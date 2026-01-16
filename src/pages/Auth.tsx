@@ -1,0 +1,239 @@
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { Mail, Lock, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
+
+const Auth = () => {
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('signup');
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get('email') || '').trim();
+    const password = String(formData.get('password') || '');
+
+    if (!email) {
+      toast.error('Please fill in your email');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (mode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        if (error) throw error;
+        toast.success('Check your inbox to reset your password');
+      } else if (mode === 'signup') {
+        if (!password) {
+          toast.error('Please fill in all fields');
+          return;
+        }
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success('Check your inbox to confirm your account');
+        navigate('/');
+      } else {
+        if (!password) {
+          toast.error('Please fill in all fields');
+          return;
+        }
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success('You are now logged in');
+        navigate('/');
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Something went wrong with authentication');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <Navbar />
+      <main className="min-h-[calc(100vh-5rem)] px-4 pt-28 pb-10 flex items-start sm:items-center justify-center relative overflow-hidden">
+        {/* Animated gradient background */}
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute -top-40 -left-24 h-64 w-64 rounded-full bg-primary/25 blur-3xl animate-pulse" />
+          <div className="absolute -bottom-40 -right-24 h-72 w-72 rounded-full bg-exclu-iris/25 blur-3xl animate-[pulse_7s_ease-in-out_infinite]" />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: 'easeOut' }}
+          className="w-full max-w-md space-y-6"
+        >
+          <div className="text-center space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-exclu-ink/80 px-3 py-1 text-[11px] font-medium text-exclu-cloud/80">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <span>Exclu for creators</span>
+            </div>
+            <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+              {mode === 'signup'
+                ? 'Create your Exclu account'
+                : mode === 'login'
+                ? 'Log in to Exclu'
+                : 'Reset your password'}
+            </h1>
+            <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
+              {mode === 'reset'
+                ? 'Enter your email and we will send you a link to reset your password.'
+                : 'Manage your premium links and payouts in one place.'}
+              {mode === 'signup'
+                ? ' Use your email to get started in a few seconds.'
+                : mode === 'login'
+                ? ' Log in with your existing creator account.'
+                : ''}
+            </p>
+          </div>
+
+          <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+            <CardHeader className="px-5 pt-5 pb-3 space-y-3">
+              <div className="flex rounded-full bg-exclu-ink/90 p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMode('login')}
+                  className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
+                    mode === 'login' || mode === 'reset'
+                      ? 'bg-exclu-cloud text-black shadow-sm'
+                      : 'text-exclu-space hover:text-exclu-cloud'
+                  }`}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('signup')}
+                  className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
+                    mode === 'signup'
+                      ? 'bg-exclu-cloud text-black shadow-sm'
+                      : 'text-exclu-space hover:text-exclu-cloud'
+                  }`}
+                >
+                  Sign up
+                </button>
+              </div>
+              <div className="space-y-1">
+                <CardTitle className="text-base text-exclu-cloud">
+                  {mode === 'signup'
+                    ? 'Create your credentials'
+                    : mode === 'login'
+                    ? 'Log in with your email'
+                    : 'Reset your password'}
+                </CardTitle>
+                <CardDescription className="text-xs text-exclu-space/80">
+                  We use email-based authentication powered by Supabase.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="px-5 pb-5">
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-1.5">
+                  <label htmlFor="email" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
+                    <Mail className="h-3.5 w-3.5 text-exclu-space/80" />
+                    Email
+                  </label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="password"
+                    className="flex items-center gap-2 text-xs font-medium text-exclu-space"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
+                    Password
+                  </label>
+                  {mode !== 'reset' && (
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                      placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
+                      className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      minLength={6}
+                      required
+                    />
+                  )}
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="hero"
+                  size="lg"
+                  className="w-full mt-1 inline-flex items-center justify-center gap-2"
+                  disabled={isLoading}
+                >
+                  {isLoading
+                    ? 'Please wait...'
+                    : mode === 'signup'
+                    ? 'Sign up and get started'
+                    : mode === 'login'
+                    ? 'Log in to your account'
+                    : 'Send reset link'}
+                </Button>
+
+                <p className="text-[10px] text-exclu-space/70 text-center mt-2">
+                  You can change your email or password later from your account settings.
+                </p>
+
+                {mode === 'login' && (
+                  <p className="text-[11px] text-exclu-space/80 text-center mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMode('reset')}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Forgot your password?
+                    </button>
+                  </p>
+                )}
+
+                {mode === 'reset' && (
+                  <p className="text-[11px] text-exclu-space/80 text-center mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      Back to login
+                    </button>
+                  </p>
+                )}
+              </form>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </main>
+      <Footer />
+    </div>
+  );
+};
+
+export default Auth;
