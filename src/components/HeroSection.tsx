@@ -127,7 +127,7 @@ const HeroSection = () => {
               className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2"
             >
               <Button variant="hero" size="xl" className="group" asChild>
-                <a href="#pricing">
+                <a href="/auth">
                   Start selling in minutes
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </a>

@@ -120,7 +120,7 @@ const PricingSection = () => {
                 className="w-full group text-lg"
                 asChild
               >
-                <a href="#pricing">
+                <a href="/auth">
                   Start monetizing now
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </a>
