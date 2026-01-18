@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
 import { useInView } from 'framer-motion';
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { MessageCircle, Heart, DollarSign, Users } from 'lucide-react';
 
 const ChatSection = () => {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: '-100px' });
+
+  const [visibleCount, setVisibleCount] = useState(0);
 
   const messages = [
     { isCreator: false, text: "Hey! Love your content 💜", time: "2:34 PM" },
@@ -13,6 +15,18 @@ const ChatSection = () => {
     { isCreator: false, text: "Yes please! What do you have?", time: "2:35 PM" },
     { isCreator: true, text: "Check out my new photo set, I just sent you the link!", time: "2:36 PM" },
   ];
+
+  // Reveal messages one by one when the section comes into view
+  useEffect(() => {
+    if (!isInView) return;
+    if (visibleCount >= messages.length) return;
+
+    const timeout = setTimeout(() => {
+      setVisibleCount((prev) => (prev < messages.length ? prev + 1 : prev));
+    }, 700);
+
+    return () => clearTimeout(timeout);
+  }, [isInView, visibleCount, messages.length]);
 
   return (
     <section className="relative py-24 px-6 overflow-hidden">
@@ -74,7 +88,13 @@ const ChatSection = () => {
               <div className="glass-card rounded-3xl p-6 shadow-glow">
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-6 pb-4 border-b border-exclu-arsenic/30">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent" />
+                  <div className="w-12 h-12 rounded-full overflow-hidden border border-exclu-arsenic/60 bg-gradient-to-br from-primary/40 to-accent/40">
+                    <img
+                      src="/creators/IMG_8266.jpg"
+                      alt="Creator profile"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
                   <div>
                     <p className="font-semibold text-exclu-cloud">Sarah ✨</p>
                     <p className="text-xs text-green-400 flex items-center gap-1">
@@ -91,7 +111,7 @@ const ChatSection = () => {
 
                 {/* Messages */}
                 <div className="space-y-4 mb-6">
-                  {messages.map((msg, index) => (
+                  {messages.slice(0, visibleCount).map((msg, index) => (
                     <motion.div
                       key={index}
                       initial={{ opacity: 0, y: 10 }}

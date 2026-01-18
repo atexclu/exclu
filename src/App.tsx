@@ -15,6 +15,16 @@ import Contact from "./pages/Contact";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
+import AppDashboard from "./pages/AppDashboard";
+import CreatorLinks from "./pages/CreatorLinks";
+import CreateLink from "./pages/CreateLink";
+import EditLink from "./pages/EditLink";
+import LinkDetail from "./pages/LinkDetail";
+import ContentLibrary from "./pages/ContentLibrary";
+import CreatorPublic from "./pages/CreatorPublic";
+import PublicLink from "./pages/PublicLink";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import Onboarding from "./pages/Onboarding";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +42,64 @@ const App = () => (
           <Route path="/help-center/links-content" element={<HelpLinksContent />} />
           <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
           <Route path="/auth" element={<Auth />} />
+          <Route
+            path="/onboarding"
+            element={
+              <ProtectedRoute>
+                <Onboarding />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app"
+            element={
+              <ProtectedRoute>
+                <AppDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/links"
+            element={
+              <ProtectedRoute>
+                <CreatorLinks />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/links/new"
+            element={
+              <ProtectedRoute>
+                <CreateLink />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/content"
+            element={
+              <ProtectedRoute>
+                <ContentLibrary />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/links/:id"
+            element={
+              <ProtectedRoute>
+                <LinkDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/links/:id/edit"
+            element={
+              <ProtectedRoute>
+                <EditLink />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/c/:handle" element={<CreatorPublic />} />
+          <Route path="/l/:slug" element={<PublicLink />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />

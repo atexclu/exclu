@@ -2,6 +2,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Play, Lock, CreditCard, MessageCircle } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const HeroSection = () => {
   const sectionRef = useRef(null);
@@ -12,6 +13,7 @@ const HeroSection = () => {
 
   const y = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const isMobile = useIsMobile();
 
   return (
     <section ref={sectionRef} className="relative min-h-[80vh] flex flex-col justify-center overflow-hidden pt-24 pb-16 px-4 sm:px-6">
@@ -23,7 +25,7 @@ const HeroSection = () => {
       {/* Grid pattern overlay */}
       <div className="absolute inset-0 grid-pattern opacity-20" />
       
-      <motion.div style={{ y, opacity }} className="max-w-6xl mx-auto w-full relative z-10">
+      <motion.div style={isMobile ? undefined : { y, opacity }} className="max-w-6xl mx-auto w-full relative z-10">
         <div className="grid lg:grid-cols-2 gap-10 items-center">
           {/* Media column */}
           <motion.div

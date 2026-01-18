@@ -42,20 +42,46 @@ const Auth = () => {
           password,
         });
         if (error) throw error;
-        toast.success('Check your inbox to confirm your account');
-        navigate('/');
+        toast.success('Check your inbox to confirm your account, then log in.');
+        setMode('login');
       } else {
         if (!password) {
           toast.error('Please fill in all fields');
           return;
         }
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
         toast.success('You are now logged in');
-        navigate('/');
+
+        // After login, decide whether to send the user to onboarding or directly to the dashboard
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          navigate('/app');
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('handle')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.error('Error loading profile after login', profileError);
+        }
+
+        if (!profile?.handle) {
+          navigate('/onboarding');
+        } else {
+          navigate('/app');
+        }
       }
     } catch (error: any) {
       toast.error(error?.message || 'Something went wrong with authentication');
@@ -138,9 +164,6 @@ const Auth = () => {
                     ? 'Log in with your email'
                     : 'Reset your password'}
                 </CardTitle>
-                <CardDescription className="text-xs text-exclu-space/80">
-                  We use email-based authentication powered by Supabase.
-                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="px-5 pb-5">
@@ -193,9 +216,9 @@ const Auth = () => {
                   {isLoading
                     ? 'Please wait...'
                     : mode === 'signup'
-                    ? 'Sign up and get started'
+                    ? 'Sign up'
                     : mode === 'login'
-                    ? 'Log in to your account'
+                    ? 'Log in'
                     : 'Send reset link'}
                 </Button>
 
