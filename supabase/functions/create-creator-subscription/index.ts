@@ -29,7 +29,7 @@ const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16',
 });
 
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,9 +52,12 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    
+    // Validate the user's JWT token using the admin client
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
+      console.error('Auth error:', userError);
       return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -62,7 +65,7 @@ serve(async (req) => {
     }
 
     // Fetch the creator's profile
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id, stripe_customer_id, is_creator_subscribed')
       .eq('id', user.id)
@@ -105,7 +108,7 @@ serve(async (req) => {
       customerId = customer.id;
 
       // Save the customer ID to the profile
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id);
