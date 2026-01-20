@@ -69,7 +69,7 @@ const HeroSection = () => {
               className="inline-flex items-center gap-2 glass px-4 py-2 rounded-full"
             >
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <span className="text-sm text-exclu-cloud font-medium">0% commission for premium creators</span>
+              <span className="text-sm text-exclu-cloud font-medium">Start free or go premium for 0% commission</span>
             </motion.div>
 
             {/* Headline */}

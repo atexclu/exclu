@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Link as RouterLink } from 'react-router-dom';
-import { Copy, ExternalLink, Plus } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Zap, CreditCard } from 'lucide-react';
 
 const AppDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -12,8 +12,11 @@ const AppDashboard = () => {
   const [publishedLinksCount, setPublishedLinksCount] = useState(0);
   const [totalSalesCount, setTotalSalesCount] = useState(0);
   const [totalRevenueCents, setTotalRevenueCents] = useState(0);
+  const [walletBalanceCents, setWalletBalanceCents] = useState(0);
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'metrics' | 'earnings'>('metrics');
   const [activeMetric, setActiveMetric] = useState<'published' | 'sales' | 'revenue'>('published');
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
@@ -24,6 +27,10 @@ const AppDashboard = () => {
   const [bioDraft, setBioDraft] = useState('');
   const [isSavingBio, setIsSavingBio] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
+  const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
+  const [isStripeLoading, setIsStripeLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -48,7 +55,7 @@ const AppDashboard = () => {
         // Profile
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url, bio, handle')
+          .select('display_name, avatar_url, bio, handle, stripe_account_id, stripe_connect_status, is_creator_subscribed')
           .eq('id', user.id)
           .single();
 
@@ -96,19 +103,39 @@ const AppDashboard = () => {
         const salesCount = safePurchases.length;
         const revenueSum = safePurchases.reduce((sum, p: any) => sum + (p.amount_cents ?? 0), 0);
 
+        // Payouts for earnings view
+        const { data: payoutsData, error: payoutsError } = await supabase
+          .from('payouts')
+          .select('id, amount_cents, status, created_at, paid_at')
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (payoutsError) throw payoutsError;
+
+        const safePayouts = payoutsData ?? [];
+        const totalPayoutsCents = safePayouts
+          .filter((p: any) => p.status !== 'failed')
+          .reduce((sum: number, p: any) => sum + (p.amount_cents ?? 0), 0);
+        const walletBalance = revenueSum - totalPayoutsCents;
+
         if (!isMounted) return;
 
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
         setTotalSalesCount(salesCount);
         setTotalRevenueCents(revenueSum);
+        setWalletBalanceCents(walletBalance);
         setLinksRaw(safeLinks);
         setPurchasesRaw(safePurchases);
+        setPayouts(safePayouts);
         if (profile) {
           setProfileName(profile.display_name || 'Creator');
           setProfileAvatarUrl(profile.avatar_url || null);
           setProfileHandle(profile.handle || null);
           setBioDraft(profile.bio || '');
+          setStripeAccountId(profile.stripe_account_id || null);
+          setStripeConnectStatus(profile.stripe_connect_status || null);
+          setIsCreatorSubscribed(profile.is_creator_subscribed === true);
         }
       } catch (err) {
         console.error('Error loading dashboard metrics', err);
@@ -332,11 +359,81 @@ const AppDashboard = () => {
     }
   };
 
+  const handleStripeConnect = async () => {
+    setIsStripeLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Please sign in again to connect Stripe.');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-connect-onboard`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error || 'Unable to start Stripe onboarding.');
+      }
+    } catch (err) {
+      console.error('Error starting Stripe Connect onboarding', err);
+      setError('Unable to connect Stripe. Please try again.');
+    } finally {
+      setIsStripeLoading(false);
+    }
+  };
+
+  const handleUpgradeToPremium = async () => {
+    setIsStripeLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Please sign in again to upgrade.');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-creator-subscription`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error || 'Unable to start subscription checkout.');
+      }
+    } catch (err) {
+      console.error('Error starting subscription checkout', err);
+      setError('Unable to upgrade. Please try again.');
+    } finally {
+      setIsStripeLoading(false);
+    }
+  };
+
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-6xl mx-auto">
         <section className="mt-4 sm:mt-6 mb-8">
-          <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-4 sm:p-6 space-y-4">
+          <div className="rounded-2xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 shadow-glow-lg p-4 sm:p-6 space-y-4">
             {/* Top row: avatar + name on the left, public URL and platforms on the right */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
               <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -431,16 +528,9 @@ const AppDashboard = () => {
             </div>
 
             {/* Bio section full width */}
-            <form onSubmit={handleSaveBio} className="space-y-1">
-              <p className="text-[11px] text-exclu-space/80">Bio / description</p>
-              <textarea
-                value={bioDraft}
-                onChange={(e) => setBioDraft(e.target.value)}
-                rows={2}
-                className="w-full rounded-xl border border-exclu-arsenic/50 bg-transparent text-exclu-cloud text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary/60 placeholder:text-exclu-space/60 resize-none"
-                placeholder="Présente-toi à tes fans, parle de ton contenu exclusif, de ton style, de ce qu'ils vont débloquer…"
-              />
-              <div className="flex items-center justify-end">
+            <form onSubmit={handleSaveBio} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-exclu-space/80">Bio / description</p>
                 <Button
                   type="submit"
                   variant="outline"
@@ -451,6 +541,13 @@ const AppDashboard = () => {
                   {isSavingBio ? 'Saving…' : 'Save bio'}
                 </Button>
               </div>
+              <textarea
+                value={bioDraft}
+                onChange={(e) => setBioDraft(e.target.value)}
+                rows={2}
+                className="w-full rounded-xl border border-exclu-arsenic/50 bg-transparent text-exclu-cloud text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary/60 placeholder:text-exclu-space/60 resize-none"
+                placeholder="Présente-toi à tes fans, parle de ton contenu exclusif, de ton style, de ce qu'ils vont débloquer…"
+              />
             </form>
           </div>
         </section>
@@ -459,53 +556,166 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
-        <section className="grid gap-4 sm:gap-6 md:grid-cols-3">
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-              activeMetric === 'published' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-            }`}
-            onClick={() => {
-              setActiveMetric('published');
-              setHoveredPoint(null);
-            }}
-          >
-            <p className="text-xs text-exclu-space mb-1">Published links</p>
-            <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : publishedLinksCount}</p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">
-              Links currently live for fans ({isLoading ? '—' : totalLinks} created in total).
-            </p>
-          </div>
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-              activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-            }`}
-            onClick={() => {
-              setActiveMetric('sales');
-              setHoveredPoint(null);
-            }}
-          >
-            <p className="text-xs text-exclu-space mb-1">Total sales</p>
-            <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : totalSalesCount}</p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">Number of purchases across all your links.</p>
-          </div>
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-              activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-            }`}
-            onClick={() => {
-              setActiveMetric('revenue');
-              setHoveredPoint(null);
-            }}
-          >
-            <p className="text-xs text-exclu-space mb-1">Revenue</p>
-            <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `${formattedRevenue} €`}</p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">Total revenue from successful purchases (mock until payments are fully wired).</p>
+        {/* Stripe Connect & Plan Status */}
+        <section className="mb-6">
+          <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              {/* Plan status */}
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isCreatorSubscribed ? 'bg-emerald-500/15' : 'bg-amber-500/15'}`}>
+                  {isCreatorSubscribed ? (
+                    <Zap className="w-5 h-5 text-emerald-400" />
+                  ) : (
+                    <CreditCard className="w-5 h-5 text-amber-300" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-exclu-cloud">
+                    {isCreatorSubscribed ? 'Premium Plan' : 'Free Plan'}
+                  </p>
+                  <p className="text-[11px] text-exclu-space/80">
+                    {isCreatorSubscribed
+                      ? '0% commission on all sales'
+                      : '10% commission on sales • Upgrade for 0%'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                {!stripeAccountId && (
+                  <Button
+                    variant="hero"
+                    size="sm"
+                    className="rounded-full text-xs"
+                    onClick={handleStripeConnect}
+                    disabled={isStripeLoading}
+                  >
+                    <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                    {isStripeLoading ? 'Loading…' : 'Connect Stripe'}
+                  </Button>
+                )}
+
+                {stripeAccountId && stripeConnectStatus === 'pending' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-xs border-amber-500/40 text-amber-300"
+                    onClick={handleStripeConnect}
+                    disabled={isStripeLoading}
+                  >
+                    {isStripeLoading ? 'Loading…' : 'Complete Stripe Setup'}
+                  </Button>
+                )}
+
+                {stripeAccountId && stripeConnectStatus === 'complete' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-[11px] text-emerald-300">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                    Stripe connected
+                  </span>
+                )}
+
+                {!isCreatorSubscribed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-xs border-primary/40 text-primary hover:bg-primary/10"
+                    onClick={handleUpgradeToPremium}
+                    disabled={isStripeLoading}
+                  >
+                    <Zap className="w-3.5 h-3.5 mr-1.5" />
+                    {isStripeLoading ? 'Loading…' : 'Upgrade to Premium – $39/mo'}
+                  </Button>
+                )}
+
+                {isCreatorSubscribed && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-xs border-exclu-arsenic/60"
+                    onClick={handleUpgradeToPremium}
+                    disabled={isStripeLoading}
+                  >
+                    Manage subscription
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Analytics chart */}
-        <section className="mt-6">
-          <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+        {/* Metrics / Earnings toggle */}
+        <section className="mt-1 mb-4">
+          <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+            {[
+              { key: 'metrics' as const, label: 'Metrics' },
+              { key: 'earnings' as const, label: 'Earnings' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-3 py-1 rounded-full transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-exclu-cloud text-black shadow-sm'
+                    : 'text-exclu-space hover:text-exclu-cloud'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {activeTab === 'metrics' && (
+          <>
+            <section className="grid gap-4 sm:gap-6 md:grid-cols-3">
+              <div
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
+                  activeMetric === 'published' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                }`}
+                onClick={() => {
+                  setActiveMetric('published');
+                  setHoveredPoint(null);
+                }}
+              >
+                <p className="text-xs text-exclu-space mb-1">Published links</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : publishedLinksCount}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">
+                  Links currently live for fans ({isLoading ? '—' : totalLinks} created in total).
+                </p>
+              </div>
+              <div
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
+                  activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                }`}
+                onClick={() => {
+                  setActiveMetric('sales');
+                  setHoveredPoint(null);
+                }}
+              >
+                <p className="text-xs text-exclu-space mb-1">Total sales</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : totalSalesCount}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Number of purchases across all your links.</p>
+              </div>
+              <div
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
+                  activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                }`}
+                onClick={() => {
+                  setActiveMetric('revenue');
+                  setHoveredPoint(null);
+                }}
+              >
+                <p className="text-xs text-exclu-space mb-1">Revenue</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `${formattedRevenue} €`}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Total revenue from successful purchases.</p>
+              </div>
+            </section>
+
+            {/* Analytics chart */}
+            <section className="mt-6">
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Growth over time</p>
@@ -681,8 +891,95 @@ const AppDashboard = () => {
                 );
               })()
             )}
-          </div>
-        </section>
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'earnings' && (
+          <section className="mt-2 space-y-4">
+            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Wallet</p>
+                <p className="text-sm text-exclu-space/80 mb-2">Amount earned and not yet paid out.</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-exclu-space/80">Current balance</p>
+                <p className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud">
+                  {isLoading
+                    ? '—'
+                    : `${(walletBalanceCents / 100).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} €`}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Payouts</p>
+                {payouts.length > 0 && (
+                  <p className="text-[11px] text-exclu-space/70">{payouts.length} payout{payouts.length > 1 ? 's' : ''}</p>
+                )}
+              </div>
+
+              {isLoading && <p className="text-sm text-exclu-space/80">Loading earnings…</p>}
+
+              {!isLoading && payouts.length === 0 && (
+                <p className="text-sm text-exclu-space/80">
+                  No payouts have been recorded yet. Once payouts are processed, they will appear here with their
+                  status.
+                </p>
+              )}
+
+              {!isLoading && payouts.length > 0 && (
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                  <table className="min-w-full text-sm">
+                    <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
+                      <tr>
+                        <th className="px-2 sm:px-3 py-2 text-left">Date</th>
+                        <th className="px-2 sm:px-3 py-2 text-left">Amount</th>
+                        <th className="px-2 sm:px-3 py-2 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payouts.map((payout: any) => (
+                        <tr key={payout.id} className="border-t border-exclu-arsenic/40">
+                          <td className="px-2 sm:px-3 py-2 text-exclu-space/80">
+                            {new Date(payout.paid_at || payout.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-exclu-cloud">
+                            {(payout.amount_cents / 100).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{' '}
+                            €
+                          </td>
+                          <td className="px-2 sm:px-3 py-2">
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                payout.status === 'paid'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                  : payout.status === 'pending' || payout.status === 'processing'
+                                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/40'
+                                  : payout.status === 'failed'
+                                  ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                  : 'bg-exclu-arsenic/40 text-exclu-cloud border border-exclu-arsenic/60'
+                              }`}
+                            >
+                              {payout.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
       </main>
     </AppShell>

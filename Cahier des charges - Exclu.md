@@ -1,241 +1,197 @@
-# Welcome to your Lovable project
 
-# Exclu
+Cahier des Charges – Plateforme Exclu.at
 
-Exclu permet aux créateurs de vendre leurs contenus digitaux (photos, vidéos, fichiers, accès exclusifs…) via des liens payants débloquables en un clic, sans création de compte côté fan, avec 0 % de commission pour les créateurs premium.
+Contexte et objectifs
+• Concept : Développer une plateforme de monétisation de contenu (photos,
+vidéos, etc.) équivalente à OnlyFans, où les créateurs conservent l’essentiel de
+leurs revenus. L’inspiration vient de solutions comme Exclu (un « OnlyFans
+alternative ») qui mettent en avant des liens payants d’accès immédiat et 0 % de
+commission pour le créateur.
+• Public cible : Exclusivement des créateurs de contenu adultes (modèles,
+influenceurs, etc.) souhaitant vendre du contenu directement à leur audience.
+Pas de comptes professionnels ou entreprises, uniquement des profils
+individuels.
 
-Ce dépôt contient la **landing page marketing Exclu**, construite comme une SPA moderne en React + Vite, animée avec framer-motion et stylée avec Tailwind + shadcn/ui.
-
----
-
-## Tech stack
-
-- **Build & bundler**
-  - Vite 5 (mode SPA, point d’entrée `index.html` → `src/main.tsx`)
-- **Langage & framework UI**
-  - React 18
-  - TypeScript
-  - React Router DOM (routing côté client)
-- **UI & design system**
-  - Tailwind CSS 3 (`tailwind.config.ts`, `src/index.css`)
-  - shadcn/ui + Radix UI (boutons, tooltips, toasts, etc. dans `src/components/ui`)
-  - framer-motion (animations d’apparition, carrousel créateurs, scroll effects)
-- **State / data**
-  - TanStack React Query (configuré dans `App.tsx` pour les futurs appels API)
-- **Qualité & tests**
-  - TypeScript strict
-  - ESLint 9
-  - Vitest + @testing-library/react + jsdom (`src/test`)
-
----
-
-## Project structure
-
-Vue d’ensemble des dossiers importants :
-
-```txt
-.
-├─ index.html              # Point d'entrée HTML, meta SEO, injection de root React
-├─ vite.config.ts          # Config Vite (React SWC, alias @, port 8080)
-├─ tailwind.config.ts      # Config Tailwind + couleurs de marque Exclu
-├─ tsconfig*.json          # Config TypeScript (app / node / base)
-└─ src/
-   ├─ main.tsx             # Bootstrap ReactDOM, montage de <App />
-   ├─ App.tsx              # Providers globaux + routing
-   ├─ pages/
-   │  ├─ Index.tsx         # Landing page principale Exclu
-   │  └─ NotFound.tsx      # Page 404 catch-all
-   ├─ components/
-   │  ├─ Navbar.tsx
-   │  ├─ HeroSection.tsx
-   │  ├─ TeaserVideoGrid.tsx
-   │  ├─ CreatorsCarousel.tsx
-   │  ├─ WhyExcluSection.tsx
-   │  ├─ HowItWorksSection.tsx
-   │  ├─ VideoShowcase.tsx
-   │  ├─ LinkInBioSection.tsx
-   │  ├─ ChatSection.tsx
-   │  ├─ PricingSection.tsx
-   │  ├─ SocialProofSection.tsx
-   │  ├─ FAQSection.tsx
-   │  ├─ FinalCTASection.tsx
-   │  ├─ Footer.tsx
-   │  ├─ CursorGlow.tsx     # Effet glow sous le curseur
-   │  └─ ui/                # Composants shadcn/ui + primitives Radix
-   ├─ hooks/
-   │  ├─ use-mobile.tsx     # Hooks utilitaires (détection mobile, etc.)
-   │  └─ use-toast.ts       # Gestion des toasts shadcn
-   ├─ lib/
-   │  └─ utils.ts           # Helpers génériques
-   ├─ test/
-   │  ├─ example.test.ts    # Exemple de test Vitest + RTL
-   │  └─ setup.ts           # Setup de l’environnement de test
-   └─ index.css             # Styles globaux + thèmes + utilitaires Tailwind custom
-```
-
----
-
-## Application architecture
-
-### Entrée & routing
-
-- `index.html`
-  - définit les meta SEO / OpenGraph / Twitter
-  - injecte le bundle dans `<div id="root"></div>` via `<script type="module" src="/src/main.tsx">`.
-
-- `src/main.tsx`
-  - crée la racine React avec `createRoot(document.getElementById("root"))`
-  - rend le composant `App`.
-
-- `src/App.tsx`
-  - instancie un `QueryClient` React Query
-  - englobe l’application avec :
-    - `QueryClientProvider`
-    - `TooltipProvider`
-    - `Toaster` (shadcn/ui)
-    - `Sonner` (lib de toasts)
-    - `BrowserRouter` (React Router DOM)
-  - définit les routes :
-    - `/` → `Index` (landing principale)
-    - `*` → `NotFound` (404 avec lien retour home)
-
-### Landing page Exclu (`src/pages/Index.tsx`)
-
-La landing assemble les différentes sections marketing dans l’ordre :
-
-- **Layout global**
-  - fond sombre `bg-background` + texte `text-foreground`
-  - texture de bruit légère + `grid-pattern` (grille) définies dans `index.css`
-  - composant `CursorGlow` pour l’effet lumineux qui suit le curseur.
-
-- **Navbar (`Navbar.tsx`)**
-  - logo Exclu
-  - navigation interne par ancres vers les sections (`#features`, `#how-it-works`, `#pricing`)
-  - CTA « Get started » / « Log in » scrollant vers la section pricing.
-
-- **Hero (`HeroSection.tsx`)**
-  - headline : *Your content. Your revenue. No middleman.*
-  - sous-titre : explication du modèle (liens payants, 0 % commission, no-account pour les fans)
-  - CTA principaux :
-    - "Start selling in minutes" (vers pricing)
-    - "See how it works" (vers la vidéo de démo)
-  - mockup vidéo vertical (`/videos/exclu-teaser.mp4`) + cartes flottantes (chat, paiement) animées avec framer-motion.
-
-- **Sections de contenu** (toutes animées avec `framer-motion` + hooks `useInView` / `useScroll`) :
-  - `TeaserVideoGrid` : grille de teasers (aperçus de contenu)
-  - `CreatorsCarousel` : carrousel horizontal infini de créateurs fictifs avec stats (followers, etc.)
-  - `WhyExcluSection` (`id="features"`) : cartes de features (0 % commission, 1‑click unlock, no account, etc.)
-  - `HowItWorksSection` (`id="how-it-works"`) : steps 01 → 05 (upload, set price, share, unlock, get paid)
-  - `VideoShowcase` (`id="video-showcase"`) : vidéo de démo `/videos/exclu-demo.mp4` en player plein écran (controls)
-  - `LinkInBioSection` : focus sur l’usage en "link in bio" multi-plateforme
-  - `ChatSection` : mockup de chat créateur ↔ fan + stats (engagement, revenu/fan…)
-  - `PricingSection` (`id="pricing"`) : carte de pricing "Premium" unique, 0 % commission, features listées
-  - `SocialProofSection` : stats globales (nb créateurs, payout total, pays, temps d’unlock)
-  - `FAQSection` : FAQ interactive avec accordéons (animations framer-motion)
-  - `FinalCTASection` : dernier gros CTA orienté conversion vers pricing.
-
-- **Footer (`Footer.tsx`)**
-  - rappel du slogan *Your content. Your revenue. No middleman.*
-  - liens de navigation (Product, Company, Legal, Support)
-  - icônes sociales (Twitter, Instagram, Discord).
-
-### Styles & thème
-
-- **`tailwind.config.ts`**
-  - active `darkMode: ["class"]` mais le design est centré sur un thème sombre permanent.
-  - déclare les couleurs de marque Exclu via des variables CSS (`--exclu-black`, `--exclu-cloud`, etc.).
-  - ajoute des keyframes / animations utilitaires (`fade-in`, `slide-in-*`, `blur-in`, etc.).
-
-- **`src/index.css`**
-  - définit les variables CSS de thème (`--background`, `--primary`, `--exclu-*`, `--gradient-*`, `--glow-*`).
-  - ajoute des utilitaires custom (via `@layer utilities`) :
-    - `gradient-text`, `glass`, `glass-card`, `shadow-glow`, `grid-pattern`, `radial-gradient`, `cursor-glow`, etc.
-  - gère la scrollbar custom, les keyframes `float`, `pulse-glow`, `shimmer`, `gradient-shift`.
-
----
-
-## Scripts npm
-
-Scripts définis dans `package.json` :
-
-- **`npm run dev`**
-  - démarre le serveur Vite de développement.
-  - par défaut, l’app tourne sur le port **8080** (voir `vite.config.ts`).
-
-- **`npm run build`**
-  - build de production (`dist/`) optimisé.
-
-- **`npm run build:dev`**
-  - build en mode développement (utile pour prévisualiser un build non minifié).
-
-- **`npm run preview`**
-  - lance un serveur de prévisualisation sur le build `dist/`.
-
-- **`npm run lint`**
-  - exécute ESLint sur le projet.
-
-- **`npm run test`**
-  - exécute la suite de tests Vitest en mode run unique.
-
-- **`npm run test:watch`**
-  - exécute Vitest en mode watch.
-
----
-
-## Getting started (local dev)
-
-Prérequis :
-
-- Node.js & npm (recommandé : installation via [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
-
-Installation & lancement :
-
-```sh
-# 1. Cloner le dépôt
-git clone <GIT_URL_DU_PROJET>
-
-# 2. Aller dans le dossier
-cd Exclu
-
-# 3. Installer les dépendances
-npm install
-
-# 4. Lancer le serveur de dev (Vite)
-npm run dev
-
-# L’app sera accessible sur http://localhost:8080 (sauf conflit de port)
-```
-
----
-
-## Build & déploiement
-
-1. **Build de production**
-
-```sh
-npm run build
-```
-
-Cela génère les fichiers statiques optimisés dans le dossier `dist/`.
-
-2. **Prévisualisation locale du build**
-
-```sh
-npm run preview
-```
-
-3. **Déploiement**
-
-Le build généré est une SPA statique classique et peut être déployé sur n’importe quel hébergeur de fichiers statiques :
-
-- Netlify, Vercel, Cloudflare Pages, GitHub Pages, OVH, etc.
-- Il suffit de pointer le service sur le dossier `dist/` en configurant le fallback HTML sur `index.html` (pour le routing client).
-
----
-
-## Prochaines évolutions possibles
-
-- Connexion à un backend Exclu réel (API pour créateurs, liens payants, paiements, analytics).
-- Internationalisation (FR / EN) de la landing.
-- Pages supplémentaires (dashboard, onboarding créateur, documentation publique, etc.).
-
+• Objectifs principaux :
+• Permettre aux créateurs de s’inscrire et de gérer leur profil de manière
+autonome.
+• Leur offrir un dashboard pour télécharger du contenu (photos, vidéos, fichiers)
+et fixer des tarifs (abonnements ou paiements à la pièce).
+• Concevoir une interface de consommateurs (fans) simple : pas de création de
+compte nécessaire, juste une carte bleue pour débloquer les contenus.
+• Intégrer un système de paiement sécurisé (Authorize.Net) pour gérer les
+transactions CB et les abonnements.
+• Prévoir un programme de parrainage : toute personne parrainant un nouveau
+créateur ou fan gagne 40 % de commission sur les ventes générées (cf.
+Commission affiliation).
+• Respecter un design sombre (thème violet/rose comme sur my.club) avec
+contenu flouté en aperçu, et une UX soignée, épurée et intuitive (inspiration
+my.club et reveal.me).
+Architecture technique et hébergement
+• Base de données (Supabase) : On utilisera Supabase (PostgreSQL + Auth +
+Storage).
+• Plan gratuit : adapté au lancement, offre 50 000 utilisateurs actifs mensuels
+(MAU) et 500 Mo de base (PostgreSQL). Ce plan gratuit comprend aussi 1 Go de
+stockage de fichiers et 5 Go de bande passante sortante, suffisant pour une
+petite charge initiale. (À noter : les projets gratuits sont mis en pause après 7
+jours d’inactivité.)
+• Plan Pro : pour le scale, Supabase propose un plan Pro « à partir de \$25/mois »
+qui inclut 8 Go de base de données, 100 Go de stockage de fichiers et 250 Go de
+bande passante. Il autorise aussi 100 000 MAU (au-delà, facturation à l’usage).
+Ce plan sera envisagé une fois que les limites du free plan sont atteintes.
+• Fonctionnalités Supabase : gestion native des utilisateurs (authentification),
+API REST automatique, stockage de fichiers (pour les contenus) et notification
+en temps réel. Les données sensibles (profil, transactions) seront protégées via
+SSL/TLS et RLS (Row-Level Security) de PostgreSQL.
+• Frontend (Vercel) : L’interface web sera développée en React/Next.js et
+déployée sur Vercel.
+• Plan Hobby : gratuit, permet déployer l’application avec CI/CD, CDN mondial,
+WAF, TLS/SSL, etc. Parfait pour démarrage.
+• Plan Pro (\$20/mois) : pour plus de ressources (CPU, build plus rapides,
+collaboration team). Le plan Hobby gratuit inclut déjà des fonctionnalités
+avancées (firewall, CDN).
+• Remarque : Vercel gère nativement les frontends statiques/dynamiques, et
+s’intègre bien avec Supabase pour l’auth et l’API (ex: NextAuth ou supabase-js
+pour les requêtes).
+• Backend (Railway, optionnel) : Si besoin d’un service serveur dédié (par ex.
+une API Node.js/Express pour orchestrer les paiements ou opérations backend
+spécifiques), Railway est une option simple.
+• Plan Free ($0) : 0,5 Go de RAM, 1 vCPU par service, 0,5 Go stockage persistant.
+Comprend 30 jours d’essai avec \$5 de crédit. Pratique pour prototypage.
+• Plan Hobby ($5/mois) et Pro ($20/mois) : montent jusqu’à 8 Go/8 vCPU et 32 Go/
+32 vCPU par service respectivement. Ils incluent des crédits d’utilisation (¥5 et
+¥20) couvrant une portion d’usage mensuel.
+• Usage : Ce backend serait utile si l’on a besoin de logique serveur (par exemple,
+orchestration des chats, webhooks de paiement Authorize, etc.). Sinon,
+l’essentiel peut être géré « serverless » via Supabase Functions ou Next.js API
+routes sur Vercel.
+• Système de paiement (Authorize.Net) : Utiliser le service Authorize.Net pour
+les transactions par carte bancaire.
+• Offre recommandée « All-in-one » à \$25/mois + 2,9% + \$0,30/transaction. Ce
+plan fournit un compte marchand intégré (merchant account) et la passerelle de
+paiement (gateway).
+• Sécurité : Authorize.Net propose une suite avancée de détection de fraude
+(« Advanced Fraud Detection Suite ») récompensée par Forbes 2025, assurant
+des transactions CB sécurisées.
+• Débouché UX : Les utilisateurs (fans) n’ont pas besoin de créer un compte sur
+la plateforme pour payer. Ils saisissent directement leurs coordonnées CB dans
+un formulaire Authorize.Net intégré (checkout sécurisé).
+Fonctionnalités du côté Créateur
+1. Inscription / Onboarding : Le créateur s’inscrit par email et mot de passe (ou
+OAuth social), valide son compte (email). Un espace de profil est créé pour
+stocker ses infos (pseudo, bio, photo de profil). On pourra prévoir une vérification
+manuelle de son identité (optionnel selon réglementations).
+2. Dashboard Créateur : Après connexion, le créateur accède à un tableau de
+bord clair :
+3. Gestion des contenus : bouton “Ajouter un contenu” permettant d’uploader des
+fichiers (photos, vidéos, audio, ebooks, etc.). Chaque contenu devient un post ou
+un lien privé payant. On peut organiser en dossiers/collections.
+4. Tarification : Pour chaque contenu, le créateur définit un prix de vente (montant
+minimum \$5). Les paiements pourront être à l’acte (pay-per-view) ou récurrents
+(abonnements mensuels) selon le modèle souhaité.
+5. Liens payants : Génération de liens monétisés (« paid links ») : chaque lien
+correspond à un accès unique à un contenu (similaire au système d’Exclu). Ces
+liens peuvent être partagés sur les réseaux sociaux, Telegram, etc.
+6. Statistiques : Affichage du nombre de vues de ses contenus, du nombre de
+ventes, des revenus générés. Exclu met en avant des « high conversion rates »
+(15–20%) grâce aux liens payants – on suivra ce KPI.
+7. Gestion des abonnements : Tableau de bord listant les abonnés récurrents
+(fans abonnés, virements automatiques). Le créateur peut activer/désactiver des
+promotions (ex : essai gratuit) si souhaité.
+Fonctionnalités du côté Fan (utilisateur)
+1. Découverte du créateur et de son contenu : Sur la page publique de chaque
+créateur, on affiche ses contenus de manière stylisée : vidéos/images miniatures
+floutées (effet « tease »), titre court, prix en surimpression partielle. Ce rendu doit
+s’inspirer des pages « link-in-bio » floutées comme on le voit sur des outils de
+teasers (par ex. reveal.me). Aucun contenu sensible n’est montré sans paiement.
+2. Achat sans compte : Pour débloquer un contenu, le fan clique sur l’icône/
+miniature floutée ; il est alors invité à entrer ses informations de carte bancaire
+dans le formulaire Authorize.Net. Après validation, l’accès au contenu devient
+instantané (déblocage du lien, lecture en streaming ou téléchargement). Le fan
+peut ensuite éventuellement chatter avec le créateur (via le chat intégré). Il n’y a
+pas besoin de créer un compte utilisateur sur la plateforme.
+3. Retour à la carte bleue : Les informations CB sont traitées par Authorize.Net
+(sécurisé). On appliquera les frais de transaction standard (2,9%+0,30$, inclus
+dans les 5% prévus côté fan). Exemple de tarification : pour un achat de \$10, le
+fan paie \$10 + \$0,50 (5% supplémentaire) et le créateur reçoit \$9.50 (moins \
+$0,30 de frais Authorize).
+4. Abonnement aux créateurs : Si un créateur propose des abonnements
+mensuels, le fan peut également s’abonner via Authorize.Net (virement
+récurrent). L’interface doit permettre l’annulation facile de l’abonnement.
+5. Interactivité post-achat : Après chaque achat, le fan est redirigé vers le profil du
+créateur
+Système de parrainage (Referral)
+• Pour encourager la croissance, tout utilisateur (créateur ou simple promoteur)
+peut parrainer d’autres utilisateurs.
+• Commission de 40% : Le parrain reçoit 40% de commission sur chaque
+transaction réalisée par le filleul (que le filleul soit fan ou créateur). Par exemple,
+si un fan parrainé effectue un achat de \$10, le parrain gagne \$4. La plateforme
+se charge de suivre ces références via des codes ou liens de parrainage dans
+l’URL. (Cette pratique est similaire à de nombreux programmes affiliés pour
+créateurs, bien que le taux de 40% soit particulièrement généreux.)
+Modèle économique et commissions
+• Abonnement (\$39/mois) : Ce plan permet au créateur de ne payer aucune
+commission sur ses ventes. Seuls les frais de transaction CB (≈5%) sont
+prélevés sur chaque achat. Cela s’apparente au modèle d’Exclu qui vante le
+« 0% commission – you keep 100% of your revenue ».
+• Plan Gratuit : Le créateur n’a pas d’abonnement fixe, mais la plateforme prélève
+une commission de 10% sur ses ventes. Les fans payent toujours 5% de frais de
+transaction à leur niveau (cumulant ~15% de frais total). Par exemple, pour une
+vente de \$20, le créateur reçoit \$18 (10% soit \$2 retenus) et le fan paie \$21 (\
+$20 + 5% soit \$1 de frais carte).
+• Minimum de paiement : Chaque lien payant ou post à la pièce doit être d’au
+moins \$5, pour assurer la rentabilité des transactions (frais de CB fixes à \
+$0,30).
+• Frais de plateforme : En résumé, le plan payant (\$39) offre 0% de commission
++ 5% de frais CB (prise en charge par le fan), tandis que le plan gratuit impose
+10% de commission + 5% frais CB. Ces chiffres sont cohérents avec des
+pratiques de la concurrence (ex. Exclu à 0%, OnlyFans à 20%).
+Design et ergonomie (UI/UX)
+• Palette de couleurs : Thème sombre (noir/anthracite) avec accents violets et
+roses (cf. https://my.club, https://reveal.me pour l’ambiance). L’idée est d’associer
+la sensualité (violet/rose) à une interface élégante et moderne.
+• Typographie & Iconographie : Simples et lisibles. Éviter les designs trop
+chargés. Les boutons d’action (paiement, s’abonner) seront bien visibles, de
+couleur contrastée (rose vif ou orange clair).
+• Images floutées (blur) : Sur la page du créateur, les contenus affichés en avant-
+première seront floutés ou pixélisés (effet blur). Lorsqu’un fan survole ou clique,
+un overlay explique « Débloquez pour voir » ou « Unlock to view ». (On vise un
+style proche de reveal.me/lolabellucci où l’image est volontairement floutée tant
+qu’on n’a pas payé.)
+• Maquette d’inspiration : L’UX générale s’inspire des pages de fans type
+My.Club (ex: my.club/twin/XnicoleanistonX), avec un grid de miniatures floutées
+et un bouton d’achat clair.
+• Responsive : L’application sera pleinement responsive (desktop, mobile,
+tablette). Il sera crucial que le tunnel de paiement soit optimisé pour mobile (la
+majorité des utilisateurs sera peut-être sur smartphone).
+Sécurité et conformité
+• Hébergement et données : Supabase et Vercel assurent l’hébergement
+sécurisé (certificats SSL, sauvegardes quotidiennes en plan Pro). Les données
+critiques (mots de passe, infos de paiement) sont stockées de manière chiffrée
+(sous-jacente dans Supabase et Authorize.net). Supabase paie ses serveurs
+PostgreSQL avec RLS et TLS par défaut.
+• Paiements sécurisés : Toutes les transactions CB passent par Authorize.Net,
+certifié PCI DSS. Le formulaire de paiement est hébergé sur les serveurs
+d’Authorize (pas de stockage de numéros CB sur nos serveurs).
+• Protection anti-fraude : Nous activerons les outils de détection de fraude
+d’Authorize.net. De plus, chaque nouvel utilisateur (créateur/fan) sera validé par
+email pour éviter les faux comptes.
+• RGPD et confidentialité : L’application doit respecter le RGPD : politique de
+confidentialité claire, consentement aux cookies, possibilité de suppression des
+données personnelles. Seuls les emails et infos minimales sont collectés.
+Synthèse des technologies et références
+• Supabase (DB & Auth) : plan Free jusqu’à 50k MAU, 500MB DB puis plan Pro (\
+$20) avec 8GB DB, 100GB stockage.
+• Vercel (Frontend) : plan Hobby gratuit (CI/CD, CDN).
+• Authorize.Net (Paiement) : forfait \$25/mois + 2,9%+0,30$ par transaction, avec
+fraude détectée (« Award winning fraud protection »).
+• Références d’inspiration : Exclu (monétisation par liens, 0% commission),
+My.Club (design sombre + teasers floutés), Reveal.me (contenu déflouté après
+paiement).
+Ce cahier des charges constitue un plan détaillé de l’expérience utilisateur et de
+l’architecture technique pour le projet. Il permettra de cadrer le développement du
+SaaS, en respectant les exigences business (monétisation, commissions, parrainage)
+et les contraintes techniques (stack Supabase/Vercel, paiement Authorize.net, chat
+humain). Chaque étape de l’interface doit être testée pour garantir une expérience
+fluide tant pour le créateur que pour le fan, tout en assurant la sécurité et la pérennité
+de la plateforme.

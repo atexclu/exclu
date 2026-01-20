@@ -74,8 +74,46 @@ serve(async (req) => {
       });
     }
 
+    // Fetch creator profile to determine Stripe Connect account and commission plan
+    const { data: creatorProfile, error: creatorProfileError } = await supabase
+      .from('profiles')
+      .select('stripe_account_id, is_creator_subscribed')
+      .eq('id', link.creator_id)
+      .single();
+
+    if (creatorProfileError || !creatorProfile) {
+      console.error('Error loading creator profile for checkout', creatorProfileError);
+      return new Response(JSON.stringify({ error: 'Creator profile not found' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!creatorProfile.stripe_account_id) {
+      return new Response(JSON.stringify({ error: 'Creator is not ready to receive payouts yet' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // We standardize on USD for the platform
     const currency = 'usd';
+
+    // Calculate pricing:
+    // - Creator sets their price (link.price_cents)
+    // - Fan pays +5% processing fee on top
+    // - Platform takes 10% commission from creator price (Free plan) or 0% (Premium plan)
+    const creatorPriceCents = link.price_cents;
+    const fanProcessingFeeCents = Math.round(creatorPriceCents * 0.05);
+    const totalFanPaysCents = creatorPriceCents + fanProcessingFeeCents;
+
+    // Determine platform commission based on creator plan
+    // Free plan: 10% commission; subscribed plan ($39/mo): 0% commission
+    const isSubscribed = creatorProfile.is_creator_subscribed === true;
+    const commissionRate = isSubscribed ? 0 : 0.1;
+    // Platform fee = commission on creator price + the 5% fan processing fee (goes to platform)
+    const platformCommissionCents = Math.round(creatorPriceCents * commissionRate);
+    const applicationFeeAmount = platformCommissionCents + fanProcessingFeeCents;
 
     const successUrl = `${siteUrl.replace(/\/$/, '')}/l/${encodeURIComponent(slug)}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${siteUrl.replace(/\/$/, '')}/l/${encodeURIComponent(slug)}`;
@@ -87,10 +125,10 @@ serve(async (req) => {
         {
           price_data: {
             currency,
-            unit_amount: link.price_cents,
+            unit_amount: totalFanPaysCents,
             product_data: {
               name: 'Creator drop access',
-              description: 'One-time access to a creator drop on Exclu',
+              description: 'One-time access to exclusive content on Exclu (includes 5% processing fee)',
             },
           },
           quantity: 1,
@@ -102,6 +140,12 @@ serve(async (req) => {
         link_id: link.id,
         creator_id: link.creator_id ?? '',
         slug: link.slug ?? slug,
+      },
+      payment_intent_data: {
+        application_fee_amount: applicationFeeAmount,
+        transfer_data: {
+          destination: creatorProfile.stripe_account_id,
+        },
       },
     });
 

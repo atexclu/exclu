@@ -191,9 +191,9 @@ const ContentLibrary = () => {
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-6xl mx-auto">
-        <section className="mt-4 sm:mt-6 mb-8 flex flex-col sm:flex-row items-start justify-between gap-4">
+        <section className="mb-8 flex flex-col sm:flex-row items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-1">Content</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Content</h1>
             <p className="text-exclu-space text-sm max-w-xl">
               Upload and manage your media library. You&apos;ll soon be able to reuse these assets when creating links.
             </p>

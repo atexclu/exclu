@@ -4,7 +4,14 @@ import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Sparkles, ArrowRight, Zap, Shield, Users, TrendingUp } from 'lucide-react';
 
-const features = [
+const freeFeatures = [
+  { icon: Check, text: 'Unlimited paid links' },
+  { icon: Check, text: 'Basic analytics' },
+  { icon: Check, text: 'Link-in-bio page' },
+  { icon: Shield, text: '5% processing fee for fans' },
+];
+
+const premiumFeatures = [
   { icon: Zap, text: '0% commission, keep everything' },
   { icon: Shield, text: '5% processing fee for fans only' },
   { icon: Users, text: 'Unlimited paid links' },
@@ -46,52 +53,39 @@ const PricingSection = () => {
             Simple Pricing
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
-            One plan. <span className="gradient-text">Zero commission.</span>
+            Choose your plan. <span className="gradient-text">Start earning.</span>
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
-            No hidden fees. No complicated tiers. Just transparent pricing that puts you first.
+            Start free with 10% commission, or go premium for 0% commission. Fans always pay a 5% processing fee.
           </p>
         </motion.div>
 
-        {/* Single Pricing Card */}
+        {/* Two Pricing Cards */}
         <motion.div
           style={{ y }}
           initial={{ opacity: 0, y: 50 }}
           animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="relative max-w-xl mx-auto"
+          className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto"
         >
-          {/* Popular Badge */}
-          <div className="absolute -top-5 left-1/2 -translate-x-1/2 z-10">
-            <motion.div 
-              className="px-6 py-2 rounded-full bg-gradient-to-r from-primary to-accent text-exclu-black text-sm font-bold flex items-center gap-2 shadow-glow-lg"
-              animate={{ scale: [1, 1.02, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              <Sparkles className="w-4 h-4 text-exclu-black" />
-              Premium
-            </motion.div>
-          </div>
-
-          {/* Card */}
-          <div className="relative rounded-[2rem] p-10 bg-gradient-to-br from-exclu-phantom/80 to-exclu-black/90 backdrop-blur-xl border-2 border-primary/30 shadow-glow-lg hover:shadow-[0_0_100px_20px_hsl(260,60%,60%/0.2)] transition-shadow duration-500">
-            {/* Corner glow accents */}
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-primary/20 rounded-full blur-[60px]" />
-            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-accent/15 rounded-full blur-[60px]" />
-            
+          {/* Free Plan */}
+          <div className="relative rounded-[2rem] p-8 bg-gradient-to-br from-exclu-phantom/60 to-exclu-black/80 backdrop-blur-xl border border-exclu-arsenic/50 hover:border-exclu-arsenic transition-colors duration-300">
             {/* Plan Header */}
-            <div className="text-center mb-10 relative z-10">
-              <h3 className="text-2xl font-bold text-exclu-cloud mb-6">Premium</h3>
-              <div className="flex items-baseline justify-center gap-1 mb-4">
-                <span className="text-7xl font-extrabold text-exclu-white">$39</span>
-                <span className="text-xl text-exclu-graphite">/month</span>
+            <div className="text-center mb-8 relative z-10">
+              <h3 className="text-xl font-bold text-exclu-cloud mb-4">Free</h3>
+              <div className="flex items-baseline justify-center gap-1 mb-3">
+                <span className="text-5xl font-extrabold text-exclu-white">$0</span>
+                <span className="text-lg text-exclu-graphite">/month</span>
               </div>
-              <p className="text-exclu-space text-lg">Maximum earnings for serious creators</p>
+              <p className="text-exclu-space text-sm">Get started with no upfront cost</p>
+              <div className="mt-3 inline-block px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30">
+                <span className="text-amber-300 text-xs font-medium">10% commission on sales</span>
+              </div>
             </div>
 
-            {/* Features Grid */}
-            <div className="grid sm:grid-cols-2 gap-4 mb-10 relative z-10">
-              {features.map((feature, index) => (
+            {/* Features */}
+            <div className="space-y-3 mb-8 relative z-10">
+              {freeFeatures.map((feature, index) => (
                 <motion.div
                   key={feature.text}
                   initial={{ opacity: 0, x: -20 }}
@@ -99,8 +93,71 @@ const PricingSection = () => {
                   transition={{ duration: 0.4, delay: 0.4 + index * 0.05 }}
                   className="flex items-center gap-3"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <feature.icon className="w-4 h-4 text-primary" />
+                  <div className="w-7 h-7 rounded-lg bg-exclu-arsenic/50 flex items-center justify-center flex-shrink-0">
+                    <feature.icon className="w-3.5 h-3.5 text-exclu-cloud" />
+                  </div>
+                  <span className="text-exclu-cloud/80 text-sm">{feature.text}</span>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <Button
+              variant="outline"
+              size="lg"
+              className="w-full group border-exclu-arsenic/60 hover:border-exclu-cloud/40"
+              asChild
+            >
+              <a href="/auth">
+                Start for free
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </a>
+            </Button>
+          </div>
+
+          {/* Premium Plan */}
+          <div className="relative rounded-[2rem] p-8 bg-gradient-to-br from-exclu-phantom/80 to-exclu-black/90 backdrop-blur-xl border-2 border-primary/30 shadow-glow-lg hover:shadow-[0_0_100px_20px_hsl(260,60%,60%/0.2)] transition-shadow duration-500">
+            {/* Popular Badge */}
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
+              <motion.div 
+                className="px-4 py-1.5 rounded-full bg-gradient-to-r from-primary to-accent text-exclu-black text-xs font-bold flex items-center gap-1.5 shadow-glow-lg"
+                animate={{ scale: [1, 1.02, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-exclu-black" />
+                Best Value
+              </motion.div>
+            </div>
+
+            {/* Corner glow accents */}
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/20 rounded-full blur-[60px]" />
+            <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-accent/15 rounded-full blur-[60px]" />
+            
+            {/* Plan Header */}
+            <div className="text-center mb-8 relative z-10">
+              <h3 className="text-xl font-bold text-exclu-cloud mb-4">Premium</h3>
+              <div className="flex items-baseline justify-center gap-1 mb-3">
+                <span className="text-5xl font-extrabold text-exclu-white">$39</span>
+                <span className="text-lg text-exclu-graphite">/month</span>
+              </div>
+              <p className="text-exclu-space text-sm">Maximum earnings for serious creators</p>
+              <div className="mt-3 inline-block px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                <span className="text-emerald-300 text-xs font-medium">0% commission on sales</span>
+              </div>
+            </div>
+
+            {/* Features Grid */}
+            <div className="space-y-3 mb-8 relative z-10">
+              {premiumFeatures.map((feature, index) => (
+                <motion.div
+                  key={feature.text}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                  transition={{ duration: 0.4, delay: 0.4 + index * 0.05 }}
+                  className="flex items-center gap-3"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <feature.icon className="w-3.5 h-3.5 text-primary" />
                   </div>
                   <span className="text-exclu-cloud text-sm">{feature.text}</span>
                 </motion.div>
@@ -108,24 +165,17 @@ const PricingSection = () => {
             </div>
 
             {/* CTA */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-              transition={{ duration: 0.6, delay: 0.6 }}
-              className="relative z-10"
+            <Button
+              variant="hero"
+              size="lg"
+              className="w-full group"
+              asChild
             >
-              <Button
-                variant="hero"
-                size="xl"
-                className="w-full group text-lg"
-                asChild
-              >
-                <a href="/auth">
-                  Start monetizing now
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </a>
-              </Button>
-            </motion.div>
+              <a href="/auth">
+                Go Premium
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </a>
+            </Button>
           </div>
         </motion.div>
 
