@@ -82,10 +82,10 @@ const CreatorLinks = () => {
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-6xl mx-auto">
-        <section className="mb-8 flex items-center justify-between gap-4">
+        <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">
-              Your premium links
+              Your links
             </h1>
             <p className="text-exclu-space text-sm max-w-xl">
               Create and manage the links your fans will pay to unlock.

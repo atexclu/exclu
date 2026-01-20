@@ -23,6 +23,7 @@ import LinkDetail from "./pages/LinkDetail";
 import ContentLibrary from "./pages/ContentLibrary";
 import CreatorPublic from "./pages/CreatorPublic";
 import PublicLink from "./pages/PublicLink";
+import Profile from "./pages/Profile";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Onboarding from "./pages/Onboarding";
 
@@ -95,6 +96,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <EditLink />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

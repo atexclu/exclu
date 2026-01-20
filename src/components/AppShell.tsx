@@ -1,8 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 
 interface AppShellProps {
   children: ReactNode;
@@ -11,6 +11,26 @@ interface AppShellProps {
 const AppShell = ({ children }: AppShellProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAvatar = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.avatar_url) {
+        setAvatarUrl(profile.avatar_url);
+      }
+    };
+
+    fetchAvatar();
+  }, []);
 
   const isActive = (path: string) => {
     if (path === '/app/links') {
@@ -74,6 +94,23 @@ const AppShell = ({ children }: AppShellProps) => {
           </nav>
 
           <div className="flex items-center gap-2">
+            <Link
+              to="/app/profile"
+              className={`relative w-8 h-8 rounded-full overflow-hidden border transition-all ${
+                location.pathname === '/app/profile'
+                  ? 'border-primary ring-2 ring-primary/30'
+                  : 'border-exclu-arsenic/70 hover:border-primary/50'
+              }`}
+              aria-label="Profile settings"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
+                  <User className="w-4 h-4 text-exclu-space" />
+                </div>
+              )}
+            </Link>
             <Button
               variant="outline"
               size="icon"

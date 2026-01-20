@@ -158,7 +158,7 @@ const CreateLink = () => {
 
       const slug = generateSlug(title);
 
-      // 1. Create the link row
+      // 1. Create the link row with status 'published'
       const { data: insertedLinks, error: insertError } = await supabase
         .from('links')
         .insert({
@@ -168,6 +168,7 @@ const CreateLink = () => {
           price_cents: Math.round(priceNumber * 100),
           currency: 'EUR',
           slug,
+          status: 'published',
         })
         .select('id')
         .limit(1);

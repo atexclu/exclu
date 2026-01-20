@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { X, Plus } from 'lucide-react';
 
 type LibraryAsset = {
   id: string;
@@ -21,6 +22,8 @@ const ContentLibrary = () => {
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -180,6 +183,7 @@ const ContentLibrary = () => {
         prev.forEach((url) => URL.revokeObjectURL(url));
         return [];
       });
+      setShowUploadModal(false);
     } catch (err: any) {
       console.error('Error uploading asset', err);
       setError(err?.message || 'Unable to upload content right now.');
@@ -188,27 +192,124 @@ const ContentLibrary = () => {
     }
   };
 
+  const closeUploadModal = () => {
+    setShowUploadModal(false);
+    setAssetTitle('');
+    setSelectedFiles([]);
+    setPreviewUrls((prev) => {
+      prev.forEach((url) => URL.revokeObjectURL(url));
+      return [];
+    });
+  };
+
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-6xl mx-auto">
-        <section className="mb-8 flex flex-col sm:flex-row items-start justify-between gap-4">
+        {/* Header with New content button */}
+        <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Content</h1>
             <p className="text-exclu-space text-sm max-w-xl">
-              Upload and manage your media library. You&apos;ll soon be able to reuse these assets when creating links.
+              Your media library. Click on any item to view it in full size.
             </p>
           </div>
+          <Button variant="hero" size="sm" onClick={() => setShowUploadModal(true)}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            New content
+          </Button>
         </section>
 
         {error && (
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
-        {/* Upload zone */}
-        <section className="mb-8">
-          <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 shadow-glow-lg p-4 sm:p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-exclu-space/70 mb-3">Upload</p>
-            <form className="space-y-4" onSubmit={handleAssetUpload}>
+        {/* Gallery */}
+        <section>
+          {isLoading && <p className="text-sm text-exclu-space">Loading your content…</p>}
+
+          {!isLoading && assets.length === 0 && (
+            <div className="text-center py-16">
+              <p className="text-exclu-space/80 mb-4">
+                You haven&apos;t added anything to your library yet.
+              </p>
+              <Button variant="hero" size="sm" onClick={() => setShowUploadModal(true)}>
+                <Plus className="w-4 h-4 mr-1.5" />
+                Upload your first content
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && assets.length > 0 && (
+            <>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <p className="text-xs text-exclu-space/70">{assets.length} item{assets.length > 1 ? 's' : ''}</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+                {assets.map((asset) => (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    onClick={() => setPreviewAsset(asset)}
+                    className="group relative overflow-hidden rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 shadow-glow-sm text-left cursor-pointer transition-all hover:border-primary/50"
+                  >
+                    {asset.previewUrl ? (
+                      asset.mime_type?.startsWith('video/') ? (
+                        <video
+                          src={asset.previewUrl}
+                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
+                          muted
+                          loop
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={asset.previewUrl}
+                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
+                          alt={asset.title || 'Library asset'}
+                        />
+                      )
+                    ) : (
+                      <div className="w-full h-32 sm:h-40 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                    )}
+
+                    {/* Hover gradient overlay */}
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+                    {/* Bottom text overlay */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
+                      <p className="text-[11px] sm:text-xs font-medium text-exclu-cloud truncate">
+                        {asset.title || 'Untitled asset'}
+                      </p>
+                      <p className="text-[10px] text-exclu-space/80">
+                        {new Date(asset.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      </main>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={closeUploadModal}
+          />
+          <div className="relative w-full max-w-lg rounded-2xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-exclu-arsenic/40">
+              <h2 className="text-lg font-semibold text-exclu-cloud">Upload new content</h2>
+              <button
+                onClick={closeUploadModal}
+                className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors"
+              >
+                <X className="w-5 h-5 text-exclu-space" />
+              </button>
+            </div>
+            <form className="p-4 space-y-4" onSubmit={handleAssetUpload}>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-exclu-space" htmlFor="asset-title">
                   Title (optional)
@@ -218,41 +319,41 @@ const ContentLibrary = () => {
                   value={assetTitle}
                   onChange={(e) => setAssetTitle(e.target.value)}
                   placeholder="Example: Behind the scenes shot"
-                  className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  className="h-10 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud placeholder:text-exclu-space/60"
                 />
               </div>
 
-              <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 px-4 py-3 flex flex-col items-center justify-center text-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary mb-1">
-                  <span className="text-[11px]">+</span>
+              <div className="rounded-2xl border border-dashed border-exclu-arsenic/60 bg-exclu-ink/60 px-4 py-6 flex flex-col items-center justify-center text-center gap-3">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary">
+                  <Plus className="w-6 h-6" />
                 </div>
                 <div className="space-y-1 w-full">
                   <p className="text-sm font-medium text-exclu-cloud">
                     {selectedFiles.length === 0
-                      ? 'Choose one or more files to upload'
+                      ? 'Choose one or more files'
                       : selectedFiles.length === 1
                       ? selectedFiles[0].name
                       : `${selectedFiles[0].name} + ${selectedFiles.length - 1} more`}
                   </p>
-                  <p className="text-[11px] text-exclu-space/80">
-                    MP4, MOV, JPG, PNG. Max size depends on your Supabase Storage settings.
+                  <p className="text-[11px] text-exclu-space/70">
+                    MP4, MOV, JPG, PNG supported
                   </p>
                   {previewUrls[0] && (
-                    <div className="mt-3 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40">
+                    <div className="mt-3 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40 max-h-40">
                       {selectedFiles[0] && selectedFiles[0].type.startsWith('video/') ? (
-                        <video src={previewUrls[0]} className="w-full h-32 object-cover" muted loop autoPlay />
+                        <video src={previewUrls[0]} className="w-full h-40 object-cover" muted loop autoPlay />
                       ) : (
                         <img
                           src={previewUrls[0]}
-                          className="w-full h-32 object-cover"
+                          className="w-full h-40 object-cover"
                           alt={selectedFiles[0]?.name || 'Preview'}
                         />
                       )}
                     </div>
                   )}
                 </div>
-                <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-exclu-cloud text-[11px] font-medium text-black cursor-pointer hover:bg-white transition-colors">
-                  <span>Select file</span>
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-exclu-cloud text-xs font-medium text-black cursor-pointer hover:bg-white transition-colors">
+                  <span>Select files</span>
                   <input
                     type="file"
                     accept="image/*,video/*"
@@ -263,86 +364,71 @@ const ContentLibrary = () => {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <p className="text-[11px] text-exclu-space/80">
-                  Uploaded files are stored privately. Only you can see them.
-                </p>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full border-exclu-arsenic/60"
+                  onClick={closeUploadModal}
+                >
+                  Cancel
+                </Button>
                 <Button
                   type="submit"
                   variant="hero"
                   size="sm"
-                  className="rounded-full text-xs px-4"
+                  className="rounded-full"
                   disabled={isUploadingAsset || selectedFiles.length === 0}
                 >
-                  {isUploadingAsset ? 'Uploading…' : 'Upload to library'}
+                  {isUploadingAsset ? 'Uploading…' : 'Upload'}
                 </Button>
               </div>
             </form>
           </div>
-        </section>
+        </div>
+      )}
 
-        {/* Gallery */}
-        <section>
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Gallery</p>
-            {assets.length > 0 && (
-              <p className="text-[11px] text-exclu-space/70">{assets.length} item{assets.length > 1 ? 's' : ''}</p>
+      {/* Preview Modal */}
+      {previewAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+            onClick={() => setPreviewAsset(null)}
+          />
+          <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+            <button
+              onClick={() => setPreviewAsset(null)}
+              className="absolute -top-12 right-0 p-2 rounded-full bg-exclu-ink/80 hover:bg-exclu-arsenic/50 transition-colors z-10"
+            >
+              <X className="w-6 h-6 text-exclu-cloud" />
+            </button>
+            {previewAsset.previewUrl ? (
+              previewAsset.mime_type?.startsWith('video/') ? (
+                <video
+                  src={previewAsset.previewUrl}
+                  className="max-w-full max-h-[85vh] rounded-lg"
+                  controls
+                  autoPlay
+                />
+              ) : (
+                <img
+                  src={previewAsset.previewUrl}
+                  className="max-w-full max-h-[85vh] rounded-lg object-contain"
+                  alt={previewAsset.title || 'Preview'}
+                />
+              )
+            ) : (
+              <div className="w-64 h-64 bg-exclu-ink rounded-lg flex items-center justify-center">
+                <p className="text-exclu-space">No preview available</p>
+              </div>
+            )}
+            {previewAsset.title && (
+              <p className="mt-3 text-sm text-exclu-cloud font-medium">{previewAsset.title}</p>
             )}
           </div>
-
-          {isLoading && <p className="text-sm text-exclu-space">Loading your content…</p>}
-
-          {!isLoading && assets.length === 0 && (
-            <p className="text-xs text-exclu-space/80">
-              You haven&apos;t added anything to your library yet. Upload your first asset above.
-            </p>
-          )}
-
-          {!isLoading && assets.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-              {assets.map((asset) => (
-                <div
-                  key={asset.id}
-                  className="group relative overflow-hidden rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 shadow-glow-sm"
-                >
-                  {asset.previewUrl ? (
-                    asset.mime_type?.startsWith('video/') ? (
-                      <video
-                        src={asset.previewUrl}
-                        className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
-                        muted
-                        loop
-                        playsInline
-                      />
-                    ) : (
-                      <img
-                        src={asset.previewUrl}
-                        className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
-                        alt={asset.title || 'Library asset'}
-                      />
-                    )
-                  ) : (
-                    <div className="w-full h-32 sm:h-40 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                  )}
-
-                  {/* Hover gradient overlay */}
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                  {/* Bottom text overlay */}
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
-                    <p className="text-[11px] sm:text-xs font-medium text-exclu-cloud truncate">
-                      {asset.title || 'Untitled asset'}
-                    </p>
-                    <p className="text-[10px] text-exclu-space/80">
-                      {new Date(asset.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
+        </div>
+      )}
     </AppShell>
   );
 };
