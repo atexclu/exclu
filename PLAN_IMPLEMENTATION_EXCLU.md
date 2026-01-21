@@ -360,7 +360,6 @@ Objectif : offrir au fan une page de **profil créateur** riche (type my.club) a
 
 - [ ] Itérer plus tard sur :
   - [ ] Modale centrale riche au clic sur une carte (une fois les paiements branchés).
-  - [ ] Teasers d’images/vidéos générés comme variantes basse def/floutées distinctes du fichier payant.
   - [ ] Intégration complète avec les Edge Functions de paiement et d’accès sécurisé.
 
 ---
