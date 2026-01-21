@@ -118,16 +118,11 @@ const Auth = () => {
                 ? 'Log in to Exclu'
                 : 'Reset your password'}
             </h1>
-            <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
-              {mode === 'reset'
-                ? 'Enter your email and we will send you a link to reset your password.'
-                : 'Manage your premium links and payouts in one place.'}
-              {mode === 'signup'
-                ? ' Use your email to get started in a few seconds.'
-                : mode === 'login'
-                ? ' Log in with your existing creator account.'
-                : ''}
-            </p>
+            {mode === 'reset' && (
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
+                Enter your email and we will send you a link to reset your password.
+              </p>
+            )}
           </div>
 
           <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
