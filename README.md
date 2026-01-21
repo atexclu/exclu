@@ -1,10 +1,16 @@
-# Welcome to your Lovable project
-
 # Exclu
 
-Exclu permet aux créateurs de vendre leurs contenus digitaux (photos, vidéos, fichiers, accès exclusifs…) via des liens payants débloquables en un clic, sans création de compte côté fan, avec 0 % de commission pour les créateurs premium.
+Exclu permet aux créateurs de vendre leurs contenus digitaux (photos, vidéos, fichiers, accès exclusifs…) via des liens payants débloquables en un clic, sans création de compte côté fan.
 
-Ce dépôt contient la **landing page marketing Exclu**, construite comme une SPA moderne en React + Vite, animée avec framer-motion et stylée avec Tailwind + shadcn/ui.
+**Modèle de commission :**
+- **Premium** ($39/mois) : 0% de commission
+- **Free** : 10% de commission par vente
+
+Ce dépôt contient l'application complète Exclu :
+- **Landing page marketing** 
+- **Dashboard créateur** (gestion des liens, analytics, earnings)
+- **Pages publiques** (profil créateur, liens payants avec paywall)
+- **Intégration Stripe Connect** pour les paiements
 
 ---
 
@@ -348,10 +354,34 @@ with check (auth.uid() = creator_id);
 
 ---
 
+## Fonctionnalités implémentées
+
+### Créateur
+- ✅ Inscription / connexion avec email
+- ✅ Onboarding avec choix de plan (Free 10% / Premium $39)
+- ✅ Dashboard avec métriques et analytics
+- ✅ Gestion des liens payants (création, édition, suppression)
+- ✅ Bibliothèque de contenus (upload images/vidéos)
+- ✅ Page profil publique (`/c/:handle`)
+- ✅ Connexion Stripe Connect pour recevoir les paiements
+- ✅ Vue Earnings avec historique des payouts
+
+### Fan
+- ✅ Accès aux liens payants sans création de compte
+- ✅ Paiement Stripe sécurisé
+- ✅ Déblocage instantané du contenu après paiement
+- ✅ Téléchargement des contenus achetés
+
+### Backend (Supabase Edge Functions)
+- ✅ `create-link-checkout-session` : création de session Stripe pour achat de lien
+- ✅ `stripe-webhook` : gestion des événements Stripe (achats, abonnements, Connect)
+- ✅ `create-creator-subscription` : abonnement créateur Premium
+- ✅ `stripe-connect-onboard` : onboarding Stripe Connect
+
 ## Prochaines évolutions possibles
 
-- Connexion à un backend Exclu réel (API pour créateurs, liens payants, paiements, analytics).
-- Internationalisation (FR / EN) de la landing.
-- Pages supplémentaires (dashboard, onboarding créateur, documentation publique, etc.).
-- Synchronisation automatique des profils (`profiles`) lors des signups via triggers ou edge functions Supabase.
+- Internationalisation (FR / EN)
+- Teasers images/vidéos floutés auto-générés
+- Analytics avancés
+- Messagerie créateur ↔ fan
 
