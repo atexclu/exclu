@@ -135,82 +135,171 @@ const CreatorLinks = () => {
         )}
 
         {!isLoading && !error && links.length > 0 && (
-          <div className="overflow-x-auto rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80">
-            <table className="min-w-full text-sm">
-              <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
-                <tr>
-                  <th className="px-4 py-3 text-left">Title</th>
-                  <th className="px-4 py-3 text-left">Price</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Created</th>
-                  <th className="px-4 py-3 text-left">Clicks</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {links.map((link) => (
-                  <tr key={link.id} className="border-t border-exclu-arsenic/40">
-                    <td className="px-4 py-3 text-exclu-cloud font-medium">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* Thumbnail preview */}
-                        <div className="relative flex-shrink-0 w-14 h-10 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
-                          {link.previewUrl ? (
-                            link.isVideo ? (
-                              <video
-                                src={link.previewUrl}
-                                className="w-full h-full object-cover"
-                                muted
-                                loop
-                                playsInline
-                              />
-                            ) : (
-                              <img
-                                src={link.previewUrl}
-                                className="w-full h-full object-cover"
-                                alt={link.title}
-                              />
-                            )
-                          ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                          )}
-                        </div>
+          <>
+            {/* Mobile: Card layout */}
+            <div className="sm:hidden space-y-3">
+              {links.map((link) => (
+                <div
+                  key={link.id}
+                  className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4"
+                >
+                  <div className="flex gap-3">
+                    {/* Thumbnail */}
+                    <div className="relative flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
+                      {link.previewUrl ? (
+                        link.isVideo ? (
+                          <video
+                            src={link.previewUrl}
+                            className="w-full h-full object-cover"
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <img
+                            src={link.previewUrl}
+                            className="w-full h-full object-cover"
+                            alt={link.title}
+                          />
+                        )
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                      )}
+                    </div>
 
-                        {/* Title */}
-                        <RouterLink
-                          to={`/app/links/${link.id}`}
-                          className="min-w-0 hover:underline hover:text-exclu-cloud/90 transition-colors"
-                        >
-                          <span className="truncate block max-w-[180px] sm:max-w-[220px]">{link.title}</span>
-                        </RouterLink>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <RouterLink
+                        to={`/app/links/${link.id}`}
+                        className="text-sm font-medium text-exclu-cloud hover:underline truncate block"
+                      >
+                        {link.title}
+                      </RouterLink>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-sm font-semibold text-exclu-cloud">
+                          {link.price_cents / 100} {link.currency}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                          link.status === 'published' 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'bg-exclu-arsenic/40 text-exclu-space'
+                        }`}>
+                          {link.status}
+                        </span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-exclu-space">
-                      {link.price_cents / 100} {link.currency}
-                    </td>
-                    <td className="px-4 py-3 text-exclu-space capitalize">{link.status}</td>
-                    <td className="px-4 py-3 text-exclu-space/80">
-                      {new Date(link.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-exclu-space">
-                      {link.click_count ?? 0}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const url = `${window.location.origin}/l/${link.slug}`;
-                            try {
-                              await navigator.clipboard.writeText(url);
-                              toast.success('Link copied!');
-                            } catch {
-                              toast.error('Failed to copy link');
-                            }
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors"
-                          title="Copy link"
-                        >
-                          <Copy className="w-4 h-4 text-exclu-space hover:text-primary" />
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-exclu-space/70">
+                        <span>{new Date(link.created_at).toLocaleDateString()}</span>
+                        <span>•</span>
+                        <span>{link.click_count ?? 0} clicks</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-exclu-arsenic/40">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const url = `${window.location.origin}/l/${link.slug}`;
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          toast.success('Link copied!');
+                        } catch {
+                          toast.error('Failed to copy link');
+                        }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-exclu-arsenic/30 hover:bg-exclu-arsenic/50 text-xs text-exclu-space transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy link
+                    </button>
+                    <RouterLink
+                      to={`/app/links/${link.id}/edit`}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-exclu-cloud/10 hover:bg-exclu-cloud/20 text-xs text-exclu-cloud transition-colors"
+                    >
+                      Edit
+                    </RouterLink>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: Table layout */}
+            <div className="hidden sm:block overflow-x-auto rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80">
+              <table className="min-w-full text-sm">
+                <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Title</th>
+                    <th className="px-4 py-3 text-left">Price</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left">Created</th>
+                    <th className="px-4 py-3 text-left">Clicks</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {links.map((link) => (
+                    <tr key={link.id} className="border-t border-exclu-arsenic/40">
+                      <td className="px-4 py-3 text-exclu-cloud font-medium">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* Thumbnail preview */}
+                          <div className="relative flex-shrink-0 w-14 h-10 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
+                            {link.previewUrl ? (
+                              link.isVideo ? (
+                                <video
+                                  src={link.previewUrl}
+                                  className="w-full h-full object-cover"
+                                  muted
+                                  loop
+                                  playsInline
+                                />
+                              ) : (
+                                <img
+                                  src={link.previewUrl}
+                                  className="w-full h-full object-cover"
+                                  alt={link.title}
+                                />
+                              )
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                            )}
+                          </div>
+
+                          {/* Title */}
+                          <RouterLink
+                            to={`/app/links/${link.id}`}
+                            className="min-w-0 hover:underline hover:text-exclu-cloud/90 transition-colors"
+                          >
+                            <span className="truncate block max-w-[180px] sm:max-w-[220px]">{link.title}</span>
+                          </RouterLink>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-exclu-space">
+                        {link.price_cents / 100} {link.currency}
+                      </td>
+                      <td className="px-4 py-3 text-exclu-space capitalize">{link.status}</td>
+                      <td className="px-4 py-3 text-exclu-space/80">
+                        {new Date(link.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-exclu-space">
+                        {link.click_count ?? 0}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const url = `${window.location.origin}/l/${link.slug}`;
+                              try {
+                                await navigator.clipboard.writeText(url);
+                                toast.success('Link copied!');
+                              } catch {
+                                toast.error('Failed to copy link');
+                              }
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors"
+                            title="Copy link"
+                          >
+                            <Copy className="w-4 h-4 text-exclu-space hover:text-primary" />
                         </button>
                         <Button
                           asChild
@@ -227,6 +316,7 @@ const CreatorLinks = () => {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </main>
     </AppShell>

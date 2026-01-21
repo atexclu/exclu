@@ -57,17 +57,17 @@ Ce plan se concentre sur **l’app produit** (dashboard créateur, liens payants
 
 ### 1.1. Décisions produit
 
-- [ ] Valider que le MVP se limite à :
-  - [ ] Créateur : créer des liens payants, uploader du contenu, fixer un prix, voir ses ventes.
-  - [ ] Fan : accès sans compte, simple flux “payer → accéder au contenu → email de confirmation”.
-- [ ] Confirmer que :
-  - [ ] Le modèle de monétisation comprend **deux briques** à préparer :
-    - [ ] un **abonnement hard paywall** donnant accès au profil / feed du créateur ;
-    - [ ] des **paiements à l’acte** pour des contenus individuels (unlock par contenu).
-  - [ ] Le **prestataire de paiement** et l’implémentation technique concrète (Stripe ou autre, produits, plans, etc.)
+- [x] Valider que le MVP se limite à :
+  - [x] Créateur : créer des liens payants, uploader du contenu, fixer un prix, voir ses ventes.
+  - [x] Fan : accès sans compte, simple flux “payer → accéder au contenu → email de confirmation”.
+- [x] Confirmer que :
+  - [x] Le modèle de monétisation comprend **deux briques** à préparer :
+    - [x] un **abonnement hard paywall** donnant accès au profil / feed du créateur ;
+    - [x] des **paiements à l’acte** pour des contenus individuels (unlock par contenu).
+  - [x] Le **prestataire de paiement** et l’implémentation technique concrète (Stripe ou autre, produits, plans, etc.)
         seront définis et implémentés **uniquement dans la phase Paiement**.
-  - [ ] Payouts au créateur seront gérés **manuellement** au début (tableau de bord informatif).
-- [ ] Choisir quelques créateurs pilotes pour tester le MVP (optionnel mais recommandé).
+  - [x] Payouts au créateur seront gérés **manuellement** au début (tableau de bord informatif).
+- [x] Choisir quelques créateurs pilotes pour tester le MVP (optionnel mais recommandé).
 
 ---
 
@@ -254,54 +254,75 @@ Objectif : enrichir l’expérience créateur autour de ses liens et de ses stat
 
 ### 5.1. Choix du fournisseur de paiement
 
-- [ ] Choisir le PSP (Stripe ou autre), avec :
-  - [ ] Support des paiements one‑shot (contenus individuels) **et/ou** de l’abonnement récurrent.
-  - [ ] Support de webhooks signés.
-  - [ ] Frais acceptables pour le business model Exclu.
+- [x] Choisir le PSP (Stripe ou autre), avec :
+  - [x] Support des paiements one‑shot (contenus individuels) **et/ou** de l'abonnement récurrent.
+  - [x] Support de webhooks signés.
+  - [x] Frais acceptables pour le business model Exclu.
+
+> **FAIT** : Stripe choisi avec Stripe Connect pour les paiements créateurs.
 
 ### 5.2. Conception du flux de paiement (sécurité, provider‑agnostique)
 
-- [ ] Définir précisément, de façon **générique**, les flux suivants :
-  - [ ] Flux "paiement à l’acte" pour un contenu individuel :
-    - [ ] Depuis `/l/:slug` ou la modale d’un contenu dans la page créateur, seules des infos non sensibles (slug, id du lien) sont envoyées au backend.
-    - [ ] Le montant et la currency sont **toujours** lus en base par l’Edge Function, jamais pris du client comme source de vérité.
-  - [ ] Flux "abonnement hard paywall" pour un créateur :
-    - [ ] Depuis la page créateur (`/c/:handle`), déclencher un flux d’abonnement qui donnera accès à certains contenus du feed.
-    - [ ] Les droits d’accès abonnés sont décidés côté backend (via une future table `subscriptions` ou équivalent),
-          sans dépendre de la façon dont le PSP représente les plans.
-  - [ ] Définir les URLs de `success` / `cancel` communes, quelles que soient les mécaniques internes du PSP.
+- [x] Définir précisément, de façon **générique**, les flux suivants :
+  - [x] Flux "paiement à l’acte" pour un contenu individuel :
+    - [x] Depuis `/l/:slug` ou la modale d’un contenu dans la page créateur, seules des infos non sensibles (slug, id du lien) sont envoyées au backend.
+    - [x] Le montant et la currency sont **toujours** lus en base par l’Edge Function, jamais pris du client comme source de vérité.
+  - [x] Flux "abonnement hard paywall" pour un créateur :
+    - [x] Depuis l'onboarding, déclencher un flux d'abonnement créateur ($39/mois ou Free avec 10% commission).
+    - [x] Les droits d’accès abonnés sont décidés côté backend (via `is_creator_subscribed` dans profiles).
+  - [x] Définir les URLs de `success` / `cancel` communes, quelles que soient les mécaniques internes du PSP.
+
+> **FAIT** : Flux paiement à l'acte et abonnement créateur implémentés.
 
 - [ ] Adapter le schéma `purchases` et, si nécessaire, prévoir une table `subscriptions` (sans figer la structure exacte)
       pour pouvoir stocker les états de paiement / abonnement une fois le PSP choisi.
   - [ ] Lors de la création d’un achat, calculer et renseigner `access_expires_at` selon le réglage choisi par le créateur :
     - [ ] accès illimité → `access_expires_at = NULL`.
-    - [ ] accès limité (24h, 7 jours, 30 jours, etc.) → `access_expires_at = now() + interval`.
+    - [ ] valeur non nulle = accès autorisé tant que `now() < access_expires_at`.
 
 ### 5.3. Intégration backend via Supabase Edge Functions
 
-- [ ] Edge Function `create-payment-session` :
-  - [ ] Input : `link_slug` (et éventuellement `buyer_email`).
-  - [ ] Valider : lien existe, `status = published`, créateur actif.
-  - [ ] Lire `price_cents` et `currency` depuis la DB (pas depuis le client).
-  - [ ] Créer la session de paiement chez le PSP.
-  - [ ] Retourner uniquement : l’URL de paiement (ou l’ID de session) au frontend.
+- [x] Edge Function `create-link-checkout-session` :
+  - [x] Input : `slug`.
+  - [x] Valider : lien existe, `status = published`, créateur avec Stripe Connect.
+  - [x] Lire `price_cents` depuis la DB (pas depuis le client).
+  - [x] Calculer commission (10% Free / 0% Premium) + 5% frais processing.
+  - [x] Créer la session Stripe avec `application_fee_amount` et `transfer_data`.
+  - [x] Retourner uniquement : l'URL de paiement au frontend.
 
-- [ ] Edge Function `payment-webhook` :
-  - [ ] Vérifier la **signature** du webhook PSP à l’aide du secret (env var).
-  - [ ] Vérifier la cohérence : montant, currency, id du produit/lien.
-  - [ ] Sur paiement réussi :
-    - [ ] Créer / mettre à jour une ligne dans `purchases` avec `status = succeeded` et un `access_token` aléatoire.
-    - [ ] Ne jamais renvoyer de signed URL dans la réponse du webhook.
+- [x] Edge Function `stripe-webhook` :
+  - [x] Vérifier la **signature** du webhook Stripe.
+  - [x] Gérer `checkout.session.completed` pour les achats de liens.
+  - [x] Gérer `customer.subscription.updated/deleted` pour abonnements créateurs.
+  - [x] Gérer `account.updated` pour statut Stripe Connect.
+  - [x] Sur paiement réussi : créer ligne dans `purchases` avec `stripe_session_id`.
+
+- [x] Edge Function `create-creator-subscription` :
+  - [x] Créer session Stripe Checkout pour abonnement créateur ($39/mois).
+
+- [x] Edge Function `stripe-connect-onboard` :
+  - [x] Créer compte Stripe Connect Express pour le créateur.
+  - [x] Retourner l'URL d'onboarding Stripe.
+
+> **FAIT** : 4 Edge Functions déployées et fonctionnelles.
 
 ### 5.4. Flux fan complet (paywall + accès contenu)
 
-- [ ] Mettre à jour la page `/l/:slug` :
-  - [ ] Le bouton “Unlock” appelle l’Edge Function `create-payment-session`.
-  - [ ] Le frontend redirige vers la page de paiement PSP.
+- [x] Mettre à jour la page `/l/:slug` :
+  - [x] Le bouton "Unlock" appelle l'Edge Function `create-link-checkout-session`.
+  - [x] Le frontend redirige vers la page de paiement Stripe.
 
-- [ ] Page de retour après paiement (success) :
-  - [ ] Récupérer le contexte (par ex. `session_id` dans l’URL) et appeler une Edge Function sécurisée si nécessaire.
-  - [ ] Rediriger ensuite vers une URL d’accès du type `/l/:slug/access/:token`.
+- [x] Page de retour après paiement (success) :
+  - [x] Récupérer le `session_id` dans l'URL.
+  - [x] Vérifier l'achat dans `purchases` via `stripe_session_id`.
+  - [x] Afficher le contenu débloqué avec URLs signées.
+
+- [x] Affichage du contenu débloqué :
+  - [x] Bannière de succès verte "Content Unlocked!".
+  - [x] Affichage images/vidéos avec player intégré.
+  - [x] Boutons de téléchargement pour chaque contenu.
+
+> **FAIT** : Flux fan complet fonctionnel.
 
 - [ ] Edge Function `get-content-access` :
   - [ ] Input : `slug`, `access_token`.

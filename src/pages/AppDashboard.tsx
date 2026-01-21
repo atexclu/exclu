@@ -2,6 +2,9 @@ import AppShell from '@/components/AppShell';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { ExternalLink } from 'lucide-react';
 
 const AppDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -19,6 +22,8 @@ const AppDashboard = () => {
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
   const [profileName, setProfileName] = useState<string>('');
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
+  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -40,10 +45,10 @@ const AppDashboard = () => {
       }
 
       try {
-        // Profile (only display_name for greeting)
+        // Profile (display_name for greeting + stripe_connect_status)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name')
+          .select('display_name, stripe_connect_status')
           .eq('id', user.id)
           .single();
 
@@ -101,6 +106,7 @@ const AppDashboard = () => {
         setPayouts(safePayouts);
         if (profile) {
           setProfileName(profile.display_name || 'Creator');
+          setStripeConnectStatus(profile.stripe_connect_status || null);
         }
       } catch (err) {
         console.error('Error loading dashboard metrics', err);
@@ -117,6 +123,26 @@ const AppDashboard = () => {
       isMounted = false;
     };
   }, []);
+
+  const handleStripeConnect = async () => {
+    setIsConnectingStripe(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {});
+      if (error) {
+        console.error('Error invoking stripe-connect-onboard', error);
+        throw new Error('Unable to start Stripe onboarding.');
+      }
+      const url = (data as any)?.url;
+      if (!url) {
+        throw new Error('Stripe onboarding URL not available.');
+      }
+      window.location.href = url;
+    } catch (err: any) {
+      console.error('Error during Stripe Connect', err);
+      toast.error(err?.message || 'Unable to connect Stripe.');
+      setIsConnectingStripe(false);
+    }
+  };
 
   const formattedRevenue = (totalRevenueCents / 100).toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -465,6 +491,38 @@ const AppDashboard = () => {
 
         {activeTab === 'earnings' && (
           <section className="mt-2 space-y-4">
+            {/* Stripe Connect CTA if not connected */}
+            {stripeConnectStatus !== 'complete' && (
+              <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-400 mb-1">Connect Stripe to receive payouts</p>
+                    <p className="text-xs text-yellow-400/70">
+                      You need to connect your Stripe account to withdraw your earnings. It only takes a few minutes.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleStripeConnect}
+                    disabled={isConnectingStripe}
+                    className="rounded-full border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10 whitespace-nowrap"
+                  >
+                    {isConnectingStripe ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin" />
+                        Connecting…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <ExternalLink className="w-4 h-4" />
+                        Connect Stripe
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Wallet</p>

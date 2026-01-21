@@ -8,11 +8,13 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { Check, Sparkles, Zap } from 'lucide-react';
 
 type PlatformKey = 'onlyfans' | 'fansly' | 'myclub' | 'mym' | 'other';
 
 const Onboarding = () => {
   const navigate = useNavigate();
+  const [step, setStep] = useState<'profile' | 'plan'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
@@ -24,6 +26,8 @@ const Onboarding = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'premium'>('premium');
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -204,14 +208,49 @@ const Onboarding = () => {
         }
       }
 
-      toast.success('Your creator profile is ready.');
-      navigate('/app');
+      toast.success('Profile saved! Now choose your plan.');
+      setStep('plan');
     } catch (err: any) {
       console.error('Error during onboarding save', err);
       toast.error(err?.message || 'Unable to complete onboarding right now.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handlePlanSelection = async () => {
+    if (selectedPlan === 'free') {
+      toast.success('Welcome to Exclu! You can upgrade anytime.');
+      navigate('/app');
+      return;
+    }
+
+    // Premium plan - redirect to Stripe checkout
+    setIsSubscribing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-creator-subscription', {});
+
+      if (error) {
+        console.error('Error creating subscription checkout', error);
+        throw new Error('Unable to start subscription checkout.');
+      }
+
+      const url = (data as any)?.url;
+      if (!url) {
+        throw new Error('Checkout URL not available.');
+      }
+
+      window.location.href = url;
+    } catch (err: any) {
+      console.error('Error during subscription', err);
+      toast.error(err?.message || 'Unable to start subscription.');
+      setIsSubscribing(false);
+    }
+  };
+
+  const handleSkipToFree = () => {
+    toast.success('Welcome to Exclu! You can upgrade to Premium anytime from your settings.');
+    navigate('/app');
   };
 
   return (
@@ -224,33 +263,41 @@ const Onboarding = () => {
           <div className="absolute -bottom-40 -right-24 h-72 w-72 rounded-full bg-exclu-iris/25 blur-3xl animate-[pulse_7s_ease-in-out_infinite]" />
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: 'easeOut' }}
-          className="w-full max-w-lg space-y-6"
-        >
-          <div className="text-center space-y-3">
-            <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-              Set up your creator profile
-            </h1>
-            <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-              Choose how fans will see you on Exclu. You can change these details later from your account settings.
-            </p>
-          </div>
+        {/* Step indicator */}
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+        </div>
 
-          <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-            <CardHeader className="px-5 pt-5 pb-3 space-y-1">
-              <CardTitle className="text-base text-exclu-cloud">Creator onboarding</CardTitle>
-              <CardDescription className="text-xs text-exclu-space/80">
-                Pick a display name, a unique handle, and connect your main platforms so fans can find you.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 pb-5">
-              {isLoading ? (
-                <p className="text-sm text-exclu-space">Loading your profile…</p>
-              ) : (
-                <form className="space-y-4" onSubmit={handleSubmit}>
+        {/* STEP 1: Profile Setup */}
+        {step === 'profile' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Set up your creator profile
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Choose how fans will see you on Exclu. You can change these details later from your account settings.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardHeader className="px-5 pt-5 pb-3 space-y-1">
+                <CardTitle className="text-base text-exclu-cloud">Creator onboarding</CardTitle>
+                <CardDescription className="text-xs text-exclu-space/80">
+                  Pick a display name, a unique handle, and connect your main platforms so fans can find you.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-5 pb-5">
+                {isLoading ? (
+                  <p className="text-sm text-exclu-space">Loading your profile…</p>
+                ) : (
+                  <form className="space-y-4" onSubmit={handleSubmit}>
                   <div className="space-y-1.5">
                     <label htmlFor="display_name" className="text-xs font-medium text-exclu-space">
                       Display name
@@ -375,20 +422,162 @@ const Onboarding = () => {
                     </div>
                   </div>
 
-                  <Button
-                    type="submit"
-                    variant="hero"
-                    size="lg"
-                    className="w-full mt-1 inline-flex items-center justify-center gap-2"
-                    disabled={isSaving}
-                  >
-                    {isSaving ? 'Saving…' : 'Continue to dashboard'}
-                  </Button>
-                </form>
+                    <Button
+                      type="submit"
+                      variant="hero"
+                      size="lg"
+                      className="w-full mt-1 inline-flex items-center justify-center gap-2"
+                      disabled={isSaving}
+                    >
+                      {isSaving ? 'Saving…' : 'Continue'}
+                    </Button>
+                  </form>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* STEP 2: Plan Selection */}
+        {step === 'plan' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-2xl space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Choose your plan</span>
+              </div>
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Start selling on Exclu
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Choose the plan that works best for you. You can change anytime.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              {/* Free Plan */}
+              <button
+                type="button"
+                onClick={() => setSelectedPlan('free')}
+                className={`relative text-left p-5 rounded-2xl border-2 transition-all ${
+                  selectedPlan === 'free'
+                    ? 'border-exclu-cloud bg-exclu-ink/80'
+                    : 'border-exclu-arsenic/50 bg-exclu-ink/40 hover:border-exclu-arsenic'
+                }`}
+              >
+                {selectedPlan === 'free' && (
+                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-exclu-cloud flex items-center justify-center">
+                    <Check className="w-3 h-3 text-black" />
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-exclu-cloud">Free</h3>
+                    <p className="text-2xl font-extrabold text-exclu-cloud">$0<span className="text-sm font-normal text-exclu-space">/month</span></p>
+                  </div>
+                  <ul className="space-y-2 text-sm text-exclu-space">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-exclu-space/60" />
+                      Unlimited links
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-exclu-space/60" />
+                      Instant payouts
+                    </li>
+                    <li className="flex items-center gap-2 text-exclu-space/70">
+                      <Zap className="w-4 h-4 text-yellow-500" />
+                      <span><strong className="text-yellow-500">10% commission</strong> per sale</span>
+                    </li>
+                  </ul>
+                </div>
+              </button>
+
+              {/* Premium Plan */}
+              <button
+                type="button"
+                onClick={() => setSelectedPlan('premium')}
+                className={`relative text-left p-5 rounded-2xl border-2 transition-all ${
+                  selectedPlan === 'premium'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-exclu-arsenic/50 bg-exclu-ink/40 hover:border-primary/50'
+                }`}
+              >
+                <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-full bg-primary text-[10px] font-bold text-white">
+                  RECOMMENDED
+                </div>
+                {selectedPlan === 'premium' && (
+                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                    <Check className="w-3 h-3 text-white" />
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-exclu-cloud">Premium</h3>
+                    <p className="text-2xl font-extrabold text-exclu-cloud">$39<span className="text-sm font-normal text-exclu-space">/month</span></p>
+                  </div>
+                  <ul className="space-y-2 text-sm text-exclu-space">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" />
+                      Unlimited links
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" />
+                      Instant payouts
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" />
+                      <span><strong className="text-green-400">0% commission</strong> – keep everything</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" />
+                      Priority support
+                    </li>
+                  </ul>
+                </div>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full rounded-full"
+                onClick={handlePlanSelection}
+                disabled={isSubscribing}
+              >
+                {isSubscribing ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Redirecting…
+                  </span>
+                ) : selectedPlan === 'premium' ? (
+                  'Start Premium – $39/month'
+                ) : (
+                  'Continue with Free'
+                )}
+              </Button>
+
+              {selectedPlan === 'premium' && (
+                <button
+                  type="button"
+                  onClick={handleSkipToFree}
+                  className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+                >
+                  Skip for now and use Free plan
+                </button>
               )}
-            </CardContent>
-          </Card>
-        </motion.div>
+
+              <p className="text-[10px] text-exclu-space/50 text-center">
+                All plans include a 5% processing fee charged to buyers. You can change your plan anytime.
+              </p>
+            </div>
+          </motion.div>
+        )}
       </main>
       <Footer />
     </div>

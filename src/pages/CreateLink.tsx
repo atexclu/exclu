@@ -31,6 +31,7 @@ const CreateLink = () => {
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [hasExistingLinks, setHasExistingLinks] = useState(false);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -65,6 +66,15 @@ const CreateLink = () => {
         setIsLoadingLibrary(false);
         return;
       }
+
+      // Check if user has existing links
+      const { count: linksCount } = await supabase
+        .from('links')
+        .select('id', { count: 'exact', head: true })
+        .eq('creator_id', user.id);
+
+      if (!isMounted) return;
+      setHasExistingLinks((linksCount ?? 0) > 0);
 
       const { data, error } = await supabase
         .from('assets')
@@ -255,9 +265,11 @@ const CreateLink = () => {
               Turn a media into a paid link
             </h1>
           </div>
-          <Button asChild variant="outline" size="sm" className="rounded-full border-exclu-arsenic/70">
-            <RouterLink to="/app/links">Back to links</RouterLink>
-          </Button>
+          {hasExistingLinks && (
+            <Button asChild variant="outline" size="sm" className="rounded-full border-exclu-arsenic/70">
+              <RouterLink to="/app/links">Back to links</RouterLink>
+            </Button>
+          )}
         </motion.section>
 
         <motion.div

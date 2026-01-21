@@ -1,12 +1,12 @@
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Sparkles } from 'lucide-react';
+import { Lock, Sparkles, Check, Download } from 'lucide-react';
 
 interface PublicLinkData {
   id: string;
@@ -19,6 +19,8 @@ interface PublicLinkData {
 interface ContentItem {
   id: string;
   type: 'image' | 'video';
+  previewUrl?: string;
+  storagePath?: string;
 }
 
 const BlurredCard = ({ index, isUnlocked }: { index: number; isUnlocked: boolean }) => {
@@ -105,11 +107,16 @@ const BlurredCard = ({ index, isUnlocked }: { index: number; isUnlocked: boolean
 
 const PublicLink = () => {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get('session_id');
+  
   const [link, setLink] = useState<PublicLinkData | null>(null);
   const [contentItems, setContentItems] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -128,54 +135,94 @@ const PublicLink = () => {
         console.error('Error loading public link', error);
         setError('This link is not available or no longer exists.');
         setLink(null);
-      } else {
-        setLink({
-          id: data.id,
-          title: data.title,
-          description: data.description,
-          price_cents: data.price_cents,
-          currency: data.currency,
-        });
-
-        // Fetch attached media count from link_media
-        const { data: linkMedia } = await supabase
-          .from('link_media')
-          .select('asset_id, assets(mime_type)')
-          .eq('link_id', data.id);
-
-        const items: ContentItem[] = [];
-
-        // Add main content if exists
-        if (data.storage_path) {
-          const ext = data.storage_path.split('.').pop()?.toLowerCase() ?? '';
-          const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-          items.push({ id: 'main', type: isVideo ? 'video' : 'image' });
-        }
-
-        // Add linked assets
-        if (linkMedia && linkMedia.length > 0) {
-          linkMedia.forEach((lm: any, idx: number) => {
-            const mimeType = lm.assets?.mime_type || '';
-            items.push({
-              id: lm.asset_id || `asset-${idx}`,
-              type: mimeType.startsWith('video/') ? 'video' : 'image',
-            });
-          });
-        }
-
-        // If no content, show at least one placeholder card
-        if (items.length === 0) {
-          items.push({ id: 'placeholder', type: 'image' });
-        }
-
-        setContentItems(items);
+        setIsLoading(false);
+        return;
       }
 
+      setLink({
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        price_cents: data.price_cents,
+        currency: data.currency,
+      });
+
+      // Check if user has purchased this link (via session_id in URL)
+      let hasPurchased = false;
+      if (sessionId) {
+        const { data: purchase } = await supabase
+          .from('purchases')
+          .select('id')
+          .eq('link_id', data.id)
+          .eq('stripe_session_id', sessionId)
+          .single();
+        
+        if (purchase) {
+          hasPurchased = true;
+          setIsUnlocked(true);
+        }
+      }
+
+      // Fetch attached media from link_media
+      const { data: linkMedia } = await supabase
+        .from('link_media')
+        .select('asset_id, assets(storage_path, mime_type)')
+        .eq('link_id', data.id)
+        .order('position', { ascending: true });
+
+      const items: ContentItem[] = [];
+      const unlocked: ContentItem[] = [];
+
+      // Add main content if exists
+      if (data.storage_path) {
+        const ext = data.storage_path.split('.').pop()?.toLowerCase() ?? '';
+        const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+        const item: ContentItem = { id: 'main', type: isVideo ? 'video' : 'image', storagePath: data.storage_path };
+        items.push(item);
+        
+        if (hasPurchased) {
+          // Generate signed URL for unlocked content
+          const { data: signed } = await supabase.storage
+            .from('paid-content')
+            .createSignedUrl(data.storage_path, 60 * 60);
+          unlocked.push({ ...item, previewUrl: signed?.signedUrl });
+        }
+      }
+
+      // Add linked assets
+      if (linkMedia && linkMedia.length > 0) {
+        for (const lm of linkMedia) {
+          const asset = (lm as any).assets;
+          const mimeType = asset?.mime_type || '';
+          const storagePath = asset?.storage_path;
+          const item: ContentItem = {
+            id: lm.asset_id || `asset-${items.length}`,
+            type: mimeType.startsWith('video/') ? 'video' : 'image',
+            storagePath,
+          };
+          items.push(item);
+          
+          if (hasPurchased && storagePath) {
+            const { data: signed } = await supabase.storage
+              .from('paid-content')
+              .createSignedUrl(storagePath, 60 * 60);
+            unlocked.push({ ...item, previewUrl: signed?.signedUrl });
+          }
+        }
+      }
+
+      // If no content, show at least one placeholder card
+      if (items.length === 0) {
+        items.push({ id: 'placeholder', type: 'image' });
+      }
+
+      setContentItems(items);
+      setUnlockedContent(unlocked);
       setIsLoading(false);
     };
 
     fetchLink();
-  }, [slug]);
+  }, [slug, sessionId]);
 
   const handleUnlockClick = async () => {
     if (!slug || !link) return;
@@ -261,8 +308,8 @@ const PublicLink = () => {
             )}
           </motion.div>
 
-          {/* Content Cards Grid */}
-          {!isLoading && link && (
+          {/* Content Cards Grid - LOCKED STATE */}
+          {!isLoading && link && !isUnlocked && (
             <>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -317,6 +364,93 @@ const PublicLink = () => {
                     )}
                   </Button>
                 </div>
+              </motion.div>
+            </>
+          )}
+
+          {/* UNLOCKED STATE - Show actual content */}
+          {!isLoading && link && isUnlocked && (
+            <>
+              {/* Success banner */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
+                className="mb-8 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 flex items-center justify-center gap-3"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                  <Check className="w-5 h-5 text-green-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-green-400">Content Unlocked!</p>
+                  <p className="text-xs text-green-400/70">Thank you for your purchase. Enjoy your exclusive content.</p>
+                </div>
+              </motion.div>
+
+              {/* Unlocked content grid */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="space-y-6"
+              >
+                {unlockedContent.map((item, index) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.1 * index }}
+                    className="rounded-2xl border border-exclu-arsenic/50 bg-exclu-ink/80 overflow-hidden"
+                  >
+                    {item.previewUrl && (
+                      item.type === 'video' ? (
+                        <video
+                          src={item.previewUrl}
+                          controls
+                          className="w-full max-h-[70vh] object-contain bg-black"
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={item.previewUrl}
+                          alt={`Content ${index + 1}`}
+                          className="w-full max-h-[70vh] object-contain bg-black"
+                        />
+                      )
+                    )}
+                    <div className="p-4 flex items-center justify-between">
+                      <span className="text-sm text-exclu-space">Content {index + 1}</span>
+                      {item.previewUrl && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(item.previewUrl!);
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              const ext = item.type === 'video' ? 'mp4' : 'jpg';
+                              a.download = `exclu-content-${index + 1}.${ext}`;
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              document.body.removeChild(a);
+                              toast.success('Download started!');
+                            } catch (err) {
+                              console.error('Download failed', err);
+                              toast.error('Download failed. Please try again.');
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-exclu-cloud/10 hover:bg-exclu-cloud/20 text-exclu-cloud text-sm transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
               </motion.div>
             </>
           )}
