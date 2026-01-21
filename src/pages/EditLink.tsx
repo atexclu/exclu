@@ -35,6 +35,7 @@ const EditLink = () => {
   const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([]);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [existingAssetIds, setExistingAssetIds] = useState<string[]>([]);
+  const [attachedAssets, setAttachedAssets] = useState<LibraryAsset[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
 
@@ -75,10 +76,10 @@ const EditLink = () => {
         }
       }
 
-      // Load existing link_media attachments
+      // Load existing link_media attachments with their asset details
       const { data: linkMedia } = await supabase
         .from('link_media')
-        .select('asset_id')
+        .select('asset_id, assets(id, title, created_at, storage_path, mime_type)')
         .eq('link_id', id)
         .order('position', { ascending: true });
 
@@ -86,6 +87,25 @@ const EditLink = () => {
         const assetIds = linkMedia.map((lm) => lm.asset_id);
         setExistingAssetIds(assetIds);
         setSelectedAssetIds(assetIds);
+
+        // Generate previews for attached assets
+        const attachedWithPreviews = await Promise.all(
+          linkMedia.map(async (lm: any) => {
+            const asset = lm.assets;
+            if (!asset || !asset.storage_path) return null;
+
+            const { data: signed } = await supabase.storage
+              .from('paid-content')
+              .createSignedUrl(asset.storage_path, 60 * 60);
+
+            return {
+              ...asset,
+              previewUrl: signed?.signedUrl || null,
+            } as LibraryAsset;
+          })
+        );
+
+        setAttachedAssets(attachedWithPreviews.filter(Boolean) as LibraryAsset[]);
       }
 
       setIsLoading(false);
@@ -529,6 +549,32 @@ const EditLink = () => {
                                 </button>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {/* Preview of selected/attached assets */}
+                        {selectedAssetIds.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-exclu-arsenic/40">
+                            <p className="text-[10px] text-exclu-space/70 mb-2">Attached content:</p>
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                              {selectedAssetIds.map((assetId) => {
+                                const asset = libraryAssets.find((a) => a.id === assetId) || attachedAssets.find((a) => a.id === assetId);
+                                if (!asset) return null;
+                                return (
+                                  <div key={assetId} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-exclu-arsenic/60">
+                                    {asset.previewUrl ? (
+                                      asset.mime_type?.startsWith('video/') ? (
+                                        <video src={asset.previewUrl} className="w-full h-full object-cover" muted playsInline />
+                                      ) : (
+                                        <img src={asset.previewUrl} className="w-full h-full object-cover" alt={asset.title || 'Attached'} />
+                                      )
+                                    ) : (
+                                      <div className="w-full h-full bg-exclu-phantom/30" />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>

@@ -299,7 +299,7 @@ const CreateLink = () => {
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         placeholder="Give fans a short, enticing description of what they will unlock."
-                        className="min-h-[96px] bg-exclu-ink border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/70 text-sm"
+                        className="min-h-[96px] bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
                       />
                     </div>
 
@@ -449,6 +449,32 @@ const CreateLink = () => {
                               </button>
                             );
                           })}
+                        </div>
+                      )}
+
+                      {/* Preview of selected library assets */}
+                      {selectedAssetIds.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-exclu-arsenic/40">
+                          <p className="text-[10px] text-exclu-space/70 mb-2">Selected content preview:</p>
+                          <div className="flex gap-2 overflow-x-auto pb-1">
+                            {selectedAssetIds.map((assetId) => {
+                              const asset = libraryAssets.find((a) => a.id === assetId);
+                              if (!asset) return null;
+                              return (
+                                <div key={assetId} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-exclu-arsenic/60">
+                                  {asset.previewUrl ? (
+                                    asset.mime_type?.startsWith('video/') ? (
+                                      <video src={asset.previewUrl} className="w-full h-full object-cover" muted playsInline />
+                                    ) : (
+                                      <img src={asset.previewUrl} className="w-full h-full object-cover" alt={asset.title || 'Selected'} />
+                                    )
+                                  ) : (
+                                    <div className="w-full h-full bg-exclu-phantom/30" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>

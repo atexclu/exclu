@@ -365,7 +365,7 @@ const AppDashboard = () => {
                     >
                       <defs>
                         <linearGradient id="metric-gradient" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="rgba(56,189,248,0.6)" />
+                          <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
                           <stop offset="100%" stopColor="rgba(15,23,42,0)" />
                         </linearGradient>
                       </defs>

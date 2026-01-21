@@ -320,87 +320,119 @@ const Profile = () => {
                   transition={{ duration: 0.3 }}
                   className="space-y-6"
                 >
-                  {/* Avatar & Basic Info Card */}
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 p-5 sm:p-6">
-                    <h2 className="text-lg font-semibold text-exclu-cloud mb-5">Profile Information</h2>
-
-                    <div className="flex flex-col sm:flex-row gap-6">
-                      {/* Avatar */}
-                      <div className="flex flex-col items-center gap-3">
-                        <div
-                          onClick={handleAvatarClick}
-                          className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-exclu-arsenic/60 bg-exclu-ink cursor-pointer group"
-                        >
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-exclu-phantom/40">
-                              <User className="w-10 h-10 text-exclu-space/60" />
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Camera className="w-6 h-6 text-white" />
+                  {/* Avatar Card - Separate prominent section */}
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-6">
+                    <div className="flex items-center gap-6">
+                      <div
+                        onClick={handleAvatarClick}
+                        className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-exclu-arsenic/50 bg-exclu-ink cursor-pointer group flex-shrink-0 ring-4 ring-exclu-phantom/20"
+                      >
+                        {avatarUrl ? (
+                          <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-exclu-phantom/40">
+                            <User className="w-8 h-8 sm:w-10 sm:h-10 text-exclu-space/60" />
                           </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Camera className="w-5 h-5 text-white" />
                         </div>
-                        <input
-                          ref={avatarInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleAvatarFileChange}
-                        />
+                      </div>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleAvatarFileChange}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-semibold text-exclu-cloud truncate">
+                          {displayName || 'Your Name'}
+                        </h3>
+                        <p className="text-sm text-exclu-space/70 truncate">
+                          {handle ? `@${handle}` : 'Set your handle below'}
+                        </p>
                         <button
                           onClick={handleAvatarClick}
-                          className="text-xs text-primary hover:underline"
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
                         >
-                          Change photo
+                          <Camera className="w-3.5 h-3.5" />
+                          Upload new photo
                         </button>
                       </div>
+                    </div>
+                  </div>
 
-                      {/* Form fields */}
-                      <div className="flex-1 space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space">Display Name</label>
+                  {/* Profile Details Card */}
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-exclu-arsenic/40">
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Profile Details</h2>
+                      <p className="text-xs text-exclu-space/60 mt-0.5">This information will be visible on your public profile</p>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                      {/* Display Name */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">
+                        <div className="sm:pt-2.5">
+                          <label className="text-sm font-medium text-exclu-cloud">Display Name</label>
+                          <p className="text-xs text-exclu-space/60 mt-0.5 hidden sm:block">How fans will see you</p>
+                        </div>
+                        <div className="sm:col-span-2">
                           <Input
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
-                            placeholder="Your name"
-                            className="h-10 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud"
+                            placeholder="Enter your name"
+                            className="h-11 bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                           />
                         </div>
+                      </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space">Handle</label>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-exclu-space/60">@</span>
+                      {/* Handle */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">
+                        <div className="sm:pt-2.5">
+                          <label className="text-sm font-medium text-exclu-cloud">Username</label>
+                          <p className="text-xs text-exclu-space/60 mt-0.5 hidden sm:block">Your unique profile URL</p>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <div className="flex">
+                            <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-exclu-arsenic/50 bg-exclu-phantom/30 text-sm text-exclu-space/70">
+                              exclu.at/c/
+                            </span>
                             <Input
                               value={handle}
                               onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                               placeholder="yourhandle"
-                              className="h-10 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud"
+                              className="h-11 rounded-l-none bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                             />
                           </div>
-                          <p className="text-[10px] text-exclu-space/60">This will be your public profile URL</p>
                         </div>
+                      </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space">Bio</label>
+                      {/* Bio */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">
+                        <div className="sm:pt-2.5">
+                          <label className="text-sm font-medium text-exclu-cloud">Bio</label>
+                          <p className="text-xs text-exclu-space/60 mt-0.5 hidden sm:block">Brief description about you</p>
+                        </div>
+                        <div className="sm:col-span-2">
                           <Textarea
                             value={bio}
                             onChange={(e) => setBio(e.target.value)}
-                            placeholder="Tell your fans about yourself..."
-                            className="min-h-[100px] bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud"
+                            placeholder="Tell your fans about yourself and your content..."
+                            className="min-h-[120px] bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none"
                           />
+                          <p className="text-[10px] text-exclu-space/50 mt-1.5 text-right">{bio.length}/500</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-5 flex justify-end">
+                    {/* Save button in footer */}
+                    <div className="px-6 py-4 border-t border-exclu-arsenic/40 bg-exclu-phantom/10 flex justify-end">
                       <Button
                         onClick={handleSaveProfile}
                         variant="hero"
                         disabled={isSaving}
-                        className="rounded-full"
+                        className="rounded-full px-6"
                       >
                         {isSaving ? 'Saving...' : 'Save changes'}
                       </Button>

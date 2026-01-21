@@ -3,10 +3,13 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface LinkRow {
   id: string;
   title: string;
+  slug: string;
   price_cents: number;
   currency: string;
   status: string;
@@ -31,7 +34,7 @@ const CreatorLinks = () => {
       setError(null);
       const { data, error } = await supabase
         .from('links')
-        .select('id, title, price_cents, currency, status, created_at, click_count, storage_path')
+        .select('id, title, slug, price_cents, currency, status, created_at, click_count, storage_path')
         .order('created_at', { ascending: false });
 
       if (!isMounted) return;
@@ -45,21 +48,42 @@ const CreatorLinks = () => {
         // Generate signed URLs for media previews
         const withPreviews = await Promise.all(
           baseLinks.map(async (link) => {
-            if (!link.storage_path) return { ...link, previewUrl: null, isVideo: false };
+            // First try main storage_path
+            if (link.storage_path) {
+              const { data: signed, error: signedError } = await supabase.storage
+                .from('paid-content')
+                .createSignedUrl(link.storage_path, 60 * 60);
 
-            const { data: signed, error: signedError } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(link.storage_path, 60 * 60);
-
-            if (signedError || !signed?.signedUrl) {
-              console.error('Error generating preview URL for link', link.id, signedError);
-              return { ...link, previewUrl: null, isVideo: false };
+              if (!signedError && signed?.signedUrl) {
+                const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
+                const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+                return { ...link, previewUrl: signed.signedUrl, isVideo };
+              }
             }
 
-            const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
-            const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+            // If no main storage_path, try to get first attached asset from link_media
+            const { data: linkMedia } = await supabase
+              .from('link_media')
+              .select('assets(storage_path, mime_type)')
+              .eq('link_id', link.id)
+              .order('position', { ascending: true })
+              .limit(1);
 
-            return { ...link, previewUrl: signed.signedUrl, isVideo };
+            if (linkMedia && linkMedia.length > 0) {
+              const asset = (linkMedia[0] as any).assets;
+              if (asset?.storage_path) {
+                const { data: signed } = await supabase.storage
+                  .from('paid-content')
+                  .createSignedUrl(asset.storage_path, 60 * 60);
+
+                if (signed?.signedUrl) {
+                  const isVideo = asset.mime_type?.startsWith('video/') || false;
+                  return { ...link, previewUrl: signed.signedUrl, isVideo };
+                }
+              }
+            }
+
+            return { ...link, previewUrl: null, isVideo: false };
           })
         );
 
@@ -171,14 +195,32 @@ const CreatorLinks = () => {
                       {link.click_count ?? 0}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="rounded-full border-exclu-arsenic/60 text-xs px-3 py-1 h-auto"
-                      >
-                        <RouterLink to={`/app/links/${link.id}/edit`}>Edit</RouterLink>
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const url = `${window.location.origin}/l/${link.slug}`;
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              toast.success('Link copied!');
+                            } catch {
+                              toast.error('Failed to copy link');
+                            }
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors"
+                          title="Copy link"
+                        >
+                          <Copy className="w-4 h-4 text-exclu-space hover:text-primary" />
+                        </button>
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full border-exclu-arsenic/60 text-xs px-3 py-1 h-auto"
+                        >
+                          <RouterLink to={`/app/links/${link.id}/edit`}>Edit</RouterLink>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -294,12 +294,12 @@ const ContentLibrary = () => {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black"
             onClick={closeUploadModal}
           />
-          <div className="relative w-full max-w-lg rounded-2xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-2xl">
+          <div className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b border-exclu-arsenic/40">
               <h2 className="text-lg font-semibold text-exclu-cloud">Upload new content</h2>
               <button

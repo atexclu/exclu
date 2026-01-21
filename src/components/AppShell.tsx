@@ -56,7 +56,7 @@ const AppShell = ({ children }: AppShellProps) => {
             <img
               src="/Logo white.png"
               alt="Exclu logo"
-              className="h-7 w-auto object-contain"
+              className="h-5 sm:h-6 w-auto object-contain"
             />
           </Link>
 
