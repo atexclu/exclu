@@ -29,7 +29,10 @@ const Auth = () => {
     setIsLoading(true);
     try {
       if (mode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${siteUrl}/auth?mode=update-password`,
+        });
         if (error) throw error;
         toast.success('Check your inbox to reset your password');
       } else if (mode === 'signup') {
@@ -37,9 +40,13 @@ const Auth = () => {
           toast.error('Please fill in all fields');
           return;
         }
+        const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: `${siteUrl}/onboarding`,
+          },
         });
         if (error) throw error;
         toast.success('Check your inbox to confirm your account, then log in.');
@@ -194,7 +201,7 @@ const Auth = () => {
                       type="password"
                       autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                       placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
-                      className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      className="h-11 !bg-white border-exclu-arsenic/70 !text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                       minLength={6}
                       required
                     />

@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HelpCenter from "./pages/HelpCenter";
@@ -29,7 +31,38 @@ import Onboarding from "./pages/Onboarding";
 
 const queryClient = new QueryClient();
 
-const App = () => (
+const App = () => {
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  useEffect(() => {
+    // Handle auth state changes including email confirmation tokens
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        setIsAuthReady(true);
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthReady(true);
+      }
+    });
+
+    // Also check initial session
+    supabase.auth.getSession().then(() => {
+      setIsAuthReady(true);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+        <span className="text-sm text-exclu-space">Loading...</span>
+      </div>
+    );
+  }
+
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -119,6 +152,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;

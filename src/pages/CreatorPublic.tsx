@@ -1,5 +1,4 @@
 import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { useParams } from 'react-router-dom';
@@ -160,10 +159,10 @@ const CreatorPublic = () => {
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-foreground flex flex-col">
+    <div className="h-screen overflow-hidden bg-gradient-to-b from-black via-exclu-ink to-black text-foreground flex flex-col">
       <Navbar />
-      <main className="flex-1 flex flex-col">
-        <div className="relative pt-28 pb-16 px-4">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="relative flex-1 pt-20 pb-4 px-4 overflow-hidden">
           {/* Animated blurred gradient background */}
           <motion.div
             className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] mx-auto max-w-3xl rounded-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_55%),radial-gradient(circle_at_bottom,_rgba(180,83,9,0.75),transparent_60%)] blur-3xl opacity-80"
@@ -238,19 +237,19 @@ const CreatorPublic = () => {
                 )}
                 <Button
                   variant="hero"
-                  size="sm"
-                  className="rounded-full inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+                  size="lg"
+                  className="rounded-full inline-flex items-center justify-center gap-2 w-full sm:w-auto text-base px-6 py-3"
                   disabled={!profile?.external_url}
                   onClick={handleExternalClick}
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  {profile?.external_url ? 'Open external profile' : 'External profile (coming soon)'}
+                  <ExternalLink className="w-5 h-5" />
+                  {profile?.external_url ? 'My exclusive link' : 'My exclusive link'}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled
-                  className="rounded-full border-dashed border-exclu-arsenic/60 text-[11px] text-exclu-space/80 inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+                  className="hidden sm:inline-flex rounded-full border-dashed border-exclu-arsenic/60 text-[11px] text-exclu-space/80 items-center justify-center gap-2 w-full sm:w-auto"
                 >
                   <MessageCircle className="w-4 h-4" />
                   Chat (coming soon)
@@ -259,8 +258,8 @@ const CreatorPublic = () => {
             </motion.section>
 
             {/* Content grid */}
-            <section className="space-y-4">
-              <div className="flex items-center justify-between gap-3 mb-2">
+            <section className="space-y-2 flex-1 overflow-hidden">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Exclusive content</p>
                 {links.length > 0 && (
                   <p className="text-[11px] text-exclu-space/70">
@@ -280,7 +279,7 @@ const CreatorPublic = () => {
               )}
 
               {!isLoading && links.length > 0 && (
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 overflow-y-auto max-h-[calc(100vh-320px)]">
                   {links.map((link) => {
                     const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
                     return (
@@ -289,9 +288,9 @@ const CreatorPublic = () => {
                         initial={{ opacity: 0, y: 14 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, ease: 'easeOut' }}
-                        className="relative overflow-hidden rounded-2xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-glow-lg"
+                        className="relative overflow-hidden rounded-xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-glow-lg"
                       >
-                        <div className="relative h-40 overflow-hidden">
+                        <div className="relative h-24 overflow-hidden">
                           {/* Animated blur / reveal style background */}
                           <motion.div
                             className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.2),transparent_55%),radial-gradient(circle_at_bottom,_rgba(236,72,153,0.9),transparent_60%)] opacity-80"
@@ -305,25 +304,21 @@ const CreatorPublic = () => {
                             transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
                           />
                           <div className="absolute inset-0 backdrop-blur-3xl bg-black/60" />
-                          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4 gap-2">
-                            <Lock className="w-5 h-5 text-exclu-cloud/80" />
-                            <p className="text-xs text-exclu-space/80">Blurred preview</p>
-                            <p className="text-sm font-medium text-exclu-cloud line-clamp-1">{link.title}</p>
+                          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-3 gap-1">
+                            <Lock className="w-4 h-4 text-exclu-cloud/80" />
+                            <p className="text-xs font-medium text-exclu-cloud line-clamp-1">{link.title}</p>
                           </div>
                         </div>
-                        <div className="p-4 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-xs text-exclu-space/80 mb-1">Unlock this content</p>
-                            <p className="text-sm font-semibold text-exclu-cloud">{priceLabel}</p>
-                          </div>
+                        <div className="p-3 flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-exclu-cloud">{priceLabel}</p>
                           <Button
                             variant="hero"
                             size="sm"
-                            className="rounded-full text-xs inline-flex items-center gap-1.5"
+                            className="rounded-full text-[11px] px-3 py-1 h-7 inline-flex items-center gap-1"
                             onClick={() => handleUnlockClick(link)}
                           >
                             Unlock
-                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <ArrowUpRight className="w-3 h-3" />
                           </Button>
                         </div>
                       </motion.article>
@@ -339,7 +334,6 @@ const CreatorPublic = () => {
           </div>
         </div>
       </main>
-      <Footer />
     </div>
   );
 };

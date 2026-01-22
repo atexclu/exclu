@@ -8,13 +8,13 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
 
 type PlatformKey = 'onlyfans' | 'fansly' | 'myclub' | 'mym' | 'other';
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'plan'>('profile');
+  const [step, setStep] = useState<'profile' | 'plan' | 'stripe'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
@@ -28,6 +28,7 @@ const Onboarding = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'premium'>('premium');
   const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -220,8 +221,8 @@ const Onboarding = () => {
 
   const handlePlanSelection = async () => {
     if (selectedPlan === 'free') {
-      toast.success('Welcome to Exclu! You can upgrade anytime.');
-      navigate('/app');
+      // Go to Stripe Connect step
+      setStep('stripe');
       return;
     }
 
@@ -249,7 +250,35 @@ const Onboarding = () => {
   };
 
   const handleSkipToFree = () => {
-    toast.success('Welcome to Exclu! You can upgrade to Premium anytime from your settings.');
+    // Go to Stripe Connect step instead of directly to dashboard
+    setStep('stripe');
+  };
+
+  const handleStripeConnect = async () => {
+    setIsConnectingStripe(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {});
+
+      if (error) {
+        console.error('Error starting Stripe Connect', error);
+        throw new Error('Unable to start Stripe Connect onboarding.');
+      }
+
+      const url = (data as any)?.url;
+      if (!url) {
+        throw new Error('Stripe Connect URL not available.');
+      }
+
+      window.location.href = url;
+    } catch (err: any) {
+      console.error('Error during Stripe Connect', err);
+      toast.error(err?.message || 'Unable to connect Stripe.');
+      setIsConnectingStripe(false);
+    }
+  };
+
+  const handleSkipStripe = () => {
+    toast.success('Welcome to Exclu! You can connect Stripe anytime from your profile.');
     navigate('/app');
   };
 
@@ -267,6 +296,7 @@ const Onboarding = () => {
         <div className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
 
         {/* STEP 1: Profile Setup */}
@@ -574,6 +604,96 @@ const Onboarding = () => {
 
               <p className="text-[10px] text-exclu-space/50 text-center">
                 All plans include a 5% processing fee charged to buyers. You can change your plan anytime.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 3: Stripe Connect */}
+        {step === 'stripe' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
+                <CreditCard className="w-8 h-8 text-white" />
+              </div>
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Connect your Stripe account
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                To receive payments from your fans, you need to connect a Stripe account. This only takes a few minutes.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="p-6 space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Instant payouts</p>
+                      <p className="text-xs text-exclu-space/70">Get paid directly to your bank account</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Secure & trusted</p>
+                      <p className="text-xs text-exclu-space/70">Stripe is used by millions of businesses worldwide</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Easy setup</p>
+                      <p className="text-xs text-exclu-space/70">Connect in just a few clicks</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-3">
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full rounded-full"
+                onClick={handleStripeConnect}
+                disabled={isConnectingStripe}
+              >
+                {isConnectingStripe ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Redirecting to Stripe…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    Connect with Stripe
+                  </span>
+                )}
+              </Button>
+
+              <button
+                type="button"
+                onClick={handleSkipStripe}
+                className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+              >
+                Skip for now – I'll do this later
+              </button>
+
+              <p className="text-[10px] text-exclu-space/50 text-center">
+                You won't be able to receive payments until you connect Stripe. You can do this anytime from your profile settings.
               </p>
             </div>
           </motion.div>

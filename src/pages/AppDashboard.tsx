@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const AppDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -24,6 +25,7 @@ const AppDashboard = () => {
   const [profileName, setProfileName] = useState<string>('');
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+  const [showStripeModal, setShowStripeModal] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -107,6 +109,11 @@ const AppDashboard = () => {
         if (profile) {
           setProfileName(profile.display_name || 'Creator');
           setStripeConnectStatus(profile.stripe_connect_status || null);
+          // Show Stripe modal if not connected (only once per session)
+          const stripeModalDismissed = sessionStorage.getItem('stripeModalDismissed');
+          if (profile.stripe_connect_status !== 'complete' && !stripeModalDismissed) {
+            setShowStripeModal(true);
+          }
         }
       } catch (err) {
         console.error('Error loading dashboard metrics', err);
@@ -142,6 +149,11 @@ const AppDashboard = () => {
       toast.error(err?.message || 'Unable to connect Stripe.');
       setIsConnectingStripe(false);
     }
+  };
+
+  const handleDismissStripeModal = () => {
+    sessionStorage.setItem('stripeModalDismissed', 'true');
+    setShowStripeModal(false);
   };
 
   const formattedRevenue = (totalRevenueCents / 100).toLocaleString('en-US', {
@@ -212,6 +224,98 @@ const AppDashboard = () => {
 
   return (
     <AppShell>
+      {/* Stripe Connect Modal */}
+      <AnimatePresence>
+        {showStripeModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+            onClick={handleDismissStripeModal}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-md bg-exclu-ink border border-exclu-arsenic/70 rounded-2xl shadow-2xl p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={handleDismissStripeModal}
+                className="absolute top-4 right-4 text-exclu-space/60 hover:text-exclu-cloud transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-center mb-6">
+                <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
+                  <CreditCard className="w-7 h-7 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-exclu-cloud mb-2">
+                  Connect Stripe to get paid
+                </h2>
+                <p className="text-sm text-exclu-space/80">
+                  You need to connect a Stripe account to receive payments from your fans.
+                </p>
+              </div>
+
+              <div className="space-y-2 mb-6">
+                <div className="flex items-center gap-3 text-sm">
+                  <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                    <Check className="w-3.5 h-3.5 text-green-400" />
+                  </div>
+                  <span className="text-exclu-space">Instant payouts to your bank</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                    <Check className="w-3.5 h-3.5 text-green-400" />
+                  </div>
+                  <span className="text-exclu-space">Secure & trusted worldwide</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                    <Check className="w-3.5 h-3.5 text-green-400" />
+                  </div>
+                  <span className="text-exclu-space">Takes only 2 minutes</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Button
+                  variant="hero"
+                  size="lg"
+                  className="w-full rounded-full"
+                  onClick={handleStripeConnect}
+                  disabled={isConnectingStripe}
+                >
+                  {isConnectingStripe ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Redirecting…
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <ExternalLink className="w-4 h-4" />
+                      Connect with Stripe
+                    </span>
+                  )}
+                </Button>
+                <button
+                  type="button"
+                  onClick={handleDismissStripeModal}
+                  className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors py-2"
+                >
+                  I'll do this later
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main className="px-4 pb-16 max-w-6xl mx-auto">
         {/* Simple header with greeting */}
         <section className="mt-4 sm:mt-6 mb-6">
