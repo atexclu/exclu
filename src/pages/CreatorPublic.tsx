@@ -184,26 +184,31 @@ const CreatorPublic = () => {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       {/* Mobile: Hero image header */}
-      <div className="sm:hidden relative -mx-4 mb-4 h-64 overflow-hidden">
+      <motion.div
+        className="sm:hidden relative -mx-4 mb-4 overflow-hidden"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+      >
         {profile?.avatar_url && (
           <>
             <img
               src={profile.avatar_url}
               alt={displayName}
-              className="w-full h-full object-contain bg-black"
+              className="w-full h-auto max-h-[70vh] object-cover"
             />
-            {/* Dark overlay */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/35 to-black/80" />
-            {/* Color fade into content section and below */}
+            {/* Soft dark overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/70" />
+            {/* Color fade only at the very bottom into the content section */}
             <div
-              className="absolute inset-x-0 bottom-0 h-40"
+              className="absolute inset-x-0 bottom-0 h-28 pointer-events-none"
               style={{
-                background: `linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.55) 45%, ${theme.bg} 85%, rgba(0,0,0,1) 100%)`,
+                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, ${theme.bg} 55%, rgba(0,0,0,1) 100%)`,
               }}
             />
             {/* Name & handle overlay */}
-            <div className="absolute inset-x-5 bottom-8 flex flex-col items-center text-center">
-              <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
+            <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
+              <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
                 {displayName}
               </h1>
               {profile?.handle && (
@@ -212,7 +217,7 @@ const CreatorPublic = () => {
             </div>
           </>
         )}
-      </div>
+      </motion.div>
 
       {/* Desktop: Gradient background */}
       <div className="hidden sm:block fixed inset-0 z-0 bg-gradient-to-b from-black via-exclu-ink to-black">

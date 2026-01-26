@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const AppDashboard = () => {
@@ -23,6 +23,7 @@ const AppDashboard = () => {
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
   const [profileName, setProfileName] = useState<string>('');
+  const [profileHandle, setProfileHandle] = useState<string | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [showStripeModal, setShowStripeModal] = useState(false);
@@ -50,7 +51,7 @@ const AppDashboard = () => {
         // Profile (display_name for greeting + stripe_connect_status)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, stripe_connect_status')
+          .select('display_name, handle, stripe_connect_status')
           .eq('id', user.id)
           .single();
 
@@ -108,6 +109,7 @@ const AppDashboard = () => {
         setPayouts(safePayouts);
         if (profile) {
           setProfileName(profile.display_name || 'Creator');
+          setProfileHandle(profile.handle || null);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           // Show Stripe modal if not connected (only once per session)
           const stripeModalDismissed = sessionStorage.getItem('stripeModalDismissed');
@@ -160,6 +162,8 @@ const AppDashboard = () => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+  const publicProfileUrl = profileHandle ? `${window.location.origin}/${profileHandle}` : null;
 
   const buildSeries = (
     metric: 'published' | 'sales' | 'revenue',
@@ -319,21 +323,51 @@ const AppDashboard = () => {
       <main className="px-4 pb-16 max-w-6xl mx-auto">
         {/* Simple header with greeting */}
         <section className="mt-4 sm:mt-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
                 Welcome back{profileName ? `, ${profileName}` : ''}
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
               </p>
             </div>
-            <RouterLink
-              to="/app/profile"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-xs text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors"
-            >
-              <span>Settings</span>
-            </RouterLink>
+            <div className="flex items-center gap-2">
+              {publicProfileUrl && (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(publicProfileUrl);
+                        toast.success('Public profile link copied');
+                      } catch {
+                        toast.error('Failed to copy link');
+                      }
+                    }}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors"
+                    aria-label="Copy public profile link"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <a
+                    href={publicProfileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors"
+                    aria-label="Open public profile"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </>
+              )}
+              <RouterLink
+                to="/app/profile"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-xs text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors whitespace-nowrap"
+              >
+                <span>Settings</span>
+              </RouterLink>
+            </div>
           </div>
         </section>
 

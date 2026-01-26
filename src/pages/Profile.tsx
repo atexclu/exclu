@@ -415,13 +415,36 @@ const Profile = () => {
                         <p className="text-sm text-exclu-space/70 truncate">
                           {handle ? `@${handle}` : 'Set your handle below'}
                         </p>
-                        <button
-                          onClick={handleAvatarClick}
-                          className="mt-2 inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
-                        >
-                          <Camera className="w-3.5 h-3.5" />
-                          Upload new photo
-                        </button>
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <button
+                            onClick={handleAvatarClick}
+                            className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                            Upload new photo
+                          </button>
+                          {publicProfileUrl && (
+                            <div className="flex items-center gap-1 text-xs text-exclu-space/70">
+                              <button
+                                type="button"
+                                onClick={handleCopyProfileUrl}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/60 bg-black/40 hover:bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                aria-label="Copy public profile link"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <a
+                                href={publicProfileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/60 bg-black/40 hover:bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                aria-label="Open public profile"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
