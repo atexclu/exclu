@@ -184,26 +184,26 @@ const CreatorPublic = () => {
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
       {/* Mobile: Hero image header */}
-      <div className="sm:hidden relative -mx-4 mb-6 h-56 overflow-hidden">
+      <div className="sm:hidden relative -mx-4 mb-4 h-64 overflow-hidden">
         {profile?.avatar_url && (
           <>
             <img
               src={profile.avatar_url}
               alt={displayName}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain bg-black"
             />
             {/* Dark overlay */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/40 to-black/80" />
-            {/* Color fade into content section */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/35 to-black/80" />
+            {/* Color fade into content section and below */}
             <div
-              className="absolute inset-x-0 bottom-0 h-32"
+              className="absolute inset-x-0 bottom-0 h-40"
               style={{
-                background: `linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.75) 40%, ${theme.bg} 100%)`,
+                background: `linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.55) 45%, ${theme.bg} 85%, rgba(0,0,0,1) 100%)`,
               }}
             />
             {/* Name & handle overlay */}
-            <div className="absolute inset-x-5 bottom-6 flex flex-col">
-              <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.7)]">
+            <div className="absolute inset-x-5 bottom-8 flex flex-col items-center text-center">
+              <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]">
                 {displayName}
               </h1>
               {profile?.handle && (
@@ -227,7 +227,7 @@ const CreatorPublic = () => {
         />
       </div>
 
-      <main className="relative z-10 flex-1 flex flex-col px-4 pt-8 pb-6 sm:pt-12">
+      <main className="relative z-10 flex-1 flex flex-col px-4 pt-4 pb-6 sm:pt-12">
         <div className="max-w-md mx-auto w-full flex flex-col flex-1">
           {/* Profile Section */}
           <motion.div

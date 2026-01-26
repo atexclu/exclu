@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Sparkles, Check, Download, Mail } from 'lucide-react';
+import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight } from 'lucide-react';
 
 interface PublicLinkData {
   id: string;
@@ -390,6 +390,24 @@ const PublicLink = () => {
               </div>
             </div>
           </motion.div>
+
+          {/* Link to creator profile */}
+          {creator?.handle && (
+            <div className="mb-6 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full border-exclu-arsenic/60 bg-white/5 hover:bg-white/10 text-xs text-exclu-cloud flex items-center gap-2 px-4 py-2"
+                onClick={() => {
+                  window.location.href = `/${creator.handle}`;
+                }}
+              >
+                <span>View {creator.display_name || creator.handle}&apos;s profile</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )}
 
           {/* Content Cards Grid - LOCKED STATE */}
           {!isLoading && link && !isUnlocked && (
