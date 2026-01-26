@@ -348,7 +348,7 @@ const Onboarding = () => {
                     </label>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-exclu-space/80 bg-exclu-ink px-2 py-1 rounded-full border border-exclu-arsenic/60">
-                        exclu.at/c/
+                        exclu.at/
                       </span>
                       <Input
                         id="handle"

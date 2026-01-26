@@ -140,12 +140,13 @@ const App = () => {
               </ProtectedRoute>
             }
           />
-          <Route path="/c/:handle" element={<CreatorPublic />} />
           <Route path="/l/:slug" element={<PublicLink />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/cookies" element={<Cookies />} />
+          {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
+          <Route path="/:handle" element={<CreatorPublic />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

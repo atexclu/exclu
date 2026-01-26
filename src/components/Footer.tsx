@@ -1,6 +1,13 @@
 import { motion } from 'framer-motion';
 import logo from '@/assets/logo-white.svg';
-import { Twitter, Instagram, MessageCircle } from 'lucide-react';
+import { Instagram, Send } from 'lucide-react';
+
+// X (Twitter) icon component
+const XIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
 
 const Footer = () => {
   const links = {
@@ -28,9 +35,9 @@ const Footer = () => {
   };
 
   const socials = [
-    { icon: Twitter, label: 'Twitter', href: 'https://twitter.com' },
-    { icon: Instagram, label: 'Instagram', href: 'https://instagram.com' },
-    { icon: MessageCircle, label: 'Discord', href: 'https://discord.com' },
+    { icon: Instagram, label: 'Instagram', href: 'https://www.instagram.com/exclu.at/' },
+    { icon: XIcon, label: 'X', href: 'https://x.com/exclu_at' },
+    { icon: Send, label: 'Telegram', href: 'https://t.me/exclu_alternative' },
   ];
 
   return (

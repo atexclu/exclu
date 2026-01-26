@@ -1,11 +1,10 @@
-import Navbar from '@/components/Navbar';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, MessageCircle, ExternalLink, Lock } from 'lucide-react';
+import { ArrowUpRight, Lock } from 'lucide-react';
 
 interface CreatorProfileData {
   id: string;
@@ -14,13 +13,8 @@ interface CreatorProfileData {
   bio: string | null;
   handle: string | null;
   external_url: string | null;
-}
-
-type PlatformKey = 'onlyfans' | 'fansly' | 'myclub' | 'mym' | 'other';
-
-interface CreatorPlatformLink {
-  platform: PlatformKey;
-  url: string;
+  theme_color: string | null;
+  social_links: Record<string, string> | null;
 }
 
 interface CreatorLinkCard {
@@ -32,14 +26,67 @@ interface CreatorLinkCard {
   slug: string;
 }
 
+// Theme color configurations
+const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string }> = {
+  pink: {
+    gradient: 'from-pink-500 to-rose-500',
+    button: 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600',
+    ring: 'ring-pink-500/50',
+    bg: 'rgba(236, 72, 153, 0.9)',
+  },
+  purple: {
+    gradient: 'from-purple-500 to-violet-500',
+    button: 'bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600',
+    ring: 'ring-purple-500/50',
+    bg: 'rgba(139, 92, 246, 0.9)',
+  },
+  blue: {
+    gradient: 'from-blue-500 to-cyan-500',
+    button: 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600',
+    ring: 'ring-blue-500/50',
+    bg: 'rgba(59, 130, 246, 0.9)',
+  },
+  orange: {
+    gradient: 'from-orange-500 to-amber-500',
+    button: 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600',
+    ring: 'ring-orange-500/50',
+    bg: 'rgba(249, 115, 22, 0.9)',
+  },
+  green: {
+    gradient: 'from-green-500 to-emerald-500',
+    button: 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600',
+    ring: 'ring-green-500/50',
+    bg: 'rgba(34, 197, 94, 0.9)',
+  },
+  red: {
+    gradient: 'from-red-500 to-rose-600',
+    button: 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700',
+    ring: 'ring-red-500/50',
+    bg: 'rgba(239, 68, 68, 0.9)',
+  },
+};
+
+// Social platform configurations
+const socialPlatforms: Record<string, { label: string; icon: string; color: string }> = {
+  twitter: { label: 'X', icon: '𝕏', color: 'bg-black' },
+  tiktok: { label: 'TikTok', icon: '♪', color: 'bg-gradient-to-br from-[#ff0050] via-black to-[#00f2ea]' },
+  telegram: { label: 'Telegram', icon: '✈', color: 'bg-[#0088cc]' },
+  onlyfans: { label: 'OnlyFans', icon: '💙', color: 'bg-[#00AFF0]' },
+  fansly: { label: 'Fansly', icon: '💎', color: 'bg-[#1DA1F2]' },
+  linktree: { label: 'Linktree', icon: '🌳', color: 'bg-[#43E55E]' },
+  instagram: { label: 'Instagram', icon: '📷', color: 'bg-gradient-to-br from-[#f09433] via-[#dc2743] to-[#bc1888]' },
+  youtube: { label: 'YouTube', icon: '▶', color: 'bg-[#FF0000]' },
+  snapchat: { label: 'Snapchat', icon: '👻', color: 'bg-[#FFFC00] text-black' },
+};
+
 const CreatorPublic = () => {
   const { handle } = useParams<{ handle: string }>();
+  const navigate = useNavigate();
 
   const [profile, setProfile] = useState<CreatorProfileData | null>(null);
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [platformLinks, setPlatformLinks] = useState<CreatorPlatformLink[]>([]);
 
   useEffect(() => {
     const fetchCreator = async () => {
@@ -49,7 +96,7 @@ const CreatorPublic = () => {
 
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url, bio, handle, external_url, is_creator')
+        .select('id, display_name, avatar_url, bio, handle, external_url, is_creator, theme_color, social_links')
         .eq('handle', handle)
         .eq('is_creator', true)
         .single();
@@ -78,31 +125,20 @@ const CreatorPublic = () => {
         setLinks((linksData ?? []) as CreatorLinkCard[]);
       }
 
-      const { data: profileLinksData, error: profileLinksError } = await supabase
-        .from('profile_links')
-        .select('platform, url')
-        .eq('profile_id', profileData.id);
-
-      if (profileLinksError) {
-        console.error('Error loading creator platform links', profileLinksError);
-      } else if (profileLinksData && Array.isArray(profileLinksData)) {
-        const cleaned = (profileLinksData as any[])
-          .map((row) => ({ platform: row.platform as PlatformKey, url: row.url as string }))
-          .filter((row) => !!row.url);
-        setPlatformLinks(cleaned);
-      }
-
-      setProfile(profileData as CreatorProfileData);
+      setProfile(profileData as unknown as CreatorProfileData);
       setIsLoading(false);
     };
 
     fetchCreator();
   }, [handle]);
 
-  const handleUnlockClick = (link: CreatorLinkCard) => {
-    toast.info('Paiement à venir – en cours d\'implémentation.', {
-      description: `Unlock "${link.title}" for ${(link.price_cents / 100).toFixed(2)} ${link.currency}.`,
-    });
+  const handleLinkClick = (link: CreatorLinkCard) => {
+    navigate(`/l/${link.slug}`);
+  };
+
+  const handleSocialClick = (url: string) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleExternalClick = () => {
@@ -110,228 +146,183 @@ const CreatorPublic = () => {
     window.open(profile.external_url, '_blank', 'noopener,noreferrer');
   };
 
-  const handlePlatformClick = (url: string) => {
-    if (!url) return;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const getPlatformMeta = (platform: PlatformKey) => {
-    switch (platform) {
-      case 'onlyfans':
-        return {
-          label: 'OnlyFans',
-          short: 'OF',
-          bg: 'bg-[#00AFF0]/15',
-          text: 'text-[#00AFF0]',
-        };
-      case 'fansly':
-        return {
-          label: 'Fansly',
-          short: 'F',
-          bg: 'bg-[#1DA1F2]/15',
-          text: 'text-[#1DA1F2]',
-        };
-      case 'myclub':
-        return {
-          label: 'my.club',
-          short: 'MC',
-          bg: 'bg-[#6366F1]/15',
-          text: 'text-[#6366F1]',
-        };
-      case 'mym':
-        return {
-          label: 'MYM',
-          short: 'MYM',
-          bg: 'bg-[#F97316]/15',
-          text: 'text-[#F97316]',
-        };
-      case 'other':
-      default:
-        return {
-          label: 'Website',
-          short: 'WEB',
-          bg: 'bg-exclu-cloud/10',
-          text: 'text-exclu-cloud',
-        };
-    }
-  };
-
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
+  const themeColor = profile?.theme_color || 'pink';
+  const theme = themeColors[themeColor] || themeColors.pink;
+  const socialLinks = profile?.social_links || {};
+  const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-b from-black via-exclu-ink to-black text-foreground flex flex-col">
-      <Navbar />
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="relative flex-1 pt-20 pb-4 px-4 overflow-hidden">
-          {/* Animated blurred gradient background */}
-          <motion.div
-            className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] mx-auto max-w-3xl rounded-full bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_55%),radial-gradient(circle_at_bottom,_rgba(180,83,9,0.75),transparent_60%)] blur-3xl opacity-80"
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0, rotateZ: [0, 1.5, -1.5, 0] }}
-            transition={{ duration: 1.8, ease: 'easeOut' }}
-          />
-          <motion.div
-            className="pointer-events-none absolute inset-x-10 -top-10 h-[380px] rounded-[3rem] bg-[conic-gradient(from_180deg_at_50%_0%,rgba(56,189,248,0.18),rgba(236,72,153,0.24),rgba(244,244,245,0.12),rgba(56,189,248,0.18))] blur-3xl opacity-70"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0.3, 0.7, 0.4], rotate: [0, 8, -6, 0] }}
-            transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-          />
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      {/* Mobile: Full screen avatar background */}
+      <div className="sm:hidden fixed inset-0 z-0">
+        {profile?.avatar_url && (
+          <>
+            <img
+              src={profile.avatar_url}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/50 to-black" />
+          </>
+        )}
+      </div>
 
-          <div className="relative max-w-4xl mx-auto">
-            {/* Hero section */}
-            <motion.section
-              initial={{ opacity: 0, y: 20 }}
+      {/* Desktop: Gradient background */}
+      <div className="hidden sm:block fixed inset-0 z-0 bg-gradient-to-b from-black via-exclu-ink to-black">
+        <motion.div
+          className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] mx-auto max-w-3xl rounded-full blur-3xl opacity-80"
+          style={{
+            background: `radial-gradient(circle at top, rgba(255,255,255,0.18), transparent 55%), radial-gradient(circle at bottom, ${theme.bg}, transparent 60%)`,
+          }}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 1.8, ease: 'easeOut' }}
+        />
+      </div>
+
+      <main className="relative z-10 flex-1 flex flex-col px-4 pt-8 pb-6 sm:pt-12">
+        <div className="max-w-md mx-auto w-full flex flex-col flex-1">
+          {/* Profile Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className="text-center mb-6"
+          >
+            {/* Avatar - smaller on mobile since it's in background */}
+            <div className="relative inline-block mb-4">
+              <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.gradient} blur-lg opacity-70 scale-110`} />
+              <div className={`relative w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-white/30 ring-4 ${theme.ring}`}>
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
+                    <span className="text-2xl font-bold text-white/80">{displayName.charAt(0).toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Name & Handle */}
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white mb-1 drop-shadow-lg">{displayName}</h1>
+            {profile?.handle && (
+              <p className="text-sm text-white/70 mb-3">@{profile.handle}</p>
+            )}
+            {profile?.bio && (
+              <p className="text-sm text-white/80 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
+            )}
+
+            {/* Social Links - Story bubbles style */}
+            {activeSocials.length > 0 && (
+              <div className="flex justify-center gap-3 mb-6">
+                {activeSocials.map(([platform, url]) => {
+                  const platformConfig = socialPlatforms[platform];
+                  if (!platformConfig) return null;
+                  return (
+                    <motion.button
+                      key={platform}
+                      type="button"
+                      onClick={() => handleSocialClick(url)}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`w-14 h-14 rounded-full ${platformConfig.color} flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all`}
+                      title={platformConfig.label}
+                    >
+                      {platformConfig.icon}
+                    </motion.button>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Main CTA Button */}
+          {profile?.external_url && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, ease: 'easeOut' }}
-              className="mb-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6"
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="mb-4"
             >
-              <div className="flex items-start gap-4">
-                <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary to-accent blur-lg opacity-70" />
-                  <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink flex items-center justify-center">
-                    {profile?.avatar_url ? (
-                      <img
-                        src={profile.avatar_url}
-                        alt={displayName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-sm text-exclu-cloud/80">{displayName.charAt(0).toUpperCase()}</span>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-exclu-space/70 mb-1">Exclu creator</p>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">{displayName}</h1>
-                  {profile?.handle && (
-                    <p className="text-xs text-exclu-space/80 mb-2">@{profile.handle}</p>
-                  )}
-                  {profile?.bio && (
-                    <p className="text-xs sm:text-sm text-exclu-space max-w-xl">{profile.bio}</p>
-                  )}
-                </div>
+              <Button
+                onClick={handleExternalClick}
+                className={`w-full h-14 rounded-full text-white font-semibold text-lg shadow-xl ${theme.button} transition-all`}
+              >
+                My exclusive link
+                <ArrowUpRight className="w-5 h-5 ml-2" />
+              </Button>
+            </motion.div>
+          )}
+
+          {/* Content Links */}
+          <div className="flex-1 overflow-y-auto space-y-3">
+            {isLoading && (
+              <p className="text-sm text-white/60 text-center py-4">Loading content…</p>
+            )}
+
+            {!isLoading && !error && links.length === 0 && (
+              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
+                No exclusive content available yet.
               </div>
+            )}
 
-              <div className="flex flex-col gap-2 w-full sm:w-auto">
-                {platformLinks.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-start sm:justify-end">
-                    {platformLinks.map((link) => {
-                      const meta = getPlatformMeta(link.platform);
-                      return (
-                        <button
-                          key={`${link.platform}-${link.url}`}
-                          type="button"
-                          onClick={() => handlePlatformClick(link.url)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-exclu-arsenic/60 bg-black/60 px-2.5 py-1 text-[10px] text-exclu-cloud hover:border-primary/70 hover:bg-black/80 transition-colors"
-                        >
-                          <span
-                            className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-semibold ${meta.bg} ${meta.text}`}
-                          >
-                            {meta.short}
-                          </span>
-                          <span className="truncate max-w-[80px] sm:max-w-[120px]">{meta.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <Button
-                  variant="hero"
-                  size="lg"
-                  className="rounded-full inline-flex items-center justify-center gap-2 w-full sm:w-auto text-base px-6 py-3"
-                  disabled={!profile?.external_url}
-                  onClick={handleExternalClick}
-                >
-                  <ExternalLink className="w-5 h-5" />
-                  {profile?.external_url ? 'My exclusive link' : 'My exclusive link'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  className="hidden sm:inline-flex rounded-full border-dashed border-exclu-arsenic/60 text-[11px] text-exclu-space/80 items-center justify-center gap-2 w-full sm:w-auto"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  Chat (coming soon)
-                </Button>
-              </div>
-            </motion.section>
+            {!isLoading && links.length > 0 && (
+              <>
+                <p className="text-xs uppercase tracking-wider text-white/50 text-center mb-2">
+                  Exclusive Content
+                </p>
+                {links.map((link, index) => {
+                  const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
+                  return (
+                    <motion.button
+                      key={link.id}
+                      type="button"
+                      onClick={() => handleLinkClick(link)}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: 0.1 * index }}
+                      className={`w-full h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all flex items-center justify-between px-5 group`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Lock className="w-4 h-4 text-white/60" />
+                        <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>
+                          {priceLabel}
+                        </span>
+                        <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
+                      </div>
+                    </motion.button>
+                  );
+                })}
+              </>
+            )}
 
-            {/* Content grid */}
-            <section className="space-y-2 flex-1 overflow-hidden">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Exclusive content</p>
-                {links.length > 0 && (
-                  <p className="text-[11px] text-exclu-space/70">
-                    {links.length} {links.length === 1 ? 'link' : 'links'} available
-                  </p>
-                )}
-              </div>
-
-              {isLoading && (
-                <p className="text-sm text-exclu-space">Loading content…</p>
-              )}
-
-              {!isLoading && !error && links.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-exclu-arsenic/60 bg-exclu-ink/70 p-4 text-xs text-exclu-space/80">
-                  This creator hasn&apos;t published any paid content yet.
-                </div>
-              )}
-
-              {!isLoading && links.length > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 overflow-y-auto max-h-[calc(100vh-320px)]">
-                  {links.map((link) => {
-                    const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
-                    return (
-                      <motion.article
-                        key={link.id}
-                        initial={{ opacity: 0, y: 14 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: 'easeOut' }}
-                        className="relative overflow-hidden rounded-xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-glow-lg"
-                      >
-                        <div className="relative h-24 overflow-hidden">
-                          {/* Animated blur / reveal style background */}
-                          <motion.div
-                            className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.2),transparent_55%),radial-gradient(circle_at_bottom,_rgba(236,72,153,0.9),transparent_60%)] opacity-80"
-                            initial={{ scale: 1.1, rotate: -2 }}
-                            animate={{
-                              scale: [1.1, 1.2, 1.1],
-                              rotate: [-4, 3, -2],
-                              x: [0, 8, -6, 0],
-                              y: [0, -6, 4, 0],
-                            }}
-                            transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-                          />
-                          <div className="absolute inset-0 backdrop-blur-3xl bg-black/60" />
-                          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-3 gap-1">
-                            <Lock className="w-4 h-4 text-exclu-cloud/80" />
-                            <p className="text-xs font-medium text-exclu-cloud line-clamp-1">{link.title}</p>
-                          </div>
-                        </div>
-                        <div className="p-3 flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-exclu-cloud">{priceLabel}</p>
-                          <Button
-                            variant="hero"
-                            size="sm"
-                            className="rounded-full text-[11px] px-3 py-1 h-7 inline-flex items-center gap-1"
-                            onClick={() => handleUnlockClick(link)}
-                          >
-                            Unlock
-                            <ArrowUpRight className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </motion.article>
-                    );
-                  })}
-                </div>
-              )}
-
-              {error && !isLoading && (
-                <p className="text-sm text-red-400 mt-4">{error}</p>
-              )}
-            </section>
+            {error && !isLoading && (
+              <p className="text-sm text-red-400 text-center py-4">{error}</p>
+            )}
           </div>
+
+          {/* Footer branding */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.5 }}
+            className="mt-6 text-center"
+          >
+            <a
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors"
+            >
+              Powered by <span className="font-semibold">Exclu</span>
+            </a>
+          </motion.div>
         </div>
       </main>
     </div>

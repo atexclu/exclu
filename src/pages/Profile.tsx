@@ -18,6 +18,7 @@ import {
   Check,
   AlertCircle,
   ChevronRight,
+  Palette,
 } from 'lucide-react';
 
 const Profile = () => {
@@ -33,7 +34,9 @@ const Profile = () => {
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'security'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'appearance' | 'subscription' | 'security'>('profile');
+  const [themeColor, setThemeColor] = useState<string>('pink');
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   // Password change state
@@ -42,7 +45,7 @@ const Profile = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const publicProfileUrl = handle ? `${window.location.origin}/c/${handle}` : null;
+  const publicProfileUrl = handle ? `${window.location.origin}/${handle}` : null;
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -63,7 +66,7 @@ const Profile = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed')
+        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links')
         .eq('id', user.id)
         .single();
 
@@ -77,6 +80,8 @@ const Profile = () => {
         setStripeAccountId(profile.stripe_account_id || null);
         setStripeConnectStatus(profile.stripe_connect_status || null);
         setIsCreatorSubscribed(profile.is_creator_subscribed === true);
+        setThemeColor(profile.theme_color || 'pink');
+        setSocialLinks(profile.social_links || {});
       }
 
       setIsLoading(false);
@@ -257,8 +262,59 @@ const Profile = () => {
     setIsChangingPassword(false);
   };
 
+  const handleSaveAppearance = async () => {
+    if (!userId) return;
+    setIsSaving(true);
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        theme_color: themeColor,
+        social_links: socialLinks,
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error saving appearance', error);
+      toast.error('Failed to save appearance settings.');
+    } else {
+      toast.success('Appearance settings saved!');
+    }
+
+    setIsSaving(false);
+  };
+
+  const handleSocialLinkChange = (platform: string, value: string) => {
+    setSocialLinks((prev) => ({
+      ...prev,
+      [platform]: value,
+    }));
+  };
+
+  const themeOptions = [
+    { id: 'pink', label: 'Pink', color: 'bg-gradient-to-r from-pink-500 to-rose-500' },
+    { id: 'purple', label: 'Purple', color: 'bg-gradient-to-r from-purple-500 to-violet-500' },
+    { id: 'blue', label: 'Blue', color: 'bg-gradient-to-r from-blue-500 to-cyan-500' },
+    { id: 'orange', label: 'Orange', color: 'bg-gradient-to-r from-orange-500 to-amber-500' },
+    { id: 'green', label: 'Green', color: 'bg-gradient-to-r from-green-500 to-emerald-500' },
+    { id: 'red', label: 'Red', color: 'bg-gradient-to-r from-red-500 to-rose-600' },
+  ];
+
+  const socialPlatformsList = [
+    { id: 'twitter', label: 'X (Twitter)', placeholder: 'https://x.com/yourhandle' },
+    { id: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourhandle' },
+    { id: 'tiktok', label: 'TikTok', placeholder: 'https://tiktok.com/@yourhandle' },
+    { id: 'telegram', label: 'Telegram', placeholder: 'https://t.me/yourhandle' },
+    { id: 'onlyfans', label: 'OnlyFans', placeholder: 'https://onlyfans.com/yourhandle' },
+    { id: 'fansly', label: 'Fansly', placeholder: 'https://fansly.com/yourhandle' },
+    { id: 'youtube', label: 'YouTube', placeholder: 'https://youtube.com/@yourhandle' },
+    { id: 'linktree', label: 'Linktree', placeholder: 'https://linktr.ee/yourhandle' },
+    { id: 'snapchat', label: 'Snapchat', placeholder: 'https://snapchat.com/add/yourhandle' },
+  ];
+
   const menuItems = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'subscription', label: 'Subscription & Payments', icon: CreditCard },
     { id: 'security', label: 'Security', icon: Lock },
   ] as const;
@@ -396,7 +452,7 @@ const Profile = () => {
                         <div className="sm:col-span-2">
                           <div className="flex">
                             <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-exclu-arsenic/50 bg-exclu-phantom/30 text-sm text-exclu-space/70">
-                              exclu.at/c/
+                              exclu.at/
                             </span>
                             <Input
                               value={handle}
@@ -482,6 +538,103 @@ const Profile = () => {
                       </div>
                     )}
                   </div>
+                </motion.div>
+              )}
+
+              {/* Appearance Section */}
+              {activeSection === 'appearance' && (
+                <motion.div
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  {/* Theme Color Card */}
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-exclu-arsenic/40">
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Theme Color</h2>
+                      <p className="text-xs text-exclu-space/60 mt-0.5">Choose a color theme for your public profile page</p>
+                    </div>
+
+                    <div className="p-6">
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                        {themeOptions.map((theme) => (
+                          <button
+                            key={theme.id}
+                            type="button"
+                            onClick={() => setThemeColor(theme.id)}
+                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                              themeColor === theme.id
+                                ? 'border-white/50 bg-white/10'
+                                : 'border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
+                            }`}
+                          >
+                            <div className={`w-10 h-10 rounded-full ${theme.color}`} />
+                            <span className="text-xs text-exclu-cloud">{theme.label}</span>
+                            {themeColor === theme.id && (
+                              <div className="absolute top-1 right-1">
+                                <Check className="w-4 h-4 text-white" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Social Links Card */}
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-exclu-arsenic/40">
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Social Links</h2>
+                      <p className="text-xs text-exclu-space/60 mt-0.5">Add your social media links to display on your profile</p>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                      {socialPlatformsList.map((platform) => (
+                        <div key={platform.id} className="grid grid-cols-1 sm:grid-cols-4 gap-2 sm:gap-4 items-center">
+                          <label className="text-sm font-medium text-exclu-cloud">{platform.label}</label>
+                          <div className="sm:col-span-3">
+                            <Input
+                              value={socialLinks[platform.id] || ''}
+                              onChange={(e) => handleSocialLinkChange(platform.id, e.target.value)}
+                              placeholder={platform.placeholder}
+                              className="h-10 bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-sm"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Save button in footer */}
+                    <div className="px-6 py-4 border-t border-exclu-arsenic/40 bg-exclu-phantom/10 flex justify-end">
+                      <Button
+                        onClick={handleSaveAppearance}
+                        variant="hero"
+                        disabled={isSaving}
+                        className="rounded-full px-6"
+                      >
+                        {isSaving ? 'Saving...' : 'Save appearance'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Preview hint */}
+                  {handle && (
+                    <div className="rounded-xl border border-exclu-arsenic/40 bg-exclu-phantom/20 p-4 flex items-center justify-between">
+                      <p className="text-sm text-exclu-space">
+                        Preview your changes on your public profile
+                      </p>
+                      <a
+                        href={`/${handle}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        View profile
+                      </a>
+                    </div>
+                  )}
                 </motion.div>
               )}
 

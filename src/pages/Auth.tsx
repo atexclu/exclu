@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { Mail, Lock, Sparkles } from 'lucide-react';
+import { Mail, Lock, Sparkles, AtSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
@@ -36,19 +36,51 @@ const Auth = () => {
         if (error) throw error;
         toast.success('Check your inbox to reset your password');
       } else if (mode === 'signup') {
-        if (!password) {
+        const username = String(formData.get('username') || '').trim().toLowerCase();
+        if (!password || !username) {
           toast.error('Please fill in all fields');
           return;
         }
+        
+        // Validate username format
+        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+          toast.error('Username can only contain letters, numbers and underscores');
+          return;
+        }
+        
+        // Check if username is already taken
+        const { data: existingHandle } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('handle', username)
+          .maybeSingle();
+        
+        if (existingHandle) {
+          toast.error('This username is already taken');
+          return;
+        }
+        
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: `${siteUrl}/onboarding`,
+            data: {
+              handle: username,
+            },
           },
         });
         if (error) throw error;
+        
+        // If user was created, save the handle to their profile
+        if (signUpData.user) {
+          await supabase.from('profiles').upsert({
+            id: signUpData.user.id,
+            handle: username,
+          });
+        }
+        
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
       } else {
@@ -125,6 +157,11 @@ const Auth = () => {
                 ? 'Log in to Exclu'
                 : 'Reset your password'}
             </h1>
+            {mode === 'signup' && (
+              <p className="text-primary text-[13px] sm:text-sm max-w-sm mx-auto font-medium">
+                OnlyFans creators are making 77.4% more with Exclu — discover why…
+              </p>
+            )}
             {mode === 'reset' && (
               <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
                 Enter your email and we will send you a link to reset your password.
@@ -170,6 +207,31 @@ const Auth = () => {
             </CardHeader>
             <CardContent className="px-5 pb-5">
               <form className="space-y-4" onSubmit={handleSubmit}>
+                {mode === 'signup' && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="username" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
+                      <AtSign className="h-3.5 w-3.5 text-exclu-space/80" />
+                      Username
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">exclu.at/</span>
+                      <Input
+                        id="username"
+                        name="username"
+                        type="text"
+                        autoComplete="username"
+                        placeholder="yourname"
+                        className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pl-[4.5rem]"
+                        pattern="^[a-zA-Z0-9_]+$"
+                        minLength={3}
+                        maxLength={30}
+                        required
+                      />
+                    </div>
+                    <p className="text-[10px] text-exclu-space/60">Only letters, numbers and underscores</p>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label htmlFor="email" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
                     <Mail className="h-3.5 w-3.5 text-exclu-space/80" />

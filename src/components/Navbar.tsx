@@ -41,7 +41,7 @@ const Navbar = () => {
               <a href="/auth">Log in</a>
             </Button>
             <Button variant="hero" size="sm" asChild>
-              <a href="/auth">Get started</a>
+              <a href="/auth">Start for free</a>
             </Button>
           </div>
         </div>
