@@ -296,7 +296,7 @@ const ContentLibrary = () => {
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div
-            className="absolute inset-0 bg-black"
+            className="absolute inset-0 bg-gradient-to-br from-black/90 via-exclu-ink/90 to-purple-950/80 backdrop-blur-sm"
             onClick={closeUploadModal}
           />
           <div className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -319,7 +319,7 @@ const ContentLibrary = () => {
                   value={assetTitle}
                   onChange={(e) => setAssetTitle(e.target.value)}
                   placeholder="Example: Behind the scenes shot"
-                  className="h-10 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud placeholder:text-exclu-space/60"
+                  className="h-10 bg-white border-exclu-arsenic/60 text-black placeholder:text-slate-500"
                 />
               </div>
 

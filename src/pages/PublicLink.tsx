@@ -1,12 +1,11 @@
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Sparkles, Check, Download } from 'lucide-react';
+import { Lock, Sparkles, Check, Download, Mail } from 'lucide-react';
 
 interface PublicLinkData {
   id: string;
@@ -22,6 +21,41 @@ interface ContentItem {
   previewUrl?: string;
   storagePath?: string;
 }
+
+interface CreatorProfileData {
+  id: string;
+  display_name: string | null;
+  handle: string | null;
+  avatar_url: string | null;
+  theme_color: string | null;
+}
+
+const themeColors: Record<string, { gradient: string; glow: string }> = {
+  pink: {
+    gradient: 'from-pink-500/40 via-rose-500/30 to-purple-500/40',
+    glow: 'bg-pink-500/40',
+  },
+  purple: {
+    gradient: 'from-purple-500/40 via-violet-500/30 to-fuchsia-500/40',
+    glow: 'bg-purple-500/40',
+  },
+  blue: {
+    gradient: 'from-sky-500/40 via-cyan-500/30 to-blue-500/40',
+    glow: 'bg-sky-500/40',
+  },
+  orange: {
+    gradient: 'from-orange-500/40 via-amber-500/30 to-pink-500/40',
+    glow: 'bg-orange-400/40',
+  },
+  green: {
+    gradient: 'from-emerald-500/40 via-lime-500/30 to-teal-500/40',
+    glow: 'bg-emerald-400/40',
+  },
+  red: {
+    gradient: 'from-rose-500/40 via-red-500/30 to-orange-500/40',
+    glow: 'bg-rose-500/40',
+  },
+};
 
 const BlurredCard = ({ index, isUnlocked }: { index: number; isUnlocked: boolean }) => {
   return (
@@ -117,6 +151,9 @@ const PublicLink = () => {
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
+  const [creator, setCreator] = useState<CreatorProfileData | null>(null);
+  const [buyerEmail, setBuyerEmail] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -126,7 +163,7 @@ const PublicLink = () => {
 
       const { data, error } = await supabase
         .from('links')
-        .select('id, title, description, price_cents, currency, status, storage_path')
+        .select('id, title, description, price_cents, currency, status, storage_path, creator_id')
         .eq('slug', slug)
         .eq('status', 'published')
         .single();
@@ -146,6 +183,17 @@ const PublicLink = () => {
         price_cents: data.price_cents,
         currency: data.currency,
       });
+
+      if (data.creator_id) {
+        const { data: creatorProfile } = await supabase
+          .from('profiles')
+          .select('id, display_name, handle, avatar_url, theme_color')
+          .eq('id', data.creator_id)
+          .maybeSingle();
+        if (creatorProfile) {
+          setCreator(creatorProfile as CreatorProfileData);
+        }
+      }
 
       // Check if user has purchased this link (via session_id in URL)
       let hasPurchased = false;
@@ -259,6 +307,9 @@ const PublicLink = () => {
       })}`
     : '';
 
+  const themeKey = creator?.theme_color || 'pink';
+  const theme = themeColors[themeKey] || themeColors.pink;
+
   return (
     <div className="min-h-screen bg-black text-foreground flex flex-col">
       {/* Custom CSS for animations */}
@@ -281,31 +332,63 @@ const PublicLink = () => {
         }
       `}</style>
 
-      <Navbar />
       <main className="flex-1 flex flex-col">
-        <div className="px-4 pt-28 pb-16 max-w-4xl mx-auto w-full">
-          {/* Header */}
+        <div className="px-4 pt-16 pb-16 max-w-4xl mx-auto w-full">
+          {/* Creator header */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="text-center mb-10"
+            className="mb-10"
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-4">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-medium text-primary">Exclusive Content</span>
+            <div className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-black via-exclu-ink to-black p-5 sm:p-6">
+              <div className={`pointer-events-none absolute -inset-x-20 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl opacity-70`} />
+              <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
+                <div className="relative">
+                  <div className={`absolute inset-0 rounded-full ${theme.glow} blur-2xl opacity-80`} />
+                  <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white/30 overflow-hidden bg-exclu-ink flex items-center justify-center">
+                    {creator?.avatar_url ? (
+                      <img src={creator.avatar_url} alt={creator.display_name || creator.handle || 'Creator'} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg font-semibold text-white/80">
+                        {(creator?.display_name || creator?.handle || 'C').charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-white/10 mb-2">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-[11px] font-medium text-exclu-cloud/90">Exclusive content</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-1">
+                    {isLoading ? 'Loading…' : link ? link.title : 'Link unavailable'}
+                  </h1>
+                  {creator && (
+                    <p className="text-xs text-exclu-space/70 mb-2">
+                      Created by <span className="font-medium text-exclu-cloud">{creator.display_name || creator.handle}</span>
+                      {creator.handle && (
+                        <>
+                          {' '}
+                          <span className="text-exclu-space/60">·</span>{' '}
+                          <a href={`/${creator.handle}`} className="text-primary hover:text-primary/80 underline-offset-2 hover:underline">
+                            View profile
+                          </a>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {!isLoading && link && (
+                    <p className="text-exclu-space text-sm sm:text-[15px] max-w-xl mx-auto sm:mx-0">
+                      {link.description || 'Pay once to instantly unlock this premium content. No account required.'}
+                    </p>
+                  )}
+                  {error && !isLoading && (
+                    <p className="text-sm text-red-400 mt-2">{error}</p>
+                  )}
+                </div>
+              </div>
             </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-3">
-              {isLoading ? 'Loading…' : link ? link.title : 'Link unavailable'}
-            </h1>
-            {!isLoading && link && (
-              <p className="text-exclu-space text-sm sm:text-base max-w-xl mx-auto">
-                {link.description || 'Unlock this exclusive content from the creator.'}
-              </p>
-            )}
-            {error && !isLoading && (
-              <p className="text-sm text-red-400 mt-3">{error}</p>
-            )}
           </motion.div>
 
           {/* Content Cards Grid - LOCKED STATE */}
@@ -318,9 +401,9 @@ const PublicLink = () => {
                 className="mb-8"
               >
                 <div className={`grid gap-4 ${
-                  contentItems.length === 1 
-                    ? 'grid-cols-1 max-w-sm mx-auto' 
-                    : contentItems.length === 2 
+                  contentItems.length === 1
+                    ? 'grid-cols-1 max-w-sm mx-auto'
+                    : contentItems.length === 2
                     ? 'grid-cols-2 max-w-lg mx-auto'
                     : 'grid-cols-2 sm:grid-cols-3'
                 }`}>
@@ -365,98 +448,14 @@ const PublicLink = () => {
                   </Button>
                 </div>
               </motion.div>
-            </>
-          )}
-
-          {/* UNLOCKED STATE - Show actual content */}
-          {!isLoading && link && isUnlocked && (
-            <>
-              {/* Success banner */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-                className="mb-8 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 flex items-center justify-center gap-3"
-              >
-                <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <Check className="w-5 h-5 text-green-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-green-400">Content Unlocked!</p>
-                  <p className="text-xs text-green-400/70">Thank you for your purchase. Enjoy your exclusive content.</p>
-                </div>
-              </motion.div>
-
-              {/* Unlocked content grid */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="space-y-6"
-              >
-                {unlockedContent.map((item, index) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.1 * index }}
-                    className="rounded-2xl border border-exclu-arsenic/50 bg-exclu-ink/80 overflow-hidden"
-                  >
-                    {item.previewUrl && (
-                      item.type === 'video' ? (
-                        <video
-                          src={item.previewUrl}
-                          controls
-                          className="w-full max-h-[70vh] object-contain bg-black"
-                          playsInline
-                        />
-                      ) : (
-                        <img
-                          src={item.previewUrl}
-                          alt={`Content ${index + 1}`}
-                          className="w-full max-h-[70vh] object-contain bg-black"
-                        />
-                      )
-                    )}
-                    <div className="p-4 flex items-center justify-between">
-                      <span className="text-sm text-exclu-space">Content {index + 1}</span>
-                      {item.previewUrl && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const response = await fetch(item.previewUrl!);
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              const ext = item.type === 'video' ? 'mp4' : 'jpg';
-                              a.download = `exclu-content-${index + 1}.${ext}`;
-                              document.body.appendChild(a);
-                              a.click();
-                              window.URL.revokeObjectURL(url);
-                              document.body.removeChild(a);
-                              toast.success('Download started!');
-                            } catch (err) {
-                              console.error('Download failed', err);
-                              toast.error('Download failed. Please try again.');
-                            }
-                          }}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-exclu-cloud/10 hover:bg-exclu-cloud/20 text-exclu-cloud text-sm transition-colors"
-                        >
-                          <Download className="w-4 h-4" />
-                          Download
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
+              <div className="mt-4 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
+                <p>Aucun compte n'est nécessaire. Une fois le paiement sécurisé effectué, votre contenu sera immédiatement débloqué sur cette page.</p>
+                <p>Le contenu sera téléchargeable et vous pourrez en recevoir une copie par e-mail.</p>
+              </div>
             </>
           )}
         </div>
       </main>
-      <Footer />
     </div>
   );
 };

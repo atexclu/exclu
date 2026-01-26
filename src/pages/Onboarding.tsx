@@ -538,11 +538,11 @@ const Onboarding = () => {
                 }`}
               >
                 <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-full bg-primary text-[10px] font-bold text-white">
-                  RECOMMENDED
+                  Most popular
                 </div>
                 {selectedPlan === 'premium' && (
-                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-exclu-cloud flex items-center justify-center">
+                    <Check className="w-3 h-3 text-black" />
                   </div>
                 )}
                 <div className="space-y-3">

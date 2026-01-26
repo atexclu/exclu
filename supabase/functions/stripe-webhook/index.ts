@@ -67,6 +67,7 @@ serve(async (req) => {
             .single();
 
           if (!existingPurchase) {
+            const customerEmail = session.customer_details?.email ?? null;
             const { error: insertError } = await supabase.from('purchases').insert({
               link_id: linkId,
               creator_id: creatorId,
@@ -74,7 +75,8 @@ serve(async (req) => {
               currency: session.currency?.toUpperCase() ?? 'USD',
               stripe_session_id: session.id,
               status: 'completed',
-              fan_email: session.customer_details?.email ?? null,
+              fan_email: customerEmail,
+              buyer_email: customerEmail,
             });
 
             if (insertError) {

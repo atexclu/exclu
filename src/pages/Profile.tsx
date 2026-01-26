@@ -37,6 +37,7 @@ const Profile = () => {
   const [activeSection, setActiveSection] = useState<'profile' | 'appearance' | 'subscription' | 'security'>('profile');
   const [themeColor, setThemeColor] = useState<string>('pink');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
+  const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   // Password change state
@@ -66,7 +67,7 @@ const Profile = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links')
+        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links, show_join_banner')
         .eq('id', user.id)
         .single();
 
@@ -82,6 +83,11 @@ const Profile = () => {
         setIsCreatorSubscribed(profile.is_creator_subscribed === true);
         setThemeColor(profile.theme_color || 'pink');
         setSocialLinks(profile.social_links || {});
+        setShowJoinBanner(
+          profile.show_join_banner === null || profile.show_join_banner === undefined
+            ? true
+            : Boolean(profile.show_join_banner)
+        );
       }
 
       setIsLoading(false);
@@ -271,6 +277,7 @@ const Profile = () => {
       .update({
         theme_color: themeColor,
         social_links: socialLinks,
+        show_join_banner: showJoinBanner,
       })
       .eq('id', userId);
 
@@ -494,6 +501,35 @@ const Profile = () => {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Public banner visibility (Premium only) */}
+                  {isCreatorSubscribed && (
+                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                      <div className="px-6 py-4 border-b border-exclu-arsenic/40">
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Exclu banner</h2>
+                        <p className="text-xs text-exclu-space/60 mt-0.5">
+                          Control whether the small “Join now” Exclu banner is shown at the bottom of your public profile.
+                        </p>
+                      </div>
+                      <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-exclu-cloud">Show Exclu join banner</p>
+                          <p className="text-xs text-exclu-space/60">
+                            When enabled, visitors will see a small Exclu banner with a “Join now” button at the bottom of your profile.
+                          </p>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm text-exclu-cloud cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showJoinBanner}
+                            onChange={(e) => setShowJoinBanner(e.target.checked)}
+                            className="h-4 w-4 rounded border-exclu-arsenic/60 bg-black"
+                          />
+                          <span>{showJoinBanner ? 'Banner enabled' : 'Banner hidden'}</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Public Link Card */}
                   <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
