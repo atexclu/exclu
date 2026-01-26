@@ -5,6 +5,17 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, Lock } from 'lucide-react';
+import {
+  SiTwitter,
+  SiInstagram,
+  SiTiktok,
+  SiTelegram,
+  SiOnlyfans,
+  SiFansly,
+  SiYoutube,
+  SiSnapchat,
+  SiLinktree,
+} from 'react-icons/si';
 
 interface CreatorProfileData {
   id: string;
@@ -68,17 +79,17 @@ const themeColors: Record<string, { gradient: string; button: string; ring: stri
   },
 };
 
-// Social platform configurations
-const socialPlatforms: Record<string, { label: string; icon: string; color: string }> = {
-  twitter: { label: 'X', icon: '𝕏', color: 'bg-black' },
-  tiktok: { label: 'TikTok', icon: '♪', color: 'bg-gradient-to-br from-[#ff0050] via-black to-[#00f2ea]' },
-  telegram: { label: 'Telegram', icon: '✈', color: 'bg-[#0088cc]' },
-  onlyfans: { label: 'OnlyFans', icon: '💙', color: 'bg-[#00AFF0]' },
-  fansly: { label: 'Fansly', icon: '💎', color: 'bg-[#1DA1F2]' },
-  linktree: { label: 'Linktree', icon: '🌳', color: 'bg-[#43E55E]' },
-  instagram: { label: 'Instagram', icon: '📷', color: 'bg-gradient-to-br from-[#f09433] via-[#dc2743] to-[#bc1888]' },
-  youtube: { label: 'YouTube', icon: '▶', color: 'bg-[#FF0000]' },
-  snapchat: { label: 'Snapchat', icon: '👻', color: 'bg-[#FFFC00] text-black' },
+// Social platform configurations using real brand icons (monochrome)
+const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
+  twitter: { label: 'X (Twitter)', icon: <SiTwitter className="w-4 h-4" /> },
+  instagram: { label: 'Instagram', icon: <SiInstagram className="w-4 h-4" /> },
+  tiktok: { label: 'TikTok', icon: <SiTiktok className="w-4 h-4" /> },
+  telegram: { label: 'Telegram', icon: <SiTelegram className="w-4 h-4" /> },
+  onlyfans: { label: 'OnlyFans', icon: <SiOnlyfans className="w-4 h-4" /> },
+  fansly: { label: 'Fansly', icon: <SiFansly className="w-4 h-4" /> },
+  linktree: { label: 'Linktree', icon: <SiLinktree className="w-4 h-4" /> },
+  youtube: { label: 'YouTube', icon: <SiYoutube className="w-4 h-4" /> },
+  snapchat: { label: 'Snapchat', icon: <SiSnapchat className="w-4 h-4" /> },
 };
 
 const CreatorPublic = () => {
@@ -201,9 +212,9 @@ const CreatorPublic = () => {
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/70" />
             {/* Color fade only at the very bottom into the content section */}
             <div
-              className="absolute inset-x-0 bottom-0 h-28 pointer-events-none"
+              className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
               style={{
-                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, ${theme.bg} 55%, rgba(0,0,0,1) 100%)`,
+                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 35%, ${theme.bg} 75%, rgba(0,0,0,1) 100%)`,
               }}
             />
             {/* Name & handle overlay */}
@@ -232,7 +243,7 @@ const CreatorPublic = () => {
         />
       </div>
 
-      <main className="relative z-10 flex-1 flex flex-col px-4 pt-4 pb-6 sm:pt-12">
+      <main className="relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24 sm:pt-12 sm:pb-10">
         <div className="max-w-md mx-auto w-full flex flex-col flex-1">
           {/* Profile Section */}
           <motion.div
@@ -283,10 +294,10 @@ const CreatorPublic = () => {
                         onClick={() => handleSocialClick(url)}
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.95 }}
-                        className={`w-14 h-14 rounded-full ${platformConfig.color} flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all`}
+                        className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all"
                         title={platformConfig.label}
                       >
-                        {platformConfig.icon}
+                        <span className="text-white">{platformConfig.icon}</span>
                       </motion.button>
                     );
                   })}
