@@ -257,7 +257,20 @@ const Onboarding = () => {
   const handleStripeConnect = async () => {
     setIsConnectingStripe(true);
     try {
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {});
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        toast.error('Please sign in again to connect Stripe.');
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (error) {
         console.error('Error starting Stripe Connect', error);
@@ -273,6 +286,7 @@ const Onboarding = () => {
     } catch (err: any) {
       console.error('Error during Stripe Connect', err);
       toast.error(err?.message || 'Unable to connect Stripe.');
+    } finally {
       setIsConnectingStripe(false);
     }
   };

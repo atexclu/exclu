@@ -163,7 +163,7 @@ const PublicLink = () => {
 
       const { data, error } = await supabase
         .from('links')
-        .select('id, title, description, price_cents, currency, status, storage_path, creator_id')
+        .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
         .eq('slug', slug)
         .eq('status', 'published')
         .single();
@@ -183,6 +183,15 @@ const PublicLink = () => {
         price_cents: data.price_cents,
         currency: data.currency,
       });
+
+      // Increment click count (best-effort)
+      if (data.id) {
+        const currentClicks = (data as any).click_count ?? 0;
+        supabase
+          .from('links')
+          .update({ click_count: currentClicks + 1 })
+          .eq('id', data.id);
+      }
 
       if (data.creator_id) {
         const { data: creatorProfile } = await supabase
@@ -333,7 +342,7 @@ const PublicLink = () => {
       `}</style>
 
       <main className="flex-1 flex flex-col">
-        <div className="px-4 pt-16 pb-16 max-w-4xl mx-auto w-full">
+        <div className="px-4 pt-16 pb-24 max-w-4xl mx-auto w-full">
           {/* Creator header */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -365,18 +374,26 @@ const PublicLink = () => {
                     {isLoading ? 'Loading…' : link ? link.title : 'Link unavailable'}
                   </h1>
                   {creator && (
-                    <p className="text-xs text-exclu-space/70 mb-2">
-                      Created by <span className="font-medium text-exclu-cloud">{creator.display_name || creator.handle}</span>
+                    <div className="flex flex-col sm:flex-row items-center sm:items-center sm:justify-between gap-2 mb-2">
+                      <p className="text-xs text-exclu-space/70">
+                        Created by{' '}
+                        <span className="font-medium text-exclu-cloud">{creator.display_name || creator.handle}</span>
+                      </p>
                       {creator.handle && (
-                        <>
-                          {' '}
-                          <span className="text-exclu-space/60">·</span>{' '}
-                          <a href={`/${creator.handle}`} className="text-primary hover:text-primary/80 underline-offset-2 hover:underline">
-                            View profile
-                          </a>
-                        </>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full border-exclu-arsenic/60 bg-black/50 hover:bg-black/70 text-[11px] h-8 px-3 flex items-center gap-1.5"
+                          onClick={() => {
+                            window.location.href = `/${creator.handle}`;
+                          }}
+                        >
+                          <span>View profile</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </Button>
                       )}
-                    </p>
+                    </div>
                   )}
                   {!isLoading && link && (
                     <p className="text-exclu-space text-sm sm:text-[15px] max-w-xl mx-auto sm:mx-0">
@@ -390,24 +407,6 @@ const PublicLink = () => {
               </div>
             </div>
           </motion.div>
-
-          {/* Link to creator profile */}
-          {creator?.handle && (
-            <div className="mb-6 flex justify-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-full border-exclu-arsenic/60 bg-white/5 hover:bg-white/10 text-xs text-exclu-cloud flex items-center gap-2 px-4 py-2"
-                onClick={() => {
-                  window.location.href = `/${creator.handle}`;
-                }}
-              >
-                <span>View {creator.display_name || creator.handle}&apos;s profile</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          )}
 
           {/* Content Cards Grid - LOCKED STATE */}
           {!isLoading && link && !isUnlocked && (
@@ -467,8 +466,8 @@ const PublicLink = () => {
                 </div>
               </motion.div>
               <div className="mt-4 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
-                <p>Aucun compte n'est nécessaire. Une fois le paiement sécurisé effectué, votre contenu sera immédiatement débloqué sur cette page.</p>
-                <p>Le contenu sera téléchargeable et vous pourrez en recevoir une copie par e-mail.</p>
+                <p>No account is required. Once the secure payment is completed, your content will be immediately unlocked on this page.</p>
+                <p>The content will be downloadable and you can also receive a copy by email.</p>
               </div>
             </>
           )}
