@@ -268,7 +268,7 @@ const Onboarding = () => {
 
       const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          'x-supabase-auth': `Bearer ${session.access_token}`,
         },
       });
 

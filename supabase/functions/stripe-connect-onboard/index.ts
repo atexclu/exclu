@@ -3,8 +3,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
-const supabaseUrl = Deno.env.get('PROJECT_URL');
-const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
+
+// Prefer the standard Supabase Edge env vars, but fall back to the legacy names
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+const supabaseServiceRoleKey =
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 
 if (!stripeSecretKey) {
@@ -12,7 +17,11 @@ if (!stripeSecretKey) {
 }
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
-  throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
+  throw new Error('Missing SUPABASE_URL/PROJECT_URL or SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY environment variables');
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_ANON_KEY environment variable');
 }
 
 if (!siteUrl) {
@@ -27,7 +36,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  // Allow the default Supabase headers plus our custom auth header
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
 };
 
 serve(async (req) => {
@@ -36,22 +46,30 @@ serve(async (req) => {
   }
 
   try {
-    // Get the user from the Authorization header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+    // Get the user from a dedicated header carrying the Supabase access token.
+    // We use a custom header (x-supabase-auth) so that the Functions gateway
+    // can continue to use the project key for its own Authorization header.
+    const rawToken = req.headers.get('x-supabase-auth') ?? '';
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'Missing or invalid authorization token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    
-    // Validate the user's JWT token using the admin client
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    // Create a Supabase client for Auth calls. We don't need to bind
+    // global headers; we pass the token directly to auth.getUser(token).
+    const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey);
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuthClient.auth.getUser(token);
 
     if (userError || !user) {
-      console.error('Auth error:', userError);
+      console.error('Auth error in stripe-connect-onboard:', userError);
       return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
