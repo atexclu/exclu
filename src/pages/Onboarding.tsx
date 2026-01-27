@@ -4,8 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { SiOnlyfans } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
@@ -24,6 +25,13 @@ const Onboarding = () => {
     myclub: '',
     mym: '',
     other: '',
+  });
+  const [activePlatforms, setActivePlatforms] = useState<Record<PlatformKey, boolean>>({
+    onlyfans: false,
+    fansly: false,
+    myclub: false,
+    mym: false,
+    other: false,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,6 +91,18 @@ const Onboarding = () => {
             const key = link.platform as PlatformKey;
             if (key && Object.prototype.hasOwnProperty.call(next, key)) {
               next[key] = link.url || '';
+            }
+          });
+          return next;
+        });
+
+        // Auto-activate platforms that already have a URL
+        setActivePlatforms((prev) => {
+          const next = { ...prev };
+          (links as any[]).forEach((link: any) => {
+            const key = link.platform as PlatformKey;
+            if (key && link.url && link.url.length > 0) {
+              next[key] = true;
             }
           });
           return next;
@@ -308,7 +328,7 @@ const Onboarding = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Navbar />
-      <main className="flex-1 px-4 pt-24 pb-10 flex items-start sm:items-center justify-center relative overflow-hidden">
+      <main className="flex-1 px-4 pt-28 sm:pt-24 pb-10 flex items-start sm:items-center justify-center relative overflow-hidden">
         {/* Animated gradient background */}
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute -top-40 -left-24 h-64 w-64 rounded-full bg-primary/25 blur-3xl animate-pulse" />
@@ -316,7 +336,7 @@ const Onboarding = () => {
         </div>
 
         {/* Step indicator */}
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-2">
+        <div className="absolute top-24 sm:top-20 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
@@ -424,84 +444,125 @@ const Onboarding = () => {
                       in your dashboard.
                     </p>
 
-                    <div className="space-y-1.5 mt-1">
-                      <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#00AFF0]/15 text-[10px] text-[#00AFF0] font-semibold">
-                          OF
-                        </span>
-                        OnlyFans
-                      </label>
-                      <Input
-                        type="url"
-                        value={platformUrls.onlyfans}
-                        onChange={(e) => setPlatformUrls((prev) => ({ ...prev, onlyfans: e.target.value }))}
-                        placeholder="https://onlyfans.com/yourname"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
-                      />
+                    {/* Platform icon selector */}
+                    <div className="mt-2 grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {([
+                        'onlyfans',
+                        'fansly',
+                        'myclub',
+                        'mym',
+                        'other',
+                      ] as PlatformKey[]).map((platform) => {
+                        const isActive = activePlatforms[platform];
+                        const baseClasses =
+                          'flex flex-col items-center justify-center gap-1 rounded-xl border text-[10px] px-2 py-2 transition-all';
+
+                        return (
+                          <button
+                            key={platform}
+                            type="button"
+                            onClick={() =>
+                              setActivePlatforms((prev) => ({
+                                ...prev,
+                                [platform]: !prev[platform],
+                              }))
+                            }
+                            className={
+                              baseClasses +
+                              ' ' +
+                              (isActive
+                                ? 'border-exclu-cloud bg-exclu-cloud/10 text-exclu-cloud shadow-sm'
+                                : 'border-exclu-arsenic/50 bg-exclu-ink/60 text-exclu-space hover:border-exclu-arsenic')
+                            }
+                          >
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-exclu-cloud/10 text-exclu-cloud text-xs">
+                              {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
+                              {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
+                              {platform === 'myclub' && <span className="text-[9px] font-semibold">MC</span>}
+                              {platform === 'mym' && <span className="text-[9px] font-semibold">MYM</span>}
+                              {platform === 'other' && <span className="text-[9px] font-semibold">WEB</span>}
+                            </span>
+                            <span className="truncate max-w-[4rem]">
+                              {platform === 'onlyfans' && 'OnlyFans'}
+                              {platform === 'fansly' && 'Fansly'}
+                              {platform === 'myclub' && 'my.club'}
+                              {platform === 'mym' && 'MYM'}
+                              {platform === 'other' && 'Other'}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#1DA1F2]/15 text-[10px] text-[#1DA1F2] font-semibold">
-                          F
-                        </span>
-                        Fansly
-                      </label>
-                      <Input
-                        type="url"
-                        value={platformUrls.fansly}
-                        onChange={(e) => setPlatformUrls((prev) => ({ ...prev, fansly: e.target.value }))}
-                        placeholder="https://fansly.com/yourname"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
-                      />
-                    </div>
+                    {/* Animated URL inputs for active platforms */}
+                    <div className="mt-3 space-y-2">
+                      <AnimatePresence initial={false}>
+                        {([
+                          'onlyfans',
+                          'fansly',
+                          'myclub',
+                          'mym',
+                          'other',
+                        ] as PlatformKey[]).map((platform) => {
+                          if (!activePlatforms[platform]) return null;
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#6366F1]/15 text-[10px] text-[#6366F1] font-semibold">
-                          MC
-                        </span>
-                        my.club
-                      </label>
-                      <Input
-                        type="url"
-                        value={platformUrls.myclub}
-                        onChange={(e) => setPlatformUrls((prev) => ({ ...prev, myclub: e.target.value }))}
-                        placeholder="https://my.club/yourname"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
-                      />
-                    </div>
+                          const placeholder =
+                            platform === 'onlyfans'
+                              ? 'https://onlyfans.com/yourname'
+                              : platform === 'fansly'
+                              ? 'https://fansly.com/yourname'
+                              : platform === 'myclub'
+                              ? 'https://my.club/yourname'
+                              : platform === 'mym'
+                              ? 'https://mym.fans/yourname'
+                              : 'https://yourwebsite.com/links';
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#F97316]/15 text-[10px] text-[#F97316] font-semibold">
-                          MYM
-                        </span>
-                        MYM
-                      </label>
-                      <Input
-                        type="url"
-                        value={platformUrls.mym}
-                        onChange={(e) => setPlatformUrls((prev) => ({ ...prev, mym: e.target.value }))}
-                        placeholder="https://mym.fans/yourname"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
-                      />
-                    </div>
+                          const label =
+                            platform === 'onlyfans'
+                              ? 'OnlyFans'
+                              : platform === 'fansly'
+                              ? 'Fansly'
+                              : platform === 'myclub'
+                              ? 'my.club'
+                              : platform === 'mym'
+                              ? 'MYM'
+                              : 'Other link';
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-exclu-cloud/10 text-[10px] text-exclu-cloud font-semibold">
-                          WEB
-                        </span>
-                        Other link
-                      </label>
-                      <Input
-                        type="url"
-                        value={platformUrls.other}
-                        onChange={(e) => setPlatformUrls((prev) => ({ ...prev, other: e.target.value }))}
-                        placeholder="https://yourwebsite.com/links"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
-                      />
+                          return (
+                            <motion.div
+                              key={platform}
+                              initial={{ opacity: 0, height: 0, y: -4 }}
+                              animate={{ opacity: 1, height: 'auto', y: 0 }}
+                              exit={{ opacity: 0, height: 0, y: -4 }}
+                              transition={{ duration: 0.18, ease: 'easeOut' }}
+                              className="overflow-hidden"
+                            >
+                              <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2 mb-1">
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-exclu-cloud/10 text-[10px] text-exclu-cloud font-semibold">
+                                  {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
+                                  {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
+                                  {platform === 'myclub' && 'MC'}
+                                  {platform === 'mym' && 'MYM'}
+                                  {platform === 'other' && 'WEB'}
+                                </span>
+                                {label}
+                              </label>
+                              <Input
+                                type="url"
+                                value={platformUrls[platform]}
+                                onChange={(e) =>
+                                  setPlatformUrls((prev) => ({
+                                    ...prev,
+                                    [platform]: e.target.value,
+                                  }))
+                                }
+                                placeholder={placeholder}
+                                className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
+                              />
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
                     </div>
                   </div>
 

@@ -72,15 +72,7 @@ const Auth = () => {
           },
         });
         if (error) throw error;
-        
-        // If user was created, save the handle to their profile
-        if (signUpData.user) {
-          await supabase.from('profiles').upsert({
-            id: signUpData.user.id,
-            handle: username,
-          });
-        }
-        
+
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
       } else {

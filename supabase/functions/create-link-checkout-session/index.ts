@@ -77,7 +77,7 @@ serve(async (req) => {
     // Fetch creator profile to determine Stripe Connect account and commission plan
     const { data: creatorProfile, error: creatorProfileError } = await supabase
       .from('profiles')
-      .select('stripe_account_id, is_creator_subscribed')
+      .select('stripe_account_id, is_creator_subscribed, stripe_connect_status')
       .eq('id', link.creator_id)
       .single();
 
@@ -91,6 +91,14 @@ serve(async (req) => {
 
     if (!creatorProfile.stripe_account_id) {
       return new Response(JSON.stringify({ error: 'Creator is not ready to receive payouts yet' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Optional extra safety: ensure the Connect account is fully onboarded
+    if (creatorProfile.stripe_connect_status !== 'complete') {
+      return new Response(JSON.stringify({ error: 'Creator is still finishing payout setup. Please try again later.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -155,6 +163,28 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('Error in create-link-checkout-session function', error);
+
+    const stripeError = error as any;
+    const raw = stripeError?.raw;
+
+    // If Stripe complains that the destination account is missing capabilities,
+    // surface a clearer message to the fan instead of a generic 500.
+    if (
+      raw?.type === 'invalid_request_error' &&
+      raw?.param === 'payment_intent_data[transfer_data][destination]'
+    ) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'The creator is still completing their payout setup. Please try again once their account is fully verified.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     return new Response(JSON.stringify({ error: 'Unable to start checkout session' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

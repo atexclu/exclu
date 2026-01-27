@@ -350,14 +350,24 @@ const PublicLink = () => {
             transition={{ duration: 0.5, ease: 'easeOut' }}
             className="mb-10"
           >
-            <div className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-black via-exclu-ink to-black p-5 sm:p-6">
-              <div className={`pointer-events-none absolute -inset-x-20 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl opacity-70`} />
-              <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
+            <div className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-b from-black via-black/80 to-black p-5 sm:p-6">
+              {/* Layered gradient veil */}
+              <div className="pointer-events-none absolute inset-0 opacity-70 mix-blend-screen">
+                <div className={`absolute -inset-x-24 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl animate-gradient-shift`} />
+                <div className="hero-veil" />
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 -bottom-16 h-24 bg-gradient-to-t from-black via-black/70 to-transparent" />
+
+              <div className="relative flex flex-col sm:flex-row items-center sm:items-center gap-5 sm:gap-7">
                 <div className="relative">
-                  <div className={`absolute inset-0 rounded-full ${theme.glow} blur-2xl opacity-80`} />
-                  <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white/30 overflow-hidden bg-exclu-ink flex items-center justify-center">
+                  <div className={`absolute -inset-2 rounded-full ${theme.glow} blur-3xl opacity-80`} />
+                  <div className="relative w-18 h-18 sm:w-20 sm:h-20 rounded-full border border-white/40 overflow-hidden bg-exclu-ink flex items-center justify-center shadow-[0_0_40px_rgba(255,255,255,0.08)]">
                     {creator?.avatar_url ? (
-                      <img src={creator.avatar_url} alt={creator.display_name || creator.handle || 'Creator'} className="w-full h-full object-cover" />
+                      <img
+                        src={creator.avatar_url}
+                        alt={creator.display_name || creator.handle || 'Creator'}
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <span className="text-lg font-semibold text-white/80">
                         {(creator?.display_name || creator?.handle || 'C').charAt(0).toUpperCase()}
@@ -365,26 +375,40 @@ const PublicLink = () => {
                     )}
                   </div>
                 </div>
-                <div className="flex-1 text-center sm:text-left">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-white/10 mb-2">
+
+                <div className="flex-1 text-center sm:text-left space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 border border-white/10 mb-1">
                     <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-[11px] font-medium text-exclu-cloud/90">Exclusive content</span>
+                    <span className="text-[11px] font-medium text-exclu-cloud/90">
+                      A hidden drop of exclusive content
+                    </span>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-1">
+
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud tracking-tight">
                     {isLoading ? 'Loading…' : link ? link.title : 'Link unavailable'}
                   </h1>
+
                   {creator && (
-                    <div className="flex flex-col sm:flex-row items-center sm:items-center sm:justify-between gap-2 mb-2">
-                      <p className="text-xs text-exclu-space/70">
-                        Created by{' '}
-                        <span className="font-medium text-exclu-cloud">{creator.display_name || creator.handle}</span>
-                      </p>
+                    <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-2">
+                      <div className="text-xs sm:text-[13px] text-exclu-space/75">
+                        <span className="text-exclu-space/60">Created by </span>
+                        <span className="font-medium text-exclu-cloud">
+                          {creator.display_name || creator.handle}
+                        </span>
+                        {creator.handle && (
+                          <span className="text-exclu-space/60">
+                            {' '}
+                            · @{creator.handle}
+                          </span>
+                        )}
+                      </div>
+
                       {creator.handle && (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="rounded-full border-exclu-arsenic/60 bg-black/50 hover:bg-black/70 text-[11px] h-8 px-3 flex items-center gap-1.5"
+                          className="rounded-full border-exclu-arsenic/60 bg-black/60 hover:bg-black/80 text-[11px] h-8 px-3 flex items-center gap-1.5"
                           onClick={() => {
                             window.location.href = `/${creator.handle}`;
                           }}
@@ -395,13 +419,16 @@ const PublicLink = () => {
                       )}
                     </div>
                   )}
+
                   {!isLoading && link && (
-                    <p className="text-exclu-space text-sm sm:text-[15px] max-w-xl mx-auto sm:mx-0">
-                      {link.description || 'Pay once to instantly unlock this premium content. No account required.'}
+                    <p className="text-exclu-space text-sm sm:text-[15px] max-w-xl mx-auto sm:mx-0 text-opacity-90">
+                      {link.description ||
+                        'Unlock a one-time drop of premium content. No account required, instant access after payment.'}
                     </p>
                   )}
+
                   {error && !isLoading && (
-                    <p className="text-sm text-red-400 mt-2">{error}</p>
+                    <p className="text-sm text-red-400 mt-1.5">{error}</p>
                   )}
                 </div>
               </div>

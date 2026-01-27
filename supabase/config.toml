@@ -1,0 +1,8 @@
+[functions.stripe-connect-onboard]
+verify_jwt = false
+
+[functions.create-link-checkout-session]
+verify_jwt = false
+
+[functions.create-creator-subscription]
+verify_jwt = false

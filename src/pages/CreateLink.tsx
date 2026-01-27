@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Image as ImageIcon, Film, Sparkles } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
 type LibraryAsset = {
@@ -32,6 +32,8 @@ const CreateLink = () => {
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [hasExistingLinks, setHasExistingLinks] = useState(false);
+  const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -67,7 +69,29 @@ const CreateLink = () => {
         return;
       }
 
-      // Check if user has existing links
+      // Check creator's Stripe Connect status before allowing link creation
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('stripe_connect_status, stripe_account_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (profileError) {
+        console.error('Error loading profile for link creation', profileError);
+      }
+
+      const connectStatus = profile?.stripe_connect_status ?? null;
+      setStripeConnectStatus(connectStatus);
+
+      const hasStripeAccount = !!profile?.stripe_account_id;
+      const isConnectComplete = connectStatus === 'complete';
+
+      // Creators can only create paid links once their Stripe Connect account is fully onboarded
+      setCanCreateLinks(hasStripeAccount && isConnectComplete);
+
+      // Check if user has existing links (for copywriting in the header)
       const { count: linksCount } = await supabase
         .from('links')
         .select('id', { count: 'exact', head: true })
@@ -250,43 +274,93 @@ const CreateLink = () => {
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-5xl mx-auto">
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="mt-4 sm:mt-6 mb-8 flex items-start justify-between gap-4"
-        >
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-exclu-ink/80 px-3 py-1 text-[11px] font-medium text-exclu-cloud/80 mb-3">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              <span>Create a premium link</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">
-              Turn a media into a paid link
-            </h1>
-          </div>
-          {hasExistingLinks && (
-            <Button asChild variant="outline" size="sm" className="rounded-full border-exclu-arsenic/70">
-              <RouterLink to="/app/links">Back to links</RouterLink>
-            </Button>
-          )}
-        </motion.section>
+        {canCreateLinks === false ? (
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="mt-6 sm:mt-10 max-w-xl mx-auto"
+          >
+            <Card className="bg-exclu-ink/90 border border-exclu-arsenic/70 rounded-2xl shadow-lg">
+              <CardHeader className="px-6 pt-6 pb-3 space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-exclu-cloud/10 px-3 py-1 text-[11px] font-medium text-exclu-cloud">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  <span>Finish your payout setup first</span>
+                </div>
+                <CardTitle className="text-base text-exclu-cloud mt-1">
+                  Connect Stripe to start selling
+                </CardTitle>
+                <CardDescription className="text-xs text-exclu-space/80">
+                  Before you can create paid links, Stripe needs to fully verify your payout details. This usually takes
+                  just a couple of minutes.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6 pb-5 space-y-4 text-[13px] text-exclu-space/85">
+                <ul className="space-y-1.5 list-disc list-inside">
+                  <li>Open your dashboard and complete the Stripe Connect onboarding.</li>
+                  <li>Stripe will ask for your legal name, address, and bank details.</li>
+                  <li>Once your account is approved, you can create and sell paid links instantly.</li>
+                </ul>
+                <div className="flex flex-col sm:flex-row gap-3 mt-3">
+                  <Button
+                    asChild
+                    variant="hero"
+                    size="sm"
+                    className="rounded-full flex-1"
+                  >
+                    <RouterLink to="/app">Go to dashboard</RouterLink>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full border-exclu-arsenic/70 flex-1"
+                  >
+                    <RouterLink to="/app/profile">Open payouts & settings</RouterLink>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.section>
+        ) : (
+          <>
+            <motion.section
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="mt-4 sm:mt-6 mb-8 flex items-start justify-between gap-4"
+            >
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-exclu-ink/80 px-3 py-1 text-[11px] font-medium text-exclu-cloud/80 mb-3">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  <span>Create a premium link</span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">
+                  Turn a media into a paid link
+                </h1>
+              </div>
+              {hasExistingLinks && (
+                <Button asChild variant="outline" size="sm" className="rounded-full border-exclu-arsenic/70">
+                  <RouterLink to="/app/links">Back to links</RouterLink>
+                </Button>
+              )}
+            </motion.section>
 
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: 'easeOut', delay: 0.05 }}
-        >
-          <Card className="bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/40 to-exclu-ink/95 border border-exclu-arsenic/70 shadow-glow-lg rounded-2xl backdrop-blur-2xl">
-            <CardHeader className="px-6 pt-6 pb-3 space-y-1">
-              <CardTitle className="text-base text-exclu-cloud">Link details</CardTitle>
-              <CardDescription className="text-xs text-exclu-space/80">
-                Your link will only be visible to fans once you publish it or share the URL directly.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-6 pb-6 space-y-6">
-              <form className="space-y-6" onSubmit={handleSubmit}>
-                <div className="space-y-6">
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: 'easeOut', delay: 0.05 }}
+            >
+              <Card className="bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/40 to-exclu-ink/95 border border-exclu-arsenic/70 shadow-glow-lg rounded-2xl backdrop-blur-2xl">
+                <CardHeader className="px-6 pt-6 pb-3 space-y-1">
+                  <CardTitle className="text-base text-exclu-cloud">Link details</CardTitle>
+                  <CardDescription className="text-xs text-exclu-space/80">
+                    Your link will only be visible to fans once you publish it or share the URL directly.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="px-6 pb-6 space-y-6">
+                  <form className="space-y-6" onSubmit={handleSubmit}>
+                    <div className="space-y-6">
                   {/* Text fields */}
                   <div className="space-y-4">
                     <div className="space-y-1.5">
@@ -500,20 +574,21 @@ const CreateLink = () => {
                   <Button
                     type="submit"
                     variant="hero"
-                    size="lg"
-                    className="inline-flex items-center gap-2"
                     disabled={isSubmitting}
+                    className="rounded-full px-6"
                   >
-                    {isSubmitting ? 'Creating link...' : 'Create premium link'}
+                    {isSubmitting ? 'Creating…' : 'Create link'}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         </motion.div>
-      </main>
-    </AppShell>
-  );
+      </>
+    )}
+  </main>
+</AppShell>
+);
 };
 
 export default CreateLink;

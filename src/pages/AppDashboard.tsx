@@ -147,7 +147,10 @@ const AppDashboard = () => {
 
       const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
         headers: {
-          'x-supabase-auth': `Bearer ${session.access_token}`,
+          // Prevent the Functions gateway from trying to validate the user JWT
+          // in the Authorization header; we pass it explicitly via x-supabase-auth.
+          Authorization: '',
+          'x-supabase-auth': session.access_token,
         },
       });
 
@@ -390,6 +393,40 @@ const AppDashboard = () => {
 
         {error && (
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
+        )}
+
+        {/* Notice for creators with existing links but incomplete Stripe Connect */}
+        {!isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
+          <section className="mb-4 max-w-2xl">
+            <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px] text-amber-100/90">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <CreditCard className="w-3.5 h-3.5 text-amber-300" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-medium text-amber-100">
+                    Finish your Stripe payout setup to unlock payments
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-amber-100/80">
+                    Fans can already see your links, but checkout is disabled until Stripe fully verifies your payout
+                    details.
+                  </p>
+                </div>
+              </div>
+              <div className="flex-shrink-0 flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="hero"
+                  className="rounded-full px-3 py-1 text-xs whitespace-nowrap"
+                  onClick={handleStripeConnect}
+                  disabled={isConnectingStripe}
+                >
+                  {isConnectingStripe ? 'Redirecting…' : 'Finish Stripe setup'}
+                </Button>
+              </div>
+            </div>
+          </section>
         )}
 
         {/* Metrics / Earnings toggle */}

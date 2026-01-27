@@ -182,7 +182,8 @@ const Profile = () => {
 
       const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
         headers: {
-          'x-supabase-auth': `Bearer ${session.access_token}`,
+          Authorization: '',
+          'x-supabase-auth': session.access_token,
         },
       });
 

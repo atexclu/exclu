@@ -1,0 +1,2 @@
+[functions.stripe-connect-onboard]
+verify_jwt = false
