@@ -11,7 +11,16 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
 
-type PlatformKey = 'onlyfans' | 'fansly' | 'myclub' | 'mym' | 'other';
+type PlatformKey =
+  | 'onlyfans'
+  | 'fansly'
+  | 'myclub'
+  | 'mym'
+  | 'tiktok'
+  | 'instagram'
+  | 'snapchat'
+  | 'x'
+  | 'other';
 
 const Onboarding = () => {
   const navigate = useNavigate();
@@ -24,6 +33,10 @@ const Onboarding = () => {
     fansly: '',
     myclub: '',
     mym: '',
+    tiktok: '',
+    instagram: '',
+    snapchat: '',
+    x: '',
     other: '',
   });
   const [activePlatforms, setActivePlatforms] = useState<Record<PlatformKey, boolean>>({
@@ -31,6 +44,10 @@ const Onboarding = () => {
     fansly: false,
     myclub: false,
     mym: false,
+    tiktok: false,
+    instagram: false,
+    snapchat: false,
+    x: false,
     other: false,
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -451,6 +468,10 @@ const Onboarding = () => {
                         'fansly',
                         'myclub',
                         'mym',
+                        'tiktok',
+                        'instagram',
+                        'snapchat',
+                        'x',
                         'other',
                       ] as PlatformKey[]).map((platform) => {
                         const isActive = activePlatforms[platform];
@@ -480,6 +501,10 @@ const Onboarding = () => {
                               {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
                               {platform === 'myclub' && <span className="text-[9px] font-semibold">MC</span>}
                               {platform === 'mym' && <span className="text-[9px] font-semibold">MYM</span>}
+                              {platform === 'tiktok' && <span className="text-[9px] font-semibold">TT</span>}
+                              {platform === 'instagram' && <span className="text-[9px] font-semibold">IG</span>}
+                              {platform === 'snapchat' && <span className="text-[9px] font-semibold">SC</span>}
+                              {platform === 'x' && <span className="text-[9px] font-semibold">X</span>}
                               {platform === 'other' && <span className="text-[9px] font-semibold">WEB</span>}
                             </span>
                             <span className="truncate max-w-[4rem]">
@@ -487,6 +512,10 @@ const Onboarding = () => {
                               {platform === 'fansly' && 'Fansly'}
                               {platform === 'myclub' && 'my.club'}
                               {platform === 'mym' && 'MYM'}
+                              {platform === 'tiktok' && 'TikTok'}
+                              {platform === 'instagram' && 'Instagram'}
+                              {platform === 'snapchat' && 'Snapchat'}
+                              {platform === 'x' && 'X'}
                               {platform === 'other' && 'Other'}
                             </span>
                           </button>
@@ -502,6 +531,10 @@ const Onboarding = () => {
                           'fansly',
                           'myclub',
                           'mym',
+                          'tiktok',
+                          'instagram',
+                          'snapchat',
+                          'x',
                           'other',
                         ] as PlatformKey[]).map((platform) => {
                           if (!activePlatforms[platform]) return null;
@@ -515,6 +548,14 @@ const Onboarding = () => {
                               ? 'https://my.club/yourname'
                               : platform === 'mym'
                               ? 'https://mym.fans/yourname'
+                              : platform === 'tiktok'
+                              ? 'https://www.tiktok.com/@yourname'
+                              : platform === 'instagram'
+                              ? 'https://www.instagram.com/yourname'
+                              : platform === 'snapchat'
+                              ? 'https://www.snapchat.com/add/yourname'
+                              : platform === 'x'
+                              ? 'https://x.com/yourname'
                               : 'https://yourwebsite.com/links';
 
                           const label =
@@ -526,6 +567,14 @@ const Onboarding = () => {
                               ? 'my.club'
                               : platform === 'mym'
                               ? 'MYM'
+                              : platform === 'tiktok'
+                              ? 'TikTok'
+                              : platform === 'instagram'
+                              ? 'Instagram'
+                              : platform === 'snapchat'
+                              ? 'Snapchat'
+                              : platform === 'x'
+                              ? 'X'
                               : 'Other link';
 
                           return (
@@ -543,6 +592,10 @@ const Onboarding = () => {
                                   {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
                                   {platform === 'myclub' && 'MC'}
                                   {platform === 'mym' && 'MYM'}
+                                  {platform === 'tiktok' && 'TT'}
+                                  {platform === 'instagram' && 'IG'}
+                                  {platform === 'snapchat' && 'SC'}
+                                  {platform === 'x' && 'X'}
                                   {platform === 'other' && 'WEB'}
                                 </span>
                                 {label}

@@ -71,7 +71,28 @@ const Auth = () => {
             },
           },
         });
-        if (error) throw error;
+
+        if (error) {
+          const message = (error.message || '').toLowerCase();
+
+          // If Supabase indicates the user is already registered, gently guide them
+          // and resend a confirmation email without explicitly confirming the account exists.
+          if (message.includes('already registered') || message.includes('user already registered')) {
+            try {
+              await supabase.auth.resend({ type: 'signup', email });
+            } catch (resendError) {
+              console.error('Error resending confirmation email after duplicate signup attempt', resendError);
+            }
+
+            toast.success(
+              'If an account already exists for this email, we have sent you a new confirmation link. Please check your inbox and spam folder.'
+            );
+            setMode('login');
+            return;
+          }
+
+          throw error;
+        }
 
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
@@ -84,7 +105,26 @@ const Auth = () => {
           email,
           password,
         });
-        if (error) throw error;
+
+        if (error) {
+          const message = (error.message || '').toLowerCase();
+
+          // Handle the case where the user has not confirmed their email yet.
+          if (message.includes('email not confirmed') || message.includes('email_not_confirmed')) {
+            try {
+              await supabase.auth.resend({ type: 'signup', email });
+            } catch (resendError) {
+              console.error('Error resending confirmation email after unconfirmed login attempt', resendError);
+            }
+
+            toast.error(
+              'You need to confirm your email before logging in. If an account exists for this address, we have just sent you a new confirmation link.'
+            );
+            return;
+          }
+
+          throw error;
+        }
         toast.success('You are now logged in');
 
         // After login, decide whether to send the user to onboarding or directly to the dashboard

@@ -920,6 +920,34 @@ const Profile = () => {
           </div>
         </motion.div>
       </main>
+
+      {isStripeLoading && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="relative w-full max-w-sm mx-4 rounded-2xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/40 to-exclu-ink p-6 shadow-2xl shadow-black/60"
+          >
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full border border-exclu-arsenic/60 bg-black/40 flex items-center justify-center mb-1">
+                <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-exclu-cloud">Opening Stripe in a secure window…</p>
+                <p className="mt-1 text-xs text-exclu-space/70">
+                  This can take a few seconds. Please do not close this tab while we prepare your Stripe page.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </AppShell>
   );
 };
