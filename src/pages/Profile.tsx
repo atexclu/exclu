@@ -171,33 +171,22 @@ const Profile = () => {
   const handleStripeConnect = async () => {
     setIsStripeLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        toast.error('Please sign in again to connect Stripe.');
-        return;
+      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {});
+
+      if (error) {
+        console.error('Error starting Stripe Connect', error);
+        throw new Error('Unable to start Stripe Connect onboarding.');
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-connect-onboard`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({}),
-        }
-      );
-
-      const data = await response.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.error(data.error || 'Unable to start Stripe onboarding.');
+      const url = (data as any)?.url;
+      if (!url) {
+        throw new Error('Stripe Connect URL not available.');
       }
-    } catch (err) {
-      console.error('Error starting Stripe Connect onboarding', err);
-      toast.error('Unable to connect Stripe. Please try again.');
+
+      window.location.href = url;
+    } catch (err: any) {
+      console.error('Error during Stripe Connect', err);
+      toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
     } finally {
       setIsStripeLoading(false);
     }
@@ -268,34 +257,57 @@ const Profile = () => {
     setIsChangingPassword(false);
   };
 
-  const handleSaveAppearance = async () => {
+  const saveAppearance = async (options?: {
+    themeColorOverride?: string;
+    socialLinksOverride?: Record<string, string>;
+    showJoinBannerOverride?: boolean;
+    silent?: boolean;
+  }) => {
     if (!userId) return;
     setIsSaving(true);
+
+    const finalThemeColor = options?.themeColorOverride ?? themeColor;
+    const finalSocialLinks = options?.socialLinksOverride ?? socialLinks;
+    const finalShowJoinBanner =
+      options?.showJoinBannerOverride !== undefined ? options.showJoinBannerOverride : showJoinBanner;
 
     const { error } = await supabase
       .from('profiles')
       .update({
-        theme_color: themeColor,
-        social_links: socialLinks,
-        show_join_banner: showJoinBanner,
+        theme_color: finalThemeColor,
+        social_links: finalSocialLinks,
+        show_join_banner: finalShowJoinBanner,
       })
       .eq('id', userId);
 
     if (error) {
       console.error('Error saving appearance', error);
-      toast.error('Failed to save appearance settings.');
-    } else {
+      if (!options?.silent) {
+        toast.error('Failed to save appearance settings.');
+      }
+    } else if (!options?.silent) {
       toast.success('Appearance settings saved!');
     }
 
     setIsSaving(false);
   };
 
+  const handleSaveAppearance = async () => {
+    await saveAppearance();
+  };
+
   const handleSocialLinkChange = (platform: string, value: string) => {
-    setSocialLinks((prev) => ({
-      ...prev,
-      [platform]: value,
-    }));
+    setSocialLinks((prev) => {
+      const updated = {
+        ...prev,
+        [platform]: value,
+      };
+
+      // Auto-save social links without requiring explicit "Save" click
+      void saveAppearance({ socialLinksOverride: updated, silent: true });
+
+      return updated;
+    });
   };
 
   const themeOptions = [
@@ -621,7 +633,10 @@ const Profile = () => {
                           <button
                             key={theme.id}
                             type="button"
-                            onClick={() => setThemeColor(theme.id)}
+                            onClick={() => {
+                              setThemeColor(theme.id);
+                              void saveAppearance({ themeColorOverride: theme.id, silent: true });
+                            }}
                             className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
                               themeColor === theme.id
                                 ? 'border-white/50 bg-white/10'
