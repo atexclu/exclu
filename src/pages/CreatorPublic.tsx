@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, Lock } from 'lucide-react';
 import {
-  SiTwitter,
+  SiX,
   SiInstagram,
   SiTiktok,
   SiTelegram,
@@ -81,7 +81,7 @@ const themeColors: Record<string, { gradient: string; button: string; ring: stri
 
 // Social platform configurations using real brand icons (monochrome)
 const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
-  twitter: { label: 'X (Twitter)', icon: <SiTwitter className="w-4 h-4" /> },
+  twitter: { label: 'X (Twitter)', icon: <SiX className="w-4 h-4" /> },
   instagram: { label: 'Instagram', icon: <SiInstagram className="w-4 h-4" /> },
   tiktok: { label: 'TikTok', icon: <SiTiktok className="w-4 h-4" /> },
   telegram: { label: 'Telegram', icon: <SiTelegram className="w-4 h-4" /> },
