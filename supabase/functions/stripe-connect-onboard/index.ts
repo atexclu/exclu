@@ -76,10 +76,10 @@ serve(async (req) => {
       });
     }
 
-    // Fetch the creator's profile
+    // Fetch the creator's profile, including their country of residence
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id, stripe_account_id, stripe_connect_status')
+      .select('id, stripe_account_id, stripe_connect_status, country')
       .eq('id', user.id)
       .single();
 
@@ -91,12 +91,21 @@ serve(async (req) => {
       });
     }
 
+    if (!profile.country) {
+      console.error('Profile missing country for Stripe Connect onboarding');
+      return new Response(JSON.stringify({ error: 'Please set your country in your profile before connecting Stripe.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     let stripeAccountId = profile.stripe_account_id;
 
     // If no Stripe account exists, create one
     if (!stripeAccountId) {
       const account = await stripe.accounts.create({
         type: 'express',
+        country: profile.country,
         email: user.email ?? undefined,
         capabilities: {
           card_payments: { requested: true },

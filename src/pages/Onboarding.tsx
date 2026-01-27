@@ -17,6 +17,7 @@ const Onboarding = () => {
   const [step, setStep] = useState<'profile' | 'plan' | 'stripe'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
+  const [country, setCountry] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
     onlyfans: '',
     fansly: '',
@@ -49,7 +50,7 @@ const Onboarding = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, external_url')
+        .select('display_name, handle, external_url, country')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -63,6 +64,7 @@ const Onboarding = () => {
       const fallbackName = user.email ? user.email.split('@')[0] : 'Creator';
       setDisplayName(profile?.display_name || fallbackName);
       setHandle(profile?.handle || '');
+      setCountry(profile?.country || '');
 
       // Charger les liens de plateformes externes existants
       const { data: links, error: linksError } = await supabase
@@ -128,6 +130,11 @@ const Onboarding = () => {
       return;
     }
 
+    if (!country) {
+      toast.error('Please select your country.');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -175,6 +182,7 @@ const Onboarding = () => {
             handle: trimmedHandle,
             external_url: mainExternalUrl,
             is_creator: true,
+            country,
           },
           { onConflict: 'id' }
         );
@@ -268,7 +276,8 @@ const Onboarding = () => {
 
       const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
         headers: {
-          'x-supabase-auth': `Bearer ${session.access_token}`,
+          Authorization: '',
+          'x-supabase-auth': session.access_token,
         },
       });
 
@@ -375,6 +384,36 @@ const Onboarding = () => {
                     </div>
                     <p className="text-[11px] text-exclu-space/70">
                       3+ characters, letters, numbers and underscores. This must be unique across all creators.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="country" className="text-xs font-medium text-exclu-space">
+                      Country of residence
+                    </label>
+                    <select
+                      id="country"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="h-10 w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 text-xs text-black focus:outline-none focus:ring-2 focus:ring-primary/60"
+                      required
+                    >
+                      <option value="">Select your country</option>
+                      <option value="FR">France</option>
+                      <option value="US">United States</option>
+                      <option value="GB">United Kingdom</option>
+                      <option value="CA">Canada</option>
+                      <option value="DE">Germany</option>
+                      <option value="ES">Spain</option>
+                      <option value="IT">Italy</option>
+                      <option value="NL">Netherlands</option>
+                      <option value="BE">Belgium</option>
+                      <option value="CH">Switzerland</option>
+                      <option value="AU">Australia</option>
+                    </select>
+                    <p className="text-[11px] text-exclu-space/70">
+                      This must match the country where you pay taxes. Stripe will use it to determine your payout
+                      requirements.
                     </p>
                   </div>
 
