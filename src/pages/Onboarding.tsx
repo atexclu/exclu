@@ -22,6 +22,32 @@ type PlatformKey =
   | 'x'
   | 'other';
 
+const STRIPE_SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
+  { code: 'US', label: 'United States' },
+  { code: 'GB', label: 'United Kingdom' },
+  { code: 'CA', label: 'Canada' },
+  { code: 'AU', label: 'Australia' },
+  { code: 'NZ', label: 'New Zealand' },
+  { code: 'FR', label: 'France' },
+  { code: 'DE', label: 'Germany' },
+  { code: 'ES', label: 'Spain' },
+  { code: 'IT', label: 'Italy' },
+  { code: 'NL', label: 'Netherlands' },
+  { code: 'BE', label: 'Belgium' },
+  { code: 'CH', label: 'Switzerland' },
+  { code: 'AT', label: 'Austria' },
+  { code: 'IE', label: 'Ireland' },
+  { code: 'PT', label: 'Portugal' },
+  { code: 'PL', label: 'Poland' },
+  { code: 'CZ', label: 'Czech Republic' },
+  { code: 'DK', label: 'Denmark' },
+  { code: 'FI', label: 'Finland' },
+  { code: 'NO', label: 'Norway' },
+  { code: 'SE', label: 'Sweden' },
+  { code: 'BR', label: 'Brazil' },
+  { code: 'MX', label: 'Mexico' },
+];
+
 const Onboarding = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState<'profile' | 'plan' | 'stripe'>('profile');
@@ -436,17 +462,11 @@ const Onboarding = () => {
                       required
                     >
                       <option value="">Select your country</option>
-                      <option value="FR">France</option>
-                      <option value="US">United States</option>
-                      <option value="GB">United Kingdom</option>
-                      <option value="CA">Canada</option>
-                      <option value="DE">Germany</option>
-                      <option value="ES">Spain</option>
-                      <option value="IT">Italy</option>
-                      <option value="NL">Netherlands</option>
-                      <option value="BE">Belgium</option>
-                      <option value="CH">Switzerland</option>
-                      <option value="AU">Australia</option>
+                      {STRIPE_SUPPORTED_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
                     </select>
                     <p className="text-[11px] text-exclu-space/70">
                       This must match the country where you pay taxes. Stripe will use it to determine your payout

@@ -294,30 +294,63 @@ create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text,
   avatar_url text,
+  bio text,
+  handle text unique,
+  external_url text,
+  is_creator boolean default false,
+  theme_color text,
+  social_links jsonb,
+  is_creator_subscribed boolean default false,
+  show_join_banner boolean,
   created_at timestamptz not null default now()
 );
 
 alter table public.profiles enable row level security;
 
+-- The owner (authenticated user) can read their own profile
+drop policy if exists "Profiles are viewable by owner" on public.profiles;
+
 create policy "Profiles are viewable by owner"
 on public.profiles
 for select
+to public
 using (auth.uid() = id);
+
+-- The owner can insert their own profile row
+drop policy if exists "Profiles are insertable by owner" on public.profiles;
 
 create policy "Profiles are insertable by owner"
 on public.profiles
 for insert
+to public
 with check (auth.uid() = id);
+
+-- The owner can update their own profile row
+drop policy if exists "Profiles are updatable by owner" on public.profiles;
 
 create policy "Profiles are updatable by owner"
 on public.profiles
 for update
+to public
 using (auth.uid() = id)
 with check (auth.uid() = id);
+
+-- Public read access is limited to creator profiles with a handle
+drop policy if exists "Public creator profiles" on public.profiles;
+
+create policy "Public creator profiles"
+on public.profiles
+for select
+to public
+using (
+  is_creator = true
+  and handle is not null
+);
 ```
 
 - Chaque créateur a un profil lié à son `auth.users.id`.
-- Un utilisateur ne peut voir / créer / modifier **que son propre profil** grâce aux policies RLS.
+- Un utilisateur authentifié ne peut voir / créer / modifier **que son propre profil** grâce aux policies RLS.
+- Les visiteurs anonymes (fans) ne peuvent lire que les profils de créateurs (`is_creator = true`) avec un `handle` défini, pour l’affichage public, et n’ont pas accès aux autres comptes.
 
 #### Table `links`
 

@@ -12,6 +12,35 @@ const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 
+// Countries for which we explicitly support Stripe Connect Express onboarding.
+// This list must stay in sync with the STRIPE_SUPPORTED_COUNTRIES constant
+// in the frontend Onboarding page.
+const SUPPORTED_STRIPE_CONNECT_COUNTRIES = [
+  'US', // United States
+  'GB', // United Kingdom
+  'CA', // Canada
+  'AU', // Australia
+  'NZ', // New Zealand
+  'FR', // France
+  'DE', // Germany
+  'ES', // Spain
+  'IT', // Italy
+  'NL', // Netherlands
+  'BE', // Belgium
+  'CH', // Switzerland
+  'AT', // Austria
+  'IE', // Ireland
+  'PT', // Portugal
+  'PL', // Poland
+  'CZ', // Czech Republic
+  'DK', // Denmark
+  'FI', // Finland
+  'NO', // Norway
+  'SE', // Sweden
+  'BR', // Brazil
+  'MX', // Mexico
+];
+
 if (!stripeSecretKey) {
   throw new Error('Missing STRIPE_SECRET_KEY environment variable');
 }
@@ -93,10 +122,28 @@ serve(async (req) => {
 
     if (!profile.country) {
       console.error('Profile missing country for Stripe Connect onboarding');
-      return new Response(JSON.stringify({ error: 'Please set your country in your profile before connecting Stripe.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ error: 'Please set your country in your profile before connecting Stripe.' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Extra safety: only allow countries that we explicitly support in our onboarding UI.
+    if (!SUPPORTED_STRIPE_CONNECT_COUNTRIES.includes(profile.country)) {
+      console.error('Unsupported country for Stripe Connect onboarding:', profile.country);
+      return new Response(
+        JSON.stringify({
+          error:
+            'Your country is not yet supported for payouts on Exclu. Please contact support if you think this is a mistake.',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     let stripeAccountId = profile.stripe_account_id;
