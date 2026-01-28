@@ -153,7 +153,6 @@ const PublicLink = () => {
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -287,7 +286,7 @@ const PublicLink = () => {
     setIsUnlocking(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-link-checkout-session', {
-        body: { slug },
+        body: { slug, buyerEmail: buyerEmail || null },
       });
 
       if (error) {
@@ -464,37 +463,127 @@ const PublicLink = () => {
                 transition={{ duration: 0.5, ease: 'easeOut', delay: 0.4 }}
                 className="rounded-2xl border border-exclu-arsenic/50 bg-gradient-to-br from-exclu-ink/80 via-exclu-phantom/20 to-exclu-ink/80 backdrop-blur-sm p-6 sm:p-8"
               >
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-                  <div className="text-center sm:text-left">
-                    <p className="text-xs text-exclu-space/70 mb-1 uppercase tracking-wider">
-                      {contentItems.length} {contentItems.length === 1 ? 'item' : 'items'} to unlock
-                    </p>
-                    <p className="text-3xl font-bold text-exclu-cloud">{priceLabel}</p>
+                <div className="flex flex-col gap-5">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div className="text-center sm:text-left">
+                      <p className="text-xs text-exclu-space/70 mb-1 uppercase tracking-wider">
+                        {contentItems.length} {contentItems.length === 1 ? 'item' : 'items'} to unlock
+                      </p>
+                      <p className="text-3xl font-bold text-exclu-cloud">{priceLabel}</p>
+                    </div>
+                    <Button
+                      variant="hero"
+                      size="lg"
+                      className="rounded-full w-full sm:w-auto px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-shadow"
+                      disabled={isUnlocking}
+                      onClick={handleUnlockClick}
+                    >
+                      {isUnlocking ? (
+                        <span className="flex items-center gap-2">
+                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Processing…
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <Lock className="w-4 h-4" />
+                          Unlock for {priceLabel}
+                        </span>
+                      )}
+                    </Button>
                   </div>
-                  <Button
-                    variant="hero"
-                    size="lg"
-                    className="rounded-full w-full sm:w-auto px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-shadow"
-                    disabled={isUnlocking}
-                    onClick={handleUnlockClick}
-                  >
-                    {isUnlocking ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Processing…
+
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[11px] sm:text-xs text-exclu-space/80">
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>
+                        Optional: enter your email to receive a copy of the content link.
                       </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <Lock className="w-4 h-4" />
-                        Unlock for {priceLabel}
-                      </span>
-                    )}
-                  </Button>
+                    </label>
+                    <Input
+                      type="email"
+                      value={buyerEmail}
+                      onChange={(e) => setBuyerEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="h-9 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud placeholder:text-exclu-space/50 text-[13px]"
+                    />
+                  </div>
                 </div>
               </motion.div>
               <div className="mt-4 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
                 <p>No account is required. Once the secure payment is completed, your content will be immediately unlocked on this page.</p>
-                <p>The content will be downloadable and you can also receive a copy by email.</p>
+                <p>If you enter your email above, you will also receive a copy of the access link by email.</p>
+              </div>
+            </>
+          )}
+
+          {/* Content Cards Grid - UNLOCKED STATE */}
+          {!isLoading && link && isUnlocked && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+                className="mb-8"
+              >
+                {unlockedContent.length > 0 ? (
+                  <div
+                    className={`grid gap-4 ${
+                      unlockedContent.length === 1
+                        ? 'grid-cols-1 max-w-sm mx-auto'
+                        : unlockedContent.length === 2
+                        ? 'grid-cols-2 max-w-lg mx-auto'
+                        : 'grid-cols-2 sm:grid-cols-3'
+                    }`}
+                  >
+                    {unlockedContent.map((item, index) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: 0.05 * index }}
+                        className="relative rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/60"
+                      >
+                        {item.type === 'video' ? (
+                          <video
+                            controls
+                            className="w-full h-full max-h-80 object-contain bg-black"
+                            src={item.previewUrl}
+                          />
+                        ) : (
+                          <img
+                            src={item.previewUrl}
+                            alt={link.title}
+                            className="w-full h-full object-contain bg-black"
+                          />
+                        )}
+                        {item.previewUrl && (
+                          <div className="absolute bottom-2 right-2">
+                            <a
+                              href={item.previewUrl}
+                              download
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-black/70 text-[11px] text-exclu-cloud border border-white/10 hover:bg-black/90"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-exclu-space/70 text-center">
+                    This content has been unlocked, but no media is attached yet.
+                  </p>
+                )}
+              </motion.div>
+
+              <div className="mt-2 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
+                <p>Your purchase has been confirmed. The content above is now unlocked on this device.</p>
+                <p>
+                  You can download the files to your device using the <strong>Download</strong> buttons, and if you provided an
+                  email, you will also receive a copy of this access link.
+                </p>
               </div>
             </>
           )}
