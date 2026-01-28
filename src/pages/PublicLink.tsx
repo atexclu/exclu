@@ -332,8 +332,8 @@ const PublicLink = () => {
             className="mb-10"
           >
             <div className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-b from-black via-black/80 to-black p-5 sm:p-6">
-              {/* Layered gradient veil */}
-              <div className="pointer-events-none absolute inset-0 opacity-70 mix-blend-screen">
+              {/* Layered gradient veil (softened) */}
+              <div className="pointer-events-none absolute inset-0 opacity-40 mix-blend-screen">
                 <div className={`absolute -inset-x-24 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl animate-gradient-shift`} />
                 <div className="hero-veil" />
               </div>
@@ -341,8 +341,8 @@ const PublicLink = () => {
 
               <div className="relative flex flex-col sm:flex-row items-center sm:items-stretch gap-5 sm:gap-7">
                 {/* Creator photo on the left, using the original image format */}
-                <div className="relative w-full sm:w-40 max-w-xs overflow-hidden rounded-2xl border border-white/30 bg-exclu-ink shadow-[0_0_40px_rgba(255,255,255,0.08)]">
-                  <div className={`pointer-events-none absolute -inset-3 ${theme.glow} blur-3xl opacity-70`} />
+                <div className="relative w-full sm:w-40 max-w-xs overflow-hidden rounded-2xl border border-white/20 bg-exclu-ink/80 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+                  <div className={`pointer-events-none absolute -inset-3 ${theme.glow} blur-3xl opacity-25`} />
                   <div className="relative z-10 flex items-center justify-center bg-black/40">
                     {creator?.avatar_url ? (
                       <img

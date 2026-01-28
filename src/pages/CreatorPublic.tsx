@@ -217,13 +217,13 @@ const CreatorPublic = () => {
               alt={displayName}
               className="w-full h-auto max-h-[70vh] object-cover"
             />
-            {/* Soft dark overlay */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/70" />
-            {/* Color fade only at the very bottom into the content section */}
+            {/* Soft dark overlay, reduced intensity */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/20 to-black/60" />
+            {/* Subtle color fade slightly overlapping the bottom of the image */}
             <div
-              className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
+              className="absolute inset-x-0 bottom-[-20px] h-32 pointer-events-none opacity-60"
               style={{
-                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 35%, ${theme.bg} 75%, rgba(0,0,0,1) 100%)`,
+                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 35%, ${theme.bg} 75%, rgba(0,0,0,1) 100%)`,
               }}
             />
             {/* Name & handle overlay */}
@@ -239,48 +239,54 @@ const CreatorPublic = () => {
         )}
       </motion.div>
 
-      {/* Desktop: Gradient background with subtle animated waves */}
+      {/* Desktop: Animated halo background behind the profile */}
       <div className="hidden sm:block fixed inset-0 z-0 bg-gradient-to-b from-black via-exclu-ink to-black">
-        {/* Soft halo behind the profile card */}
+        {/* Main soft halo traversing the viewport */}
         <motion.div
-          className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] mx-auto max-w-3xl rounded-full blur-3xl opacity-80"
+          className="pointer-events-none absolute top-1/4 left-1/2 w-[520px] h-[520px] -translate-x-1/2 rounded-full blur-3xl"
           style={{
-            background: `radial-gradient(circle at top, rgba(255,255,255,0.16), transparent 55%), radial-gradient(circle at bottom, ${theme.bg}, transparent 60%)`,
+            background: `radial-gradient(circle, ${theme.bg} 0%, rgba(0,0,0,0.22) 45%, transparent 75%)`,
           }}
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ x: -260, y: -160, scale: 0.96, opacity: 0.3 }}
           animate={{
-            opacity: [0.7, 0.9, 0.7],
-            scale: [0.95, 1.03, 0.98],
+            x: [-320, 240, -200, 260, -260],
+            y: [-180, -40, 180, 60, -160],
+            scale: [0.96, 1.05, 1.02, 1.08, 1.0],
+            opacity: [0.25, 0.5, 0.65, 0.5, 0.25],
           }}
-          transition={{ duration: 16, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
         />
 
-        {/* Gentle horizontal wave near the middle */}
+        {/* Secondary white halo for depth, clearly moving and pulsing */}
         <motion.div
-          className="pointer-events-none absolute inset-x-[-10%] top-1/3 h-40 blur-3xl opacity-60"
+          className="pointer-events-none absolute top-[-10%] left-[5%] w-[380px] h-[380px] rounded-full blur-3xl"
           style={{
-            background: `linear-gradient(90deg, transparent 0%, ${theme.bg} 40%, rgba(0,0,0,0.2) 100%)`,
+            background: 'radial-gradient(circle, rgba(255,255,255,0.22) 0%, transparent 70%)',
           }}
-          initial={{ opacity: 0.2, y: 0 }}
+          initial={{ x: 160, y: 20, scale: 0.94, opacity: 0.3 }}
           animate={{
-            opacity: [0.2, 0.45, 0.2],
-            y: [-10, 6, -10],
+            x: [160, -140, 220, -200, 140],
+            y: [20, -160, 120, 200, 40],
+            scale: [0.94, 1.02, 1.06, 1.01, 0.97],
+            opacity: [0.25, 0.55, 0.7, 0.55, 0.25],
           }}
-          transition={{ duration: 20, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
         />
 
-        {/* Lower, softer wave for depth */}
+        {/* Tertiary soft halo, slightly tinted, for extra depth */}
         <motion.div
-          className="pointer-events-none absolute inset-x-[-15%] bottom-8 h-48 blur-3xl opacity-50"
+          className="pointer-events-none absolute bottom-[-10%] right-[10%] w-[420px] h-[420px] rounded-full blur-3xl"
           style={{
-            background: `linear-gradient(120deg, rgba(0,0,0,0.2) 0%, ${theme.bg} 45%, transparent 100%)`,
+            background: `radial-gradient(circle, ${theme.bg} 0%, rgba(0,0,0,0.22) 40%, transparent 75%)`,
           }}
-          initial={{ opacity: 0.15, y: 0 }}
+          initial={{ x: 60, y: 120, scale: 0.92, opacity: 0.3 }}
           animate={{
-            opacity: [0.15, 0.35, 0.15],
-            y: [6, -8, 6],
+            x: [60, -220, 200, -160, 80],
+            y: [120, -100, 220, 40, 140],
+            scale: [0.92, 1.03, 1.06, 1.0, 0.95],
+            opacity: [0.25, 0.5, 0.65, 0.5, 0.25],
           }}
-          transition={{ duration: 24, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
         />
       </div>
 
@@ -295,17 +301,20 @@ const CreatorPublic = () => {
           >
             {/* Avatar - smaller on mobile since it's in background */}
             <div className="relative inline-block mb-6 hidden sm:inline-block">
-              <div
-                className={`absolute inset-0 rounded-3xl bg-gradient-to-br ${theme.gradient} blur-xl opacity-70 scale-110`}
+              <motion.div
+                className={`absolute inset-0 rounded-3xl bg-gradient-to-br ${theme.gradient} blur-xl opacity-40 scale-110`}
+                initial={{ opacity: 0.2, scale: 1 }}
+                animate={{ opacity: [0.2, 0.45, 0.25], scale: [1, 1.03, 0.98] }}
+                transition={{ duration: 20, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
               />
               <div
-                className={`relative w-[260px] h-[340px] md:w-[300px] md:h-[380px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ${theme.ring} bg-black`}
+                className={`relative max-w-[220px] md:max-w-[260px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ${theme.ring}`}
               >
                 {profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
                     alt={displayName}
-                    className="w-full h-full object-contain"
+                    className="w-full h-auto block"
                   />
                 ) : (
                   <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
