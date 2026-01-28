@@ -111,7 +111,7 @@ const CreatorPublic = () => {
         .select('id, display_name, avatar_url, bio, handle, external_url, is_creator, theme_color, social_links, is_creator_subscribed, show_join_banner')
         .eq('handle', handle)
         .eq('is_creator', true)
-        .single();
+        .maybeSingle();
 
       if (profileError || !profileData) {
         console.error('Error loading creator profile', profileError);
