@@ -69,7 +69,7 @@ const Profile = () => {
         .from('profiles')
         .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links, show_join_banner')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         console.error('Error loading profile', profileError);
