@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { SiOnlyfans } from 'react-icons/si';
+import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
@@ -345,7 +345,7 @@ const Onboarding = () => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Navbar />
-      <main className="flex-1 px-4 pt-28 sm:pt-24 pb-10 flex items-start sm:items-center justify-center relative overflow-hidden">
+      <main className="flex-1 px-4 pt-32 sm:pt-28 pb-10 flex items-start sm:items-center justify-center relative overflow-hidden">
         {/* Animated gradient background */}
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute -top-40 -left-24 h-64 w-64 rounded-full bg-primary/25 blur-3xl animate-pulse" />
@@ -353,7 +353,7 @@ const Onboarding = () => {
         </div>
 
         {/* Step indicator */}
-        <div className="absolute top-24 sm:top-20 left-1/2 -translate-x-1/2 flex items-center gap-2">
+        <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
@@ -498,13 +498,13 @@ const Onboarding = () => {
                           >
                             <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-exclu-cloud/10 text-exclu-cloud text-xs">
                               {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
-                              {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
+                              {platform === 'fansly' && <span className="text-[9px] font-semibold">FS</span>}
                               {platform === 'myclub' && <span className="text-[9px] font-semibold">MC</span>}
                               {platform === 'mym' && <span className="text-[9px] font-semibold">MYM</span>}
-                              {platform === 'tiktok' && <span className="text-[9px] font-semibold">TT</span>}
-                              {platform === 'instagram' && <span className="text-[9px] font-semibold">IG</span>}
-                              {platform === 'snapchat' && <span className="text-[9px] font-semibold">SC</span>}
-                              {platform === 'x' && <span className="text-[9px] font-semibold">X</span>}
+                              {platform === 'tiktok' && <SiTiktok className="w-4 h-4" />}
+                              {platform === 'instagram' && <SiInstagram className="w-4 h-4" />}
+                              {platform === 'snapchat' && <SiSnapchat className="w-4 h-4" />}
+                              {platform === 'x' && <SiX className="w-4 h-4" />}
                               {platform === 'other' && <span className="text-[9px] font-semibold">WEB</span>}
                             </span>
                             <span className="truncate max-w-[4rem]">
@@ -589,13 +589,13 @@ const Onboarding = () => {
                               <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2 mb-1">
                                 <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-exclu-cloud/10 text-[10px] text-exclu-cloud font-semibold">
                                   {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
-                                  {platform === 'fansly' && <SiOnlyfans className="w-4 h-4" />}
+                                  {platform === 'fansly' && 'FS'}
                                   {platform === 'myclub' && 'MC'}
                                   {platform === 'mym' && 'MYM'}
-                                  {platform === 'tiktok' && 'TT'}
-                                  {platform === 'instagram' && 'IG'}
-                                  {platform === 'snapchat' && 'SC'}
-                                  {platform === 'x' && 'X'}
+                                  {platform === 'tiktok' && <SiTiktok className="w-4 h-4" />}
+                                  {platform === 'instagram' && <SiInstagram className="w-4 h-4" />}
+                                  {platform === 'snapchat' && <SiSnapchat className="w-4 h-4" />}
+                                  {platform === 'x' && <SiX className="w-4 h-4" />}
                                   {platform === 'other' && 'WEB'}
                                 </span>
                                 {label}
