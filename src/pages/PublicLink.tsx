@@ -161,13 +161,13 @@ const PublicLink = () => {
         currency: data.currency,
       });
 
-      // Increment click count (best-effort)
-      if (data.id) {
-        const currentClicks = (data as any).click_count ?? 0;
-        supabase
-          .from('links')
-          .update({ click_count: currentClicks + 1 })
-          .eq('id', data.id);
+      // Increment click count (best-effort) via Edge Function to bypass RLS safely
+      if (slug) {
+        supabase.functions
+          .invoke('increment-link-click', { body: { slug } })
+          .catch((err) => {
+            console.error('Error incrementing click count', err);
+          });
       }
 
       if (data.creator_id) {

@@ -139,6 +139,15 @@ const CreatorPublic = () => {
       }
 
       setProfile(profileData as unknown as CreatorProfileData);
+
+      // Increment profile view count (best-effort) via Edge Function
+      if (profileData.handle) {
+        supabase.functions
+          .invoke('increment-profile-view', { body: { handle: profileData.handle } })
+          .catch((err) => {
+            console.error('Error incrementing profile view count', err);
+          });
+      }
       setIsLoading(false);
     };
 
@@ -253,18 +262,24 @@ const CreatorPublic = () => {
             className="text-center mb-6"
           >
             {/* Avatar - smaller on mobile since it's in background */}
-            <div className="relative inline-block mb-4 hidden sm:inline-block">
-              <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${theme.gradient} blur-lg opacity-70 scale-110`} />
-              <div className={`relative w-20 h-20 sm:w-28 sm:h-28 rounded-full overflow-hidden border-2 border-white/30 ring-4 ${theme.ring}`}>
+            <div className="relative inline-block mb-6 hidden sm:inline-block">
+              <div
+                className={`absolute inset-0 rounded-3xl bg-gradient-to-br ${theme.gradient} blur-xl opacity-70 scale-110`}
+              />
+              <div
+                className={`relative w-[260px] h-[340px] md:w-[300px] md:h-[380px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ${theme.ring} bg-black`}
+              >
                 {profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
                     alt={displayName}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 ) : (
                   <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
-                    <span className="text-2xl font-bold text-white/80">{displayName.charAt(0).toUpperCase()}</span>
+                    <span className="text-3xl font-bold text-white/80">
+                      {displayName.charAt(0).toUpperCase()}
+                    </span>
                   </div>
                 )}
               </div>

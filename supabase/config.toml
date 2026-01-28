@@ -12,3 +12,9 @@ verify_jwt = false
 
 [functions.stripe-connect-status]
 verify_jwt = false
+
+[functions.increment-link-click]
+verify_jwt = false
+
+[functions.increment-profile-view]
+verify_jwt = false

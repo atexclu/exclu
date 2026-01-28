@@ -24,6 +24,7 @@ const AppDashboard = () => {
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
   const [profileName, setProfileName] = useState<string>('');
   const [profileHandle, setProfileHandle] = useState<string | null>(null);
+  const [profileViewCount, setProfileViewCount] = useState<number | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [showStripeModal, setShowStripeModal] = useState(false);
@@ -61,7 +62,7 @@ const AppDashboard = () => {
         // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status, is_creator_subscribed')
+          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count')
           .eq('id', user.id)
           .single();
 
@@ -120,6 +121,7 @@ const AppDashboard = () => {
         if (profile) {
           setProfileName(profile.display_name || 'Creator');
           setProfileHandle(profile.handle || null);
+          setProfileViewCount(profile.profile_view_count ?? 0);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           // Show Stripe modal if not connected (only once per session)
@@ -387,6 +389,11 @@ const AppDashboard = () => {
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
               </p>
+              {profileViewCount !== null && (
+                <p className="text-xs text-exclu-space/60 mt-0.5">
+                  Profile visits: {profileViewCount.toLocaleString('en-US')}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {publicProfileUrl && (
