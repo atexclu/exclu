@@ -19,6 +19,7 @@ import {
   AlertCircle,
   ChevronRight,
   Palette,
+  AlertTriangle,
 } from 'lucide-react';
 
 const Profile = () => {
@@ -31,6 +32,7 @@ const Profile = () => {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
+  const [country, setCountry] = useState<string | null>(null);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
@@ -67,7 +69,7 @@ const Profile = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links, show_join_banner')
+        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links, show_join_banner, country')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -80,6 +82,7 @@ const Profile = () => {
         setAvatarUrl(profile.avatar_url || null);
         setStripeAccountId(profile.stripe_account_id || null);
         setStripeConnectStatus(profile.stripe_connect_status || null);
+        setCountry(profile.country || null);
         setIsCreatorSubscribed(profile.is_creator_subscribed === true);
         setThemeColor(profile.theme_color || 'pink');
         setSocialLinks(profile.social_links || {});
@@ -816,14 +819,33 @@ const Profile = () => {
                               Pending
                             </span>
                           )}
+                          {stripeConnectStatus === 'restricted' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/15 text-[10px] text-red-300 font-medium">
+                              <AlertTriangle className="w-3 h-3" />
+                              Action required
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-exclu-space/80 mt-1">
                           {stripeAccountId
                             ? stripeConnectStatus === 'complete'
                               ? 'Your Stripe account is connected. You can receive payments from fans.'
-                              : 'Complete your Stripe setup to start receiving payments.'
+                              : stripeConnectStatus === 'restricted'
+                                ? 'Your Stripe account is limited. Stripe needs additional information or verification. Click below to review and fix it.'
+                                : 'Stripe is still waiting for you to complete some steps or validate your details. Click below to finish your payout setup.'
                             : 'Connect your Stripe account to receive payments from your fans.'}
                         </p>
+                        {stripeAccountId && (
+                          <p className="text-[11px] text-exclu-space/60 mt-1">
+                            Linked Stripe account:
+                            <span className="ml-1 font-mono text-exclu-cloud/80 break-all">{stripeAccountId}</span>
+                            {country && (
+                              <span className="ml-1">
+                                · Payout country: <span className="font-medium">{country}</span>
+                              </span>
+                            )}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -839,14 +861,14 @@ const Profile = () => {
                           {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
                         </Button>
                       )}
-                      {stripeAccountId && stripeConnectStatus === 'pending' && (
+                      {stripeAccountId && stripeConnectStatus !== 'complete' && (
                         <Button
                           onClick={handleStripeConnect}
                           variant="outline"
                           disabled={isStripeLoading}
                           className="rounded-full border-amber-500/40 text-amber-300"
                         >
-                          {isStripeLoading ? 'Loading...' : 'Complete Stripe Setup'}
+                          {isStripeLoading ? 'Loading...' : 'Review Stripe setup'}
                         </Button>
                       )}
                     </div>

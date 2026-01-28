@@ -421,8 +421,8 @@ const CreatorPublic = () => {
         <div className="fixed inset-x-4 bottom-4 z-30">
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/85 border border-exclu-arsenic/60 px-4 py-3 backdrop-blur-md shadow-lg shadow-black/60">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-emerald-400 flex items-center justify-center overflow-hidden">
-                <img src={logo} alt="Exclu" className="w-6 h-6" />
+              <div className="flex items-center gap-2">
+                <img src={logo} alt="Exclu" className="h-4" />
               </div>
               <div className="flex flex-col">
                 <span className="text-xs font-semibold text-white/90">Exclu</span>

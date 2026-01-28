@@ -148,7 +148,64 @@ serve(async (req) => {
 
     let stripeAccountId = profile.stripe_account_id;
 
-    // If no Stripe account exists, create one
+    // If a Stripe account already exists, ensure it matches the creator's current country.
+    // Stripe does not allow changing the country of an existing Connect account, so if the
+    // profile.country has changed since the first onboarding attempt, we transparently
+    // create a new Express account in the correct country and update the profile.
+    if (stripeAccountId) {
+      try {
+        const existingAccount = await stripe.accounts.retrieve(stripeAccountId);
+        const accountCountry = (existingAccount as any).country as string | null;
+
+        if (accountCountry && accountCountry !== profile.country) {
+          console.warn(
+            'Stripe account country mismatch for user',
+            user.id,
+            'existing account country =',
+            accountCountry,
+            'profile.country =',
+            profile.country,
+          );
+
+          const newAccount = await stripe.accounts.create({
+            type: 'express',
+            country: profile.country,
+            email: user.email ?? undefined,
+            capabilities: {
+              card_payments: { requested: true },
+              transfers: { requested: true },
+            },
+            metadata: {
+              supabase_user_id: user.id,
+            },
+          });
+
+          stripeAccountId = newAccount.id;
+
+          const { error: updateError } = await supabaseAdmin
+            .from('profiles')
+            .update({
+              stripe_account_id: stripeAccountId,
+              stripe_connect_status: 'pending',
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            console.error('Error updating profile with new Stripe account after country mismatch', updateError);
+            return new Response(JSON.stringify({ error: 'Failed to align Stripe account with your country' }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error retrieving existing Stripe account, will fall back to creating a new one', err);
+        // If we cannot safely use the existing account, create a fresh one below.
+        stripeAccountId = null;
+      }
+    }
+
+    // If no Stripe account exists (first time or after mismatch), create one
     if (!stripeAccountId) {
       const account = await stripe.accounts.create({
         type: 'express',

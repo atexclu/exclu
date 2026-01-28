@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const AppDashboard = () => {
@@ -27,6 +27,14 @@ const AppDashboard = () => {
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [showStripeModal, setShowStripeModal] = useState(false);
+  const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
+  const [connectPhaseIndex, setConnectPhaseIndex] = useState(0);
+
+  const stripeConnectPhases = [
+    'Preparing a secure connection with Stripe…',
+    'Creating your Stripe onboarding link…',
+    'Almost ready, redirecting you to Stripe…',
+  ];
 
   useEffect(() => {
     let isMounted = true;
@@ -48,10 +56,10 @@ const AppDashboard = () => {
       }
 
       try {
-        // Profile (display_name for greeting + stripe_connect_status)
+        // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status')
+          .select('display_name, handle, stripe_connect_status, is_creator_subscribed')
           .eq('id', user.id)
           .single();
 
@@ -111,6 +119,7 @@ const AppDashboard = () => {
           setProfileName(profile.display_name || 'Creator');
           setProfileHandle(profile.handle || null);
           setStripeConnectStatus(profile.stripe_connect_status || null);
+          setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           // Show Stripe modal if not connected (only once per session)
           const stripeModalDismissed = sessionStorage.getItem('stripeModalDismissed');
           if (profile.stripe_connect_status !== 'complete' && !stripeModalDismissed) {
@@ -184,6 +193,21 @@ const AppDashboard = () => {
   });
 
   const publicProfileUrl = profileHandle ? `${window.location.origin}/${profileHandle}` : null;
+
+  // While we are starting the Stripe Connect flow, show a small phased status message
+  // so creators understand that the redirect can take a few seconds.
+  useEffect(() => {
+    if (!isConnectingStripe) {
+      setConnectPhaseIndex(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setConnectPhaseIndex((prev) => (prev + 1) % stripeConnectPhases.length);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isConnectingStripe]);
 
   const buildSeries = (
     metric: 'published' | 'sales' | 'revenue',
@@ -276,13 +300,15 @@ const AppDashboard = () => {
 
               <div className="text-center mb-6">
                 <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
-                  <CreditCard className="w-7 h-7 text-white" />
+                  <span className="text-sm font-semibold tracking-tight text-white">Stripe</span>
                 </div>
                 <h2 className="text-xl font-bold text-exclu-cloud mb-2">
                   Connect Stripe to get paid
                 </h2>
                 <p className="text-sm text-exclu-space/80">
-                  You need to connect a Stripe account to receive payments from your fans.
+                  Exclu does not hold a wallet for you: every payment from your fans is paid out directly to your
+                  Stripe account. On the Premium plan you keep 100% of your sales; on the Free plan Exclu only takes a
+                  10% creator commission.
                 </p>
               </div>
 
@@ -318,7 +344,9 @@ const AppDashboard = () => {
                   {isConnectingStripe ? (
                     <span className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Redirecting…
+                      <span className="text-xs sm:text-sm text-exclu-cloud/90">
+                        {stripeConnectPhases[connectPhaseIndex]}
+                      </span>
                     </span>
                   ) : (
                     <span className="flex items-center gap-2">
@@ -345,8 +373,14 @@ const AppDashboard = () => {
         <section className="mt-4 sm:mt-6 mb-6">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                Welcome back{profileName ? `, ${profileName}` : ''}
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate flex items-center gap-2">
+                <span>Welcome back{profileName ? `, ${profileName}` : ''}</span>
+                {isCreatorSubscribed && (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 via-primary/10 to-emerald-500/20 border border-emerald-400/40 text-[11px] text-emerald-200 shadow-glow">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Premium · 0% commission</span>
+                  </span>
+                )}
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
@@ -395,7 +429,7 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
-        {/* Notice for creators with existing links but incomplete Stripe Connect */}
+        {/* Notice for creators with existing links but incomplete or limited Stripe Connect */}
         {!isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
           <section className="mb-4 max-w-2xl">
             <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px] text-amber-100/90">
@@ -405,11 +439,14 @@ const AppDashboard = () => {
                 </div>
                 <div className="space-y-0.5">
                   <p className="font-medium text-amber-100">
-                    Finish your Stripe payout setup to unlock payments
+                    {stripeConnectStatus === 'restricted'
+                      ? 'Action needed to restore payouts on Stripe'
+                      : 'Finish your Stripe payout setup to unlock payments'}
                   </p>
                   <p className="text-[11px] sm:text-xs text-amber-100/80">
-                    Fans can already see your links, but checkout is disabled until Stripe fully verifies your payout
-                    details.
+                    {stripeConnectStatus === 'restricted'
+                      ? 'Stripe has temporarily limited your payout account. Open Stripe to provide the missing information or fix any issues so payouts can be enabled again.'
+                      : 'Fans can already see your links, but checkout is disabled until you complete your payout details on Stripe.'}
                   </p>
                 </div>
               </div>
