@@ -54,6 +54,7 @@ const Onboarding = () => {
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [country, setCountry] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
     onlyfans: '',
     fansly: '',
@@ -81,6 +82,24 @@ const Onboarding = () => {
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'premium'>('premium');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+
+  // Filter the list of supported countries based on user input (code or label)
+  let filteredCountries = STRIPE_SUPPORTED_COUNTRIES.filter((c) => {
+    if (!countryFilter.trim()) return true;
+    const q = countryFilter.trim().toLowerCase();
+    return (
+      c.label.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q)
+    );
+  });
+
+  // Ensure the currently selected country is always visible even if it doesn't match the filter
+  if (country && !filteredCountries.some((c) => c.code === country)) {
+    const current = STRIPE_SUPPORTED_COUNTRIES.find((c) => c.code === country);
+    if (current) {
+      filteredCountries = [current, ...filteredCountries];
+    }
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -454,20 +473,29 @@ const Onboarding = () => {
                     <label htmlFor="country" className="text-xs font-medium text-exclu-space">
                       Country of residence
                     </label>
-                    <select
-                      id="country"
-                      value={country}
-                      onChange={(e) => setCountry(e.target.value)}
-                      className="h-10 w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 text-xs text-black focus:outline-none focus:ring-2 focus:ring-primary/60"
-                      required
-                    >
-                      <option value="">Select your country</option>
-                      {STRIPE_SUPPORTED_COUNTRIES.map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="space-y-1.5">
+                      <Input
+                        type="text"
+                        value={countryFilter}
+                        onChange={(e) => setCountryFilter(e.target.value)}
+                        placeholder="Type country or code (e.g. FR, Brazil, Czech...)"
+                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-xs"
+                      />
+                      <select
+                        id="country"
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        className="h-10 w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 text-xs text-black focus:outline-none focus:ring-2 focus:ring-primary/60"
+                        required
+                      >
+                        <option value="">Select your country</option>
+                        {filteredCountries.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <p className="text-[11px] text-exclu-space/70">
                       This must match the country where you pay taxes. Stripe will use it to determine your payout
                       requirements.

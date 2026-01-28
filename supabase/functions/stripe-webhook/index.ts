@@ -39,7 +39,9 @@ serve(async (req) => {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret);
+    // In the Edge runtime (Deno/Web Crypto), Stripe requires the async variant
+    // of constructEvent to work with SubtleCryptoProvider.
+    event = await stripe.webhooks.constructEventAsync(body, signature, stripeWebhookSecret);
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
     return new Response('Webhook signature verification failed', { status: 400 });
