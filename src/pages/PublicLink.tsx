@@ -57,53 +57,30 @@ const themeColors: Record<string, { gradient: string; glow: string }> = {
   },
 };
 
-const BlurredCard = ({ index, isUnlocked }: { index: number; isUnlocked: boolean }) => {
+const BlurredCard = ({
+  index,
+  isUnlocked,
+  themeGradient,
+}: {
+  index: number;
+  isUnlocked: boolean;
+  themeGradient: string;
+}) => {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5, delay: index * 0.1 }}
+      transition={{ duration: 0.6, delay: index * 0.12 }}
       className="relative aspect-[4/5] rounded-2xl overflow-hidden"
     >
-      {/* Animated gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-exclu-phantom via-exclu-ink to-exclu-phantom">
-        <div
-          className="absolute inset-0 animate-gradient-shift"
-          style={{
-            background: `linear-gradient(${45 + index * 30}deg, 
-              rgba(236,72,153,0.3) 0%, 
-              rgba(168,85,247,0.3) 25%, 
-              rgba(236,72,153,0.2) 50%, 
-              rgba(139,92,246,0.3) 75%, 
-              rgba(236,72,153,0.3) 100%)`,
-            backgroundSize: '400% 400%',
-            animation: `gradient-shift ${8 + index}s ease infinite`,
-          }}
-        />
+      {/* Animated gradient background tinted with the creator theme */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${themeGradient} opacity-60`}
+      >
+        <div className="absolute inset-0 animate-gradient-shift" />
       </div>
 
       {/* Blur overlay with glass effect */}
-      <div className="absolute inset-0 backdrop-blur-xl bg-black/20" />
-
-      {/* Animated glow orbs */}
-      <div
-        className="absolute w-32 h-32 rounded-full blur-3xl opacity-60"
-        style={{
-          background: 'radial-gradient(circle, rgba(236,72,153,0.6) 0%, transparent 70%)',
-          top: `${20 + (index * 15) % 40}%`,
-          left: `${10 + (index * 20) % 60}%`,
-          animation: `float ${6 + index}s ease-in-out infinite`,
-        }}
-      />
-      <div
-        className="absolute w-24 h-24 rounded-full blur-2xl opacity-50"
-        style={{
-          background: 'radial-gradient(circle, rgba(168,85,247,0.5) 0%, transparent 70%)',
-          bottom: `${15 + (index * 10) % 30}%`,
-          right: `${15 + (index * 25) % 50}%`,
-          animation: `float ${7 + index}s ease-in-out infinite reverse`,
-        }}
-      />
+      <div className="absolute inset-0 backdrop-blur-2xl bg-black/35" />
 
       {/* Lock icon overlay */}
       <AnimatePresence>
@@ -153,6 +130,7 @@ const PublicLink = () => {
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
+  const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -208,14 +186,15 @@ const PublicLink = () => {
       if (sessionId) {
         const { data: purchase } = await supabase
           .from('purchases')
-          .select('id')
+          .select('id, access_expires_at')
           .eq('link_id', data.id)
           .eq('stripe_session_id', sessionId)
           .single();
-        
+
         if (purchase) {
           hasPurchased = true;
           setIsUnlocked(true);
+          setAccessExpiresAt((purchase as any).access_expires_at ?? null);
         }
       }
 
@@ -317,6 +296,9 @@ const PublicLink = () => {
 
   const themeKey = creator?.theme_color || 'pink';
   const theme = themeColors[themeKey] || themeColors.pink;
+
+  const expiresDate = accessExpiresAt ? new Date(accessExpiresAt) : null;
+  const hasTemporaryAccess = !!expiresDate;
 
   return (
     <div className="min-h-screen bg-black text-foreground flex flex-col">
@@ -451,7 +433,12 @@ const PublicLink = () => {
                     : 'grid-cols-2 sm:grid-cols-3'
                 }`}>
                   {contentItems.map((item, index) => (
-                    <BlurredCard key={item.id} index={index} isUnlocked={false} />
+                    <BlurredCard
+                      key={item.id}
+                      index={index}
+                      isUnlocked={false}
+                      themeGradient={theme.gradient}
+                    />
                   ))}
                 </div>
               </motion.div>
@@ -556,18 +543,6 @@ const PublicLink = () => {
                             className="w-full h-full object-contain bg-black"
                           />
                         )}
-                        {item.previewUrl && (
-                          <div className="absolute bottom-2 right-2">
-                            <a
-                              href={item.previewUrl}
-                              download
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-black/70 text-[11px] text-exclu-cloud border border-white/10 hover:bg-black/90"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Download</span>
-                            </a>
-                          </div>
-                        )}
                       </motion.div>
                     ))}
                   </div>
@@ -578,11 +553,35 @@ const PublicLink = () => {
                 )}
               </motion.div>
 
-              <div className="mt-2 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
-                <p>Your purchase has been confirmed. The content above is now unlocked on this device.</p>
-                <p>
-                  You can download the files to your device using the <strong>Download</strong> buttons, and if you provided an
-                  email, you will also receive a copy of this access link.
+              <div className="space-y-3">
+                {unlockedContent.length > 0 && unlockedContent[0].previewUrl && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <p className="text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
+                      Your purchase has been confirmed. The content below is now unlocked on this device.
+                    </p>
+                    {/* Primary download button outside the players */}
+                    <a
+                      href={unlockedContent[0].previewUrl}
+                      download
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-exclu-cloud text-black text-xs sm:text-sm font-semibold shadow-lg hover:bg-white"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download to device</span>
+                    </a>
+                  </div>
+                )}
+                {hasTemporaryAccess && expiresDate && (
+                  <p className="text-[11px] sm:text-xs text-amber-300/80 text-center sm:text-left">
+                    This access is temporary. Make sure to download the content before{' '}
+                    <span className="font-semibold">
+                      {expiresDate.toLocaleString()}
+                    </span>
+                    .
+                  </p>
+                )}
+                <p className="text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
+                  You can also right-click or long-press on the media to save it. If you provided an email, you will receive a
+                  copy of this access link.
                 </p>
               </div>
             </>

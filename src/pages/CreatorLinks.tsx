@@ -32,9 +32,23 @@ const CreatorLinks = () => {
     const fetchLinks = async () => {
       setIsLoading(true);
       setError(null);
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        if (!isMounted) return;
+        setError('You must be signed in to view your links.');
+        setLinks([]);
+        setIsLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('links')
         .select('id, title, slug, price_cents, currency, status, created_at, click_count, storage_path')
+        .eq('creator_id', user.id)
         .order('created_at', { ascending: false });
 
       if (!isMounted) return;

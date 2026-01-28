@@ -124,9 +124,10 @@ const CreatorPublic = () => {
 
       const { data: linksData, error: linksError } = await supabase
         .from('links')
-        .select('id, title, description, price_cents, currency, slug, status')
+        .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
         .eq('creator_id', profileData.id)
         .eq('status', 'published')
+        .eq('show_on_profile', true)
         .order('created_at', { ascending: false });
 
       if (linksError) {

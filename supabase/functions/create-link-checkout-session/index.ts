@@ -36,7 +36,11 @@ serve(async (req) => {
   }
 
   try {
-    const { slug } = await req.json();
+    const body = await req.json();
+    const slug = body?.slug as string | undefined;
+    const buyerEmail = typeof body?.buyerEmail === 'string' && body.buyerEmail.trim().length > 0
+      ? body.buyerEmail.trim()
+      : undefined;
 
     if (!slug || typeof slug !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing or invalid slug' }), {
@@ -148,7 +152,9 @@ serve(async (req) => {
         link_id: link.id,
         creator_id: link.creator_id ?? '',
         slug: link.slug ?? slug,
+        buyerEmail: buyerEmail ?? '',
       },
+      customer_email: buyerEmail,
       payment_intent_data: {
         application_fee_amount: applicationFeeAmount,
         transfer_data: {

@@ -20,6 +20,16 @@ interface LinkDetailData {
   created_at: string;
 }
 
+interface PurchaseRow {
+  id: string;
+  buyer_email: string | null;
+  amount_cents: number | null;
+  currency: string | null;
+  status: string;
+  created_at: string;
+  access_expires_at: string | null;
+}
+
 const LinkDetail = () => {
   const { id } = useParams<{ id: string }>();
   const [link, setLink] = useState<LinkDetailData | null>(null);
@@ -28,6 +38,7 @@ const LinkDetail = () => {
   const [salesCount, setSalesCount] = useState(0);
   const [revenueCents, setRevenueCents] = useState(0);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,24 +72,29 @@ const LinkDetail = () => {
           throw linkError || new Error('Link not found');
         }
 
-        const { data: purchases, error: purchasesError } = await supabase
+        const { data: purchasesData, error: purchasesError } = await supabase
           .from('purchases')
-          .select('id, amount_cents')
-          .eq('link_id', id);
+          .select('id, buyer_email, amount_cents, currency, status, created_at, access_expires_at')
+          .eq('link_id', id)
+          .order('created_at', { ascending: false });
 
         if (purchasesError) {
           throw purchasesError;
         }
 
-        const safePurchases = purchases ?? [];
+        const safePurchases = (purchasesData ?? []) as PurchaseRow[];
         const sales = safePurchases.length;
-        const revenue = safePurchases.reduce((sum: number, p: any) => sum + (p.amount_cents ?? 0), 0);
+        const revenue = safePurchases.reduce(
+          (sum: number, p: PurchaseRow) => sum + (p.amount_cents ?? 0),
+          0
+        );
 
         if (!isMounted) return;
 
         setLink(data as LinkDetailData);
         setSalesCount(sales);
         setRevenueCents(revenue);
+        setPurchases(safePurchases);
       } catch (err) {
         console.error('Error loading link detail', err);
         if (!isMounted) return;
@@ -296,6 +312,84 @@ const LinkDetail = () => {
                     Chat (coming soon)
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Buyers list / purchases timeline */}
+            <Card className="bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 border border-exclu-arsenic/70 shadow-glow-lg rounded-2xl md:col-span-2">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 mb-1">Buyers</p>
+                    <p className="text-sm text-exclu-space/80">
+                      {salesCount > 0
+                        ? 'See who unlocked this content and when they purchased it.'
+                        : 'No fans have purchased this link yet.'}
+                    </p>
+                  </div>
+                </div>
+
+                {purchases.length > 0 && (
+                  <div className="mt-2 space-y-3 max-h-64 overflow-y-auto pr-1">
+                    {purchases.map((purchase, index) => {
+                      const emailLabel = purchase.buyer_email || 'Unknown buyer';
+                      const amountLabel = purchase.amount_cents
+                        ? `${(purchase.amount_cents / 100).toFixed(2)} ${purchase.currency ?? ''}`
+                        : '—';
+                      const dateLabel = new Date(purchase.created_at).toLocaleString();
+                      const isRefunded = purchase.status === 'refunded';
+                      const isPending = purchase.status === 'pending';
+                      const isSucceeded = purchase.status === 'succeeded';
+
+                      return (
+                        <motion.div
+                          key={purchase.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: 0.03 * index }}
+                          className="flex items-start justify-between gap-3 rounded-xl border border-exclu-arsenic/60 bg-black/40 px-3 py-2.5"
+                        >
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="flex flex-col items-center mt-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                              {index < purchases.length - 1 && (
+                                <div className="flex-1 w-px bg-exclu-arsenic/60 mt-1" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-exclu-cloud truncate">
+                                {emailLabel}
+                              </p>
+                              <p className="text-[11px] text-exclu-space/70">{dateLabel}</p>
+                              {purchase.access_expires_at && (
+                                <p className="text-[11px] text-amber-300/80 mt-0.5">
+                                  Temporary access until{' '}
+                                  {new Date(purchase.access_expires_at).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                            <span className="text-xs font-semibold text-exclu-cloud">{amountLabel}</span>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${
+                                isRefunded
+                                  ? 'bg-red-500/15 text-red-300'
+                                  : isPending
+                                  ? 'bg-yellow-500/15 text-yellow-300'
+                                  : isSucceeded
+                                  ? 'bg-emerald-500/15 text-emerald-300'
+                                  : 'bg-exclu-arsenic/50 text-exclu-space/80'
+                              }`}
+                            >
+                              {purchase.status}
+                            </span>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>

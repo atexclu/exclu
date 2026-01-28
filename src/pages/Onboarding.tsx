@@ -834,7 +834,7 @@ const Onboarding = () => {
           >
             <div className="text-center space-y-3">
               <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
-                <CreditCard className="w-8 h-8 text-white" />
+                <span className="text-base font-semibold tracking-tight text-white">Stripe</span>
               </div>
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
                 Connect your Stripe account

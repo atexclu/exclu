@@ -26,6 +26,50 @@ const corsHeaders = {
 };
 
 function mapRequirementKeyToMessage(key: string): string {
+  // Business profile
+  if (key === 'business_profile.mcc') {
+    return 'Select your business category (what you sell) in Stripe.';
+  }
+  if (key === 'business_profile.url') {
+    return 'Add your website or main social profile URL in Stripe.';
+  }
+  if (key.startsWith('business_profile')) {
+    return 'Complete your business profile details in Stripe.';
+  }
+
+  // External payout account
+  if (key === 'external_account') {
+    return 'Add or confirm the bank account where payouts will be sent.';
+  }
+
+  // Representative / individual details
+  if (key.startsWith('representative.address')) {
+    return 'Complete the address of the account holder (city, street, postal code).';
+  }
+  if (key.startsWith('representative.dob')) {
+    return 'Add the date of birth of the account holder.';
+  }
+  if (key === 'representative.email') {
+    return 'Add or confirm the email address of the account holder.';
+  }
+  if (key === 'representative.phone') {
+    return 'Add or confirm the phone number of the account holder.';
+  }
+  if (key === 'representative.first_name' || key === 'representative.last_name') {
+    return 'Complete the full name of the account holder.';
+  }
+
+  // Business type
+  if (key === 'business_type') {
+    return 'Tell Stripe if you are registering as an individual or a business.';
+  }
+
+  // Terms of service
+  if (key === 'tos_acceptance.date' || key === 'tos_acceptance.ip') {
+    return 'Accept Stripe\'s terms of service in the onboarding flow.';
+  }
+
+  // Individual generic fields
   if (key.startsWith('individual.address')) {
     return 'Add or complete your personal address.';
   }
@@ -38,12 +82,7 @@ function mapRequirementKeyToMessage(key: string): string {
   if (key.startsWith('individual.phone')) {
     return 'Add or verify your phone number in Stripe.';
   }
-  if (key.startsWith('business_profile')) {
-    return 'Complete your business profile details in Stripe.';
-  }
-  if (key.startsWith('external_account')) {
-    return 'Add or confirm the bank account where payouts will be sent.';
-  }
+
   return 'Provide additional information requested by Stripe.';
 }
 
@@ -126,7 +165,21 @@ serve(async (req) => {
     const allKeys = new Set<string>();
     [...currentlyDue, ...pastDue, ...pendingVerification].forEach((key) => allKeys.add(key));
 
-    const friendlyMessages = Array.from(allKeys).map(mapRequirementKeyToMessage);
+    // Map keys to human messages, deduplicate by message text, and keep only the
+    // most important ones so the UI stays readable.
+    const messageSet = new Set<string>();
+    const friendlyMessages: string[] = [];
+
+    for (const key of Array.from(allKeys)) {
+      const msg = mapRequirementKeyToMessage(key);
+      if (!messageSet.has(msg)) {
+        messageSet.add(msg);
+        friendlyMessages.push(msg);
+      }
+    }
+
+    // Limit to a small, focused list (e.g. 6) so creators see only the key actions.
+    const limitedMessages = friendlyMessages.slice(0, 6);
 
     return new Response(
       JSON.stringify({
@@ -135,7 +188,7 @@ serve(async (req) => {
         currently_due: currentlyDue,
         past_due: pastDue,
         pending_verification: pendingVerification,
-        friendly_messages: friendlyMessages,
+        friendly_messages: limitedMessages,
       }),
       {
         status: 200,

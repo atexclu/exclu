@@ -34,6 +34,7 @@ const CreateLink = () => {
   const [hasExistingLinks, setHasExistingLinks] = useState(false);
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
+  const [showOnProfile, setShowOnProfile] = useState(true);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -203,6 +204,7 @@ const CreateLink = () => {
           currency: 'EUR',
           slug,
           status: 'published',
+          show_on_profile: showOnProfile,
         })
         .select('id')
         .limit(1);
@@ -405,6 +407,22 @@ const CreateLink = () => {
                         />
                         <span className="text-xs text-exclu-space">EUR</span>
                       </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-exclu-space">Visibility on public profile</p>
+                      <label className="flex items-center gap-2 text-[11px] text-exclu-space/80">
+                        <input
+                          type="checkbox"
+                          checked={showOnProfile}
+                          onChange={(e) => setShowOnProfile(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-exclu-arsenic/70 bg-exclu-ink"
+                        />
+                        <span>
+                          Show this link on my public profile page
+                          <span className="text-exclu-space/60"> (fans will still be able to access it if you share the URL directly)</span>
+                        </span>
+                      </label>
                     </div>
                   </div>
 

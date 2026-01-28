@@ -6,6 +6,12 @@ const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
+const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
+
+// Optional Brevo configuration for sending content access emails to buyers
+const brevoApiKey = Deno.env.get('BREVO_API_KEY');
+const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL');
+const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu';
 
 if (!stripeSecretKey) {
   throw new Error('Missing STRIPE_SECRET_KEY environment variable');
@@ -24,6 +30,65 @@ const stripe = new Stripe(stripeSecretKey, {
 });
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+async function sendContentAccessEmail(toEmail: string, linkTitle: string, accessUrl: string) {
+  if (!brevoApiKey || !brevoSenderEmail) {
+    console.warn('Brevo not configured (BREVO_API_KEY or BREVO_SENDER_EMAIL missing); skipping email send');
+    return;
+  }
+
+  try {
+    const subject = `Your access to "${linkTitle}" on Exclu`;
+    const htmlContent = `
+      <html>
+        <body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #050816; color: #f9fafb; padding: 24px;">
+          <div style="max-width: 480px; margin: 0 auto; background-color: #020617; border-radius: 16px; padding: 24px; border: 1px solid #1f2937;">
+            <h1 style="font-size: 20px; margin: 0 0 12px 0;">Your exclusive content is unlocked 🎉</h1>
+            <p style="font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
+              Thank you for your purchase. You can access your content here:
+            </p>
+            <p style="margin: 0 0 20px 0;">
+              <a href="${accessUrl}" style="display: inline-block; padding: 10px 18px; background-color: #f97316; color: #0b1120; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Open my content</a>
+            </p>
+            <p style="font-size: 12px; line-height: 1.6; color: #9ca3af; margin: 0 0 4px 0;">
+              Link: <a href="${accessUrl}" style="color: #f97316; text-decoration: underline;">${accessUrl}</a>
+            </p>
+            <p style="font-size: 12px; line-height: 1.6; color: #6b7280; margin: 12px 0 0 0;">
+              If you didn’t request this content, you can safely ignore this email.
+            </p>
+          </div>
+          <p style="font-size: 11px; color: #4b5563; margin-top: 16px; text-align: center;">
+            Sent by Exclu · Please do not reply directly to this automated email.
+          </p>
+        </body>
+      </html>
+    `;
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': brevoApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sender: {
+          email: brevoSenderEmail,
+          name: brevoSenderName,
+        },
+        to: [{ email: toEmail }],
+        subject,
+        htmlContent,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('Failed to send Brevo email', response.status, errorBody);
+    }
+  } catch (err) {
+    console.error('Error while sending Brevo email', err);
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -60,6 +125,7 @@ serve(async (req) => {
           const linkId = session.metadata.link_id;
           const creatorId = session.metadata.creator_id;
           const amountTotal = session.amount_total ?? 0;
+          const slug = session.metadata.slug as string | undefined;
 
           // Check if purchase already exists (idempotency)
           const { data: existingPurchase } = await supabase
@@ -69,14 +135,19 @@ serve(async (req) => {
             .single();
 
           if (!existingPurchase) {
-            const customerEmail = session.customer_details?.email ?? null;
+            // Prefer an explicit buyer email captured before checkout if present in metadata,
+            // otherwise fall back to the email on the Stripe Checkout session.
+            const buyerEmailFromMetadata = (session.metadata as any)?.buyerEmail as string | undefined;
+            const emailFromStripe = session.customer_details?.email ?? null;
+            const customerEmail = (buyerEmailFromMetadata || emailFromStripe || null) as string | null;
+
             const { error: insertError } = await supabase.from('purchases').insert({
               link_id: linkId,
               creator_id: creatorId,
               amount_cents: amountTotal,
               currency: session.currency?.toUpperCase() ?? 'USD',
               stripe_session_id: session.id,
-              status: 'completed',
+              status: 'succeeded',
               fan_email: customerEmail,
               buyer_email: customerEmail,
             });
@@ -85,6 +156,30 @@ serve(async (req) => {
               console.error('Error inserting purchase:', insertError);
             } else {
               console.log('Purchase recorded for link:', linkId);
+
+              // If we have both an email and a site URL, send the buyer a copy of the access link via Brevo.
+              if (customerEmail && siteUrl && slug) {
+                try {
+                  // Build the same URL used on success (link page with session_id for unlocking)
+                  const base = siteUrl.replace(/\/$/, '');
+                  const accessUrl = `${base}/l/${encodeURIComponent(slug)}?session_id=${session.id}`;
+
+                  let linkTitle = 'your exclusive content';
+                  const { data: linkRecord } = await supabase
+                    .from('links')
+                    .select('title')
+                    .eq('id', linkId)
+                    .single();
+
+                  if (linkRecord?.title) {
+                    linkTitle = linkRecord.title;
+                  }
+
+                  await sendContentAccessEmail(customerEmail, linkTitle, accessUrl);
+                } catch (emailErr) {
+                  console.error('Error sending content access email:', emailErr);
+                }
+              }
             }
           }
         }
