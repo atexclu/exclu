@@ -99,6 +99,22 @@ const Onboarding = () => {
     if (current) {
       filteredCountries = [current, ...filteredCountries];
     }
+
+  const isSafeExternalUrl = (raw: string): boolean => {
+    const url = raw.trim();
+    if (!url) return false;
+    // Basic pattern: must start with http:// or https:// and contain at least one dot after host
+    if (!/^https?:\/\//i.test(url)) return false;
+    try {
+      // Use URL constructor for extra validation; will throw on invalid URLs.
+      // We still only accept http/https schemes.
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  };
   }
 
   useEffect(() => {
@@ -217,6 +233,16 @@ const Onboarding = () => {
       return;
     }
 
+    // Validate all external platform URLs before hitting the backend.
+    const invalidUrlEntry = (Object.entries(platformUrls) as [PlatformKey, string][]) // type narrowing
+      .map(([platform, url]) => ({ platform, url: url.trim() }))
+      .find((entry) => entry.url.length > 0 && !isSafeExternalUrl(entry.url));
+
+    if (invalidUrlEntry) {
+      toast.error('One of your external links looks invalid. Please use a full URL starting with http:// or https://');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -247,13 +273,18 @@ const Onboarding = () => {
         return;
       }
 
-      const mainExternalUrl =
+      const mainExternalUrlCandidate =
         platformUrls.onlyfans.trim() ||
         platformUrls.fansly.trim() ||
         platformUrls.myclub.trim() ||
         platformUrls.mym.trim() ||
         platformUrls.other.trim() ||
-        null;
+        '';
+
+      const mainExternalUrl =
+        mainExternalUrlCandidate && isSafeExternalUrl(mainExternalUrlCandidate)
+          ? mainExternalUrlCandidate
+          : null;
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -277,7 +308,7 @@ const Onboarding = () => {
       // Mettre à jour les liens de plateformes externes
       const platformRows = (Object.entries(platformUrls) as [PlatformKey, string][]) // type narrowing
         .map(([platform, url]) => ({ platform, url: url.trim() }))
-        .filter((entry) => entry.url.length > 0)
+        .filter((entry) => entry.url.length > 0 && isSafeExternalUrl(entry.url))
         .map((entry) => ({ profile_id: user.id, platform: entry.platform, url: entry.url }));
 
       // On simplifie : on supprime les anciens liens de ce profil puis on insère les nouveaux

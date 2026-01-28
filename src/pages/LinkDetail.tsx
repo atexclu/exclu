@@ -236,7 +236,7 @@ const LinkDetail = () => {
                       value={link.status}
                       onChange={(e) => handleStatusChange(e.target.value)}
                       disabled={isUpdatingStatus}
-                      className="text-xs px-2.5 py-1 rounded-full bg-exclu-ink text-exclu-cloud border border-exclu-arsenic/60 capitalize focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:opacity-60"
+                      className="text-xs px-2.5 py-1 rounded-full bg-white text-black border border-exclu-arsenic/60 capitalize focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:opacity-60"
                     >
                       <option value="draft">draft</option>
                       <option value="published">published</option>
@@ -259,9 +259,9 @@ const LinkDetail = () => {
 
                 <div className="pt-3 border-t border-exclu-arsenic/60 mt-2">
                   <p className="text-[11px] text-exclu-space/80 mb-1">Revenue (gross)</p>
-                  <p className="text-xl font-semibold text-exclu-cloud">{formattedRevenue} €</p>
+                  <p className="text-xl font-semibold text-exclu-cloud">${formattedRevenue} USD</p>
                   <p className="text-[11px] text-exclu-space/70 mt-1">
-                    This is the total amount paid by fans for this link. Payouts and fees will be handled in the payments phase.
+                    This is the total amount paid by fans for this link, in USD. Payouts and fees will be handled in the payments phase.
                   </p>
                 </div>
               </CardContent>
@@ -334,7 +334,7 @@ const LinkDetail = () => {
                     {purchases.map((purchase, index) => {
                       const emailLabel = purchase.buyer_email || 'Unknown buyer';
                       const amountLabel = purchase.amount_cents
-                        ? `${(purchase.amount_cents / 100).toFixed(2)} ${purchase.currency ?? ''}`
+                        ? `$${(purchase.amount_cents / 100).toFixed(2)} USD`
                         : '—';
                       const dateLabel = new Date(purchase.created_at).toLocaleString();
                       const isRefunded = purchase.status === 'refunded';

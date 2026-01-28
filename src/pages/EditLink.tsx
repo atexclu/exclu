@@ -178,7 +178,38 @@ const EditLink = () => {
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
+
+    if (selected) {
+      const MAX_FILE_SIZE_MB = 500;
+      const isImage = selected.type.startsWith('image/');
+      const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+      const isVideo = allowedVideoTypes.includes(selected.type);
+
+      if (!isImage && !isVideo) {
+        toast.error('Please upload an image or a supported video file (MP4, MOV, WebM).');
+        event.target.value = '';
+        setFile(null);
+        setPreviewUrl((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return null;
+        });
+        return;
+      }
+
+      if (selected.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.error('This file is too large. Please upload a file under 500 MB.');
+        event.target.value = '';
+        setFile(null);
+        setPreviewUrl((previous) => {
+          if (previous) URL.revokeObjectURL(previous);
+          return null;
+        });
+        return;
+      }
+    }
+
     setFile(selected);
+
     if (selected) {
       const nextUrl = URL.createObjectURL(selected);
       setPreviewUrl((previous) => {
@@ -206,7 +237,9 @@ const EditLink = () => {
     event.preventDefault();
     if (!id) return;
 
-    if (!title.trim()) {
+    const safeTitle = title.trim().replace(/[\u0000-\u001F\u007F]/g, '');
+
+    if (!safeTitle) {
       toast.error('Please enter a title for your link.');
       return;
     }
@@ -233,7 +266,7 @@ const EditLink = () => {
       const { error: updateLinkError } = await supabase
         .from('links')
         .update({
-          title: title.trim(),
+          title: safeTitle,
           description: description.trim() || null,
           price_cents: Math.round(priceNumber * 100),
         })

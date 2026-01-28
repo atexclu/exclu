@@ -1,7 +1,7 @@
 import AppShell from '@/components/AppShell';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ExternalLink, X, CreditCard, Check, Copy, Zap } from 'lucide-react';
@@ -29,6 +29,8 @@ const AppDashboard = () => {
   const [showStripeModal, setShowStripeModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [connectPhaseIndex, setConnectPhaseIndex] = useState(0);
+
+  const navigate = useNavigate();
 
   const stripeConnectPhases = [
     'Preparing a secure connection with Stripe…',
@@ -82,7 +84,7 @@ const AppDashboard = () => {
         // Purchases metrics (RLS limite déjà aux achats du créateur)
         const { data: purchases, error: purchasesError } = await supabase
           .from('purchases')
-          .select('id, amount_cents, created_at');
+          .select('id, link_id, amount_cents, created_at');
 
         if (purchasesError) throw purchasesError;
 
@@ -212,7 +214,7 @@ const AppDashboard = () => {
   const buildSeries = (
     metric: 'published' | 'sales' | 'revenue',
     range: '7d' | '30d' | '365d'
-  ): { label: string; value: number }[] => {
+  ): { label: string; value: number; dateKey: string }[] => {
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 365;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -246,7 +248,7 @@ const AppDashboard = () => {
     // Sort events by date
     events.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    const points: { label: string; value: number }[] = [];
+    const points: { label: string; value: number; dateKey: string }[] = [];
 
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(today);
@@ -264,7 +266,7 @@ const AppDashboard = () => {
         day: 'numeric',
       });
 
-      points.push({ label, value: cumulative });
+      points.push({ label, value: cumulative, dateKey: dayKey });
     }
 
     return points;
@@ -530,7 +532,7 @@ const AppDashboard = () => {
                 }}
               >
                 <p className="text-xs text-exclu-space mb-1">Revenue</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `${formattedRevenue} €`}</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `$${formattedRevenue} USD`}</p>
                 <p className="text-[11px] text-exclu-space/80 mt-1">Total revenue from successful purchases.</p>
               </div>
             </section>
@@ -604,7 +606,7 @@ const AppDashboard = () => {
                       : paddingX + (innerWidth * index) / (series.length - 1);
                   const normalized = point.value / (maxValue || 1);
                   const y = paddingY + innerHeight - normalized * innerHeight;
-                  return { x, y, label: point.label, value: point.value };
+                  return { x, y, label: point.label, value: point.value, dateKey: point.dateKey };
                 });
 
                 const pointsAttr = computedPoints.map((pt) => `${pt.x},${pt.y}`).join(' ');
@@ -667,6 +669,32 @@ const AppDashboard = () => {
                             className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
                             onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
                             onMouseLeave={() => setHoveredPoint(null)}
+                            onClick={() => {
+                              // On sales / revenue, try to navigate to the link if the day maps to a single link
+                              if (activeMetric === 'published') return;
+
+                              const purchasesForDay = purchasesRaw.filter((purchase: any) => {
+                                if (!purchase.created_at) return false;
+                                const d = new Date(purchase.created_at);
+                                d.setHours(0, 0, 0, 0);
+                                const key = d.toISOString().slice(0, 10);
+                                return key === pt.dateKey;
+                              });
+
+                              const distinctLinkIds = Array.from(
+                                new Set(
+                                  purchasesForDay
+                                    .map((p: any) => p.link_id)
+                                    .filter((id: string | null | undefined) => !!id),
+                                ),
+                              );
+
+                              if (distinctLinkIds.length === 1) {
+                                navigate(`/app/links/${distinctLinkIds[0]}`);
+                              } else if (distinctLinkIds.length > 1) {
+                                toast.info('Multiple links were purchased on this day. Open your Links page for details.');
+                              }
+                            }}
                           />
                         ))}
                       </g>
@@ -689,10 +717,10 @@ const AppDashboard = () => {
                         <span>
                           Total{' '}
                           {activeMetric === 'revenue'
-                            ? `${(lastPoint.value / 100).toLocaleString('en-US', {
+                            ? `$${(lastPoint.value / 100).toLocaleString('en-US', {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
-                              })} €`
+                              })} USD`
                             : lastPoint.value}{' '}
                           au {lastPoint.label}
                         </span>
@@ -700,10 +728,10 @@ const AppDashboard = () => {
                           <span className="inline-flex items-center gap-1 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 px-2.5 py-1 text-[10px] text-exclu-cloud">
                             {tooltipPoint.label} ·{' '}
                             {activeMetric === 'revenue'
-                              ? `${(tooltipPoint.value / 100).toLocaleString('en-US', {
+                              ? `$${(tooltipPoint.value / 100).toLocaleString('en-US', {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
-                                })} €`
+                                })} USD`
                               : tooltipPoint.value}
                           </span>
                         )}
@@ -762,10 +790,10 @@ const AppDashboard = () => {
                 <p className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud">
                   {isLoading
                     ? '—'
-                    : `${(walletBalanceCents / 100).toLocaleString('en-US', {
+                    : `$${(walletBalanceCents / 100).toLocaleString('en-US', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
-                      })} €`}
+                      })} USD`}
                 </p>
               </div>
             </div>
@@ -803,12 +831,12 @@ const AppDashboard = () => {
                           <td className="px-2 sm:px-3 py-2 text-exclu-space/80">
                             {new Date(payout.paid_at || payout.created_at).toLocaleDateString()}
                           </td>
-                          <td className="px-2 sm:px-3 py-2 text-exclu-cloud">
-                            {(payout.amount_cents / 100).toLocaleString('en-US', {
+                          <td className="px-2 sm:px-3 py-2 text-right text-exclu-space">
+                            ${(payout.amount_cents / 100).toLocaleString('en-US', {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}{' '}
-                            €
+                            USD
                           </td>
                           <td className="px-2 sm:px-3 py-2">
                             <span

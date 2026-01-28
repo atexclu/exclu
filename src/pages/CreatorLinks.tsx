@@ -155,7 +155,8 @@ const CreatorLinks = () => {
               {links.map((link) => (
                 <div
                   key={link.id}
-                  className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4"
+                  onClick={() => navigate(`/app/links/${link.id}`)}
+                  className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 cursor-pointer hover:bg-exclu-ink"
                 >
                   <div className="flex gap-3">
                     {/* Thumbnail */}
@@ -212,7 +213,8 @@ const CreatorLinks = () => {
                   <div className="flex items-center gap-2 mt-3 pt-3 border-t border-exclu-arsenic/40">
                     <button
                       type="button"
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         const url = `${window.location.origin}/l/${link.slug}`;
                         try {
                           await navigator.clipboard.writeText(url);
@@ -228,6 +230,9 @@ const CreatorLinks = () => {
                     </button>
                     <RouterLink
                       to={`/app/links/${link.id}/edit`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
                       className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-exclu-cloud/10 hover:bg-exclu-cloud/20 text-xs text-exclu-cloud transition-colors"
                     >
                       Edit
@@ -252,7 +257,11 @@ const CreatorLinks = () => {
                 </thead>
                 <tbody>
                   {links.map((link) => (
-                    <tr key={link.id} className="border-t border-exclu-arsenic/40">
+                    <tr
+                      key={link.id}
+                      className="border-t border-exclu-arsenic/40 hover:bg-exclu-ink/60 cursor-pointer"
+                      onClick={() => navigate(`/app/links/${link.id}`)}
+                    >
                       <td className="px-4 py-3 text-exclu-cloud font-medium">
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Thumbnail preview */}
@@ -281,6 +290,9 @@ const CreatorLinks = () => {
                           {/* Title */}
                           <RouterLink
                             to={`/app/links/${link.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
                             className="min-w-0 hover:underline hover:text-exclu-cloud/90 transition-colors"
                           >
                             <span className="truncate block max-w-[180px] sm:max-w-[220px]">{link.title}</span>
@@ -301,7 +313,8 @@ const CreatorLinks = () => {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            onClick={async () => {
+                            onClick={async (e) => {
+                              e.stopPropagation();
                               const url = `${window.location.origin}/l/${link.slug}`;
                               try {
                                 await navigator.clipboard.writeText(url);
@@ -321,7 +334,14 @@ const CreatorLinks = () => {
                           size="sm"
                           className="rounded-full border-exclu-arsenic/60 text-xs px-3 py-1 h-auto"
                         >
-                          <RouterLink to={`/app/links/${link.id}/edit`}>Edit</RouterLink>
+                          <RouterLink
+                            to={`/app/links/${link.id}/edit`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            Edit
+                          </RouterLink>
                         </Button>
                       </div>
                     </td>

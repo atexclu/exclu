@@ -6,6 +6,7 @@ const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const brevoApiKey = Deno.env.get('BREVO_API_KEY');
 const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL');
 const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu';
+const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
@@ -18,13 +19,44 @@ if (!brevoApiKey) {
 if (!brevoSenderEmail) {
   throw new Error('Missing BREVO_SENDER_EMAIL environment variable');
 }
-
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
+const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const allowedOrigins = [
+  normalizedSiteOrigin,
+  'http://localhost:8080',
+  'http://localhost:5173',
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
+
+// Very lightweight in-memory rate limiting per IP and function instance.
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 20; // per IP per window
+const ipHits = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const existing = ipHits.get(ip);
+
+  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+
+  existing.count += 1;
+  ipHits.set(ip, existing);
+  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+}
 
 interface Purchase {
   id: string;
@@ -49,8 +81,22 @@ interface LinkMediaRow {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('cf-connecting-ip') ??
+    'unknown';
+
+  if (isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
@@ -84,6 +130,15 @@ serve(async (req) => {
 
     if (!finalEmail) {
       return new Response(JSON.stringify({ error: 'No email available to send content to' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Basic email validation to avoid sending to clearly malformed addresses.
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(finalEmail)) {
+      return new Response(JSON.stringify({ error: 'Invalid email address' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -150,8 +205,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 
     // Build HTML email (based on the provided style)
     const linksListHtml = downloadLinks

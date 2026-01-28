@@ -52,8 +52,8 @@ const HelpPayoutsPricing = () => {
               </CardHeader>
               <CardContent className="text-sm text-exclu-space space-y-3">
                 <p>
-                  Exclu does not charge a platform commission on eligible premium creator accounts. When a fan pays 10€
-                  for your content, you receive the full 10€, minus standard payment processing fees from the provider.
+                  Exclu does not charge a platform commission on eligible premium creator accounts. When a fan pays $10
+                  for your content, you receive the full $10, minus standard payment processing fees from the provider.
                 </p>
                 <p>
                   This makes it easier to predict your revenue and to compare Exclu with other platforms that take
@@ -117,8 +117,8 @@ const HelpPayoutsPricing = () => {
                   Your revenue without the usual platform cut.
                 </p>
                 <p className="text-xs text-exclu-space/80">
-                  Imagine a 20€ content pack sold 100 times. On Exclu, you keep the full 2,000€ before payment fees.
-                  On a 20% platform, you would lose 400€ to fees alone.
+                  Imagine a $20 content pack sold 100 times. On Exclu, you keep the full $2,000 before payment fees.
+                  On a 20% platform, you would lose $400 to fees alone.
                 </p>
               </div>
             </div>

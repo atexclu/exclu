@@ -18,29 +18,78 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 if (!siteUrl) {
   throw new Error('Missing PUBLIC_SITE_URL environment variable');
 }
-
 const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16',
 });
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
+const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const allowedOrigins = [
+  normalizedSiteOrigin,
+  'http://localhost:8080',
+  'http://localhost:5173',
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
+  };
+}
+
+// Very lightweight in-memory rate limiting per IP and function instance.
+// This is a best-effort protection: it may reset when the Edge Function is
+// re-deployed or scaled, but still helps absorb basic abuse.
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 20; // per IP per window
+const ipHits = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const existing = ipHits.get(ip);
+
+  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+
+  existing.count += 1;
+  ipHits.set(ip, existing);
+  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('cf-connecting-ip') ??
+    'unknown';
+
+  if (isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
     const body = await req.json();
     const slug = body?.slug as string | undefined;
-    const buyerEmail = typeof body?.buyerEmail === 'string' && body.buyerEmail.trim().length > 0
-      ? body.buyerEmail.trim()
-      : undefined;
+
+    // Basic email validation to avoid storing malformed addresses.
+    const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const buyerEmail = emailRegex.test(rawBuyerEmail) ? rawBuyerEmail : undefined;
 
     if (!slug || typeof slug !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing or invalid slug' }), {
@@ -187,7 +236,7 @@ serve(async (req) => {
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+        },
       );
     }
 

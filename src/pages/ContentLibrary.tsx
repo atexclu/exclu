@@ -92,11 +92,51 @@ const ContentLibrary = () => {
 
   const handleAssetFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
-    setSelectedFiles(files);
+
+    if (files.length === 0) {
+      setSelectedFiles([]);
+      setPreviewUrls((prev) => {
+        prev.forEach((url) => URL.revokeObjectURL(url));
+        return [];
+      });
+      return;
+    }
+
+    const MAX_FILE_SIZE_MB = 500;
+    const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+    const accepted: File[] = [];
+    let hadInvalid = false;
+
+    for (const file of files) {
+      const isImage = file.type.startsWith('image/');
+      const isVideo = allowedVideoTypes.includes(file.type);
+
+      if (!isImage && !isVideo) {
+        hadInvalid = true;
+        continue;
+      }
+
+      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        hadInvalid = true;
+        continue;
+      }
+
+      accepted.push(file);
+    }
+
+    if (hadInvalid) {
+      setError(
+        'Some files were skipped because they are not supported images/videos or are larger than 500 MB.',
+      );
+    } else {
+      setError(null);
+    }
+
+    setSelectedFiles(accepted);
 
     setPreviewUrls((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
-      return files.map((file) => URL.createObjectURL(file));
+      return accepted.map((file) => URL.createObjectURL(file));
     });
   };
 

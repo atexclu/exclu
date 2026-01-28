@@ -5,6 +5,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
+const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 
 if (!stripeSecretKey) {
   throw new Error('Missing STRIPE_SECRET_KEY environment variable');
@@ -13,17 +14,48 @@ if (!stripeSecretKey) {
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
 }
-
 const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16',
 });
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
+const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const allowedOrigins = [
+  normalizedSiteOrigin,
+  'http://localhost:8080',
+  'http://localhost:5173',
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
+
+// Very lightweight in-memory rate limiting per IP and function instance.
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 60; // per IP per window (slightly higher, mostly used by creators)
+const ipHits = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const existing = ipHits.get(ip);
+
+  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+
+  existing.count += 1;
+  ipHits.set(ip, existing);
+  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+}
 
 function mapRequirementKeyToMessage(key: string): string {
   // Business profile
@@ -85,10 +117,23 @@ function mapRequirementKeyToMessage(key: string): string {
 
   return 'Provide additional information requested by Stripe.';
 }
-
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('cf-connecting-ip') ??
+    'unknown';
+
+  if (isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {

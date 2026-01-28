@@ -339,20 +339,23 @@ const PublicLink = () => {
               </div>
               <div className="pointer-events-none absolute inset-x-0 -bottom-16 h-24 bg-gradient-to-t from-black via-black/70 to-transparent" />
 
-              <div className="relative flex flex-col sm:flex-row items-center sm:items-center gap-5 sm:gap-7">
-                <div className="relative">
-                  <div className={`absolute -inset-2 rounded-full ${theme.glow} blur-3xl opacity-80`} />
-                  <div className="relative w-18 h-18 sm:w-20 sm:h-20 rounded-full border border-white/40 overflow-hidden bg-exclu-ink flex items-center justify-center shadow-[0_0_40px_rgba(255,255,255,0.08)]">
+              <div className="relative flex flex-col sm:flex-row items-center sm:items-stretch gap-5 sm:gap-7">
+                {/* Creator photo on the left, using the original image format */}
+                <div className="relative w-full sm:w-40 max-w-xs overflow-hidden rounded-2xl border border-white/30 bg-exclu-ink shadow-[0_0_40px_rgba(255,255,255,0.08)]">
+                  <div className={`pointer-events-none absolute -inset-3 ${theme.glow} blur-3xl opacity-70`} />
+                  <div className="relative z-10 flex items-center justify-center bg-black/40">
                     {creator?.avatar_url ? (
                       <img
                         src={creator.avatar_url}
                         alt={creator.display_name || creator.handle || 'Creator'}
-                        className="w-full h-full object-cover"
+                        className="w-full h-auto object-contain max-h-56"
                       />
                     ) : (
-                      <span className="text-lg font-semibold text-white/80">
-                        {(creator?.display_name || creator?.handle || 'C').charAt(0).toUpperCase()}
-                      </span>
+                      <div className="flex items-center justify-center w-full h-32 bg-gradient-to-br from-exclu-phantom/40 via-exclu-ink to-exclu-phantom/20">
+                        <span className="text-3xl font-semibold text-white/80">
+                          {(creator?.display_name || creator?.handle || 'C').charAt(0).toUpperCase()}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -491,7 +494,7 @@ const PublicLink = () => {
                       value={buyerEmail}
                       onChange={(e) => setBuyerEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="h-9 bg-exclu-ink border-exclu-arsenic/60 text-exclu-cloud placeholder:text-exclu-space/50 text-[13px]"
+                      className="h-9 bg-exclu-ink border-exclu-arsenic/60 text-black placeholder:text-exclu-space/50 text-[13px]"
                     />
                   </div>
                 </div>
