@@ -54,7 +54,6 @@ const Onboarding = () => {
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [country, setCountry] = useState('');
-  const [countryFilter, setCountryFilter] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
     onlyfans: '',
     fansly: '',
@@ -83,39 +82,26 @@ const Onboarding = () => {
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
 
-  // Filter the list of supported countries based on user input (code or label)
-  let filteredCountries = STRIPE_SUPPORTED_COUNTRIES.filter((c) => {
-    if (!countryFilter.trim()) return true;
-    const q = countryFilter.trim().toLowerCase();
-    return (
-      c.label.toLowerCase().includes(q) ||
-      c.code.toLowerCase().includes(q)
-    );
-  });
+  const filteredCountries = STRIPE_SUPPORTED_COUNTRIES;
 
-  // Ensure the currently selected country is always visible even if it doesn't match the filter
-  if (country && !filteredCountries.some((c) => c.code === country)) {
-    const current = STRIPE_SUPPORTED_COUNTRIES.find((c) => c.code === country);
-    if (current) {
-      filteredCountries = [current, ...filteredCountries];
+  const normalizeExternalUrl = (raw: string): string | null => {
+    const value = raw.trim();
+    if (!value) return null;
+
+    let candidate = value;
+    // If the user omitted the scheme, assume https:// for convenience.
+    if (!/^https?:\/\//i.test(candidate)) {
+      candidate = `https://${candidate}`;
     }
 
-  const isSafeExternalUrl = (raw: string): boolean => {
-    const url = raw.trim();
-    if (!url) return false;
-    // Basic pattern: must start with http:// or https:// and contain at least one dot after host
-    if (!/^https?:\/\//i.test(url)) return false;
     try {
-      // Use URL constructor for extra validation; will throw on invalid URLs.
-      // We still only accept http/https schemes.
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-      return true;
+      const parsed = new URL(candidate);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+      return parsed.toString();
     } catch {
-      return false;
+      return null;
     }
   };
-  }
 
   useEffect(() => {
     let isMounted = true;
@@ -233,10 +219,10 @@ const Onboarding = () => {
       return;
     }
 
-    // Validate all external platform URLs before hitting the backend.
+    // Validate all external platform URLs before hitting the backend (auto-normalizing them).
     const invalidUrlEntry = (Object.entries(platformUrls) as [PlatformKey, string][]) // type narrowing
       .map(([platform, url]) => ({ platform, url: url.trim() }))
-      .find((entry) => entry.url.length > 0 && !isSafeExternalUrl(entry.url));
+      .find((entry) => entry.url.length > 0 && !normalizeExternalUrl(entry.url));
 
     if (invalidUrlEntry) {
       toast.error('One of your external links looks invalid. Please use a full URL starting with http:// or https://');
@@ -281,10 +267,9 @@ const Onboarding = () => {
         platformUrls.other.trim() ||
         '';
 
-      const mainExternalUrl =
-        mainExternalUrlCandidate && isSafeExternalUrl(mainExternalUrlCandidate)
-          ? mainExternalUrlCandidate
-          : null;
+      const mainExternalUrl = mainExternalUrlCandidate
+        ? normalizeExternalUrl(mainExternalUrlCandidate)
+        : null;
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -308,8 +293,9 @@ const Onboarding = () => {
       // Mettre à jour les liens de plateformes externes
       const platformRows = (Object.entries(platformUrls) as [PlatformKey, string][]) // type narrowing
         .map(([platform, url]) => ({ platform, url: url.trim() }))
-        .filter((entry) => entry.url.length > 0 && isSafeExternalUrl(entry.url))
-        .map((entry) => ({ profile_id: user.id, platform: entry.platform, url: entry.url }));
+        .map((entry) => ({ platform: entry.platform, url: normalizeExternalUrl(entry.url) }))
+        .filter((entry) => entry.url)
+        .map((entry) => ({ profile_id: user.id, platform: entry.platform, url: entry.url as string }));
 
       // On simplifie : on supprime les anciens liens de ce profil puis on insère les nouveaux
       const { error: deleteError } = await supabase
@@ -504,29 +490,20 @@ const Onboarding = () => {
                     <label htmlFor="country" className="text-xs font-medium text-exclu-space">
                       Country of residence
                     </label>
-                    <div className="space-y-1.5">
-                      <Input
-                        type="text"
-                        value={countryFilter}
-                        onChange={(e) => setCountryFilter(e.target.value)}
-                        placeholder="Type country or code (e.g. FR, Brazil, Czech...)"
-                        className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-xs"
-                      />
-                      <select
-                        id="country"
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                        className="h-10 w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 text-xs text-black focus:outline-none focus:ring-2 focus:ring-primary/60"
-                        required
-                      >
-                        <option value="">Select your country</option>
-                        {filteredCountries.map((c) => (
-                          <option key={c.code} value={c.code}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <select
+                      id="country"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="h-10 w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 text-xs text-black focus:outline-none focus:ring-2 focus:ring-primary/60"
+                      required
+                    >
+                      <option value="">Select your country</option>
+                      {filteredCountries.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
                     <p className="text-[11px] text-exclu-space/70">
                       This must match the country where you pay taxes. Stripe will use it to determine your payout
                       requirements.
