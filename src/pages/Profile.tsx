@@ -33,6 +33,8 @@ const Profile = () => {
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [country, setCountry] = useState<string | null>(null);
+  const [stripeMissingInfo, setStripeMissingInfo] = useState<string[]>([]);
+  const [isStripeDetailsLoading, setIsStripeDetailsLoading] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
@@ -98,6 +100,52 @@ const Profile = () => {
 
     fetchProfile();
   }, []);
+
+  // Load more detailed Stripe Connect requirements (what is missing) when there is a Stripe
+  // account but the status is not complete, so we can guide the creator.
+  useEffect(() => {
+    const loadStripeStatusDetails = async () => {
+      if (!stripeAccountId || stripeConnectStatus === 'complete') {
+        setStripeMissingInfo([]);
+        return;
+      }
+
+      setIsStripeDetailsLoading(true);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          setStripeMissingInfo([]);
+          return;
+        }
+
+        const { data, error } = await supabase.functions.invoke('stripe-connect-status', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (error) {
+          console.error('Error invoking stripe-connect-status', error);
+          setStripeMissingInfo([]);
+          return;
+        }
+
+        const payload = data as any;
+        const friendly = Array.isArray(payload?.friendly_messages) ? payload.friendly_messages : [];
+        setStripeMissingInfo(friendly);
+      } catch (err) {
+        console.error('Error loading Stripe Connect status details', err);
+        setStripeMissingInfo([]);
+      } finally {
+        setIsStripeDetailsLoading(false);
+      }
+    };
+
+    loadStripeStatusDetails();
+  }, [stripeAccountId, stripeConnectStatus]);
 
   const handleAvatarClick = () => {
     avatarInputRef.current?.click();
@@ -836,15 +884,39 @@ const Profile = () => {
                             : 'Connect your Stripe account to receive payments from your fans.'}
                         </p>
                         {stripeAccountId && (
-                          <p className="text-[11px] text-exclu-space/60 mt-1">
-                            Linked Stripe account:
-                            <span className="ml-1 font-mono text-exclu-cloud/80 break-all">{stripeAccountId}</span>
-                            {country && (
-                              <span className="ml-1">
-                                · Payout country: <span className="font-medium">{country}</span>
-                              </span>
+                          <>
+                            <p className="text-[11px] text-exclu-space/60 mt-1">
+                              Stripe account email:
+                              <span className="ml-1 font-medium text-exclu-cloud/90">{email}</span>
+                              {country && (
+                                <span className="ml-1">
+                                  · Payout country: <span className="font-medium">{country}</span>
+                                </span>
+                              )}
+                            </p>
+                            {stripeConnectStatus !== 'complete' && (
+                              <div className="mt-2 text-[11px] text-exclu-space/70">
+                                <p className="font-medium text-exclu-space/80 mb-1">
+                                  {isStripeDetailsLoading
+                                    ? 'Checking with Stripe what is still required…'
+                                    : 'Stripe still needs the following information:'}
+                                </p>
+                                {!isStripeDetailsLoading && stripeMissingInfo.length > 0 && (
+                                  <ul className="list-disc list-inside space-y-0.5">
+                                    {stripeMissingInfo.map((item, idx) => (
+                                      <li key={idx}>{item}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {!isStripeDetailsLoading && stripeMissingInfo.length === 0 && (
+                                  <p className="text-[11px] text-exclu-space/60">
+                                    Open Stripe to review your details. Any remaining checks will be shown directly in your
+                                    Stripe dashboard.
+                                  </p>
+                                )}
+                              </div>
                             )}
-                          </p>
+                          </>
                         )}
                       </div>
                     </div>
