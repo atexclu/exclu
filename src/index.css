@@ -76,7 +76,14 @@
   }
 
   ::selection {
-    @apply bg-primary/30 text-white;
+    /* Make text selection readable: light highlight with dark text */
+    @apply bg-[hsl(var(--exclu-cloud)/0.25)] text-black;
+  }
+
+  /* Explicit selection colors inside form fields (login / signup inputs, textareas, etc.) */
+  input::selection,
+  textarea::selection {
+    @apply bg-sky-500/60 text-white;
   }
 }
 

@@ -411,6 +411,100 @@ with check (auth.uid() = creator_id);
 - ✅ `create-creator-subscription` : abonnement créateur Premium
 - ✅ `stripe-connect-onboard` : onboarding Stripe Connect
 
+### Flux Stripe & sécurité
+
+#### Abonnement créateur Premium
+
+- **Création de la session** :
+  - Initié côté frontend depuis la page Profil (section abonnement) via l’Edge Function `create-creator-subscription`.
+  - La function :
+    - valide le JWT utilisateur en interne avec un client admin Supabase,
+    - charge le profil (`profiles.id, stripe_customer_id, is_creator_subscribed`),
+    - crée un `customer` Stripe si nécessaire et enregistre `stripe_customer_id` sur le profil,
+    - crée une session Checkout Stripe en mode `subscription` avec :
+      - `price: STRIPE_CREATOR_PRICE_ID` (prix mensuel Premium),
+      - `metadata.supabase_user_id = user.id`,
+      - `subscription_data.metadata.supabase_user_id = user.id`.
+
+- **Activation de l’abonnement (webhook)** :
+  - L’Edge Function `stripe-webhook` écoute notamment :
+    - `checkout.session.completed` (mode `subscription`),
+    - `customer.subscription.updated`,
+    - `customer.subscription.deleted`.
+  - À la fin du checkout (event `checkout.session.completed` mode `subscription` avec `metadata.supabase_user_id`), le webhook met `profiles.is_creator_subscribed = true` pour l’ID concerné.
+  - Lors des mises à jour d’abonnement (event `customer.subscription.updated`), le webhook recalcule `is_creator_subscribed` en fonction du statut Stripe :
+    - `true` si `status` ∈ {`active`, `trialing`},
+    - `false` sinon.
+  - Lors d’une résiliation (event `customer.subscription.deleted`), le webhook force `is_creator_subscribed = false`.
+
+#### Achats de contenu (checkouts one‑shot)
+
+- **Création de la session** :
+  - Initiée côté frontend depuis la page publique d’un lien (`/l/:slug`) via l’Edge Function `create-link-checkout-session`.
+  - La function :
+    - charge le lien (`links`) par `slug` et vérifie qu’il est `published` avec un prix valide,
+    - charge le profil créateur (`profiles`) pour récupérer `stripe_account_id`, `is_creator_subscribed`, `stripe_connect_status`,
+    - bloque le checkout si le compte Connect n’est pas encore complètement onboardé,
+    - calcule les montants :
+      - prix créateur (base),
+      - +5 % de frais fan,
+      - commission plateforme de 10 % sur le prix créateur pour les comptes **Free**, 0 % pour les comptes **Premium**,
+    - crée une session Checkout Stripe en mode `payment` avec :
+      - `metadata.link_id`,
+      - `metadata.creator_id`,
+      - `metadata.slug`,
+      - `payment_intent_data.application_fee_amount` (commission + frais fan),
+      - `payment_intent_data.transfer_data.destination = stripe_account_id` du créateur.
+
+- **Enregistrement de l’achat (webhook)** :
+  - L’Edge Function `stripe-webhook` traite `checkout.session.completed` en mode `payment` uniquement si `session.metadata.link_id` est présent.
+  - Pour ces sessions (créées par `create-link-checkout-session`), le webhook :
+    - vérifie d’abord si un achat existe déjà pour `stripe_session_id` (idempotence),
+    - sinon, insère une ligne dans la table `purchases` avec :
+      - `link_id`,
+      - `creator_id`,
+      - `amount_cents = session.amount_total` (montant réellement payé par le fan),
+      - `currency`,
+      - `stripe_session_id`,
+      - `status = 'completed'`,
+      - `fan_email` / `buyer_email` issus de `customer_details.email`.
+  - Les checkouts historiques créés directement depuis le Dashboard Stripe (payment links sans metadata) ne sont pas enregistrés dans `purchases` car le webhook n’a pas d’`link_id` pour savoir quel contenu débloquer.
+
+#### Validation Stripe Connect (créateurs)
+
+- L’Edge Function `stripe-connect-onboard` crée ou met à jour le compte Connect Express du créateur.
+- La liste des pays supportés est définie explicitement côté backend (`SUPPORTED_STRIPE_CONNECT_COUNTRIES`) et synchronisée avec l’UI d’onboarding.
+- L’Edge Function `stripe-webhook` écoute également `account.updated` pour mettre à jour `profiles.stripe_connect_status` en fonction des capacités Stripe :
+  - `complete` si `charges_enabled` + `payouts_enabled` sont vrais,
+  - `restricted` si un `disabled_reason` est présent,
+  - `pending` sinon.
+
+#### Sécurité des intégrations Stripe
+
+- **Signature des webhooks** :
+  - `stripe-webhook` récupère l’en-tête `stripe-signature` et reconstruit l’événement avec
+    `stripe.webhooks.constructEventAsync(body, signature, STRIPE_WEBHOOK_SECRET)`.
+  - Si la signature ne correspond pas au secret `whsec_...` configuré dans les variables d’environnement Supabase, la requête est rejetée avec `400 Webhook signature verification failed`.
+  - Cela garantit que seuls les appels provenant réellement de Stripe peuvent créer des `purchases` ou modifier `is_creator_subscribed` / `stripe_connect_status`.
+
+- **Séparation des secrets et du frontend** :
+  - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SERVICE_ROLE_KEY`, `STRIPE_CREATOR_PRICE_ID`, `PUBLIC_SITE_URL` sont stockés dans les variables d’environnement du projet Supabase / Vite et **ne sont jamais exposés au code frontend compilé**.
+
+- **Service Role & RLS** :
+  - Les Edge Functions utilisent un client Supabase créé avec `SERVICE_ROLE_KEY` côté serveur.
+  - Cela contourne les policies RLS **uniquement dans les fonctions backend**, jamais côté client.
+  - Le webhook ne croit que les données provenant de Stripe + des metadata générées par nos propres fonctions (`create-creator-subscription`, `create-link-checkout-session`), jamais des données soumises par le navigateur.
+
+- **verify_jwt et accès aux fonctions** :
+  - Certaines functions (`create-creator-subscription`, `create-link-checkout-session`, `stripe-connect-onboard`) sont appelées depuis le frontend et valident elles-mêmes le JWT utilisateur si nécessaire.
+  - La function `stripe-webhook` est appelée uniquement par Stripe : 
+    - `verify_jwt = false` dans `supabase/config.toml` pour cette function afin que le gateway Supabase ne bloque pas les requêtes Stripe,
+    - l’authentification est assurée par la **signature webhook** et non par un JWT.
+
+- **Idempotence et résilience** :
+  - Le webhook vérifie l’existence d’un achat par `stripe_session_id` avant d’insérer dans `purchases` pour éviter les doublons en cas de ré-envoi Stripe.
+  - Les updates d’abonnement sont idempotents : chaque event `customer.subscription.updated` recalcule `is_creator_subscribed` à partir du statut Stripe.
+
 ## Prochaines évolutions possibles
 
 - Internationalisation (FR / EN)
