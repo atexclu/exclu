@@ -239,16 +239,48 @@ const CreatorPublic = () => {
         )}
       </motion.div>
 
-      {/* Desktop: Gradient background */}
+      {/* Desktop: Gradient background with subtle animated waves */}
       <div className="hidden sm:block fixed inset-0 z-0 bg-gradient-to-b from-black via-exclu-ink to-black">
+        {/* Soft halo behind the profile card */}
         <motion.div
           className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] mx-auto max-w-3xl rounded-full blur-3xl opacity-80"
           style={{
-            background: `radial-gradient(circle at top, rgba(255,255,255,0.18), transparent 55%), radial-gradient(circle at bottom, ${theme.bg}, transparent 60%)`,
+            background: `radial-gradient(circle at top, rgba(255,255,255,0.16), transparent 55%), radial-gradient(circle at bottom, ${theme.bg}, transparent 60%)`,
           }}
           initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.8, ease: 'easeOut' }}
+          animate={{
+            opacity: [0.7, 0.9, 0.7],
+            scale: [0.95, 1.03, 0.98],
+          }}
+          transition={{ duration: 16, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+        />
+
+        {/* Gentle horizontal wave near the middle */}
+        <motion.div
+          className="pointer-events-none absolute inset-x-[-10%] top-1/3 h-40 blur-3xl opacity-60"
+          style={{
+            background: `linear-gradient(90deg, transparent 0%, ${theme.bg} 40%, rgba(0,0,0,0.2) 100%)`,
+          }}
+          initial={{ opacity: 0.2, y: 0 }}
+          animate={{
+            opacity: [0.2, 0.45, 0.2],
+            y: [-10, 6, -10],
+          }}
+          transition={{ duration: 20, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
+        />
+
+        {/* Lower, softer wave for depth */}
+        <motion.div
+          className="pointer-events-none absolute inset-x-[-15%] bottom-8 h-48 blur-3xl opacity-50"
+          style={{
+            background: `linear-gradient(120deg, rgba(0,0,0,0.2) 0%, ${theme.bg} 45%, transparent 100%)`,
+          }}
+          initial={{ opacity: 0.15, y: 0 }}
+          animate={{
+            opacity: [0.15, 0.35, 0.15],
+            y: [6, -8, 6],
+          }}
+          transition={{ duration: 24, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
         />
       </div>
 
