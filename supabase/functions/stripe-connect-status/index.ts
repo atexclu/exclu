@@ -207,6 +207,17 @@ serve(async (req) => {
       status = 'restricted';
     }
 
+    // Self-healing: automatically update the DB if the webhook hasn't fired yet
+    // or if there is a mismatch. This ensures the frontend gets the latest data
+    // immediately after calling this function.
+    if (profile.stripe_connect_status !== status) {
+      console.log('Syncing Stripe status for user', user.id, 'from', profile.stripe_connect_status, 'to', status);
+      await supabaseAdmin
+        .from('profiles')
+        .update({ stripe_connect_status: status })
+        .eq('id', user.id);
+    }
+
     const allKeys = new Set<string>();
     [...currentlyDue, ...pastDue, ...pendingVerification].forEach((key) => allKeys.add(key));
 

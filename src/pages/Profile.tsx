@@ -196,6 +196,7 @@ const Profile = () => {
         display_name: displayName.trim() || null,
         handle: handle.trim().toLowerCase() || null,
         bio: bio.trim() || null,
+        country: country || 'US',
       })
       .eq('id', userId);
 
@@ -435,11 +436,10 @@ const Profile = () => {
                     <button
                       key={item.id}
                       onClick={() => setActiveSection(item.id)}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                        isActive
-                          ? 'bg-primary/10 text-primary border border-primary/30'
-                          : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70 border border-transparent'
-                      }`}
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${isActive
+                        ? 'bg-primary/10 text-primary border border-primary/30'
+                        : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70 border border-transparent'
+                        }`}
                     >
                       <Icon className="w-4 h-4 flex-shrink-0" />
                       <span>{item.label}</span>
@@ -587,6 +587,44 @@ const Profile = () => {
                           <p className="text-[10px] text-exclu-space/50 mt-1.5 text-right">{bio.length}/500</p>
                         </div>
                       </div>
+
+                      {/* Country Selector */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">
+                        <div className="sm:pt-2.5">
+                          <label className="text-sm font-medium text-exclu-cloud">Country</label>
+                          <p className="text-xs text-exclu-space/60 mt-0.5 hidden sm:block">Required for payouts</p>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <select
+                            value={country || 'US'}
+                            onChange={(e) => setCountry(e.target.value)}
+                            className="h-11 w-full rounded-md border border-exclu-arsenic/50 bg-black/40 px-3 text-sm text-exclu-cloud focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                          >
+                            <option value="US">United States</option>
+                            <option value="GB">United Kingdom</option>
+                            <option value="CA">Canada</option>
+                            <option value="AU">Australia</option>
+                            <option value="FR">France</option>
+                            <option value="DE">Germany</option>
+                            <option value="ES">Spain</option>
+                            <option value="IT">Italy</option>
+                            <option value="NL">Netherlands</option>
+                            <option value="BE">Belgium</option>
+                            <option value="CH">Switzerland</option>
+                            <option value="AT">Austria</option>
+                            <option value="IE">Ireland</option>
+                            <option value="PT">Portugal</option>
+                            <option value="PL">Poland</option>
+                            <option value="CZ">Czech Republic</option>
+                            <option value="DK">Denmark</option>
+                            <option value="FI">Finland</option>
+                            <option value="NO">Norway</option>
+                            <option value="SE">Sweden</option>
+                            <option value="BR">Brazil</option>
+                            <option value="MX">Mexico</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Save button in footer */}
@@ -702,11 +740,10 @@ const Profile = () => {
                               setThemeColor(theme.id);
                               void saveAppearance({ themeColorOverride: theme.id, silent: true });
                             }}
-                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                              themeColor === theme.id
-                                ? 'border-white/50 bg-white/10'
-                                : 'border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
-                            }`}
+                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${themeColor === theme.id
+                              ? 'border-white/50 bg-white/10'
+                              : 'border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
+                              }`}
                           >
                             <div className={`w-10 h-10 rounded-full ${theme.color}`} />
                             <span className="text-xs text-exclu-cloud">{theme.label}</span>
@@ -921,17 +958,59 @@ const Profile = () => {
                       </div>
                     </div>
 
-                    <div className="mt-4">
+                    <div className="mt-4 flex flex-col sm:flex-row gap-4 sm:items-end">
                       {!stripeAccountId && (
-                        <Button
-                          onClick={handleStripeConnect}
-                          variant="hero"
-                          disabled={isStripeLoading}
-                          className="rounded-full"
-                        >
-                          <CreditCard className="w-4 h-4 mr-2" />
-                          {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
-                        </Button>
+                        <>
+                          <div className="flex-1 max-w-xs space-y-1.5">
+                            <label className="text-xs font-medium text-exclu-cloud ml-1">
+                              Payout Country
+                            </label>
+                            <select
+                              value={country || 'US'}
+                              onChange={(e) => {
+                                setCountry(e.target.value);
+                                // Auto-save the country when changed here so the user doesn't have to click "Save" elsewhere
+                                void supabase
+                                  .from('profiles')
+                                  .update({ country: e.target.value })
+                                  .eq('id', userId);
+                              }}
+                              className="h-10 w-full rounded-full border border-exclu-arsenic/60 bg-black/40 px-3 text-sm text-exclu-cloud focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            >
+                              <option value="US">United States 🇺🇸</option>
+                              <option value="GB">United Kingdom 🇬🇧</option>
+                              <option value="CA">Canada 🇨🇦</option>
+                              <option value="AU">Australia 🇦🇺</option>
+                              <option value="FR">France 🇫🇷</option>
+                              <option value="DE">Germany 🇩🇪</option>
+                              <option value="ES">Spain 🇪🇸</option>
+                              <option value="IT">Italy 🇮🇹</option>
+                              <option value="NL">Netherlands 🇳🇱</option>
+                              <option value="BE">Belgium 🇧🇪</option>
+                              <option value="CH">Switzerland 🇨🇭</option>
+                              <option value="AT">Austria 🇦🇹</option>
+                              <option value="IE">Ireland 🇮🇪</option>
+                              <option value="PT">Portugal 🇵🇹</option>
+                              <option value="PL">Poland 🇵🇱</option>
+                              <option value="CZ">Czech Republic 🇨🇿</option>
+                              <option value="DK">Denmark 🇩🇰</option>
+                              <option value="FI">Finland 🇫🇮</option>
+                              <option value="NO">Norway 🇳🇴</option>
+                              <option value="SE">Sweden 🇸🇪</option>
+                              <option value="BR">Brazil 🇧🇷</option>
+                              <option value="MX">Mexico 🇲🇽</option>
+                            </select>
+                          </div>
+                          <Button
+                            onClick={handleStripeConnect}
+                            variant="hero"
+                            disabled={isStripeLoading}
+                            className="rounded-full"
+                          >
+                            <CreditCard className="w-4 h-4 mr-2" />
+                            {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
+                          </Button>
+                        </>
                       )}
                       {stripeAccountId && stripeConnectStatus !== 'complete' && (
                         <Button

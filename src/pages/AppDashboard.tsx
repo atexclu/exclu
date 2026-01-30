@@ -1,7 +1,7 @@
 import AppShell from '@/components/AppShell';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ExternalLink, X, CreditCard, Check, Copy, Zap } from 'lucide-react';
@@ -32,6 +32,7 @@ const AppDashboard = () => {
   const [connectPhaseIndex, setConnectPhaseIndex] = useState(0);
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const stripeConnectPhases = [
     'Preparing a secure connection with Stripe…',
@@ -145,6 +146,58 @@ const AppDashboard = () => {
       isMounted = false;
     };
   }, []);
+
+  // Handle return from Stripe Onboarding
+  useEffect(() => {
+    const checkStripeReturn = async () => {
+      const mode = searchParams.get('stripe_onboarding');
+
+      if (!mode) return;
+
+      // Clean up the URL params immediately so we don't re-trigger on reload
+      // We do this using replace to keep history clean
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('stripe_onboarding');
+      setSearchParams(newParams, { replace: true });
+
+      if (mode === 'refresh') {
+        toast.error('Connection incomplete. Please try connecting to Stripe again.');
+        return;
+      }
+
+      if (mode === 'return') {
+        const toastId = toast.loading('Verifying Stripe connection...');
+
+        try {
+          // Force a check against Stripe API (bypassing potential webhook delays)
+          // The edge function now also auto-updates the DB if needed.
+          const { data, error: funcError } = await supabase.functions.invoke('stripe-connect-status', {
+            // No body needed
+          });
+
+          if (funcError) throw funcError;
+
+          if (data && data.status) {
+            setStripeConnectStatus(data.status);
+
+            if (data.status === 'complete') {
+              toast.success('Stripe connected successfully! You can now receive payouts.', { id: toastId });
+              setShowStripeModal(false);
+            } else if (data.status === 'restricted') {
+              toast.warning('Stripe connected but requires more information.', { id: toastId });
+            } else {
+              toast.info('Stripe connection is still pending verification.', { id: toastId });
+            }
+          }
+        } catch (err) {
+          console.error('Error verifying Stripe return:', err);
+          toast.error('Could not verify connection status. Please refresh the page.', { id: toastId });
+        }
+      }
+    };
+
+    checkStripeReturn();
+  }, [searchParams, setSearchParams]);
 
   const handleStripeConnect = async () => {
     setIsConnectingStripe(true);
@@ -486,11 +539,10 @@ const AppDashboard = () => {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-3 py-1 rounded-full transition-colors ${
-                  activeTab === tab.key
-                    ? 'bg-exclu-cloud text-black shadow-sm'
-                    : 'text-exclu-space hover:text-exclu-cloud'
-                }`}
+                className={`px-3 py-1 rounded-full transition-colors ${activeTab === tab.key
+                  ? 'bg-exclu-cloud text-black shadow-sm'
+                  : 'text-exclu-space hover:text-exclu-cloud'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -522,9 +574,8 @@ const AppDashboard = () => {
               </div>
 
               <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-                  activeMetric === 'published' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                }`}
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'published' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                  }`}
                 onClick={() => {
                   setActiveMetric('published');
                   setHoveredPoint(null);
@@ -537,9 +588,8 @@ const AppDashboard = () => {
                 </p>
               </div>
               <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-                  activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                }`}
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                  }`}
                 onClick={() => {
                   setActiveMetric('sales');
                   setHoveredPoint(null);
@@ -550,9 +600,8 @@ const AppDashboard = () => {
                 <p className="text-[11px] text-exclu-space/80 mt-1">Number of purchases across all your links.</p>
               </div>
               <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${
-                  activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                }`}
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
+                  }`}
                 onClick={() => {
                   setActiveMetric('revenue');
                   setHoveredPoint(null);
@@ -567,207 +616,206 @@ const AppDashboard = () => {
             {/* Analytics chart */}
             <section className="mt-6">
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Growth over time</p>
-                <p className="text-sm text-exclu-space/80">
-                  {activeMetric === 'published'
-                    ? 'Published links'
-                    : activeMetric === 'sales'
-                    ? 'Total sales'
-                    : 'Revenue'}{' '}
-                  over the last {activeRange === '7d' ? '7 days' : activeRange === '30d' ? '30 days' : '12 months'}.
-                </p>
-              </div>
-              <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
-                {[
-                  { key: '7d' as const, label: '7D' },
-                  { key: '30d' as const, label: '30D' },
-                  { key: '365d' as const, label: '1Y' },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      setActiveRange(item.key);
-                      setHoveredPoint(null);
-                    }}
-                    className={`px-3 py-1 rounded-full transition-colors ${
-                      activeRange === item.key
-                        ? 'bg-exclu-cloud text-black shadow-sm'
-                        : 'text-exclu-space hover:text-exclu-cloud'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {isLoading ? (
-              <p className="text-sm text-exclu-space/80">Loading analytics…</p>
-            ) : (
-              (() => {
-                const series = buildSeries(activeMetric, activeRange);
-                const maxValue = series.reduce((max, p) => (p.value > max ? p.value : max), 0);
-
-                if (series.length === 0 || maxValue === 0) {
-                  return (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Growth over time</p>
                     <p className="text-sm text-exclu-space/80">
-                      Not enough data yet to display a chart. Start publishing links and generating sales.
+                      {activeMetric === 'published'
+                        ? 'Published links'
+                        : activeMetric === 'sales'
+                          ? 'Total sales'
+                          : 'Revenue'}{' '}
+                      over the last {activeRange === '7d' ? '7 days' : activeRange === '30d' ? '30 days' : '12 months'}.
                     </p>
-                  );
-                }
+                  </div>
+                  <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+                    {[
+                      { key: '7d' as const, label: '7D' },
+                      { key: '30d' as const, label: '30D' },
+                      { key: '365d' as const, label: '1Y' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          setActiveRange(item.key);
+                          setHoveredPoint(null);
+                        }}
+                        className={`px-3 py-1 rounded-full transition-colors ${activeRange === item.key
+                          ? 'bg-exclu-cloud text-black shadow-sm'
+                          : 'text-exclu-space hover:text-exclu-cloud'
+                          }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                const height = 160;
-                const width = 600; // viewBox width, SVG is responsive
-                const paddingX = 10;
-                const paddingY = 10;
-                const innerWidth = width - paddingX * 2;
-                const innerHeight = height - paddingY * 2;
+                {isLoading ? (
+                  <p className="text-sm text-exclu-space/80">Loading analytics…</p>
+                ) : (
+                  (() => {
+                    const series = buildSeries(activeMetric, activeRange);
+                    const maxValue = series.reduce((max, p) => (p.value > max ? p.value : max), 0);
 
-                const computedPoints = series.map((point, index) => {
-                  const x =
-                    series.length === 1
-                      ? paddingX + innerWidth / 2
-                      : paddingX + (innerWidth * index) / (series.length - 1);
-                  const normalized = point.value / (maxValue || 1);
-                  const y = paddingY + innerHeight - normalized * innerHeight;
-                  return { x, y, label: point.label, value: point.value, dateKey: point.dateKey };
-                });
+                    if (series.length === 0 || maxValue === 0) {
+                      return (
+                        <p className="text-sm text-exclu-space/80">
+                          Not enough data yet to display a chart. Start publishing links and generating sales.
+                        </p>
+                      );
+                    }
 
-                const pointsAttr = computedPoints.map((pt) => `${pt.x},${pt.y}`).join(' ');
+                    const height = 160;
+                    const width = 600; // viewBox width, SVG is responsive
+                    const paddingX = 10;
+                    const paddingY = 10;
+                    const innerWidth = width - paddingX * 2;
+                    const innerHeight = height - paddingY * 2;
 
-                const lastPoint = series[series.length - 1];
-                const tooltipPoint = hoveredPoint || lastPoint;
+                    const computedPoints = series.map((point, index) => {
+                      const x =
+                        series.length === 1
+                          ? paddingX + innerWidth / 2
+                          : paddingX + (innerWidth * index) / (series.length - 1);
+                      const normalized = point.value / (maxValue || 1);
+                      const y = paddingY + innerHeight - normalized * innerHeight;
+                      return { x, y, label: point.label, value: point.value, dateKey: point.dateKey };
+                    });
 
-                return (
-                  <div className="relative">
-                    <svg
-                      viewBox={`0 0 ${width} ${height}`}
-                      className="w-full h-40 sm:h-48 text-primary/80 transition-all duration-500"
-                    >
-                      <defs>
-                        <linearGradient id="metric-gradient" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
-                          <stop offset="100%" stopColor="rgba(15,23,42,0)" />
-                        </linearGradient>
-                      </defs>
+                    const pointsAttr = computedPoints.map((pt) => `${pt.x},${pt.y}`).join(' ');
 
-                      {/* Background grid */}
-                      <g className="stroke-exclu-arsenic/40">
-                        {[0.25, 0.5, 0.75].map((ratio) => (
-                          <line
-                            key={ratio}
-                            x1={paddingX}
-                            x2={width - paddingX}
-                            y1={paddingY + innerHeight * ratio}
-                            y2={paddingY + innerHeight * ratio}
-                            strokeWidth={0.5}
+                    const lastPoint = series[series.length - 1];
+                    const tooltipPoint = hoveredPoint || lastPoint;
+
+                    return (
+                      <div className="relative">
+                        <svg
+                          viewBox={`0 0 ${width} ${height}`}
+                          className="w-full h-40 sm:h-48 text-primary/80 transition-all duration-500"
+                        >
+                          <defs>
+                            <linearGradient id="metric-gradient" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
+                              <stop offset="100%" stopColor="rgba(15,23,42,0)" />
+                            </linearGradient>
+                          </defs>
+
+                          {/* Background grid */}
+                          <g className="stroke-exclu-arsenic/40">
+                            {[0.25, 0.5, 0.75].map((ratio) => (
+                              <line
+                                key={ratio}
+                                x1={paddingX}
+                                x2={width - paddingX}
+                                y1={paddingY + innerHeight * ratio}
+                                y2={paddingY + innerHeight * ratio}
+                                strokeWidth={0.5}
+                              />
+                            ))}
+                          </g>
+
+                          {/* Area under curve */}
+                          <polyline
+                            fill="url(#metric-gradient)"
+                            stroke="none"
+                            points={`${paddingX + innerWidth},${height - paddingY} ${pointsAttr} ${paddingX},${height - paddingY}`}
+                            className="opacity-80 transition-all duration-500"
                           />
-                        ))}
-                      </g>
 
-                      {/* Area under curve */}
-                      <polyline
-                        fill="url(#metric-gradient)"
-                        stroke="none"
-                        points={`${paddingX + innerWidth},${height - paddingY} ${pointsAttr} ${paddingX},${height - paddingY}`}
-                        className="opacity-80 transition-all duration-500"
-                      />
-
-                      {/* Line */}
-                      <polyline
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        points={pointsAttr}
-                        className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
-                      />
-
-                      {/* Hover points */}
-                      <g>
-                        {computedPoints.map((pt, index) => (
-                          <circle
-                            key={index}
-                            cx={pt.x}
-                            cy={pt.y}
-                            r={3}
-                            className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
-                            onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
-                            onMouseLeave={() => setHoveredPoint(null)}
-                            onClick={() => {
-                              // On sales / revenue, try to navigate to the link if the day maps to a single link
-                              if (activeMetric === 'published') return;
-
-                              const purchasesForDay = purchasesRaw.filter((purchase: any) => {
-                                if (!purchase.created_at) return false;
-                                const d = new Date(purchase.created_at);
-                                d.setHours(0, 0, 0, 0);
-                                const key = d.toISOString().slice(0, 10);
-                                return key === pt.dateKey;
-                              });
-
-                              const distinctLinkIds = Array.from(
-                                new Set(
-                                  purchasesForDay
-                                    .map((p: any) => p.link_id)
-                                    .filter((id: string | null | undefined) => !!id),
-                                ),
-                              );
-
-                              if (distinctLinkIds.length === 1) {
-                                navigate(`/app/links/${distinctLinkIds[0]}`);
-                              } else if (distinctLinkIds.length > 1) {
-                                toast.info('Multiple links were purchased on this day. Open your Links page for details.');
-                              }
-                            }}
+                          {/* Line */}
+                          <polyline
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            points={pointsAttr}
+                            className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
                           />
-                        ))}
-                      </g>
-                    </svg>
 
-                    {/* X-axis labels */}
-                    <div className="mt-2 flex justify-between text-[10px] text-exclu-space/70">
-                      {series.map((point, index) => (
-                        <span key={index} className="min-w-0 truncate">
-                          {index === 0 || index === series.length - 1 || series.length <= 7
-                            ? point.label
-                            : ''}
-                        </span>
-                      ))}
-                    </div>
+                          {/* Hover points */}
+                          <g>
+                            {computedPoints.map((pt, index) => (
+                              <circle
+                                key={index}
+                                cx={pt.x}
+                                cy={pt.y}
+                                r={3}
+                                className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
+                                onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
+                                onMouseLeave={() => setHoveredPoint(null)}
+                                onClick={() => {
+                                  // On sales / revenue, try to navigate to the link if the day maps to a single link
+                                  if (activeMetric === 'published') return;
 
-                    {/* Subtitle with latest total + tooltip info */}
-                    {tooltipPoint && (
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-exclu-space/80">
-                        <span>
-                          Total{' '}
-                          {activeMetric === 'revenue'
-                            ? `$${(lastPoint.value / 100).toLocaleString('en-US', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })} USD`
-                            : lastPoint.value}{' '}
-                          au {lastPoint.label}
-                        </span>
-                        {hoveredPoint && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 px-2.5 py-1 text-[10px] text-exclu-cloud">
-                            {tooltipPoint.label} ·{' '}
-                            {activeMetric === 'revenue'
-                              ? `$${(tooltipPoint.value / 100).toLocaleString('en-US', {
+                                  const purchasesForDay = purchasesRaw.filter((purchase: any) => {
+                                    if (!purchase.created_at) return false;
+                                    const d = new Date(purchase.created_at);
+                                    d.setHours(0, 0, 0, 0);
+                                    const key = d.toISOString().slice(0, 10);
+                                    return key === pt.dateKey;
+                                  });
+
+                                  const distinctLinkIds = Array.from(
+                                    new Set(
+                                      purchasesForDay
+                                        .map((p: any) => p.link_id)
+                                        .filter((id: string | null | undefined) => !!id),
+                                    ),
+                                  );
+
+                                  if (distinctLinkIds.length === 1) {
+                                    navigate(`/app/links/${distinctLinkIds[0]}`);
+                                  } else if (distinctLinkIds.length > 1) {
+                                    toast.info('Multiple links were purchased on this day. Open your Links page for details.');
+                                  }
+                                }}
+                              />
+                            ))}
+                          </g>
+                        </svg>
+
+                        {/* X-axis labels */}
+                        <div className="mt-2 flex justify-between text-[10px] text-exclu-space/70">
+                          {series.map((point, index) => (
+                            <span key={index} className="min-w-0 truncate">
+                              {index === 0 || index === series.length - 1 || series.length <= 7
+                                ? point.label
+                                : ''}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Subtitle with latest total + tooltip info */}
+                        {tooltipPoint && (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-exclu-space/80">
+                            <span>
+                              Total{' '}
+                              {activeMetric === 'revenue'
+                                ? `$${(lastPoint.value / 100).toLocaleString('en-US', {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })} USD`
-                              : tooltipPoint.value}
-                          </span>
+                                : lastPoint.value}{' '}
+                              au {lastPoint.label}
+                            </span>
+                            {hoveredPoint && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 px-2.5 py-1 text-[10px] text-exclu-cloud">
+                                {tooltipPoint.label} ·{' '}
+                                {activeMetric === 'revenue'
+                                  ? `$${(tooltipPoint.value / 100).toLocaleString('en-US', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })} USD`
+                                  : tooltipPoint.value}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })()
-            )}
+                    );
+                  })()
+                )}
               </div>
             </section>
           </>
@@ -818,9 +866,9 @@ const AppDashboard = () => {
                   {isLoading
                     ? '—'
                     : `$${(walletBalanceCents / 100).toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })} USD`}
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })} USD`}
                 </p>
               </div>
             </div>
@@ -867,15 +915,14 @@ const AppDashboard = () => {
                           </td>
                           <td className="px-2 sm:px-3 py-2">
                             <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                payout.status === 'paid'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
-                                  : payout.status === 'pending' || payout.status === 'processing'
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${payout.status === 'paid'
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                : payout.status === 'pending' || payout.status === 'processing'
                                   ? 'bg-amber-500/10 text-amber-300 border border-amber-500/40'
                                   : payout.status === 'failed'
-                                  ? 'bg-red-500/10 text-red-400 border border-red-500/40'
-                                  : 'bg-exclu-arsenic/40 text-exclu-cloud border border-exclu-arsenic/60'
-                              }`}
+                                    ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                    : 'bg-exclu-arsenic/40 text-exclu-cloud border border-exclu-arsenic/60'
+                                }`}
                             >
                               {payout.status}
                             </span>
