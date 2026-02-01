@@ -1,12 +1,15 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const supabaseUrl = Deno.env.get('PROJECT_URL');
-const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+const supabaseServiceRoleKey =
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
-  throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
+  throw new Error(
+    'Missing SUPABASE_URL/PROJECT_URL or SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY'
+  );
 }
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);

@@ -28,6 +28,9 @@ import PublicLink from "./pages/PublicLink";
 import Profile from "./pages/Profile";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Onboarding from "./pages/Onboarding";
+import AdminRoute from "@/components/AdminRoute";
+import AdminUsers from "./pages/AdminUsers";
+import AdminUserOverview from "./pages/AdminUserOverview";
 
 const queryClient = new QueryClient();
 
@@ -82,6 +85,22 @@ const App = () => {
               <ProtectedRoute>
                 <Onboarding />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <AdminRoute>
+                <AdminUsers />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/users/:id/overview"
+            element={
+              <AdminRoute>
+                <AdminUserOverview />
+              </AdminRoute>
             }
           />
           <Route

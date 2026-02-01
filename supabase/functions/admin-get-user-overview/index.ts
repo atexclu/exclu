@@ -1,0 +1,510 @@
+import Stripe from 'npm:stripe';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+const supabaseServiceRoleKey =
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
+const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+  throw new Error('Missing SUPABASE_URL/PROJECT_URL or SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY');
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_ANON_KEY environment variable');
+}
+
+if (!stripeSecretKey) {
+  throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+}
+
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+const stripe = new Stripe(stripeSecretKey, {
+  apiVersion: '2023-10-16',
+});
+
+// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
+const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const allowedOrigins = [
+  normalizedSiteOrigin,
+  'http://localhost:8080',
+  'http://localhost:8081',
+  'http://localhost:5173',
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers':
+      'authorization, x-client-info, apikey, content-type, x-supabase-auth',
+  };
+}
+
+// Lightweight in-memory rate limiting per IP
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 30; // per IP per window
+const ipHits = new Map<string, { count: number; windowStart: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const existing = ipHits.get(ip);
+
+  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+    ipHits.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+
+  existing.count += 1;
+  ipHits.set(ip, existing);
+  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+interface UserOverviewPayload {
+  profile: {
+    id: string;
+    display_name: string | null;
+    handle: string | null;
+    created_at: string | null;
+    is_creator: boolean | null;
+    country: string | null;
+    stripe_connect_status: string | null;
+  } | null;
+  links: Array<{
+    id: string;
+    title: string | null;
+    status: string | null;
+    price_cents: number | null;
+    created_at: string | null;
+    published_at: string | null;
+  }>;
+  assets: Array<{
+    id: string;
+    title: string | null;
+    created_at: string | null;
+    mime_type: string | null;
+    preview_url: string | null;
+  }>;
+  sales: Array<{
+    id: string;
+    link_id: string | null;
+    link_title: string | null;
+    buyer_email: string | null;
+    amount_cents: number | null;
+    currency: string | null;
+    status: string;
+    created_at: string | null;
+  }>;
+  stripe: {
+    status: string;
+    disabled_reason: string | null;
+    friendly_messages: string[];
+    account_email: string | null;
+    payout_country: string | null;
+  } | null;
+}
+
+function mapRequirementKeyToMessage(key: string): string {
+  if (key === 'business_profile.mcc') {
+    return 'Select the business category for this account in Stripe.';
+  }
+  if (key === 'business_profile.url') {
+    return 'Add a website or main social profile URL in Stripe.';
+  }
+  if (key.startsWith('business_profile')) {
+    return 'Complete the business profile details in Stripe.';
+  }
+
+  if (key === 'external_account') {
+    return 'Add or confirm the bank account where payouts will be sent.';
+  }
+
+  if (key.startsWith('representative.address')) {
+    return 'Complete the address of the account holder (city, street, postal code).';
+  }
+  if (key.startsWith('representative.dob')) {
+    return 'Add the date of birth of the account holder.';
+  }
+  if (key === 'representative.email') {
+    return 'Add or confirm the email address of the account holder.';
+  }
+  if (key === 'representative.phone') {
+    return 'Add or confirm the phone number of the account holder.';
+  }
+  if (key === 'representative.first_name' || key === 'representative.last_name') {
+    return 'Complete the full name of the account holder.';
+  }
+
+  if (key === 'business_type') {
+    return 'Specify whether this account is for an individual or a business.';
+  }
+
+  if (key === 'tos_acceptance.date' || key === 'tos_acceptance.ip') {
+    return "Accept Stripe's terms of service in the onboarding flow.";
+  }
+
+  if (key.startsWith('individual.address')) {
+    return 'Add or complete the personal address of the account holder.';
+  }
+  if (key.startsWith('individual.verification.document')) {
+    return 'Upload a valid identity document for verification.';
+  }
+  if (key.startsWith('individual.email')) {
+    return 'Confirm the personal email address in Stripe.';
+  }
+  if (key.startsWith('individual.phone')) {
+    return 'Add or verify the phone number in Stripe.';
+  }
+
+  return 'Provide additional information requested by Stripe for this account.';
+}
+
+serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('cf-connecting-ip') ??
+    'unknown';
+
+  if (isRateLimited(ip)) {
+    return new Response(JSON.stringify({ error: 'Too many requests' }), {
+      status: 429,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get the admin user from the Supabase access token passed via x-supabase-auth
+    const rawToken = req.headers.get('x-supabase-auth') ?? '';
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'Missing or invalid authorization token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey);
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuthClient.auth.getUser(token);
+
+    if (userError || !user) {
+      console.error('Error resolving user in admin-get-user-overview', userError);
+      return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Ensure the caller is an admin according to the profiles table
+    const { data: adminProfile, error: adminProfileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, is_admin')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (adminProfileError) {
+      console.error('Error loading admin profile in admin-get-user-overview', adminProfileError);
+      return new Response(JSON.stringify({ error: 'Unable to verify admin status' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!adminProfile || adminProfile.is_admin !== true) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const body = await req.json().catch(() => null);
+    const targetUserId = body?.user_id as string | undefined;
+
+    if (!targetUserId) {
+      return new Response(JSON.stringify({ error: 'Missing user_id in request body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Load the target user's profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select(
+        'id, display_name, handle, created_at, is_creator, country, stripe_connect_status, stripe_account_id',
+      )
+      .eq('id', targetUserId)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('Error loading target profile in admin-get-user-overview', profileError);
+      return new Response(JSON.stringify({ error: 'Failed to load user profile' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Resolve the target user's auth email via the Admin API so we can
+    // display it alongside Stripe status in the admin UI.
+    let authEmail: string | null = null;
+    try {
+      const { data: authUser, error: authUserError } =
+        await supabaseAdmin.auth.admin.getUserById(targetUserId);
+
+      if (authUserError) {
+        console.error('Error loading auth user in admin-get-user-overview', authUserError);
+      } else {
+        authEmail = authUser?.user?.email ?? null;
+      }
+    } catch (e) {
+      console.error('Unexpected error loading auth user in admin-get-user-overview', e);
+    }
+
+    // Load a list of the target user's links (most recent first)
+    const { data: links, error: linksError } = await supabaseAdmin
+      .from('links')
+      .select('id, title, status, price_cents, created_at')
+      .eq('creator_id', targetUserId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (linksError) {
+      console.error('Error loading target links in admin-get-user-overview', linksError);
+      return new Response(JSON.stringify({ error: 'Failed to load user links' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Load a subset of the target user's content library assets with signed preview URLs.
+    const { data: assets, error: assetsError } = await supabaseAdmin
+      .from('assets')
+      .select('id, title, created_at, storage_path, mime_type')
+      .eq('creator_id', targetUserId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (assetsError) {
+      console.error('Error loading target assets in admin-get-user-overview', assetsError);
+    }
+
+    const safeAssets: {
+      id: string;
+      title: string | null;
+      created_at: string | null;
+      mime_type: string | null;
+      preview_url: string | null;
+    }[] = [];
+
+    if (assets && assets.length > 0) {
+      for (const asset of assets as any[]) {
+        const storagePath = asset.storage_path as string | null;
+        let previewUrl: string | null = null;
+
+        if (storagePath) {
+          try {
+            const { data: signed } = await supabaseAdmin.storage
+              .from('paid-content')
+              .createSignedUrl(storagePath, 60 * 60);
+
+            if (signed?.signedUrl) {
+              previewUrl = signed.signedUrl;
+            }
+          } catch (e) {
+            console.error('Error generating signed URL for asset in admin-get-user-overview', e);
+          }
+        }
+
+        safeAssets.push({
+          id: asset.id as string,
+          title: (asset.title as string | null) ?? null,
+          created_at: (asset.created_at as string | null) ?? null,
+          mime_type: (asset.mime_type as string | null) ?? null,
+          preview_url: previewUrl,
+        });
+      }
+    }
+
+    // Compute a simple sales history based on purchases of the target user's recent links.
+    const linkTitleById = new Map<string, string | null>();
+    for (const l of (links ?? []) as any[]) {
+      if (l.id) {
+        linkTitleById.set(l.id as string, (l.title as string | null) ?? null);
+      }
+    }
+
+    let sales: {
+      id: string;
+      link_id: string | null;
+      link_title: string | null;
+      buyer_email: string | null;
+      amount_cents: number | null;
+      currency: string | null;
+      status: string;
+      created_at: string | null;
+    }[] = [];
+
+    const linkIds = Array.from(linkTitleById.keys());
+    if (linkIds.length > 0) {
+      const { data: purchases, error: purchasesError } = await supabaseAdmin
+        .from('purchases')
+        .select('id, link_id, buyer_email, amount_cents, currency, status, created_at')
+        .in('link_id', linkIds)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (purchasesError) {
+        console.error('Error loading purchases in admin-get-user-overview', purchasesError);
+      } else {
+        sales = (purchases ?? []).map((p: any) => {
+          const lid = (p.link_id as string | null) ?? null;
+          return {
+            id: p.id as string,
+            link_id: lid,
+            link_title: lid ? linkTitleById.get(lid) ?? null : null,
+            buyer_email: (p.buyer_email as string | null) ?? null,
+            amount_cents: typeof p.amount_cents === 'number' ? (p.amount_cents as number) : null,
+            currency: (p.currency as string | null) ?? null,
+            status: (p.status as string) ?? 'unknown',
+            created_at: (p.created_at as string | null) ?? null,
+          };
+        });
+      }
+    }
+
+    // Load detailed Stripe Connect status for this creator, similar to stripe-connect-status.
+    let stripeDetails: UserOverviewPayload['stripe'] = null;
+    let accountEmail: string | null = authEmail;
+    let payoutCountry: string | null = (profile as any)?.country ?? null;
+    if (profile?.stripe_account_id) {
+      try {
+        const account = await stripe.accounts.retrieve(profile.stripe_account_id as string);
+        const requirements = (account as any).requirements || {};
+        const currentlyDue: string[] = requirements.currently_due || [];
+        const pastDue: string[] = requirements.past_due || [];
+        const pendingVerification: string[] = requirements.pending_verification || [];
+        const disabledReason: string | null = requirements.disabled_reason || null;
+
+        // Prefer the email/country returned by Stripe if available.
+        if ((account as any).email) {
+          accountEmail = (account as any).email as string;
+        }
+        if ((account as any).country) {
+          payoutCountry = (account as any).country as string;
+        }
+
+        let status: 'pending' | 'restricted' | 'complete' = 'pending';
+        if ((account as any).charges_enabled && (account as any).payouts_enabled) {
+          status = 'complete';
+        } else if (disabledReason) {
+          status = 'restricted';
+        }
+
+        // Optionally sync DB status for this creator
+        if (profile.stripe_connect_status !== status) {
+          await supabaseAdmin
+            .from('profiles')
+            .update({ stripe_connect_status: status })
+            .eq('id', targetUserId);
+        }
+
+        const allKeys = new Set<string>();
+        [...currentlyDue, ...pastDue, ...pendingVerification].forEach((key) => allKeys.add(key));
+
+        const messageSet = new Set<string>();
+        const friendlyMessages: string[] = [];
+
+        for (const key of Array.from(allKeys)) {
+          const msg = mapRequirementKeyToMessage(key);
+          if (!messageSet.has(msg)) {
+            messageSet.add(msg);
+            friendlyMessages.push(msg);
+          }
+        }
+
+        stripeDetails = {
+          status,
+          disabled_reason: disabledReason,
+          friendly_messages: friendlyMessages.slice(0, 6),
+          account_email: accountEmail,
+          payout_country: payoutCountry,
+        };
+      } catch (e) {
+        console.error('Error loading Stripe account in admin-get-user-overview', e);
+        stripeDetails = {
+          status: profile.stripe_connect_status ?? 'unknown',
+          disabled_reason: null,
+          friendly_messages: [],
+          account_email: accountEmail,
+          payout_country: payoutCountry,
+        };
+      }
+    } else {
+      stripeDetails = {
+        status: profile?.stripe_connect_status ?? 'no_account',
+        disabled_reason: null,
+        friendly_messages: [],
+        account_email: authEmail,
+        payout_country: (profile as any)?.country ?? null,
+      };
+    }
+
+    const payload: UserOverviewPayload = {
+      profile: profile
+        ? {
+            id: profile.id,
+            display_name: profile.display_name ?? null,
+            handle: profile.handle ?? null,
+            created_at: profile.created_at ?? null,
+            is_creator: profile.is_creator ?? null,
+            country: profile.country ?? null,
+            stripe_connect_status: profile.stripe_connect_status ?? null,
+          }
+        : null,
+      links: (links ?? []).map((l: any) => ({
+        id: l.id,
+        title: l.title ?? null,
+        status: l.status ?? null,
+        price_cents: typeof l.price_cents === 'number' ? l.price_cents : null,
+        created_at: l.created_at ?? null,
+        published_at: null,
+      })),
+      assets: safeAssets,
+      sales,
+      stripe: stripeDetails,
+    };
+
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Unexpected error in admin-get-user-overview', error);
+    return new Response(JSON.stringify({ error: 'Internal error' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

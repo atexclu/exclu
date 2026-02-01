@@ -67,6 +67,7 @@ const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
   'http://localhost:8080',
+  'http://localhost:8081',
   'http://localhost:5173',
 ];
 
@@ -151,11 +152,58 @@ serve(async (req) => {
       });
     }
 
+    // By default, operate on the authenticated user. For admin requests that
+    // include a target_user_id in the body, we can trigger onboarding for
+    // another user while keeping the same Stripe + webhook logic.
+    let subjectUserId = user.id;
+    let subjectEmail = user.email ?? undefined;
+
+    const body = await req.json().catch(() => null);
+    const targetUserId = body?.target_user_id as string | undefined;
+
+    if (targetUserId && targetUserId !== user.id) {
+      // Ensure the caller is an admin before allowing cross-user onboarding.
+      const { data: adminProfile, error: adminProfileError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, is_admin')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (adminProfileError) {
+        console.error('Error loading admin profile in stripe-connect-onboard', adminProfileError);
+        return new Response(JSON.stringify({ error: 'Unable to verify admin status' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!adminProfile || adminProfile.is_admin !== true) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: targetUser, error: targetUserError } =
+        await supabaseAdmin.auth.admin.getUserById(targetUserId);
+
+      if (targetUserError || !targetUser || !targetUser.user) {
+        console.error('Error loading target user in stripe-connect-onboard', targetUserError);
+        return new Response(JSON.stringify({ error: 'Target user not found' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      subjectUserId = targetUserId;
+      subjectEmail = targetUser.user.email ?? undefined;
+    }
+
     // Fetch the creator's profile, including their country of residence
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id, stripe_account_id, stripe_connect_status, country')
-      .eq('id', user.id)
+      .eq('id', subjectUserId)
       .single();
 
     if (profileError || !profile) {
@@ -216,13 +264,13 @@ serve(async (req) => {
           const newAccount = await stripe.accounts.create({
             type: 'express',
             country: profile.country,
-            email: user.email ?? undefined,
+            email: subjectEmail,
             capabilities: {
               card_payments: { requested: true },
               transfers: { requested: true },
             },
             metadata: {
-              supabase_user_id: user.id,
+              supabase_user_id: subjectUserId,
             },
           });
 
@@ -234,7 +282,7 @@ serve(async (req) => {
               stripe_account_id: stripeAccountId,
               stripe_connect_status: 'pending',
             })
-            .eq('id', user.id);
+            .eq('id', subjectUserId);
 
           if (updateError) {
             console.error('Error updating profile with new Stripe account after country mismatch', updateError);
@@ -256,13 +304,13 @@ serve(async (req) => {
       const account = await stripe.accounts.create({
         type: 'express',
         country: profile.country,
-        email: user.email ?? undefined,
+        email: subjectEmail,
         capabilities: {
           card_payments: { requested: true },
           transfers: { requested: true },
         },
         metadata: {
-          supabase_user_id: user.id,
+          supabase_user_id: subjectUserId,
         },
       });
 
@@ -275,7 +323,7 @@ serve(async (req) => {
           stripe_account_id: stripeAccountId,
           stripe_connect_status: 'pending',
         })
-        .eq('id', user.id);
+        .eq('id', subjectUserId);
 
       if (updateError) {
         console.error('Error saving Stripe account ID to profile', updateError);

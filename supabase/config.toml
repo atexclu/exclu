@@ -18,3 +18,9 @@ verify_jwt = false
 
 [functions.increment-profile-view]
 verify_jwt = false
+
+[functions.admin-get-users]
+verify_jwt = false
+
+[functions.admin-get-user-overview]
+verify_jwt = false

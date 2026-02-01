@@ -555,12 +555,7 @@ const AppDashboard = () => {
             <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
               {/* Profile visits metric */}
               <div
-                className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70"
-                onClick={() => {
-                  if (publicProfileUrl) {
-                    window.open(publicProfileUrl, '_blank', 'noopener,noreferrer');
-                  }
-                }}
+                className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70"
               >
                 <p className="text-xs text-exclu-space mb-1">Profile visits</p>
                 <p className="text-2xl font-bold text-exclu-cloud">

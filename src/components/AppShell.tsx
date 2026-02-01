@@ -12,6 +12,7 @@ const AppShell = ({ children }: AppShellProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const fetchAvatar = async () => {
@@ -20,12 +21,15 @@ const AppShell = ({ children }: AppShellProps) => {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('avatar_url')
+        .select('avatar_url, is_admin')
         .eq('id', user.id)
         .single();
 
-      if (profile?.avatar_url) {
-        setAvatarUrl(profile.avatar_url);
+      if (profile) {
+        if (profile.avatar_url) {
+          setAvatarUrl(profile.avatar_url);
+        }
+        setIsAdmin(profile.is_admin === true);
       }
     };
 
@@ -38,6 +42,9 @@ const AppShell = ({ children }: AppShellProps) => {
     }
     if (path === '/app/content') {
       return location.pathname === '/app/content';
+    }
+    if (path === '/admin/users') {
+      return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
     }
     return location.pathname === path;
   };
@@ -91,6 +98,18 @@ const AppShell = ({ children }: AppShellProps) => {
             >
               Content
             </Link>
+            {isAdmin && (
+              <Link
+                to="/admin/users"
+                className={`px-3 py-1.5 rounded-full transition-all ${
+                  isActive('/admin/users')
+                    ? 'bg-exclu-cloud text-black shadow-sm'
+                    : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70'
+                }`}
+              >
+                Admin
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-2">
