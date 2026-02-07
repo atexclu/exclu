@@ -50,12 +50,12 @@
 
     /* Gradient Colors - Dark Mode */
     --gradient-violet: 282 85% 60%; /* #9B59B6 */
-    --gradient-pink: 340 82% 52%; /* #E91E63 */
+    --gradient-pink: 0 0% 100%; /* white */
     --gradient-blue: 230 15% 75%;
 
     /* Glow Effects - Dark Mode */
-    --glow-violet: 282 85% 60%;
-    --glow-pink: 340 82% 52%;
+    --glow-violet: 0 0% 100%;
+    --glow-pink: 0 0% 100%;
 
     /* Status Colors */
     --success: 142 71% 45%; /* #10B981 */
@@ -81,7 +81,7 @@
     --secondary-foreground: 230 25% 10%;
 
     --muted: 0 0% 96%;
-    --muted-foreground: 220 9% 46%; /* #6B7280 */
+    --muted-foreground: 220 9% 6%; /* #6B7280 */
 
     --accent: 0 0% 96%;
     --accent-foreground: 230 25% 10%;
@@ -98,7 +98,7 @@
     --exclu-phantom: 0 0% 98%;
     --exclu-arsenic: 0 0% 70%; /* Darker border gray for better visibility in light mode */
     --exclu-graphite: 220 9% 46%;
-    --exclu-space: 220 9% 10%;
+    --exclu-space: 220 9% 46%;
     --exclu-steel: 230 5% 40%;
     --exclu-smoke: 230 8% 22%;
     --exclu-cloud: 230 12% 9%;
@@ -106,12 +106,12 @@
 
     /* Gradient Colors - Light Mode */
     --gradient-violet: 266 85% 58%; /* #7C3AED */
-    --gradient-pink: 330 85% 49%; /* #DB2777 */
+    --gradient-pink: 0 0% 100%; /* white */
     --gradient-blue: 230 15% 45%;
 
     /* Glow Effects - Light Mode */
     --glow-violet: 266 85% 58%;
-    --glow-pink: 330 85% 49%;
+    --glow-pink: 0 0% 100%;
 
     /* Status Colors - Same for both modes */
     --success: 142 71% 45%;

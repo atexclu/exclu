@@ -68,8 +68,8 @@ const FeatureCard = ({ feature, index }: { feature: typeof features[0]; index: n
 
         {/* Highlight Stat */}
         <div className="mb-4">
-          <span className="text-4xl font-extrabold text-exclu-graphite">{feature.highlight}</span>
-          <span className="text-sm text-exclu-graphite ml-2">{feature.highlightLabel}</span>
+          <span className="text-4xl font-extrabold text-white">{feature.highlight}</span>
+          <span className="text-sm text-white ml-2">{feature.highlightLabel}</span>
         </div>
 
         {/* Content */}
