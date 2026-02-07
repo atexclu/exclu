@@ -47,10 +47,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (profile) {
         const displayName = profile.display_name || profile.handle || 'Creator';
         const bio = profile.bio || 'Check out my exclusive content on Exclu';
-        const ogImage = profile.avatar_url || 'https://exclu.at/og-profile-default.png';
+        const ogImage = `https://exclu.at/api/og-image?type=profile&handle=${encodeURIComponent(profile.handle)}`;
 
         return sendOGHTML(res, {
-          title: `${displayName} — Join me on Exclu`,
+          title: `${displayName} - Check out my Exclu profile`,
           description: bio,
           image: ogImage,
           url: `https://exclu.at/@${profile.handle}`,
@@ -75,10 +75,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const link = links?.[0];
 
       if (link) {
+        const ogImage = `https://exclu.at/api/og-image?type=link&slug=${encodeURIComponent(slug)}`;
+
         return sendOGHTML(res, {
-          title: `${link.title || 'Exclusive Content'} — Unlock now on Exclu`,
+          title: `${link.title || 'Exclusive Content'} - Unlock now on Exclu`,
           description: link.description || 'Unlock exclusive content on Exclu. No account needed.',
-          image: 'https://exclu.at/og-link-default.png',
+          image: ogImage,
           url: `https://exclu.at/l/${slug}`,
         });
       }
