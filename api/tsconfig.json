@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "outDir": "../.vercel/output",
+    "rootDir": "."
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}
