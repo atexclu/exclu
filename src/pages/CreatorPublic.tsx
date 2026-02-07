@@ -218,7 +218,14 @@ const CreatorPublic = () => {
 
   const handleSocialClick = (url: string) => {
     if (!url) return;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // On mobile, navigate directly so the OS can intercept and open the native app (deep link).
+    // window.open with _blank can prevent deep linking on some mobile browsers.
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = url;
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';

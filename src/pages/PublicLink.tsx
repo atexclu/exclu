@@ -5,11 +5,59 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight } from 'lucide-react';
+import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import JSZip from 'jszip';
 import PixelCard from '@/components/PixelCard';
 import Aurora from '@/components/ui/Aurora';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import CircularText from '@/components/CircularText';
+
+// Download a single file from a cross-origin signed URL
+async function downloadFile(url: string, filename?: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || url.split('/').pop()?.split('?')[0] || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('Download failed:', err);
+    window.open(url, '_blank');
+  }
+}
+
+// Download multiple files as a ZIP archive
+async function downloadAllAsZip(items: { url: string; filename: string }[], zipName: string) {
+  try {
+    const zip = new JSZip();
+    const fetches = items.map(async (item, idx) => {
+      try {
+        const res = await fetch(item.url);
+        const blob = await res.blob();
+        zip.file(item.filename || `file-${idx + 1}`, blob);
+      } catch (err) {
+        console.error('Failed to fetch for zip:', item.filename, err);
+      }
+    });
+    await Promise.all(fetches);
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const blobUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `${zipName}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('ZIP download failed:', err);
+  }
+}
 
 interface PublicLinkData {
   id: string;
@@ -76,6 +124,74 @@ const themeColors: Record<string, { gradient: string; glow: string }> = {
   },
 };
 
+// Poll for purchase record with exponential backoff.
+// Returns the purchase row or null if not found after all retries.
+const POLL_INTERVALS_MS = [1000, 2000, 4000, 8000, 16000] as const;
+
+async function pollForPurchase(
+  linkId: string,
+  stripeSessionId: string,
+  signal: AbortSignal,
+): Promise<PurchaseData | null> {
+  for (const delay of POLL_INTERVALS_MS) {
+    if (signal.aborted) return null;
+    await new Promise((r) => setTimeout(r, delay));
+    if (signal.aborted) return null;
+
+    const { data } = await supabase
+      .from('purchases')
+      .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
+      .eq('link_id', linkId)
+      .eq('stripe_session_id', stripeSessionId)
+      .maybeSingle();
+
+    if (data) return data as PurchaseData;
+  }
+  return null;
+}
+
+// Generate signed URLs via Edge Function (uses service_role_key server-side to bypass storage RLS).
+async function generateSignedUrls(
+  linkId: string,
+  sessionId: string,
+  items: ContentItem[],
+): Promise<ContentItem[]> {
+  try {
+    const { data, error } = await supabase.functions.invoke('generate-signed-urls', {
+      body: { link_id: linkId, session_id: sessionId },
+    });
+
+    if (error || !data?.signedUrls) {
+      console.error('[generateSignedUrls] Edge Function error:', error || 'no signedUrls');
+      return items.map((item) => ({ ...item, previewUrl: undefined }));
+    }
+
+    const urlMap = new Map<string, { url: string | null; type: string }>();
+    for (const entry of data.signedUrls) {
+      urlMap.set(entry.path, { url: entry.url, type: entry.type });
+    }
+
+    return items.map((item) => {
+      if (!item.storagePath) return item;
+      const match = urlMap.get(item.storagePath);
+      return match ? { ...item, previewUrl: match.url ?? undefined, type: match.type as 'image' | 'video' } : item;
+    });
+  } catch (err) {
+    console.error('[generateSignedUrls] Unexpected error:', err);
+    return items.map((item) => ({ ...item, previewUrl: undefined }));
+  }
+}
+
+interface PurchaseData {
+  id: string;
+  access_expires_at: string | null;
+  amount_cents: number;
+  currency: string;
+  created_at: string;
+  email_sent: boolean;
+  download_count: number;
+}
+
 const PublicLink = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
@@ -87,13 +203,17 @@ const PublicLink = () => {
   const [error, setError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
+  const [purchaseData, setPurchaseData] = useState<PurchaseData | null>(null);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
   useEffect(() => {
     const abortController = new AbortController();
+    const signal = abortController.signal;
     
     const fetchLink = async () => {
       if (!slug) return;
@@ -106,7 +226,7 @@ const PublicLink = () => {
           .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
           .eq('slug', slug)
           .eq('status', 'published')
-          .abortSignal(abortController.signal)
+          .abortSignal(signal)
           .single();
 
       if (error || !data) {
@@ -139,7 +259,7 @@ const PublicLink = () => {
           .from('profiles')
           .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio')
           .eq('id', data.creator_id)
-          .abortSignal(abortController.signal)
+          .abortSignal(signal)
           .maybeSingle();
         if (creatorProfile) {
           setCreator(creatorProfile as CreatorProfileData);
@@ -149,18 +269,37 @@ const PublicLink = () => {
       // Check if user has purchased this link (via session_id in URL)
       let hasPurchased = false;
       if (sessionId) {
+        // First attempt: immediate lookup
         const { data: purchase } = await supabase
           .from('purchases')
-          .select('id, access_expires_at')
+          .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
           .eq('link_id', data.id)
           .eq('stripe_session_id', sessionId)
-          .abortSignal(abortController.signal)
-          .single();
+          .maybeSingle();
 
         if (purchase) {
+          const pd = purchase as PurchaseData;
           hasPurchased = true;
           setIsUnlocked(true);
-          setAccessExpiresAt((purchase as any).access_expires_at ?? null);
+          setAccessExpiresAt(pd.access_expires_at ?? null);
+          setPurchaseData(pd);
+        } else {
+          // Race condition: webhook hasn't created the purchase yet.
+          // Show a "verifying payment" state and poll with exponential backoff.
+          setIsVerifyingPayment(true);
+          setIsLoading(false);
+
+          const polledPurchase = await pollForPurchase(data.id, sessionId, signal);
+
+          if (signal.aborted) return;
+
+          if (polledPurchase) {
+            hasPurchased = true;
+            setIsUnlocked(true);
+            setAccessExpiresAt(polledPurchase.access_expires_at ?? null);
+            setPurchaseData(polledPurchase);
+          }
+          setIsVerifyingPayment(false);
         }
       }
 
@@ -169,47 +308,27 @@ const PublicLink = () => {
         .from('link_media')
         .select('asset_id, assets(storage_path, mime_type)')
         .eq('link_id', data.id)
-        .abortSignal(abortController.signal)
+        .abortSignal(signal)
         .order('position', { ascending: true });
 
       const items: ContentItem[] = [];
-      const unlocked: ContentItem[] = [];
 
       // Add main content if exists
       if (data.storage_path) {
         const ext = data.storage_path.split('.').pop()?.toLowerCase() ?? '';
         const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-        const item: ContentItem = { id: 'main', type: isVideo ? 'video' : 'image', storagePath: data.storage_path };
-        items.push(item);
-        
-        if (hasPurchased) {
-          // Generate signed URL for unlocked content
-          const { data: signed } = await supabase.storage
-            .from('paid-content')
-            .createSignedUrl(data.storage_path, 60 * 60);
-          unlocked.push({ ...item, previewUrl: signed?.signedUrl });
-        }
+        items.push({ id: 'main', type: isVideo ? 'video' : 'image', storagePath: data.storage_path });
       }
 
       // Add linked assets
       if (linkMedia && linkMedia.length > 0) {
         for (const lm of linkMedia) {
           const asset = (lm as any).assets;
-          const mimeType = asset?.mime_type || '';
-          const storagePath = asset?.storage_path;
-          const item: ContentItem = {
+          items.push({
             id: lm.asset_id || `asset-${items.length}`,
-            type: mimeType.startsWith('video/') ? 'video' : 'image',
-            storagePath,
-          };
-          items.push(item);
-          
-          if (hasPurchased && storagePath) {
-            const { data: signed } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(storagePath, 60 * 60);
-            unlocked.push({ ...item, previewUrl: signed?.signedUrl });
-          }
+            type: (asset?.mime_type || '').startsWith('video/') ? 'video' : 'image',
+            storagePath: asset?.storage_path,
+          });
         }
       }
 
@@ -219,7 +338,13 @@ const PublicLink = () => {
       }
 
       setContentItems(items);
-      setUnlockedContent(unlocked);
+
+      // Generate signed URLs only if purchased (via Edge Function with service_role_key)
+      if (hasPurchased && sessionId) {
+        const unlocked = await generateSignedUrls(data.id, sessionId, items);
+        setUnlockedContent(unlocked);
+      }
+
       setIsLoading(false);
       } catch (err: any) {
         if (err.name === 'AbortError') {
@@ -312,8 +437,28 @@ const PublicLink = () => {
 
       <main className="flex-1 flex flex-col relative z-10">
         <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
+          {/* VERIFYING PAYMENT STATE */}
+          {isVerifyingPayment && link && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-32 gap-6"
+            >
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-xl flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 text-white animate-spin" />
+                </div>
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold text-white">Verifying your payment…</h2>
+                <p className="text-sm text-white/60 max-w-xs">This usually takes a few seconds. Please don't close this page.</p>
+              </div>
+            </motion.div>
+          )}
+
           {/* LOCKED STATE - New Grid Layout */}
-          {!isLoading && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
+          {!isLoading && !isVerifyingPayment && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
               {/* LEFT: Card with Effects */}
               <motion.div
@@ -553,6 +698,13 @@ const PublicLink = () => {
                         <p className="text-center text-[10px] text-white/40 mt-2 leading-relaxed">
                           Start selling your own premium content without commission with Exclu.
                         </p>
+                        <div className="flex items-center justify-center gap-3 mt-3">
+                          <a href="/terms" className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Terms</a>
+                          <span className="text-white/15">·</span>
+                          <a href="/privacy" className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Privacy</a>
+                          <span className="text-white/15">·</span>
+                          <a href="/cookies" className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Cookies</a>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -563,187 +715,213 @@ const PublicLink = () => {
 
           {/* UNLOCKED STATE - Modern Layout */}
           {!isLoading && link && isUnlocked && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
-              {/* LEFT: Unlocked Content */}
+            <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
+              {/* Success Header */}
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
-                className="relative overflow-hidden rounded-3xl border border-green-500/30 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="flex items-center justify-between"
               >
-                {/* Success indicator */}
-                <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40">
-                  <Check className="w-4 h-4 text-green-400" />
-                  <span className="text-xs font-medium text-green-400">Unlocked</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40">
+                    <Check className="w-3.5 h-3.5 text-green-400" />
+                    <span className="text-xs font-medium text-green-400">Unlocked</span>
+                  </div>
+                  <h1 className="text-lg sm:text-xl font-bold text-white truncate">{link.title}</h1>
                 </div>
+                <button
+                  onClick={() => {
+                    const downloadable = unlockedContent.filter((i) => i.previewUrl);
+                    if (downloadable.length === 0) return;
+                    if (downloadable.length === 1) {
+                      downloadFile(downloadable[0].previewUrl!);
+                    } else {
+                      downloadAllAsZip(
+                        downloadable.map((item, idx) => ({
+                          url: item.previewUrl!,
+                          filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
+                        })),
+                        link.title || 'exclu-content',
+                      );
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-xs font-semibold hover:bg-white/90 transition-all active:scale-95 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download{unlockedContent.filter((i) => i.previewUrl).length > 1 ? ` (${unlockedContent.filter((i) => i.previewUrl).length})` : ''}</span>
+                </button>
+              </motion.div>
 
+              {/* Media Gallery */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
+                className="relative rounded-3xl border border-exclu-arsenic/60 bg-exclu-ink/80 backdrop-blur-xl overflow-hidden"
+              >
                 {unlockedContent.length > 0 ? (
-                  <div className="space-y-4">
-                    {unlockedContent.map((item, index) => (
+                  <div className="relative">
+                    {/* Current media item */}
+                    <AnimatePresence mode="wait">
                       <motion.div
-                        key={item.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, delay: index * 0.1 }}
-                        className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-exclu-arsenic/60"
+                        key={activeMediaIndex}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="relative"
                       >
-                        {item.type === 'video' ? (
+                        {unlockedContent[activeMediaIndex]?.type === 'video' ? (
                           <video
                             controls
-                            className="w-full h-full object-contain bg-black"
-                            src={item.previewUrl}
+                            className="w-full block"
+                            src={unlockedContent[activeMediaIndex]?.previewUrl}
                           />
                         ) : (
                           <img
-                            src={item.previewUrl}
-                            alt={link.title}
-                            className="w-full h-full object-contain bg-black"
+                            src={unlockedContent[activeMediaIndex]?.previewUrl}
+                            alt={`${link.title} — ${activeMediaIndex + 1}`}
+                            className="w-full block"
                           />
                         )}
                       </motion.div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-exclu-space/70 text-center py-12">
-                    This content has been unlocked, but no media is attached yet.
-                  </p>
-                )}
-              </motion.div>
+                    </AnimatePresence>
 
-              {/* RIGHT: Success Info */}
-              <div className="flex flex-col gap-6">
-                {/* Creator Profile Card */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.2 }}
-                  className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6 sm:p-8"
-                >
-                  <div className="pointer-events-none absolute inset-0 opacity-30">
-                    <div className={`absolute -inset-x-24 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl animate-gradient-shift`} />
-                  </div>
-
-                  <div className="relative space-y-6">
-                    {creator && (
-                      <div className="flex items-center gap-4">
-                        <div className="relative w-16 h-16 sm:w-20 sm:h-20 overflow-hidden rounded-2xl border-2 border-white/20 bg-exclu-ink/80 shadow-xl">
-                          <div className={`pointer-events-none absolute -inset-2 ${theme.glow} blur-2xl opacity-30`} />
-                          <div className="relative z-10 w-full h-full flex items-center justify-center">
-                            {creator.avatar_url ? (
-                              <img
-                                src={creator.avatar_url}
-                                alt={creator.display_name || creator.handle || 'Creator'}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <span className="text-2xl font-bold text-white/80">
-                                {(creator.display_name || creator.handle || 'C').charAt(0).toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <h2 className="text-lg sm:text-xl font-bold text-exclu-cloud truncate">
-                            {creator.display_name || creator.handle}
-                          </h2>
-                          {creator.handle && (
-                            <p className="text-sm text-exclu-space/70">@{creator.handle}</p>
-                          )}
-                        </div>
-
-                        {creator.handle && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="rounded-full border-exclu-arsenic/60 bg-black/40 hover:bg-black/60 text-xs h-9 px-4 flex items-center gap-2 transition-all hover:scale-105"
-                            onClick={() => {
-                              window.location.href = `/${creator.handle}`;
-                            }}
-                          >
-                            <span>Profile</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="h-px bg-gradient-to-r from-transparent via-exclu-arsenic/40 to-transparent" />
-
-                    <div className="space-y-3">
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40">
-                        <Check className="w-3.5 h-3.5 text-green-400" />
-                        <span className="text-[11px] font-medium text-green-400">
-                          Purchase Confirmed
-                        </span>
-                      </div>
-
-                      <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud tracking-tight leading-tight">
-                        {link.title}
-                      </h1>
-                    </div>
-
-                    {link.description && (
-                      <p className="text-exclu-space/80 text-sm sm:text-base leading-relaxed">
-                        {link.description}
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-
-                {/* Download & Info Card */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
-                  className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6 sm:p-8"
-                >
-                  <div className="space-y-4">
-                    {unlockedContent.length > 0 && unlockedContent[0].previewUrl && (
+                    {/* Navigation arrows (only if multiple items) */}
+                    {unlockedContent.length > 1 && (
                       <>
-                        <Button
-                          variant="hero"
-                          size="lg"
-                          className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl shadow-primary/30 hover:shadow-primary/50 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                          onClick={() => {
-                            const link = document.createElement('a');
-                            link.href = unlockedContent[0].previewUrl!;
-                            link.download = '';
-                            link.click();
-                          }}
+                        <button
+                          onClick={() => setActiveMediaIndex((prev) => (prev - 1 + unlockedContent.length) % unlockedContent.length)}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 hover:text-white hover:bg-black/80 transition-all z-10"
                         >
-                          <span className="flex items-center justify-center gap-3">
-                            <Download className="w-5 h-5" />
-                            <span>Download Content</span>
-                          </span>
-                        </Button>
-
-                        <p className="text-xs text-exclu-space/70 text-center">
-                          Your purchase has been confirmed. The content is now unlocked on this device.
-                        </p>
+                          <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => setActiveMediaIndex((prev) => (prev + 1) % unlockedContent.length)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 hover:text-white hover:bg-black/80 transition-all z-10"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
                       </>
                     )}
 
-                    {hasTemporaryAccess && expiresDate && (
-                      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                        <p className="text-xs text-amber-300/90 text-center">
-                          ⏰ Temporary access expires on{' '}
-                          <span className="font-semibold">
-                            {expiresDate.toLocaleString()}
+                    {/* Bottom bar: dots navigation */}
+                    {unlockedContent.length > 1 && (
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-4 pb-3 pt-8 flex items-end justify-center z-10">
+                        <div className="flex items-center gap-1.5">
+                          {unlockedContent.map((_, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setActiveMediaIndex(idx)}
+                              className={`rounded-full transition-all ${idx === activeMediaIndex ? 'w-6 h-2 bg-white' : 'w-2 h-2 bg-white/40 hover:bg-white/60'}`}
+                            />
+                          ))}
+                          <span className="text-[11px] text-white/50 ml-2">
+                            {activeMediaIndex + 1}/{unlockedContent.length}
                           </span>
-                        </p>
+                        </div>
                       </div>
                     )}
-
-                    <div className="pt-4 border-t border-exclu-arsenic/30 space-y-2 text-[11px] text-exclu-space/60">
-                      <p>✓ Right-click or long-press to save media</p>
-                      <p>✓ Email copy sent (if provided)</p>
-                      <p>✓ Access link saved to this device</p>
-                    </div>
                   </div>
-                </motion.div>
+                ) : (
+                  <div className="flex items-center justify-center py-20">
+                    <p className="text-sm text-white/40">No media attached to this content yet.</p>
+                  </div>
+                )}
+              </motion.div>
+
+              {/* Info Row: Purchase Recap + Creator */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Purchase Summary Card */}
+                {purchaseData && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 backdrop-blur-xl p-5 space-y-3"
+                  >
+                    <h3 className="text-xs font-semibold text-white/60 uppercase tracking-wider">Purchase Summary</h3>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-2xl font-bold text-white">
+                        ${(purchaseData.amount_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <span className="text-xs text-white/40">
+                        {new Date(purchaseData.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px]">
+                      <span className={`flex items-center gap-1 ${purchaseData.email_sent ? 'text-green-400' : 'text-white/30'}`}>
+                        {purchaseData.email_sent ? <Check className="w-3 h-3" /> : <Mail className="w-3 h-3" />}
+                        {purchaseData.email_sent ? 'Email sent' : 'No email'}
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Creator Card */}
+                {creator && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                    className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 backdrop-blur-xl p-5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                        {creator.avatar_url ? (
+                          <img src={creator.avatar_url} alt={creator.display_name || ''} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-lg font-bold text-white/60">
+                            {(creator.display_name || creator.handle || 'C').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{creator.display_name || creator.handle}</p>
+                        {creator.handle && <p className="text-xs text-white/40">@{creator.handle}</p>}
+                      </div>
+                      {creator.handle && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full border-exclu-arsenic/60 bg-black/40 hover:bg-black/60 text-xs h-8 px-3 flex items-center gap-1.5 transition-all shrink-0"
+                          onClick={() => { window.location.href = `/${creator.handle}`; }}
+                        >
+                          <span>Profile</span>
+                          <ArrowUpRight className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {link.description && (
+                      <p className="text-xs text-white/50 mt-3 leading-relaxed line-clamp-3">{link.description}</p>
+                    )}
+                  </motion.div>
+                )}
               </div>
+
+              {/* Info Footer */}
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.4 }}
+                className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 backdrop-blur-xl p-5 space-y-4"
+              >
+                {hasTemporaryAccess && expiresDate && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                    <p className="text-xs text-amber-300/90 text-center">
+                      ⏰ Temporary access expires on{' '}
+                      <span className="font-semibold">{expiresDate.toLocaleString()}</span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 text-[11px] text-white">
+                  <p>✓ Download links expire after 15 minutes — revisit this page to regenerate</p>
+                  <p>✓ Bookmark this page to access your content anytime</p>
+                </div>
+              </motion.div>
             </div>
           )}
         </div>

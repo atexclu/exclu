@@ -187,7 +187,7 @@ serve(async (req) => {
     for (const path of paths) {
       const { data: signed, error: signedError } = await supabase.storage
         .from('paid-content')
-        .createSignedUrl(path, 60 * 60 * 24); // 24 hours
+        .createSignedUrl(path, 60 * 60); // 1 hour (email links)
 
       if (signedError) {
         console.error('Error creating signed URL for', path, signedError);
