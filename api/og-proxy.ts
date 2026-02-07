@@ -56,10 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (profile) {
         const displayName = profile.display_name || profile.handle || 'Creator';
-        // Use dynamic OG image if creator has an avatar, otherwise static default
-        const ogImage = profile.avatar_url
-          ? `https://exclu.at/api/og-image?type=profile&handle=${encodeURIComponent(profile.handle)}`
-          : 'https://exclu.at/og-profile-default.png';
+        const ogImage = profile.avatar_url || 'https://exclu.at/og-profile-default.png';
         ogData = {
           title: `${displayName} - Check out my Exclu profile`,
           description: profile.bio || 'Check out my exclusive content on Exclu',
@@ -86,8 +83,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const link = links?.[0];
 
       if (link) {
-        // Use dynamic OG image to composite creator avatar on link default
-        const ogImage = `https://exclu.at/api/og-image?type=link&slug=${encodeURIComponent(slug)}`;
+        let ogImage = 'https://exclu.at/og-link-default.png';
+        if (link.creator_id) {
+          const creatorRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(link.creator_id)}&select=avatar_url&limit=1`,
+            {
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              },
+            }
+          );
+          const creators = await creatorRes.json();
+          if (creators?.[0]?.avatar_url) {
+            ogImage = creators[0].avatar_url;
+          }
+        }
 
         ogData = {
           title: `${link.title || 'Exclusive Content'} - Unlock now on Exclu`,
