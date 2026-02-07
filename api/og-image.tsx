@@ -1,14 +1,18 @@
 import { ImageResponse } from '@vercel/og';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+export const config = {
+  runtime: 'edge',
+};
 
 const SUPABASE_URL = 'https://qexnwezetjlbwltyccks.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleG53ZXpldGpsYndsdHljY2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyOTcyNjcsImV4cCI6MjA4Mzg3MzI2N30.BwE47MEU7KVm3NWXbX7hK1osCc00dQ0s8Y0Qudh5eyE';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: Request) {
   try {
-    const type = (req.query.type as string) || 'profile';
-    const handle = req.query.handle as string;
-    const slug = req.query.slug as string;
+    const { searchParams } = new URL(req.url);
+    const type = searchParams.get('type') || 'profile';
+    const handle = searchParams.get('handle') || '';
+    const slug = searchParams.get('slug') || '';
 
     let avatarUrl: string | null = null;
     let bgImage: string;
@@ -56,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       bgImage = 'https://exclu.at/og-profile-default.png';
     }
 
-    const imageResponse = new ImageResponse(
+    return new ImageResponse(
       (
         <div
           style={{
@@ -66,7 +70,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             position: 'relative',
           }}
         >
-          {/* Background image */}
           <img
             src={bgImage}
             width={1200}
@@ -77,12 +80,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               left: 0,
               width: '1200px',
               height: '630px',
-              objectFit: 'cover',
             }}
           />
 
-          {/* Creator avatar overlay in top-right corner */}
-          {avatarUrl && (
+          {avatarUrl ? (
             <div
               style={{
                 position: 'absolute',
@@ -90,11 +91,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 right: '30px',
                 width: '120px',
                 height: '120px',
-                borderRadius: '50%',
-                overflow: 'hidden',
+                borderRadius: '60px',
                 border: '4px solid rgba(255, 255, 255, 0.9)',
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
                 display: 'flex',
+                overflow: 'hidden',
               }}
             >
               <img
@@ -104,32 +104,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 style={{
                   width: '120px',
                   height: '120px',
-                  objectFit: 'cover',
                 }}
               />
             </div>
-          )}
+          ) : null}
         </div>
       ),
       {
         width: 1200,
         height: 630,
+        headers: {
+          'Cache-Control': 'public, s-maxage=86400, max-age=86400',
+        },
       }
     );
-
-    // Convert the ImageResponse to a buffer and send via Vercel Node response
-    const buffer = await imageResponse.arrayBuffer();
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400');
-    return res.send(Buffer.from(buffer));
   } catch (error) {
     console.error('OG image generation error:', error);
-    // Fallback: redirect to static default image
-    const type = (req.query.type as string) || 'profile';
+    const type = new URL(req.url).searchParams.get('type') || 'profile';
     const fallback = type === 'link'
       ? 'https://exclu.at/og-link-default.png'
       : 'https://exclu.at/og-profile-default.png';
-    res.writeHead(302, { Location: fallback });
-    return res.end();
+    return Response.redirect(fallback, 302);
   }
 }
