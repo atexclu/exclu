@@ -371,15 +371,15 @@ const PublicLink = () => {
         body: { slug, buyerEmail: buyerEmail || null },
       });
 
-      if (error) {
-        console.error('Error invoking create-link-checkout-session', error);
-        throw new Error('Unable to start checkout. Please try again.');
+      if (error || !(data as any)?.url) {
+        console.error('Error invoking create-link-checkout-session', error, data);
+        const serverMsg = (data as any)?.error;
+        throw new Error(
+          serverMsg || 'Unable to start checkout. Please try again later.',
+        );
       }
 
-      const url = (data as any)?.url as string | undefined;
-      if (!url) {
-        throw new Error('Checkout link is not available right now.');
-      }
+      const url = (data as any).url as string;
 
       window.location.href = url;
     } catch (err: any) {
