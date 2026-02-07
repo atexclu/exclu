@@ -904,21 +904,21 @@ const PublicLink = () => {
                         <p className="text-sm font-semibold text-white truncate">{creator.display_name || creator.handle}</p>
                         {creator.handle && <p className="text-xs text-white/40">@{creator.handle}</p>}
                       </div>
-                      {creator.handle && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="rounded-full border-exclu-arsenic/60 bg-black/40 hover:bg-black/60 text-xs h-8 px-3 flex items-center gap-1.5 transition-all shrink-0"
-                          onClick={() => { window.location.href = `/${creator.handle}`; }}
-                        >
-                          <span>Profile</span>
-                          <ArrowUpRight className="w-3 h-3" />
-                        </Button>
-                      )}
                     </div>
                     {link.description && (
                       <p className="text-xs text-white/50 mt-3 leading-relaxed line-clamp-3">{link.description}</p>
+                    )}
+                    {creator.handle && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full border-exclu-arsenic/60 bg-black/40 hover:bg-black/60 text-white text-xs h-8 px-3 flex items-center gap-1.5 transition-all mt-3 w-full justify-center sm:w-auto"
+                        onClick={() => { window.location.href = `/${creator.handle}`; }}
+                      >
+                        <span>View Profile</span>
+                        <ArrowUpRight className="w-3 h-3" />
+                      </Button>
                     )}
                   </motion.div>
                 )}
