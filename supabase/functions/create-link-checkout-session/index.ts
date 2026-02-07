@@ -217,10 +217,15 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('Error in create-link-checkout-session function', error);
-
     const stripeError = error as any;
     const raw = stripeError?.raw;
+    console.error('Error in create-link-checkout-session function', {
+      message: stripeError?.message,
+      type: raw?.type,
+      code: raw?.code,
+      param: raw?.param,
+      detail: raw?.message,
+    });
 
     // If Stripe complains that the destination account is missing capabilities,
     // surface a clearer message to the fan instead of a generic 500.

@@ -181,25 +181,28 @@ serve(async (req) => {
     let users: any[] = [];
     let totalUsers = 0;
 
-    if (!normalizedSearch) {
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
+    // Sorts that depend on aggregated data (links, assets, sales) need all profiles first
+    const needsFullFetch = ['most_content', 'most_links', 'best_sellers'].includes(sortBy);
 
+    if (!normalizedSearch) {
       let query = supabaseAdmin
         .from('profiles')
         .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
 
-      // Apply sorting based on sortBy parameter
-      if (sortBy === 'created_asc') {
-        query = query.order('created_at', { ascending: true });
-      } else if (sortBy === 'most_viewed') {
-        query = query.order('profile_view_count', { ascending: false, nullsLast: true });
-      } else {
-        // created_desc (default)
-        query = query.order('created_at', { ascending: false });
-      }
+      // Apply DB-level sorting only for sorts that don't depend on aggregated data
+      if (!needsFullFetch) {
+        if (sortBy === 'created_asc') {
+          query = query.order('created_at', { ascending: true });
+        } else if (sortBy === 'most_viewed') {
+          query = query.order('profile_view_count', { ascending: false, nullsLast: true });
+        } else {
+          query = query.order('created_at', { ascending: false });
+        }
 
-      query = query.range(from, to);
+        const from = (page - 1) * pageSize;
+        const to = from + pageSize - 1;
+        query = query.range(from, to);
+      }
 
       const { data: usersPage, error: usersError, count } = await query;
 
@@ -297,7 +300,7 @@ serve(async (req) => {
       users = allMatched.slice(fromIndex, toIndex);
     }
 
-    const userIds = (users ?? []).map((u: any) => u.id as string).filter(Boolean);
+    let userIds = (users ?? []).map((u: any) => u.id as string).filter(Boolean);
 
     // Fetch aggregated metrics from profile_analytics
     const { data: analytics, error: analyticsError } = await supabaseAdmin
@@ -420,7 +423,7 @@ serve(async (req) => {
       };
     });
 
-    // Apply sorting if requested (after aggregating data)
+    // Apply sorting on aggregated data, then paginate
     if (sortBy === 'best_sellers') {
       safeUsers.sort((a, b) => {
         if (b.total_sales !== a.total_sales) {
@@ -434,7 +437,15 @@ serve(async (req) => {
       safeUsers.sort((a, b) => b.links_count - a.links_count);
     }
 
-    return new Response(JSON.stringify({ users: safeUsers, page, pageSize, total: totalUsers }), {
+    // For aggregated sorts, paginate after sorting
+    let paginatedUsers = safeUsers;
+    if (needsFullFetch) {
+      totalUsers = safeUsers.length;
+      const fromIndex = (page - 1) * pageSize;
+      paginatedUsers = safeUsers.slice(fromIndex, fromIndex + pageSize);
+    }
+
+    return new Response(JSON.stringify({ users: paginatedUsers, page, pageSize, total: totalUsers }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
