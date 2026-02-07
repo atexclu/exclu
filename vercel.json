@@ -2,25 +2,11 @@
   "rewrites": [
     {
       "source": "/@:handle",
-      "destination": "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/og-preview/@:handle",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": ".*(bot|crawler|spider|facebook|twitter|whatsapp|telegram|linkedin|Twitterbot|facebookexternalhit|WhatsApp|TelegramBot|LinkedInBot|Slackbot|Discordbot).*"
-        }
-      ]
+      "destination": "/api/og-proxy"
     },
     {
       "source": "/l/:slug",
-      "destination": "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/og-preview/l/:slug",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": ".*(bot|crawler|spider|facebook|twitter|whatsapp|telegram|linkedin|Twitterbot|facebookexternalhit|WhatsApp|TelegramBot|LinkedInBot|Slackbot|Discordbot).*"
-        }
-      ]
+      "destination": "/api/og-proxy"
     },
     {
       "source": "/(.*)",

@@ -184,14 +184,10 @@ const CreatorPublic = () => {
 
         // Increment profile view count (best-effort) via Edge Function
         if (profileData.handle) {
-          console.log('[CreatorPublic] Calling increment-profile-view for handle:', profileData.handle);
           supabase.functions
             .invoke('increment-profile-view', { body: { handle: profileData.handle } })
-            .then((result) => {
-              console.log('[CreatorPublic] increment-profile-view result:', result);
-            })
-            .catch((err) => {
-              console.error('[CreatorPublic] Error incrementing profile view count', err);
+            .catch(() => {
+              // Silently fail - this is a best-effort metric
             });
         }
 
