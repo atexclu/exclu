@@ -108,7 +108,7 @@ const CreatorPublic = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const abortController = new AbortController();
+    let isMounted = true;
     
     const fetchCreator = async () => {
       if (!handle) return;
@@ -120,8 +120,9 @@ const CreatorPublic = () => {
           .from('profiles')
           .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status')
           .eq('handle', handle)
-          .abortSignal(abortController.signal)
           .maybeSingle();
+
+        if (!isMounted) return;
 
         if (profileError || !profileData) {
           console.error('Error loading creator profile', profileError);
@@ -142,8 +143,9 @@ const CreatorPublic = () => {
             .eq('creator_id', profileData.id)
             .eq('status', 'published')
             .eq('show_on_profile', true)
-            .abortSignal(abortController.signal)
             .order('created_at', { ascending: false });
+
+          if (!isMounted) return;
 
           if (linksError) {
             console.error('Error loading creator links', linksError);
@@ -163,8 +165,9 @@ const CreatorPublic = () => {
           .select('id, title, storage_path, mime_type')
           .eq('creator_id', profileData.id)
           .eq('is_public', true)
-          .abortSignal(abortController.signal)
           .order('created_at', { ascending: false });
+
+        if (!isMounted) return;
 
         if (!publicError && publicData) {
           // Generate signed URLs
@@ -177,6 +180,8 @@ const CreatorPublic = () => {
               return { ...item, previewUrl: signed?.signedUrl || null };
             })
           );
+          
+          if (!isMounted) return;
           setPublicContent(withUrls);
         }
 
@@ -193,18 +198,17 @@ const CreatorPublic = () => {
 
         setIsLoading(false);
       } catch (err: any) {
-        if (err.name === 'AbortError') {
-          console.log('Request was aborted');
-        } else {
-          console.error('Error in fetchCreator:', err);
-        }
+        if (!isMounted) return;
+        console.error('Error in fetchCreator:', err);
+        setError('Unable to load this creator profile.');
+        setIsLoading(false);
       }
     };
 
     fetchCreator();
     
     return () => {
-      abortController.abort();
+      isMounted = false;
     };
   }, [handle]);
 

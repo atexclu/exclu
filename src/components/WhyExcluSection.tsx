@@ -68,7 +68,7 @@ const FeatureCard = ({ feature, index }: { feature: typeof features[0]; index: n
 
         {/* Highlight Stat */}
         <div className="mb-4">
-          <span className="text-4xl font-extrabold text-exclu-cloud">{feature.highlight}</span>
+          <span className="text-4xl font-extrabold text-exclu-graphite">{feature.highlight}</span>
           <span className="text-sm text-exclu-graphite ml-2">{feature.highlightLabel}</span>
         </div>
 
@@ -96,7 +96,7 @@ const WhyExcluSection = () => {
     <section id="features" ref={containerRef} className="relative py-24 px-6 overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 grid-pattern opacity-30" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/3 rounded-full blur-[150px]" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-white/3 rounded-full blur-[150px]" />
 
       <div className="max-w-7xl mx-auto relative z-10">
         {/* Section Header */}

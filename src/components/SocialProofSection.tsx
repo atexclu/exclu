@@ -58,7 +58,7 @@ const SocialProofSection = () => {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl glass-card mb-4 group-hover:scale-110 transition-transform duration-300">
                 <stat.icon className="w-7 h-7 text-primary" />
               </div>
-              <p className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud mb-2">{stat.value}</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-exclu-graphite mb-2">{stat.value}</p>
               <p className="text-exclu-space text-sm">{stat.label}</p>
             </motion.div>
           ))}

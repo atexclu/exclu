@@ -96,7 +96,7 @@ serve(async (req) => {
     let search: string | null = null;
     let page = 1;
     let pageSize = 50;
-    let sortBy: 'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' = 'created_desc';
+    let sortBy: 'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' | 'most_content' | 'most_links' = 'created_desc';
 
     try {
       const rawBody = await req.text();
@@ -420,7 +420,7 @@ serve(async (req) => {
       };
     });
 
-    // Apply best_sellers sorting if requested (after aggregating sales data)
+    // Apply sorting if requested (after aggregating data)
     if (sortBy === 'best_sellers') {
       safeUsers.sort((a, b) => {
         if (b.total_sales !== a.total_sales) {
@@ -428,6 +428,10 @@ serve(async (req) => {
         }
         return b.total_revenue_cents - a.total_revenue_cents;
       });
+    } else if (sortBy === 'most_content') {
+      safeUsers.sort((a, b) => b.assets_count - a.assets_count);
+    } else if (sortBy === 'most_links') {
+      safeUsers.sort((a, b) => b.links_count - a.links_count);
     }
 
     return new Response(JSON.stringify({ users: safeUsers, page, pageSize, total: totalUsers }), {

@@ -32,7 +32,7 @@ const AdminUsers = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [sortMode, setSortMode] = useState<'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed'>(initialSort);
+  const [sortMode, setSortMode] = useState<'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' | 'most_content' | 'most_links'>(initialSort);
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(50);
   const [total, setTotal] = useState(0);
@@ -153,6 +153,8 @@ const AdminUsers = () => {
                 <option value="created_asc">Date de création · plus anciens</option>
                 <option value="best_sellers">Meilleurs vendeurs</option>
                 <option value="most_viewed">Plus de vues</option>
+                <option value="most_content">Plus de contenus</option>
+                <option value="most_links">Plus de liens</option>
               </select>
             </div>
           </div>
