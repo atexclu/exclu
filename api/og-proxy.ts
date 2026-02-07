@@ -47,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (profile) {
         const displayName = profile.display_name || profile.handle || 'Creator';
         const bio = profile.bio || 'Check out my exclusive content on Exclu';
-        const ogImage = `https://exclu.at/api/og-image?type=profile&handle=${encodeURIComponent(profile.handle)}`;
+        const ogImage = profile.avatar_url || 'https://exclu.at/og-profile-default.png';
 
         return sendOGHTML(res, {
           title: `${displayName} - Check out my Exclu profile`,
@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const slug = path.slice(3).split('/')[0].split('?')[0];
 
       const linkRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/links?slug=eq.${encodeURIComponent(slug)}&select=title,description&limit=1`,
+        `${SUPABASE_URL}/rest/v1/links?slug=eq.${encodeURIComponent(slug)}&select=title,description,creator_id&limit=1`,
         {
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -75,7 +75,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const link = links?.[0];
 
       if (link) {
-        const ogImage = `https://exclu.at/api/og-image?type=link&slug=${encodeURIComponent(slug)}`;
+        // Try to get creator avatar for the link preview
+        let ogImage = 'https://exclu.at/og-link-default.png';
+        if (link.creator_id) {
+          const creatorRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(link.creator_id)}&select=avatar_url&limit=1`,
+            {
+              headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              },
+            }
+          );
+          const creators = await creatorRes.json();
+          if (creators?.[0]?.avatar_url) {
+            ogImage = creators[0].avatar_url;
+          }
+        }
 
         return sendOGHTML(res, {
           title: `${link.title || 'Exclusive Content'} - Unlock now on Exclu`,
