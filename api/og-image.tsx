@@ -7,6 +7,21 @@ export const config = {
 const SUPABASE_URL = 'https://qexnwezetjlbwltyccks.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleG53ZXpldGpsYndsdHljY2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyOTcyNjcsImV4cCI6MjA4Mzg3MzI2N30.BwE47MEU7KVm3NWXbX7hK1osCc00dQ0s8Y0Qudh5eyE';
 
+async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const buffer = await res.arrayBuffer();
+    const base64 = btoa(
+      new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+    );
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -15,10 +30,10 @@ export default async function handler(req: Request) {
     const slug = searchParams.get('slug') || '';
 
     let avatarUrl: string | null = null;
-    let bgImage: string;
+    let bgImageUrl: string;
 
     if (type === 'profile' && handle) {
-      bgImage = 'https://exclu.at/og-profile-default.png';
+      bgImageUrl = 'https://exclu.at/og-profile-default.png';
       const profileRes = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?handle=eq.${encodeURIComponent(handle)}&select=avatar_url&limit=1`,
         {
@@ -31,7 +46,7 @@ export default async function handler(req: Request) {
       const profiles = await profileRes.json();
       avatarUrl = profiles?.[0]?.avatar_url || null;
     } else if (type === 'link' && slug) {
-      bgImage = 'https://exclu.at/og-link-default.png';
+      bgImageUrl = 'https://exclu.at/og-link-default.png';
       const linkRes = await fetch(
         `${SUPABASE_URL}/rest/v1/links?slug=eq.${encodeURIComponent(slug)}&select=creator_id&limit=1`,
         {
@@ -57,7 +72,21 @@ export default async function handler(req: Request) {
         avatarUrl = profiles?.[0]?.avatar_url || null;
       }
     } else {
-      bgImage = 'https://exclu.at/og-profile-default.png';
+      bgImageUrl = 'https://exclu.at/og-profile-default.png';
+    }
+
+    // Fetch images as data URLs so Satori can render them
+    const [bgDataUrl, avatarDataUrl] = await Promise.all([
+      fetchImageAsDataUrl(bgImageUrl),
+      avatarUrl ? fetchImageAsDataUrl(avatarUrl) : Promise.resolve(null),
+    ]);
+
+    // If we can't load the background, redirect to static fallback
+    if (!bgDataUrl) {
+      const fallback = type === 'link'
+        ? 'https://exclu.at/og-link-default.png'
+        : 'https://exclu.at/og-profile-default.png';
+      return Response.redirect(fallback, 302);
     }
 
     return new ImageResponse(
@@ -71,7 +100,7 @@ export default async function handler(req: Request) {
           }}
         >
           <img
-            src={bgImage}
+            src={bgDataUrl}
             width={1200}
             height={630}
             style={{
@@ -83,7 +112,7 @@ export default async function handler(req: Request) {
             }}
           />
 
-          {avatarUrl ? (
+          {avatarDataUrl ? (
             <div
               style={{
                 position: 'absolute',
@@ -98,7 +127,7 @@ export default async function handler(req: Request) {
               }}
             >
               <img
-                src={avatarUrl}
+                src={avatarDataUrl}
                 width={120}
                 height={120}
                 style={{
