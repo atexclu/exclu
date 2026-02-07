@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/og-proxy.ts": {
+      "includeFiles": "dist/index.html"
+    }
+  },
   "rewrites": [
     {
       "source": "/@:handle",
