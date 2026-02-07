@@ -16,15 +16,31 @@ function getIndexHtml(): string {
   return cachedIndexHtml;
 }
 
+// Known app routes that should NOT be treated as creator handles
+const APP_ROUTES = new Set([
+  'auth', 'app', 'admin', 'onboarding', 'help-center',
+  'contact', 'privacy', 'terms', 'cookies', 'l', 'api',
+]);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const path = req.url || '/';
 
   try {
     let ogData: { title: string; description: string; image: string; url: string } | null = null;
 
-    // Handle creator profile pages (/@handle)
+    // Extract potential handle from path (supports both /@handle and /handle)
+    let handle: string | null = null;
     if (path.startsWith('/@')) {
-      const handle = path.slice(2).split('/')[0].split('?')[0];
+      handle = path.slice(2).split('/')[0].split('?')[0];
+    } else if (path.startsWith('/') && !path.startsWith('/l/')) {
+      const segment = path.slice(1).split('/')[0].split('?')[0];
+      if (segment && !APP_ROUTES.has(segment)) {
+        handle = segment;
+      }
+    }
+
+    // Handle creator profile pages
+    if (handle) {
 
       const profileRes = await fetch(
         `${SUPABASE_URL}/rest/v1/profiles?handle=eq.${encodeURIComponent(handle)}&select=display_name,handle,bio,avatar_url&limit=1`,

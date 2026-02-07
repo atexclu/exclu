@@ -14,6 +14,10 @@
       "destination": "/api/og-proxy"
     },
     {
+      "source": "/:handle",
+      "destination": "/api/og-proxy"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
