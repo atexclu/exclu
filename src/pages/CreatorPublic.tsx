@@ -290,18 +290,10 @@ const CreatorPublic = () => {
               alt={displayName}
               className="w-full h-auto max-h-[70vh] object-cover"
             />
-            {/* Shadow at bottom of image - fading up */}
-            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
-            {/* Shadow below image - fading down */}
-            <div className="absolute inset-x-0 bottom-[-80px] h-20 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10" />
-            {/* Soft dark overlay, reduced intensity */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/20 to-black/60" />
-            {/* Smooth transition gradient centered on bottom edge: transparent at top, black at center (bottom edge), transparent at bottom */}
-            <div className="absolute inset-x-0 bottom-[-20px] h-40 pointer-events-none">
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black to-transparent opacity-90" />
-            </div>
+            {/* Soft dark overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/80" />
             {/* Name overlay */}
-            <div className="absolute inset-x-5 bottom-11 flex flex-col items-center text-center">
+            <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
               <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
                 {displayName}
               </h1>
@@ -310,9 +302,11 @@ const CreatorPublic = () => {
         )}
       </motion.div>
 
-      <main className="relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24 sm:pt-12 sm:pb-10">
-        {/* Inner shadow at top - strong at top, quick fade */}
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
+      <main className="relative z-10 flex-1 flex flex-col px-4 pt-10 pb-24 sm:pt-12 sm:pb-10">
+        {/* Inner shadow at top - mobile: black to transparent over 150px */}
+        <div className="sm:hidden absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black to-transparent pointer-events-none z-20" />
+        {/* Inner shadow at top - desktop */}
+        <div className="hidden sm:block absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
         <div className="max-w-md mx-auto w-full flex flex-col flex-1">
           {/* Profile Section */}
           <motion.div
@@ -366,7 +360,7 @@ const CreatorPublic = () => {
               />
             </div>
             {profile?.location && (
-              <p className="text-xs text-white/80 mb-2 drop-shadow">{profile.location}</p>
+              <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow">{profile.location}</p>
             )}
             {profile?.bio && (
               <p className="text-sm text-white/90 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
@@ -413,7 +407,7 @@ const CreatorPublic = () => {
                     {activeTab === 'links' && (
                       <motion.div
                         layoutId="activeTab"
-                        className="absolute -bottom-3 left-0 right-0 h-[2px] bg-white rounded-full z-10"
+                        className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white rounded-full z-10"
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                       />
                     )}
@@ -430,7 +424,7 @@ const CreatorPublic = () => {
                     {activeTab === 'content' && (
                       <motion.div
                         layoutId="activeTab"
-                        className="absolute -bottom-3 left-0 right-0 h-[2px] bg-white rounded-full z-10"
+                        className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white rounded-full z-10"
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                       />
                     )}
