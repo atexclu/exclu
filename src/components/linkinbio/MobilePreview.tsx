@@ -147,7 +147,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
               {/* Aurora Background - Positioned lower with margin from top */}
               <div className="absolute inset-x-0 top-[70%] -translate-y-1/2 h-full z-0 pointer-events-none">
                 <Aurora
-                  colorStops={getAuroraGradient(data.aurora_gradient || 'aurora').colors}
+                  colorStops={getAuroraGradient(data.aurora_gradient || 'purple_dream').colors}
                   blend={0.5}
                   amplitude={1.0}
                   speed={1}

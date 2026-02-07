@@ -19,7 +19,7 @@ const themeOptions = [
   { id: 'red', label: 'Red', gradient: 'from-red-500 to-rose-600' },
 ];
 
-export function OptionsSection({ themeColor, showJoinBanner, isPremium, auroraGradient = 'aurora', onUpdate }: OptionsSectionProps) {
+export function OptionsSection({ themeColor, showJoinBanner, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
   return (
     <div className="space-y-6">
       {/* Aurora Background Gradient */}

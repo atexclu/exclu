@@ -408,7 +408,7 @@ const PublicLink = () => {
       {/* Aurora animated background */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <Aurora
-          colorStops={getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'aurora').colors}
+          colorStops={getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'purple_dream').colors}
           blend={0.5}
           amplitude={1.0}
           speed={1}
@@ -632,7 +632,7 @@ const PublicLink = () => {
                         variant="hero"
                         size="lg"
                         style={{
-                          background: getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'aurora').preview
+                          background: getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'purple_dream').preview
                         }}
                         className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl transition-all hover:scale-[1.02] active:scale-[0.98] hover:opacity-90"
                         disabled={isUnlocking}

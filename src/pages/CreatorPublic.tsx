@@ -266,7 +266,7 @@ const CreatorPublic = () => {
       {/* Desktop: Aurora animated background from top */}
       <div className="hidden sm:block fixed inset-0 z-0 pointer-events-none">
         <Aurora
-          colorStops={getAuroraGradient(profile?.aurora_gradient || 'aurora').colors}
+          colorStops={getAuroraGradient(profile?.aurora_gradient || 'purple_dream').colors}
           blend={0.5}
           amplitude={1.0}
           speed={1}
@@ -276,7 +276,7 @@ const CreatorPublic = () => {
       {/* Mobile: Aurora animated background from bottom of profile photo */}
       <div className="sm:hidden absolute inset-x-0 top-[55vh] h-[120vh] z-0 pointer-events-none">
         <Aurora
-          colorStops={getAuroraGradient(profile?.aurora_gradient || 'aurora').colors}
+          colorStops={getAuroraGradient(profile?.aurora_gradient || 'purple_dream').colors}
           blend={0.5}
           amplitude={1.0}
           speed={1}
