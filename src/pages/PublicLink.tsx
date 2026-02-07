@@ -6,6 +6,10 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight } from 'lucide-react';
+import PixelCard from '@/components/PixelCard';
+import Aurora from '@/components/ui/Aurora';
+import { getAuroraGradient } from '@/lib/auroraGradients';
+import CircularText from '@/components/CircularText';
 
 interface PublicLinkData {
   id: string;
@@ -28,7 +32,22 @@ interface CreatorProfileData {
   handle: string | null;
   avatar_url: string | null;
   theme_color: string | null;
+  aurora_gradient?: string | null;
+  bio?: string | null;
 }
+
+// Map theme colors to pixel colors for PixelCard
+const getPixelColorsFromTheme = (themeColor: string): string => {
+  const pixelColorMap: Record<string, string> = {
+    pink: '#fecdd3,#fda4af,#e11d48',
+    purple: '#e9d5ff,#d8b4fe,#a855f7',
+    blue: '#bfdbfe,#93c5fd,#3b82f6',
+    orange: '#fed7aa,#fdba74,#f97316',
+    green: '#bbf7d0,#86efac,#22c55e',
+    red: '#fecaca,#fca5a5,#ef4444',
+  };
+  return pixelColorMap[themeColor] || pixelColorMap.pink;
+};
 
 const themeColors: Record<string, { gradient: string; glow: string }> = {
   pink: {
@@ -57,65 +76,6 @@ const themeColors: Record<string, { gradient: string; glow: string }> = {
   },
 };
 
-const BlurredCard = ({
-  index,
-  isUnlocked,
-  themeGradient,
-}: {
-  index: number;
-  isUnlocked: boolean;
-  themeGradient: string;
-}) => {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.6, delay: index * 0.12 }}
-      className="relative aspect-[4/5] rounded-2xl overflow-hidden"
-    >
-      {/* Animated gradient background tinted with the creator theme */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${themeGradient} opacity-60`}
-      >
-        <div className="absolute inset-0 animate-gradient-shift" />
-      </div>
-
-      {/* Blur overlay with glass effect */}
-      <div className="absolute inset-0 backdrop-blur-2xl bg-black/35" />
-
-      {/* Lock icon overlay */}
-      <AnimatePresence>
-        {!isUnlocked && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0, scale: 1.5 }}
-            transition={{ duration: 0.5 }}
-            className="absolute inset-0 flex items-center justify-center"
-          >
-            <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center border border-white/10">
-              <Lock className="w-7 h-7 text-white/80" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Shimmer effect */}
-      <div
-        className="absolute inset-0 opacity-30"
-        style={{
-          background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.1) 45%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 55%, transparent 60%)',
-          backgroundSize: '200% 100%',
-          animation: 'shimmer 3s infinite',
-        }}
-      />
-
-      {/* Content number badge */}
-      <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
-        <span className="text-[10px] font-medium text-white/80">Content {index + 1}</span>
-      </div>
-    </motion.div>
-  );
-};
-
 const PublicLink = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
@@ -133,17 +93,21 @@ const PublicLink = () => {
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    
     const fetchLink = async () => {
       if (!slug) return;
       setIsLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
-        .from('links')
-        .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
-        .eq('slug', slug)
-        .eq('status', 'published')
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('links')
+          .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
+          .eq('slug', slug)
+          .eq('status', 'published')
+          .abortSignal(abortController.signal)
+          .single();
 
       if (error || !data) {
         console.error('Error loading public link', error);
@@ -173,8 +137,9 @@ const PublicLink = () => {
       if (data.creator_id) {
         const { data: creatorProfile } = await supabase
           .from('profiles')
-          .select('id, display_name, handle, avatar_url, theme_color')
+          .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio')
           .eq('id', data.creator_id)
+          .abortSignal(abortController.signal)
           .maybeSingle();
         if (creatorProfile) {
           setCreator(creatorProfile as CreatorProfileData);
@@ -189,6 +154,7 @@ const PublicLink = () => {
           .select('id, access_expires_at')
           .eq('link_id', data.id)
           .eq('stripe_session_id', sessionId)
+          .abortSignal(abortController.signal)
           .single();
 
         if (purchase) {
@@ -203,6 +169,7 @@ const PublicLink = () => {
         .from('link_media')
         .select('asset_id, assets(storage_path, mime_type)')
         .eq('link_id', data.id)
+        .abortSignal(abortController.signal)
         .order('position', { ascending: true });
 
       const items: ContentItem[] = [];
@@ -254,9 +221,20 @@ const PublicLink = () => {
       setContentItems(items);
       setUnlockedContent(unlocked);
       setIsLoading(false);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log('Request was aborted');
+        } else {
+          console.error('Error in fetchLink:', err);
+        }
+      }
     };
 
     fetchLink();
+    
+    return () => {
+      abortController.abort();
+    };
   }, [slug, sessionId]);
 
   const handleUnlockClick = async () => {
@@ -301,7 +279,17 @@ const PublicLink = () => {
   const hasTemporaryAccess = !!expiresDate;
 
   return (
-    <div className="min-h-screen bg-black text-foreground flex flex-col">
+    <div className="min-h-screen bg-black text-foreground flex flex-col relative overflow-x-hidden">
+      {/* Aurora animated background */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <Aurora
+          colorStops={getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'aurora').colors}
+          blend={0.5}
+          amplitude={1.0}
+          speed={1}
+        />
+      </div>
+
       {/* Custom CSS for animations */}
       <style>{`
         @keyframes gradient-shift {
@@ -322,221 +310,287 @@ const PublicLink = () => {
         }
       `}</style>
 
-      <main className="flex-1 flex flex-col">
-        <div className="px-4 pt-16 pb-24 max-w-4xl mx-auto w-full">
-          {/* Creator header */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="mb-10"
-          >
-            <div className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-b from-black via-black/80 to-black p-5 sm:p-6">
-              {/* Layered gradient veil (softened) */}
-              <div className="pointer-events-none absolute inset-0 opacity-40 mix-blend-screen">
-                <div className={`absolute -inset-x-24 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl animate-gradient-shift`} />
-                <div className="hero-veil" />
-              </div>
-              <div className="pointer-events-none absolute inset-x-0 -bottom-16 h-24 bg-gradient-to-t from-black via-black/70 to-transparent" />
-
-              <div className="relative flex flex-col sm:flex-row items-center sm:items-stretch gap-5 sm:gap-7">
-                {/* Creator photo on the left, using the original image format */}
-                <div className="relative w-full sm:w-40 max-w-xs overflow-hidden rounded-2xl border border-white/20 bg-exclu-ink/80 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
-                  <div className={`pointer-events-none absolute -inset-3 ${theme.glow} blur-3xl opacity-25`} />
-                  <div className="relative z-10 flex items-center justify-center bg-black/40">
-                    {creator?.avatar_url ? (
-                      <img
-                        src={creator.avatar_url}
-                        alt={creator.display_name || creator.handle || 'Creator'}
-                        className="w-full h-auto object-contain max-h-56"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center w-full h-32 bg-gradient-to-br from-exclu-phantom/40 via-exclu-ink to-exclu-phantom/20">
-                        <span className="text-3xl font-semibold text-white/80">
-                          {(creator?.display_name || creator?.handle || 'C').charAt(0).toUpperCase()}
-                        </span>
+      <main className="flex-1 flex flex-col relative z-10">
+        <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
+          {/* LOCKED STATE - New Grid Layout */}
+          {!isLoading && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+              {/* LEFT: Card with Effects */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+                className="flex items-center justify-center lg:sticky lg:top-24 lg:self-start"
+              >
+                <div className="relative w-full max-w-[400px] h-[600px]">
+                  {/* Black background - z-0 (behind everything) */}
+                  <div className="absolute inset-0 bg-black rounded-3xl z-0" />
+                  
+                  {/* PixelCard with canvas - z-10 (middle layer) */}
+                  <div className="absolute inset-0 z-10">
+                    <PixelCard 
+                      variant="default" 
+                      className="w-full h-full"
+                      colors={getPixelColorsFromTheme(creator?.theme_color || 'pink')}
+                      speed={80}
+                      gap={6}
+                    >
+                      <div />
+                    </PixelCard>
+                  </div>
+                  
+                  {/* Title and Description - z-15 (below lock bubble) */}
+                  <div className="absolute bottom-0 left-0 right-0 z-15 p-6 pb-8">
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.6, delay: 0.4 }}
+                      className="space-y-3"
+                    >
+                      <h1 className="text-2xl sm:text-3xl font-bold text-white drop-shadow-lg">
+                        {link?.title || 'Exclusive Content'}
+                      </h1>
+                      {link?.description && (
+                        <p className="text-sm sm:text-base text-white/90 drop-shadow-md leading-relaxed">
+                          {link.description}
+                        </p>
+                      )}
+                    </motion.div>
+                  </div>
+                  
+                  {/* Centered lock bubble with circular text - z-20 (on top of everything) */}
+                  <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                    <motion.div
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ 
+                        duration: 0.5, 
+                        delay: 0.3,
+                        type: "spring",
+                        stiffness: 200,
+                        damping: 15
+                      }}
+                      className="relative"
+                    >
+                      {/* Circular Text Animation */}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <CircularText
+                          text="EXCLUSIVE CONTENT • UNLOCK NOW • "
+                          spinDuration={15}
+                          onHover="speedUp"
+                          className="w-48 h-48"
+                        />
                       </div>
-                    )}
+                      
+                      {/* Glow effect */}
+                      <div className={`absolute inset-0 rounded-full bg-gradient-to-r ${theme.gradient} blur-2xl opacity-60 animate-pulse`} />
+                      
+                      {/* Lock bubble */}
+                      <div className="relative w-20 h-20 rounded-full border-2 border-white/30 backdrop-blur-xl bg-black/30 flex items-center justify-center shadow-2xl z-10">
+                        <Lock className="w-10 h-10 text-white" strokeWidth={1.5} />
+                      </div>
+                    </motion.div>
                   </div>
                 </div>
+              </motion.div>
 
-                <div className="flex-1 text-center sm:text-left space-y-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 border border-white/10 mb-1">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-[11px] font-medium text-exclu-cloud/90">
-                      A hidden drop of exclusive content
-                    </span>
-                  </div>
+              {/* RIGHT: Two Stacked Cards */}
+              <div className="flex flex-col gap-6">
+                {/* TOP RIGHT: Creator Profile */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.2 }}
+                  className="relative overflow-hidden rounded-3xl border border-white/20 bg-black p-6 sm:p-8"
+                >
+                  <div className="space-y-6">
+                    {/* Creator Profile Section */}
+                    {creator && (
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-16 h-16 sm:w-20 sm:h-20 overflow-hidden rounded-2xl border-2 border-white/20 bg-exclu-ink/80 shadow-xl">
+                          <div className={`pointer-events-none absolute -inset-2 ${theme.glow} blur-2xl opacity-30`} />
+                          <div className="relative z-10 w-full h-full flex items-center justify-center">
+                            {creator.avatar_url ? (
+                              <img
+                                src={creator.avatar_url}
+                                alt={creator.display_name || creator.handle || 'Creator'}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-2xl font-bold text-white/80">
+                                {(creator.display_name || creator.handle || 'C').charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud tracking-tight">
-                    {isLoading ? 'Loading…' : link ? link.title : 'Link unavailable'}
-                  </h1>
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-lg sm:text-xl font-bold text-white truncate">
+                            {creator.display_name || creator.handle}
+                          </h2>
+                          {creator?.bio && (
+                            <p className="text-sm text-white/70 mt-1 leading-relaxed">
+                              {creator.bio}
+                            </p>
+                          )}
+                        </div>
 
-                  {creator && (
-                    <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-2">
-                      <div className="text-xs sm:text-[13px] text-exclu-space/75">
-                        <span className="text-exclu-space/60">Created by </span>
-                        <span className="font-medium text-exclu-cloud">
-                          {creator.display_name || creator.handle}
-                        </span>
                         {creator.handle && (
-                          <span className="text-exclu-space/60">
-                            {' '}
-                            · @{creator.handle}
-                          </span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="rounded-full border-white/20 bg-black/40 hover:bg-white/10 text-white text-xs h-9 px-4 flex items-center gap-2 transition-all hover:scale-105"
+                            onClick={() => {
+                              window.location.href = `/${creator.handle}`;
+                            }}
+                          >
+                            <span>Profile</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </Button>
                         )}
                       </div>
+                    )}
 
-                      {creator.handle && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="rounded-full border-exclu-arsenic/60 bg-black/60 hover:bg-black/80 text-[11px] h-8 px-3 flex items-center gap-1.5"
-                          onClick={() => {
-                            window.location.href = `/${creator.handle}`;
-                          }}
+                    {error && !isLoading && (
+                      <p className="text-sm text-red-400">{error}</p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* BOTTOM RIGHT: Unlock CTA */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
+                  className="relative overflow-hidden rounded-3xl border border-white/20 bg-black p-6 sm:p-8"
+                >
+                  <div>
+                    <div className="space-y-6">
+                      {/* Price Section */}
+                      <div className="text-center">
+                        <p className="text-xs text-white/60 mb-2 uppercase tracking-wider font-medium">
+                          {contentItems.length} {contentItems.length === 1 ? 'item' : 'items'} to unlock
+                        </p>
+                        <motion.p
+                          initial={{ scale: 0.9, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ duration: 0.5, delay: 0.6 }}
+                          className="text-5xl sm:text-6xl font-extrabold text-white tracking-tight"
                         >
-                          <span>View profile</span>
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
+                          {priceLabel}
+                        </motion.p>
+                      </div>
+
+                      {/* Unlock Button */}
+                      <Button
+                        variant="hero"
+                        size="lg"
+                        style={{
+                          background: getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'aurora').preview
+                        }}
+                        className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl transition-all hover:scale-[1.02] active:scale-[0.98] hover:opacity-90"
+                        disabled={isUnlocking}
+                        onClick={handleUnlockClick}
+                      >
+                        {isUnlocking ? (
+                          <span className="flex items-center justify-center gap-3">
+                            <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Processing…</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-3">
+                            <Lock className="w-5 h-5" />
+                            <span>Unlock for {priceLabel}</span>
+                          </span>
+                        )}
+                      </Button>
+
+                      {/* Email Input */}
+                      <div className="space-y-3">
+                        <p className="text-xs text-white/60">
+                          Optional: enter your email to receive a copy of the content link
+                        </p>
+                        <Input
+                          type="email"
+                          value={buyerEmail}
+                          onChange={(e) => setBuyerEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          className="h-11 bg-black/40 border-white/20 text-white placeholder:text-white/50 text-sm rounded-xl focus:ring-2 focus:ring-primary/50 transition-all"
+                        />
+                      </div>
+
+                      {/* Info Text */}
+                      <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[10px] sm:text-[11px] text-white/80">
+                        <span className="flex items-center gap-1.5">
+                          <Check className="w-3 h-3 text-green-400" />
+                          No account required
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Check className="w-3 h-3 text-green-400" />
+                          Instant access
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Check className="w-3 h-3 text-green-400" />
+                          Email copy (optional)
+                        </span>
+                      </div>
+
+                      {/* Exclu Branding */}
+                      <div className="pt-6 border-t border-white/10">
+                        <a 
+                          href="https://exclu.at" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-3 text-white/60 hover:text-white/90 transition-colors group"
+                        >
+                          <img 
+                            src="/Logo white.png" 
+                            alt="Exclu" 
+                            className="h-5 w-auto opacity-60 group-hover:opacity-90 transition-opacity"
+                          />
+                        </a>
+                        <p className="text-center text-[10px] text-white/40 mt-2 leading-relaxed">
+                          Start selling your own premium content without commission with Exclu.
+                        </p>
+                      </div>
                     </div>
-                  )}
-
-                  {!isLoading && link && (
-                    <p className="text-exclu-space text-sm sm:text-[15px] max-w-xl mx-auto sm:mx-0 text-opacity-90">
-                      {link.description ||
-                        'Unlock a one-time drop of premium content. No account required, instant access after payment.'}
-                    </p>
-                  )}
-
-                  {error && !isLoading && (
-                    <p className="text-sm text-red-400 mt-1.5">{error}</p>
-                  )}
-                </div>
+                  </div>
+                </motion.div>
               </div>
             </div>
-          </motion.div>
-
-          {/* Content Cards Grid - LOCKED STATE */}
-          {!isLoading && link && !isUnlocked && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="mb-8"
-              >
-                <div className={`grid gap-4 ${
-                  contentItems.length === 1
-                    ? 'grid-cols-1 max-w-sm mx-auto'
-                    : contentItems.length === 2
-                    ? 'grid-cols-2 max-w-lg mx-auto'
-                    : 'grid-cols-2 sm:grid-cols-3'
-                }`}>
-                  {contentItems.map((item, index) => (
-                    <BlurredCard
-                      key={item.id}
-                      index={index}
-                      isUnlocked={false}
-                      themeGradient={theme.gradient}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-
-              {/* Unlock CTA */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: 'easeOut', delay: 0.4 }}
-                className="rounded-2xl border border-exclu-arsenic/50 bg-gradient-to-br from-exclu-ink/80 via-exclu-phantom/20 to-exclu-ink/80 backdrop-blur-sm p-6 sm:p-8"
-              >
-                <div className="flex flex-col gap-5">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-                    <div className="text-center sm:text-left">
-                      <p className="text-xs text-exclu-space/70 mb-1 uppercase tracking-wider">
-                        {contentItems.length} {contentItems.length === 1 ? 'item' : 'items'} to unlock
-                      </p>
-                      <p className="text-3xl font-bold text-exclu-cloud">{priceLabel}</p>
-                    </div>
-                    <Button
-                      variant="hero"
-                      size="lg"
-                      className="rounded-full w-full sm:w-auto px-8 py-6 text-base font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-shadow"
-                      disabled={isUnlocking}
-                      onClick={handleUnlockClick}
-                    >
-                      {isUnlocking ? (
-                        <span className="flex items-center gap-2">
-                          <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Processing…
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <Lock className="w-4 h-4" />
-                          Unlock for {priceLabel}
-                        </span>
-                      )}
-                    </Button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-[11px] sm:text-xs text-exclu-space/80">
-                      <Mail className="w-3.5 h-3.5" />
-                      <span>
-                        Optional: enter your email to receive a copy of the content link.
-                      </span>
-                    </label>
-                    <Input
-                      type="email"
-                      value={buyerEmail}
-                      onChange={(e) => setBuyerEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      className="h-9 bg-exclu-ink border-exclu-arsenic/60 text-black placeholder:text-exclu-space/50 text-[13px]"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-              <div className="mt-4 space-y-1 text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
-                <p>No account is required. Once the secure payment is completed, your content will be immediately unlocked on this page.</p>
-                <p>If you enter your email above, you will also receive a copy of the access link by email.</p>
-              </div>
-            </>
           )}
 
-          {/* Content Cards Grid - UNLOCKED STATE */}
+          {/* UNLOCKED STATE - Modern Layout */}
           {!isLoading && link && isUnlocked && (
-            <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+              {/* LEFT: Unlocked Content */}
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="mb-8"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+                className="relative overflow-hidden rounded-3xl border border-green-500/30 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6"
               >
+                {/* Success indicator */}
+                <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40">
+                  <Check className="w-4 h-4 text-green-400" />
+                  <span className="text-xs font-medium text-green-400">Unlocked</span>
+                </div>
+
                 {unlockedContent.length > 0 ? (
-                  <div
-                    className={`grid gap-4 ${
-                      unlockedContent.length === 1
-                        ? 'grid-cols-1 max-w-sm mx-auto'
-                        : unlockedContent.length === 2
-                        ? 'grid-cols-2 max-w-lg mx-auto'
-                        : 'grid-cols-2 sm:grid-cols-3'
-                    }`}
-                  >
+                  <div className="space-y-4">
                     {unlockedContent.map((item, index) => (
                       <motion.div
                         key={item.id}
-                        initial={{ opacity: 0, y: 8 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.05 * index }}
-                        className="relative rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/60"
+                        transition={{ duration: 0.5, delay: index * 0.1 }}
+                        className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-exclu-arsenic/60"
                       >
                         {item.type === 'video' ? (
                           <video
                             controls
-                            className="w-full h-full max-h-80 object-contain bg-black"
+                            className="w-full h-full object-contain bg-black"
                             src={item.previewUrl}
                           />
                         ) : (
@@ -550,44 +604,147 @@ const PublicLink = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-exclu-space/70 text-center">
+                  <p className="text-sm text-exclu-space/70 text-center py-12">
                     This content has been unlocked, but no media is attached yet.
                   </p>
                 )}
               </motion.div>
 
-              <div className="space-y-3">
-                {unlockedContent.length > 0 && unlockedContent[0].previewUrl && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <p className="text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
-                      Your purchase has been confirmed. The content below is now unlocked on this device.
-                    </p>
-                    {/* Primary download button outside the players */}
-                    <a
-                      href={unlockedContent[0].previewUrl}
-                      download
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-exclu-cloud text-black text-xs sm:text-sm font-semibold shadow-lg hover:bg-white"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Download to device</span>
-                    </a>
+              {/* RIGHT: Success Info */}
+              <div className="flex flex-col gap-6">
+                {/* Creator Profile Card */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.2 }}
+                  className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6 sm:p-8"
+                >
+                  <div className="pointer-events-none absolute inset-0 opacity-30">
+                    <div className={`absolute -inset-x-24 -top-32 h-56 bg-gradient-to-r ${theme.gradient} blur-3xl animate-gradient-shift`} />
                   </div>
-                )}
-                {hasTemporaryAccess && expiresDate && (
-                  <p className="text-[11px] sm:text-xs text-amber-300/80 text-center sm:text-left">
-                    This access is temporary. Make sure to download the content before{' '}
-                    <span className="font-semibold">
-                      {expiresDate.toLocaleString()}
-                    </span>
-                    .
-                  </p>
-                )}
-                <p className="text-[11px] sm:text-xs text-exclu-space/70 text-center sm:text-left">
-                  You can also right-click or long-press on the media to save it. If you provided an email, you will receive a
-                  copy of this access link.
-                </p>
+
+                  <div className="relative space-y-6">
+                    {creator && (
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-16 h-16 sm:w-20 sm:h-20 overflow-hidden rounded-2xl border-2 border-white/20 bg-exclu-ink/80 shadow-xl">
+                          <div className={`pointer-events-none absolute -inset-2 ${theme.glow} blur-2xl opacity-30`} />
+                          <div className="relative z-10 w-full h-full flex items-center justify-center">
+                            {creator.avatar_url ? (
+                              <img
+                                src={creator.avatar_url}
+                                alt={creator.display_name || creator.handle || 'Creator'}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-2xl font-bold text-white/80">
+                                {(creator.display_name || creator.handle || 'C').charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-lg sm:text-xl font-bold text-exclu-cloud truncate">
+                            {creator.display_name || creator.handle}
+                          </h2>
+                          {creator.handle && (
+                            <p className="text-sm text-exclu-space/70">@{creator.handle}</p>
+                          )}
+                        </div>
+
+                        {creator.handle && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="rounded-full border-exclu-arsenic/60 bg-black/40 hover:bg-black/60 text-xs h-9 px-4 flex items-center gap-2 transition-all hover:scale-105"
+                            onClick={() => {
+                              window.location.href = `/${creator.handle}`;
+                            }}
+                          >
+                            <span>Profile</span>
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="h-px bg-gradient-to-r from-transparent via-exclu-arsenic/40 to-transparent" />
+
+                    <div className="space-y-3">
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40">
+                        <Check className="w-3.5 h-3.5 text-green-400" />
+                        <span className="text-[11px] font-medium text-green-400">
+                          Purchase Confirmed
+                        </span>
+                      </div>
+
+                      <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud tracking-tight leading-tight">
+                        {link.title}
+                      </h1>
+                    </div>
+
+                    {link.description && (
+                      <p className="text-exclu-space/80 text-sm sm:text-base leading-relaxed">
+                        {link.description}
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* Download & Info Card */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, ease: 'easeOut', delay: 0.4 }}
+                  className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/90 via-exclu-phantom/30 to-exclu-ink/90 backdrop-blur-xl p-6 sm:p-8"
+                >
+                  <div className="space-y-4">
+                    {unlockedContent.length > 0 && unlockedContent[0].previewUrl && (
+                      <>
+                        <Button
+                          variant="hero"
+                          size="lg"
+                          className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl shadow-primary/30 hover:shadow-primary/50 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = unlockedContent[0].previewUrl!;
+                            link.download = '';
+                            link.click();
+                          }}
+                        >
+                          <span className="flex items-center justify-center gap-3">
+                            <Download className="w-5 h-5" />
+                            <span>Download Content</span>
+                          </span>
+                        </Button>
+
+                        <p className="text-xs text-exclu-space/70 text-center">
+                          Your purchase has been confirmed. The content is now unlocked on this device.
+                        </p>
+                      </>
+                    )}
+
+                    {hasTemporaryAccess && expiresDate && (
+                      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                        <p className="text-xs text-amber-300/90 text-center">
+                          ⏰ Temporary access expires on{' '}
+                          <span className="font-semibold">
+                            {expiresDate.toLocaleString()}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="pt-4 border-t border-exclu-arsenic/30 space-y-2 text-[11px] text-exclu-space/60">
+                      <p>✓ Right-click or long-press to save media</p>
+                      <p>✓ Email copy sent (if provided)</p>
+                      <p>✓ Access link saved to this device</p>
+                    </div>
+                  </div>
+                </motion.div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </main>

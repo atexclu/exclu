@@ -1,8 +1,12 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import logo from '@/assets/logo-white.svg';
+import { useTheme } from '@/contexts/ThemeContext';
+import logoBlack from '@/assets/logo-black.svg';
+import logoWhite from '@/assets/logo-white.svg';
 
 const Navbar = () => {
+  const { resolvedTheme } = useTheme();
+  
   return (
     <motion.nav
       initial={{ opacity: 0, y: -20 }}
@@ -19,7 +23,7 @@ const Navbar = () => {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
-            <img src={logo} alt="Exclu" className="h-7" />
+            <img src={resolvedTheme === 'light' ? logoBlack : logoWhite} alt="Exclu" className="h-7" />
           </motion.a>
 
           {/* Navigation Links */}

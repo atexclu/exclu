@@ -43,7 +43,7 @@ const CreatorsCarousel = () => {
         className="text-center mb-12 px-6"
       >
         <h2 className="text-4xl sm:text-5xl lg:text-6xl xl:text-6xl font-extrabold tracking-tight text-exclu-cloud mb-4">
-          <span className="gradient-text">10,000+</span> creators
+          <span className="text-[#CFFF16]">10,000+</span> creators
         </h2>
         <p className="text-lg text-exclu-space max-w-2xl mx-auto">
           Building on their own terms: earning more, keeping more, and owning every connection.

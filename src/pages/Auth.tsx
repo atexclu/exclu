@@ -209,7 +209,7 @@ const Auth = () => {
                   onClick={() => setMode('login')}
                   className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
                     mode === 'login' || mode === 'reset'
-                      ? 'bg-exclu-cloud text-black shadow-sm'
+                      ? 'bg-white text-black shadow-sm'
                       : 'text-exclu-space hover:text-exclu-cloud'
                   }`}
                 >
@@ -220,7 +220,7 @@ const Auth = () => {
                   onClick={() => setMode('signup')}
                   className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
                     mode === 'signup'
-                      ? 'bg-exclu-cloud text-black shadow-sm'
+                      ? 'bg-white text-black shadow-sm'
                       : 'text-exclu-space hover:text-exclu-cloud'
                   }`}
                 >

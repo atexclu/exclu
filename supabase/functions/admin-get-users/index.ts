@@ -23,6 +23,8 @@ const allowedOrigins = [
   normalizedSiteOrigin,
   'http://localhost:8080',
   'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:8084',
   'http://localhost:5173',
 ];
 
@@ -68,6 +70,7 @@ interface AdminUserSummary {
   assets_count: number;
   total_sales: number;
   total_revenue_cents: number;
+  profile_view_count: number;
 }
 
 serve(async (req) => {
@@ -93,6 +96,7 @@ serve(async (req) => {
     let search: string | null = null;
     let page = 1;
     let pageSize = 50;
+    let sortBy: 'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' = 'created_desc';
 
     try {
       const rawBody = await req.text();
@@ -110,6 +114,10 @@ serve(async (req) => {
 
         if (typeof body.pageSize === 'number' && body.pageSize > 0) {
           pageSize = Math.min(body.pageSize, 200);
+        }
+
+        if (typeof body.sortBy === 'string') {
+          sortBy = body.sortBy as any;
         }
       }
     } catch {
@@ -177,11 +185,23 @@ serve(async (req) => {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      const { data: usersPage, error: usersError, count } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('profiles')
-        .select('id, display_name, handle, created_at, is_creator, is_admin', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to);
+        .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
+
+      // Apply sorting based on sortBy parameter
+      if (sortBy === 'created_asc') {
+        query = query.order('created_at', { ascending: true });
+      } else if (sortBy === 'most_viewed') {
+        query = query.order('profile_view_count', { ascending: false, nullsLast: true });
+      } else {
+        // created_desc (default)
+        query = query.order('created_at', { ascending: false });
+      }
+
+      query = query.range(from, to);
+
+      const { data: usersPage, error: usersError, count } = await query;
 
       if (usersError) {
         console.error('Error loading users in admin-get-users', usersError);
@@ -214,7 +234,7 @@ serve(async (req) => {
 
       const { data: matchedProfiles, error: profilesError } = await supabaseAdmin
         .from('profiles')
-        .select('id, display_name, handle, created_at, is_creator, is_admin')
+        .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count')
         .or(orFilters);
 
       if (profilesError) {
@@ -255,7 +275,7 @@ serve(async (req) => {
       if (extraIds.length > 0) {
         const { data: extraProfilesData, error: extraProfilesError } = await supabaseAdmin
           .from('profiles')
-          .select('id, display_name, handle, created_at, is_creator, is_admin')
+          .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count')
           .in('id', extraIds);
 
         if (extraProfilesError) {
@@ -278,6 +298,19 @@ serve(async (req) => {
     }
 
     const userIds = (users ?? []).map((u: any) => u.id as string).filter(Boolean);
+
+    // Fetch aggregated metrics from profile_analytics
+    const { data: analytics, error: analyticsError } = await supabaseAdmin
+      .from('profile_analytics')
+      .select('profile_id, sales_count, revenue_cents, profile_views, link_clicks');
+
+    if (analyticsError) {
+      console.error('Error loading analytics in admin-get-users', analyticsError);
+      return new Response(JSON.stringify({ error: 'Failed to load analytics' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Load auth users to hydrate emails in the summary
     const emailByUserId = new Map<string, string | null>();
@@ -346,33 +379,27 @@ serve(async (req) => {
       }
     }
 
-    // Compute simple sales metrics per user based on purchases and link ownership.
+    // Build maps for aggregated metrics from profile_analytics
     const salesCountByUser = new Map<string, number>();
     const revenueByUser = new Map<string, number>();
+    const profileViewsByUser = new Map<string, number>();
+    const linkClicksByUser = new Map<string, number>();
 
-    if (linkOwnerById.size > 0) {
-      const linkIds = Array.from(linkOwnerById.keys());
-      const { data: purchasesAll, error: purchasesError } = await supabaseAdmin
-        .from('purchases')
-        .select('id, link_id, amount_cents')
-        .in('link_id', linkIds);
+    for (const analytic of (analytics ?? []) as any[]) {
+      const profileId = analytic.profile_id as string;
+      
+      // Aggregate metrics for each profile (user)
+      const currentSales = salesCountByUser.get(profileId) ?? 0;
+      salesCountByUser.set(profileId, currentSales + (analytic.sales_count ?? 0));
 
-      if (purchasesError) {
-        console.error('Error loading purchases in admin-get-users', purchasesError);
-      } else {
-        for (const purchase of purchasesAll ?? []) {
-          const linkId = (purchase as any).link_id as string | null;
-          if (!linkId) continue;
-          const creatorId = linkOwnerById.get(linkId);
-          if (!creatorId) continue;
+      const currentRevenue = revenueByUser.get(profileId) ?? 0;
+      revenueByUser.set(profileId, currentRevenue + (analytic.revenue_cents ?? 0));
 
-          const amount = (purchase as any).amount_cents as number | null;
-          salesCountByUser.set(creatorId, (salesCountByUser.get(creatorId) ?? 0) + 1);
-          if (typeof amount === 'number') {
-            revenueByUser.set(creatorId, (revenueByUser.get(creatorId) ?? 0) + amount);
-          }
-        }
-      }
+      const currentViews = profileViewsByUser.get(profileId) ?? 0;
+      profileViewsByUser.set(profileId, currentViews + (analytic.profile_views ?? 0));
+
+      const currentClicks = linkClicksByUser.get(profileId) ?? 0;
+      linkClicksByUser.set(profileId, currentClicks + (analytic.link_clicks ?? 0));
     }
 
     const safeUsers: AdminUserSummary[] = (users ?? []).map((u: any) => {
@@ -389,8 +416,19 @@ serve(async (req) => {
         assets_count: assetsCountByUser.get(userId) ?? 0,
         total_sales: salesCountByUser.get(userId) ?? 0,
         total_revenue_cents: revenueByUser.get(userId) ?? 0,
+        profile_view_count: u.profile_view_count ?? 0,
       };
     });
+
+    // Apply best_sellers sorting if requested (after aggregating sales data)
+    if (sortBy === 'best_sellers') {
+      safeUsers.sort((a, b) => {
+        if (b.total_sales !== a.total_sales) {
+          return b.total_sales - a.total_sales;
+        }
+        return b.total_revenue_cents - a.total_revenue_cents;
+      });
+    }
 
     return new Response(JSON.stringify({ users: safeUsers, page, pageSize, total: totalUsers }), {
       status: 200,

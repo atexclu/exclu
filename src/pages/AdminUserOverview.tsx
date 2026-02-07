@@ -1,7 +1,7 @@
 import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 
 interface UserProfileOverview {
   id: string;
@@ -20,6 +20,9 @@ interface UserLinkOverview {
   price_cents: number | null;
   created_at: string | null;
   published_at: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  previewUrl?: string | null;
 }
 
 interface UserAssetOverview {
@@ -60,6 +63,8 @@ interface UserOverviewPayload {
 const AdminUserOverview = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo') || '/admin/users';
   const [profile, setProfile] = useState<UserProfileOverview | null>(null);
   const [links, setLinks] = useState<UserLinkOverview[]>([]);
   const [assets, setAssets] = useState<UserAssetOverview[]>([]);
@@ -69,6 +74,8 @@ const AdminUserOverview = () => {
   const [error, setError] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<UserAssetOverview | null>(null);
+  const [selectedLink, setSelectedLink] = useState<UserLinkOverview | null>(null);
+  const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -227,7 +234,7 @@ const AdminUserOverview = () => {
             </div>
             <button
               type="button"
-              onClick={() => navigate('/admin/users')}
+              onClick={() => navigate(returnTo)}
               className="text-xs sm:text-sm text-exclu-space hover:text-exclu-cloud underline-offset-2 hover:underline"
             >
               Back to users
@@ -309,21 +316,7 @@ const AdminUserOverview = () => {
                         </ul>
                       </div>
                     )}
-                    {!stripeDetails?.friendly_messages?.length && (
-                      <p className="text-[11px] text-exclu-space/60 mt-1">
-                        This is an admin-only control. Clicking "Connect Stripe" will start the same
-                        onboarding flow this user sees in their dashboard.
-                      </p>
-                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleStripeConnectAsUser}
-                    disabled={isConnectingStripe}
-                    className="inline-flex items-center self-start rounded-full bg-exclu-cloud text-black px-3 py-1 text-[11px] font-medium hover:bg-white/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isConnectingStripe ? 'Connecting…' : 'Connect Stripe as user'}
-                  </button>
                 </div>
                   </div>
 
@@ -334,6 +327,7 @@ const AdminUserOverview = () => {
                       <table className="min-w-full text-left text-xs sm:text-sm">
                         <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
                           <tr>
+                            <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
                             <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
                             <th className="px-4 py-2 font-medium text-exclu-space/80">Status</th>
                             <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
@@ -341,11 +335,36 @@ const AdminUserOverview = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {links.map((link) => (
+                          {links.map((link) => {
+                            const isVideo = link.mime_type?.startsWith('video/');
+                            return (
                             <tr
                               key={link.id}
-                              className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80"
+                              className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80 cursor-pointer"
+                              onClick={() => setSelectedLink(link)}
                             >
+                              <td className="px-4 py-2 align-middle">
+                                <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
+                                  {link.previewUrl ? (
+                                    isVideo ? (
+                                      <video
+                                        src={link.previewUrl}
+                                        className="w-full h-full object-cover"
+                                        muted
+                                        playsInline
+                                      />
+                                    ) : (
+                                      <img
+                                        src={link.previewUrl}
+                                        className="w-full h-full object-cover"
+                                        alt={link.title || 'Link content'}
+                                      />
+                                    )
+                                  ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-4 py-2 align-middle text-exclu-cloud">
                                 {link.title || 'Untitled link'}
                               </td>
@@ -361,7 +380,8 @@ const AdminUserOverview = () => {
                                 {link.created_at ? new Date(link.created_at).toLocaleString() : '—'}
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -457,6 +477,51 @@ const AdminUserOverview = () => {
                 )
               ) : (
                 <p className="text-xs text-exclu-space/70 p-6">No preview available for this asset.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedLink && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4" onClick={() => setSelectedLink(null)}>
+          <div
+            className="relative max-w-3xl w-full max-h-[90vh] bg-exclu-ink rounded-2xl border border-exclu-arsenic/70 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-2 border-b border-exclu-arsenic/70">
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-exclu-cloud truncate">
+                  {selectedLink.title || 'Untitled link'}
+                </span>
+                <span className="text-[11px] text-exclu-space/70 truncate">
+                  {selectedLink.mime_type || 'Unknown type'} · {selectedLink.status}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="text-xs text-exclu-space hover:text-exclu-cloud"
+                onClick={() => setSelectedLink(null)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="bg-black flex items-center justify-center max-h-[80vh]">
+              {selectedLink.previewUrl ? (
+                selectedLink.mime_type?.startsWith('video/') ? (
+                  <video
+                    src={selectedLink.previewUrl}
+                    controls
+                    className="max-h-[80vh] max-w-full"
+                  />
+                ) : (
+                  <img
+                    src={selectedLink.previewUrl}
+                    alt={selectedLink.title || 'Link content'}
+                    className="max-h-[80vh] max-w-full object-contain"
+                  />
+                )
+              ) : (
+                <p className="text-xs text-exclu-space/70 p-6">No preview available for this link.</p>
               )}
             </div>
           </div>

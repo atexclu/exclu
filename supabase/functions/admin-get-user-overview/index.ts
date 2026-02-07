@@ -32,6 +32,8 @@ const allowedOrigins = [
   normalizedSiteOrigin,
   'http://localhost:8080',
   'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:8084',
   'http://localhost:5173',
 ];
 
@@ -82,6 +84,9 @@ interface UserOverviewPayload {
     price_cents: number | null;
     created_at: string | null;
     published_at: string | null;
+    storage_path: string | null;
+    mime_type: string | null;
+    previewUrl?: string | null;
   }>;
   assets: Array<{
     id: string;
@@ -283,9 +288,9 @@ serve(async (req) => {
     }
 
     // Load a list of the target user's links (most recent first)
-    const { data: links, error: linksError } = await supabaseAdmin
+    const { data: linksData, error: linksError } = await supabaseAdmin
       .from('links')
-      .select('id, title, status, price_cents, created_at')
+      .select('id, title, status, price_cents, created_at, storage_path, mime_type')
       .eq('creator_id', targetUserId)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -296,6 +301,51 @@ serve(async (req) => {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Generate signed URLs for link previews
+    const links: Array<{
+      id: string;
+      title: string | null;
+      status: string | null;
+      price_cents: number | null;
+      created_at: string | null;
+      storage_path: string | null;
+      mime_type: string | null;
+      previewUrl?: string | null;
+    }> = [];
+
+    if (linksData && linksData.length > 0) {
+      for (const link of linksData as any[]) {
+        const storagePath = link.storage_path as string | null;
+        let previewUrl: string | null = null;
+
+        if (storagePath) {
+          try {
+            const { data: signed } = await supabaseAdmin.storage
+              .from('paid-content')
+              .createSignedUrl(storagePath, 60 * 60);
+
+            if (signed?.signedUrl) {
+              previewUrl = signed.signedUrl;
+            }
+          } catch (e) {
+            console.error('Error generating signed URL for link in admin-get-user-overview', e);
+          }
+        }
+
+        links.push({
+          id: link.id as string,
+          title: (link.title as string | null) ?? null,
+          status: (link.status as string | null) ?? null,
+          price_cents: (link.price_cents as number | null) ?? null,
+          created_at: (link.created_at as string | null) ?? null,
+          published_at: null,
+          storage_path: storagePath,
+          mime_type: (link.mime_type as string | null) ?? null,
+          previewUrl,
+        });
+      }
     }
 
     // Load a subset of the target user's content library assets with signed preview URLs.
@@ -483,14 +533,7 @@ serve(async (req) => {
             stripe_connect_status: profile.stripe_connect_status ?? null,
           }
         : null,
-      links: (links ?? []).map((l: any) => ({
-        id: l.id,
-        title: l.title ?? null,
-        status: l.status ?? null,
-        price_cents: typeof l.price_cents === 'number' ? l.price_cents : null,
-        created_at: l.created_at ?? null,
-        published_at: null,
-      })),
+      links: links,
       assets: safeAssets,
       sales,
       stripe: stripeDetails,

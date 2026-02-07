@@ -19,6 +19,7 @@ const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
   'http://localhost:8080',
+  'http://localhost:8082',
   'http://localhost:5173',
 ];
 
@@ -104,6 +105,7 @@ serve(async (req) => {
     }
 
     const currentViews = (profile as any).profile_view_count ?? 0;
+    console.log('[increment-profile-view] Current views:', currentViews, 'Profile ID:', (profile as any).id);
 
     const { error: updateError } = await supabaseAdmin
       .from('profiles')
@@ -111,12 +113,14 @@ serve(async (req) => {
       .eq('id', (profile as any).id);
 
     if (updateError) {
-      console.error('Error incrementing profile view count', updateError);
-      return new Response(JSON.stringify({ error: 'Failed to increment profile views' }), {
+      console.error('[increment-profile-view] Error incrementing profile view count:', JSON.stringify(updateError));
+      return new Response(JSON.stringify({ error: 'Failed to increment profile views', details: updateError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log('[increment-profile-view] Successfully incremented to:', currentViews + 1);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

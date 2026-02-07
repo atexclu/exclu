@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HelpCenter from "./pages/HelpCenter";
@@ -27,10 +28,12 @@ import CreatorPublic from "./pages/CreatorPublic";
 import PublicLink from "./pages/PublicLink";
 import Profile from "./pages/Profile";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AppShell from "@/components/AppShell";
 import Onboarding from "./pages/Onboarding";
 import AdminRoute from "@/components/AdminRoute";
 import AdminUsers from "./pages/AdminUsers";
 import AdminUserOverview from "./pages/AdminUserOverview";
+import LinkInBioEditor from "./pages/LinkInBioEditor";
 
 const queryClient = new QueryClient();
 
@@ -67,10 +70,11 @@ const App = () => {
 
   return (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/help-center" element={<HelpCenter />} />
@@ -152,10 +156,18 @@ const App = () => {
             }
           />
           <Route
-            path="/app/profile"
+            path="/app/settings"
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/app/profile"
+            element={
+              <ProtectedRoute>
+                <LinkInBioEditor />
               </ProtectedRoute>
             }
           />
@@ -170,7 +182,8 @@ const App = () => {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
-    </TooltipProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
   );
 };

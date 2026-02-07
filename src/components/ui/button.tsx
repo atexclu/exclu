@@ -22,7 +22,7 @@ const buttonVariants = cva(
         link: 
           "text-primary underline-offset-4 hover:underline",
         hero: 
-          "bg-[#CFFF16] text-exclu-black font-bold shadow-glow-lg hover:shadow-[0_0_80px_15px_rgba(207,255,22,0.4)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] border-0",
+          "bg-[#CFFF16] text-black font-extrabold shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] hover:shadow-[0_0_45px_8px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] border-0",
         heroOutline:
           "border border-exclu-steel/30 bg-exclu-phantom/30 backdrop-blur-sm text-exclu-cloud hover:bg-exclu-phantom/50 hover:border-exclu-steel/50 hover:scale-[1.02] active:scale-[0.98]",
         glass:

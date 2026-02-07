@@ -43,8 +43,8 @@ const FinalCTASection = () => {
           <h2 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-extrabold text-exclu-cloud mb-6 leading-tight">
             Ready to keep{' '}
             <span className="inline-flex items-baseline">
-              <span className="gradient-text text-5xl sm:text-6xl lg:text-7xl">100</span>
-              <span className="gradient-text text-3xl sm:text-4xl lg:text-5xl">%</span>
+              <span className="text-[#CFFF16] text-5xl sm:text-6xl lg:text-7xl">100</span>
+              <span className="text-[#CFFF16] text-3xl sm:text-4xl lg:text-5xl">%</span>
             </span>{' '}
             of your earnings?
           </h2>

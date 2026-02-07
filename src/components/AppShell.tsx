@@ -3,12 +3,17 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { LogOut, User } from 'lucide-react';
+import { useTheme } from '@/contexts/ThemeContext';
+import logoBlack from '@/assets/logo-black.svg';
+import logoWhite from '@/assets/logo-white.svg';
 
 interface AppShellProps {
   children: ReactNode;
+  rightActions?: ReactNode;
 }
 
-const AppShell = ({ children }: AppShellProps) => {
+const AppShell = ({ children, rightActions }: AppShellProps) => {
+  const { resolvedTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -57,11 +62,11 @@ const AppShell = ({ children }: AppShellProps) => {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* App topbar */}
-      <header className="fixed top-0 inset-x-0 z-30 border-b border-exclu-arsenic/60 bg-gradient-to-b from-black/90 via-black/80 to-black/60 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+      <header className="fixed top-0 inset-x-0 z-30 border-b border-border bg-card backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-4">
           <Link to="/app" className="inline-flex items-center">
             <img
-              src="/Logo white.png"
+              src={resolvedTheme === 'light' ? logoBlack : logoWhite}
               alt="Exclu logo"
               className="h-5 sm:h-6 w-auto object-contain"
             />
@@ -72,18 +77,28 @@ const AppShell = ({ children }: AppShellProps) => {
               to="/app"
               className={`px-3 py-1.5 rounded-full transition-all ${
                 isActive('/app')
-                  ? 'bg-exclu-cloud text-black shadow-sm'
-                  : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               Dashboard
             </Link>
             <Link
+              to="/app/profile"
+              className={`px-3 py-1.5 rounded-full transition-all ${
+                isActive('/app/profile')
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              Profile
+            </Link>
+            <Link
               to="/app/links"
               className={`px-3 py-1.5 rounded-full transition-all ${
                 isActive('/app/links')
-                  ? 'bg-exclu-cloud text-black shadow-sm'
-                  : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               Links
@@ -92,8 +107,8 @@ const AppShell = ({ children }: AppShellProps) => {
               to="/app/content"
               className={`px-3 py-1.5 rounded-full transition-all ${
                 isActive('/app/content')
-                  ? 'bg-exclu-cloud text-black shadow-sm'
-                  : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               Content
@@ -103,8 +118,8 @@ const AppShell = ({ children }: AppShellProps) => {
                 to="/admin/users"
                 className={`px-3 py-1.5 rounded-full transition-all ${
                   isActive('/admin/users')
-                    ? 'bg-exclu-cloud text-black shadow-sm'
-                    : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/70'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 Admin
@@ -112,28 +127,34 @@ const AppShell = ({ children }: AppShellProps) => {
             )}
           </nav>
 
+          {rightActions && (
+            <div className="flex items-center gap-2">
+              {rightActions}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <Link
-              to="/app/profile"
+              to="/app/settings"
               className={`relative w-8 h-8 rounded-full overflow-hidden border transition-all ${
-                location.pathname === '/app/profile'
+                location.pathname === '/app/settings'
                   ? 'border-primary ring-2 ring-primary/30'
-                  : 'border-exclu-arsenic/70 hover:border-primary/50'
+                  : 'border-border hover:border-primary/50'
               }`}
               aria-label="Profile settings"
             >
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
-                  <User className="w-4 h-4 text-exclu-space" />
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <User className="w-4 h-4 text-muted-foreground" />
                 </div>
               )}
             </Link>
             <Button
               variant="outline"
               size="icon"
-              className="rounded-full border-exclu-arsenic/70 bg-exclu-ink/80 hover:bg-exclu-phantom/80 h-8 w-8"
+              className="rounded-full h-8 w-8"
               onClick={handleLogout}
               aria-label="Log out"
             >
@@ -144,7 +165,7 @@ const AppShell = ({ children }: AppShellProps) => {
       </header>
 
       {/* Main content */}
-      <div className="pt-16 flex-1 flex flex-col">
+      <div className="pt-20 flex-1 flex flex-col">
         <main className="flex-1">{children}</main>
       </div>
     </div>

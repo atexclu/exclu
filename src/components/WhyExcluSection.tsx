@@ -113,7 +113,7 @@ const WhyExcluSection = () => {
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
             Built for creators who want{' '}
-            <span className="gradient-text">more</span>
+            <span className="text-[#CFFF16]">more</span>
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
             Stop giving away 20% of your hard work. Exclu puts you in complete control of your monetization.

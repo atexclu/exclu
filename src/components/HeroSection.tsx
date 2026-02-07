@@ -19,8 +19,8 @@ const HeroSection = () => {
     <section ref={sectionRef} className="relative min-h-[80vh] flex flex-col justify-center overflow-hidden pt-24 pb-16 px-4 sm:px-6">
       {/* Subtle Background Effects */}
       <div className="absolute inset-0 radial-gradient opacity-40" />
-      <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-glow-violet/8 rounded-full blur-[150px] animate-pulse-glow" />
-      <div className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] bg-glow-pink/6 rounded-full blur-[120px] animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
+      <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-white/5 rounded-full blur-[150px] animate-pulse-glow" />
+      <div className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] bg-white/3 rounded-full blur-[120px] animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
       
       {/* Grid pattern overlay */}
       <div className="absolute inset-0 grid-pattern opacity-20" />
@@ -83,7 +83,7 @@ const HeroSection = () => {
                 Sell exclusive content
               </span>
               <br className="hidden lg:block" />
-              <span className="gradient-text block lg:inline-block lg:whitespace-nowrap">
+              <span className="text-[#CFFF16] block lg:inline-block lg:whitespace-nowrap">
                 with 0% commission.
               </span>
             </motion.h1>

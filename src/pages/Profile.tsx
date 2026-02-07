@@ -21,6 +21,7 @@ import {
   Palette,
   AlertTriangle,
 } from 'lucide-react';
+import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 
 const Profile = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -38,11 +39,21 @@ const Profile = () => {
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'profile' | 'appearance' | 'subscription' | 'security'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'security'>('profile');
   const [themeColor, setThemeColor] = useState<string>('pink');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Handle hash navigation to open specific section
+  useEffect(() => {
+    const hash = window.location.hash.slice(1); // Remove the #
+    if (hash === 'payments') {
+      setActiveSection('subscription');
+      // Clear the hash after navigating
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -399,7 +410,6 @@ const Profile = () => {
 
   const menuItems = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'subscription', label: 'Subscription & Payments', icon: CreditCard },
     { id: 'security', label: 'Security', icon: Lock },
   ] as const;
@@ -423,7 +433,10 @@ const Profile = () => {
           transition={{ duration: 0.5, ease: 'easeOut' }}
           className="mt-4 sm:mt-6"
         >
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-6">Settings</h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">Settings</h1>
+            <ThemeToggleSwitch />
+          </div>
 
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Sidebar menu */}
@@ -465,7 +478,7 @@ const Profile = () => {
                     <div className="flex items-center gap-6">
                       <div
                         onClick={handleAvatarClick}
-                        className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-exclu-arsenic/50 bg-exclu-ink cursor-pointer group flex-shrink-0 ring-4 ring-exclu-phantom/20"
+                        className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-exclu-arsenic/50 bg-exclu-ink cursor-pointer group flex-shrink-0"
                       >
                         {avatarUrl ? (
                           <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -505,7 +518,7 @@ const Profile = () => {
                               <button
                                 type="button"
                                 onClick={handleCopyProfileUrl}
-                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/60 bg-black/40 hover:bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-primary/10 hover:bg-primary/20 text-muted-foreground hover:text-foreground transition-colors"
                                 aria-label="Copy public profile link"
                               >
                                 <Copy className="w-3.5 h-3.5" />
@@ -514,7 +527,7 @@ const Profile = () => {
                                 href={publicProfileUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/60 bg-black/40 hover:bg-exclu-ink/80 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-primary/10 hover:bg-primary/20 text-muted-foreground hover:text-foreground transition-colors"
                                 aria-label="Open public profile"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
@@ -545,7 +558,7 @@ const Profile = () => {
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
                             placeholder="Enter your name"
-                            className="h-11 bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                           />
                         </div>
                       </div>
@@ -565,7 +578,7 @@ const Profile = () => {
                               value={handle}
                               onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                               placeholder="yourhandle"
-                              className="h-11 rounded-l-none bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                              className="h-11 rounded-l-none bg-primary/10 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                             />
                           </div>
                         </div>
@@ -582,7 +595,7 @@ const Profile = () => {
                             value={bio}
                             onChange={(e) => setBio(e.target.value)}
                             placeholder="Tell your fans about yourself and your content..."
-                            className="min-h-[120px] bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none"
+                            className="min-h-[120px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none"
                           />
                           <p className="text-[10px] text-exclu-space/50 mt-1.5 text-right">{bio.length}/500</p>
                         </div>
@@ -598,7 +611,7 @@ const Profile = () => {
                           <select
                             value={country || 'US'}
                             onChange={(e) => setCountry(e.target.value)}
-                            className="h-11 w-full rounded-md border border-exclu-arsenic/50 bg-black/40 px-3 text-sm text-exclu-cloud focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            className="h-11 w-full rounded-md border border-border bg-primary/10 px-3 text-sm text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                           >
                             <option value="US">United States</option>
                             <option value="GB">United Kingdom</option>
@@ -625,6 +638,7 @@ const Profile = () => {
                           </select>
                         </div>
                       </div>
+
                     </div>
 
                     {/* Save button in footer */}
@@ -640,42 +654,13 @@ const Profile = () => {
                     </div>
                   </div>
 
-                  {/* Public banner visibility (Premium only) */}
-                  {isCreatorSubscribed && (
-                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-                      <div className="px-6 py-4 border-b border-exclu-arsenic/40">
-                        <h2 className="text-sm font-semibold text-exclu-cloud">Exclu banner</h2>
-                        <p className="text-xs text-exclu-space/60 mt-0.5">
-                          Control whether the small “Join now” Exclu banner is shown at the bottom of your public profile.
-                        </p>
-                      </div>
-                      <div className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-exclu-cloud">Show Exclu join banner</p>
-                          <p className="text-xs text-exclu-space/60">
-                            When enabled, visitors will see a small Exclu banner with a “Join now” button at the bottom of your profile.
-                          </p>
-                        </div>
-                        <label className="inline-flex items-center gap-2 text-sm text-exclu-cloud cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={showJoinBanner}
-                            onChange={(e) => setShowJoinBanner(e.target.checked)}
-                            className="h-4 w-4 rounded border-exclu-arsenic/60 bg-black"
-                          />
-                          <span>{showJoinBanner ? 'Banner enabled' : 'Banner hidden'}</span>
-                        </label>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Public Link Card */}
                   <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
                     <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Your Public Link</h2>
 
                     {publicProfileUrl ? (
                       <div className="space-y-3">
-                        <div className="flex items-center gap-2 rounded-xl bg-black/60 border border-exclu-arsenic/50 px-4 py-3">
+                        <div className="flex items-center gap-2 rounded-xl bg-primary/10 border border-border px-4 py-3">
                           <input
                             type="text"
                             readOnly
@@ -715,105 +700,6 @@ const Profile = () => {
                 </motion.div>
               )}
 
-              {/* Appearance Section */}
-              {activeSection === 'appearance' && (
-                <motion.div
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="space-y-6"
-                >
-                  {/* Theme Color Card */}
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-exclu-arsenic/40">
-                      <h2 className="text-sm font-semibold text-exclu-cloud">Theme Color</h2>
-                      <p className="text-xs text-exclu-space/60 mt-0.5">Choose a color theme for your public profile page</p>
-                    </div>
-
-                    <div className="p-6">
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                        {themeOptions.map((theme) => (
-                          <button
-                            key={theme.id}
-                            type="button"
-                            onClick={() => {
-                              setThemeColor(theme.id);
-                              void saveAppearance({ themeColorOverride: theme.id, silent: true });
-                            }}
-                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${themeColor === theme.id
-                              ? 'border-white/50 bg-white/10'
-                              : 'border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
-                              }`}
-                          >
-                            <div className={`w-10 h-10 rounded-full ${theme.color}`} />
-                            <span className="text-xs text-exclu-cloud">{theme.label}</span>
-                            {themeColor === theme.id && (
-                              <div className="absolute top-1 right-1">
-                                <Check className="w-4 h-4 text-white" />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Social Links Card */}
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-exclu-arsenic/40">
-                      <h2 className="text-sm font-semibold text-exclu-cloud">Social Links</h2>
-                      <p className="text-xs text-exclu-space/60 mt-0.5">Add your social media links to display on your profile</p>
-                    </div>
-
-                    <div className="p-6 space-y-4">
-                      {socialPlatformsList.map((platform) => (
-                        <div key={platform.id} className="grid grid-cols-1 sm:grid-cols-4 gap-2 sm:gap-4 items-center">
-                          <label className="text-sm font-medium text-exclu-cloud">{platform.label}</label>
-                          <div className="sm:col-span-3">
-                            <Input
-                              value={socialLinks[platform.id] || ''}
-                              onChange={(e) => handleSocialLinkChange(platform.id, e.target.value)}
-                              placeholder={platform.placeholder}
-                              className="h-10 bg-black/40 border-exclu-arsenic/50 text-exclu-cloud placeholder:text-exclu-space/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 text-sm"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Save button in footer */}
-                    <div className="px-6 py-4 border-t border-exclu-arsenic/40 bg-exclu-phantom/10 flex justify-end">
-                      <Button
-                        onClick={handleSaveAppearance}
-                        variant="hero"
-                        disabled={isSaving}
-                        className="rounded-full px-6"
-                      >
-                        {isSaving ? 'Saving...' : 'Save appearance'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Preview hint */}
-                  {handle && (
-                    <div className="rounded-xl border border-exclu-arsenic/40 bg-exclu-phantom/20 p-4 flex items-center justify-between">
-                      <p className="text-sm text-exclu-space">
-                        Preview your changes on your public profile
-                      </p>
-                      <a
-                        href={`/${handle}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        View profile
-                      </a>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-
               {/* Subscription Section */}
               {activeSection === 'subscription' && (
                 <motion.div
@@ -823,10 +709,10 @@ const Profile = () => {
                   className="space-y-6"
                 >
                   {/* Current Plan Card */}
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 p-5 sm:p-6">
+                  <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
                     <h2 className="text-lg font-semibold text-exclu-cloud mb-5">Your Plan</h2>
 
-                    <div className="flex items-start gap-4 p-4 rounded-xl bg-black/40 border border-exclu-arsenic/50">
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isCreatorSubscribed ? 'bg-emerald-500/15' : 'bg-amber-500/15'}`}>
                         {isCreatorSubscribed ? (
                           <Zap className="w-6 h-6 text-emerald-400" />
@@ -840,8 +726,8 @@ const Profile = () => {
                             {isCreatorSubscribed ? 'Premium Plan' : 'Free Plan'}
                           </h3>
                           {isCreatorSubscribed && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 font-medium">
-                              <Check className="w-3 h-3" />
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 dark:text-emerald-300 light:text-black font-medium">
+                              <Check className="w-3 h-3 text-emerald-300 dark:text-emerald-300 light:text-black" />
                               Active
                             </span>
                           )}
@@ -883,10 +769,10 @@ const Profile = () => {
                   </div>
 
                   {/* Stripe Connect Card */}
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+                  <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
                     <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Payment Account</h2>
 
-                    <div className="flex items-start gap-4 p-4 rounded-xl bg-black/40 border border-exclu-arsenic/50">
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stripeConnectStatus === 'complete' ? 'bg-emerald-500/15' : 'bg-exclu-phantom/30'}`}>
                         <CreditCard className={`w-6 h-6 ${stripeConnectStatus === 'complete' ? 'text-emerald-400' : 'text-exclu-space'}`} />
                       </div>
@@ -975,7 +861,7 @@ const Profile = () => {
                                   .update({ country: e.target.value })
                                   .eq('id', userId);
                               }}
-                              className="h-10 w-full rounded-full border border-exclu-arsenic/60 bg-black/40 px-3 text-sm text-exclu-cloud focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                              className="h-10 w-full rounded-full border border-border bg-primary/10 px-3 text-sm text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
                             >
                               <option value="US">United States 🇺🇸</option>
                               <option value="GB">United Kingdom 🇬🇧</option>
@@ -1039,11 +925,11 @@ const Profile = () => {
                   <div className="rounded-2xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/95 via-exclu-phantom/30 to-exclu-ink/95 p-5 sm:p-6">
                     <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Email Address</h2>
 
-                    <div className="flex items-center gap-3 p-4 rounded-xl bg-black/40 border border-exclu-arsenic/50">
+                    <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/10 border border-border">
                       <Mail className="w-5 h-5 text-exclu-space/60" />
                       <span className="text-sm text-exclu-cloud">{email}</span>
-                      <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 font-medium">
-                        <Check className="w-3 h-3" />
+                      <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 dark:text-emerald-300 light:text-black font-medium">
+                        <Check className="w-3 h-3 text-emerald-300 dark:text-emerald-300 light:text-black" />
                         Verified
                       </span>
                     </div>

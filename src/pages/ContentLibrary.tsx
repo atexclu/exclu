@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, Plus } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 type LibraryAsset = {
   id: string;
@@ -12,6 +14,7 @@ type LibraryAsset = {
   storage_path: string;
   mime_type: string | null;
   previewUrl?: string | null;
+  is_public: boolean;
 };
 
 const ContentLibrary = () => {
@@ -24,6 +27,9 @@ const ContentLibrary = () => {
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
+  const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
 
   useEffect(() => {
     let isMounted = true;
@@ -46,7 +52,7 @@ const ContentLibrary = () => {
 
       const { data, error } = await supabase
         .from('assets')
-        .select('id, title, created_at, storage_path, mime_type')
+        .select('id, title, created_at, storage_path, mime_type, is_public')
         .eq('creator_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -170,7 +176,7 @@ const ContentLibrary = () => {
       for (const file of selectedFiles) {
         const assetId = crypto.randomUUID();
         const ext = file.name.split('.').pop() ?? 'bin';
-        const objectName = `paid-content/${user.id}/assets/${assetId}/original/content.${ext}`;
+        const objectName = `${user.id}/assets/${assetId}/original/content.${ext}`;
 
         const { error: uploadError } = await supabase.storage
           .from('paid-content')
@@ -192,8 +198,9 @@ const ContentLibrary = () => {
             title: assetTitle.trim() || null,
             storage_path: objectName,
             mime_type: file.type || null,
+            is_public: isPublic,
           })
-          .select('id, title, created_at, storage_path, mime_type')
+          .select('id, title, created_at, storage_path, mime_type, is_public')
           .single();
 
         if (insertError || !inserted) {
@@ -224,6 +231,7 @@ const ContentLibrary = () => {
         return [];
       });
       setShowUploadModal(false);
+      setIsPublic(false);
     } catch (err: any) {
       console.error('Error uploading asset', err);
       setError(err?.message || 'Unable to upload content right now.');
@@ -236,10 +244,104 @@ const ContentLibrary = () => {
     setShowUploadModal(false);
     setAssetTitle('');
     setSelectedFiles([]);
+    setIsPublic(false);
     setPreviewUrls((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
       return [];
     });
+  };
+
+  const handleToggleVisibility = async (assetId: string, currentIsPublic: boolean) => {
+    const newIsPublic = !currentIsPublic;
+    
+    const { error } = await supabase
+      .from('assets')
+      .update({ is_public: newIsPublic })
+      .eq('id', assetId);
+    
+    if (error) {
+      console.error('Error updating visibility', error);
+      return;
+    }
+    
+    setAssets((prev) =>
+      prev.map((asset) =>
+        asset.id === assetId ? { ...asset, is_public: newIsPublic } : asset
+      )
+    );
+  };
+
+  const toggleAssetSelection = (assetId: string) => {
+    setSelectedAssets((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(assetId)) {
+        newSet.delete(assetId);
+      } else {
+        newSet.add(assetId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVisible = () => {
+    const visibleAssets = getFilteredAssets();
+    setSelectedAssets(new Set(visibleAssets.map(a => a.id)));
+  };
+
+  const deselectAll = () => {
+    setSelectedAssets(new Set());
+  };
+
+  const handleBulkVisibilityChange = async (makePublic: boolean) => {
+    const assetIds = Array.from(selectedAssets);
+    if (assetIds.length === 0) return;
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ is_public: makePublic })
+      .in('id', assetIds);
+
+    if (error) {
+      console.error('Error updating bulk visibility', error);
+      return;
+    }
+
+    setAssets((prev) =>
+      prev.map((asset) =>
+        assetIds.includes(asset.id) ? { ...asset, is_public: makePublic } : asset
+      )
+    );
+    setSelectedAssets(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    const assetIds = Array.from(selectedAssets);
+    if (assetIds.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${assetIds.length} content${assetIds.length > 1 ? 's' : ''}? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from('assets')
+      .delete()
+      .in('id', assetIds);
+
+    if (error) {
+      console.error('Error deleting assets', error);
+      return;
+    }
+
+    setAssets((prev) => prev.filter((asset) => !assetIds.includes(asset.id)));
+    setSelectedAssets(new Set());
+  };
+
+  const getFilteredAssets = () => {
+    if (visibilityFilter === 'all') return assets;
+    if (visibilityFilter === 'public') return assets.filter(a => a.is_public);
+    return assets.filter(a => !a.is_public);
   };
 
   return (
@@ -263,6 +365,115 @@ const ContentLibrary = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
+        {/* Upload Section - Slides down from top */}
+        <AnimatePresence>
+          {showUploadModal && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden mb-6"
+            >
+              <div className="rounded-2xl border border-border bg-card shadow-lg p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-foreground">Upload new content</h2>
+                  <button
+                    type="button"
+                    onClick={closeUploadModal}
+                    className="p-2 rounded-lg hover:bg-muted transition-colors"
+                    aria-label="Close upload form"
+                  >
+                    <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                  </button>
+                </div>
+                <form className="space-y-6" onSubmit={handleAssetUpload}>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground" htmlFor="asset-title">
+                      Title (optional)
+                    </label>
+                    <Input
+                      id="asset-title"
+                      value={assetTitle}
+                      onChange={(e) => setAssetTitle(e.target.value)}
+                      placeholder="Example: Behind the scenes shot"
+                      className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  <div className="relative rounded-2xl border-2 border-dashed border-border bg-muted/50 px-6 py-8 flex flex-col items-center justify-center text-center gap-4">
+                    <div className="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary">
+                      <Plus className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-2 w-full">
+                      <p className="text-sm font-semibold text-foreground">
+                        {selectedFiles.length === 0
+                          ? 'Choose one or more files'
+                          : selectedFiles.length === 1
+                          ? selectedFiles[0].name
+                          : `${selectedFiles[0].name} + ${selectedFiles.length - 1} more`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        MP4, MOV, JPG, PNG supported
+                      </p>
+                      {previewUrls[0] && (
+                        <div className="mt-4 rounded-xl overflow-hidden border border-border bg-muted max-h-48">
+                          {selectedFiles[0] && selectedFiles[0].type.startsWith('video/') ? (
+                            <video src={previewUrls[0]} className="w-full h-48 object-cover" muted loop autoPlay />
+                          ) : (
+                            <img
+                              src={previewUrls[0]}
+                              className="w-full h-48 object-cover"
+                              alt={selectedFiles[0]?.name || 'Preview'}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      onChange={handleAssetFileChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">Make this content public</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Public content will be visible on your profile without payment</p>
+                    </div>
+                    <Switch
+                      checked={isPublic}
+                      onCheckedChange={setIsPublic}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={closeUploadModal}
+                      className="rounded-full"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="hero"
+                      disabled={isUploadingAsset || selectedFiles.length === 0}
+                      className="rounded-full"
+                    >
+                      {isUploadingAsset ? 'Uploading…' : 'Upload'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Gallery */}
         <section>
           {isLoading && <p className="text-sm text-exclu-space">Loading your content…</p>}
@@ -281,17 +492,136 @@ const ContentLibrary = () => {
 
           {!isLoading && assets.length > 0 && (
             <>
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <p className="text-xs text-exclu-space/70">{assets.length} item{assets.length > 1 ? 's' : ''}</p>
+              {/* Toolbar with filters and bulk actions */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <p className="text-xs text-exclu-space/70">{getFilteredAssets().length} item{getFilteredAssets().length > 1 ? 's' : ''}</p>
+                  
+                  {/* Visibility filter */}
+                  <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+                    <button
+                      onClick={() => setVisibilityFilter('all')}
+                      className={`px-4 py-1.5 rounded-full font-medium transition-all ${
+                        visibilityFilter === 'all'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setVisibilityFilter('public')}
+                      className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
+                        visibilityFilter === 'public'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                      }`}
+                    >
+                      <Eye className="w-3 h-3" />
+                      Public
+                    </button>
+                    <button
+                      onClick={() => setVisibilityFilter('private')}
+                      className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
+                        visibilityFilter === 'private'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                      }`}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                      Private
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bulk actions */}
+                {selectedAssets.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-exclu-cloud font-medium">{selectedAssets.size} selected</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkVisibilityChange(true)}
+                      className="rounded-full text-xs h-8"
+                    >
+                      <Eye className="w-3 h-3 mr-1" />
+                      Make public
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleBulkVisibilityChange(false)}
+                      className="rounded-full text-xs h-8"
+                    >
+                      <EyeOff className="w-3 h-3 mr-1" />
+                      Make private
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleBulkDelete}
+                      className="rounded-full text-xs h-8 text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Delete
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={deselectAll}
+                      className="rounded-full text-xs h-8"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+
+                {/* Select all button */}
+                {selectedAssets.size === 0 && getFilteredAssets().length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={selectAllVisible}
+                    className="rounded-full text-xs h-8"
+                  >
+                    Select all
+                  </Button>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-                {assets.map((asset) => (
-                  <button
+                {getFilteredAssets().map((asset) => (
+                  <div
                     key={asset.id}
-                    type="button"
-                    onClick={() => setPreviewAsset(asset)}
-                    className="group relative overflow-hidden rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 shadow-glow-sm text-left cursor-pointer transition-all hover:border-primary/50"
+                    className={`group relative overflow-hidden rounded-2xl border bg-exclu-ink/80 shadow-glow-sm transition-all ${
+                      selectedAssets.has(asset.id)
+                        ? 'border-primary ring-2 ring-primary/50'
+                        : 'border-exclu-arsenic/60 hover:border-primary/50'
+                    }`}
                   >
+                    {/* Selection checkbox */}
+                    <div
+                      className="absolute top-2 left-2 z-20"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => toggleAssetSelection(asset.id)}
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          selectedAssets.has(asset.id)
+                            ? 'bg-primary border-primary'
+                            : 'bg-black/60 border-white/40 backdrop-blur-sm hover:border-white/60'
+                        }`}
+                      >
+                        {selectedAssets.has(asset.id) && (
+                          <Check className="w-4 h-4 text-white" />
+                        )}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setPreviewAsset(asset)}
+                      className="w-full text-left cursor-pointer"
+                    >
                     {asset.previewUrl ? (
                       asset.mime_type?.startsWith('video/') ? (
                         <video
@@ -324,110 +654,14 @@ const ContentLibrary = () => {
                         {new Date(asset.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                  </button>
+                    </button>
+                  </div>
                 ))}
               </div>
             </>
           )}
         </section>
       </main>
-
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div
-            className="absolute inset-0 bg-gradient-to-br from-black/90 via-exclu-ink/90 to-purple-950/80 backdrop-blur-sm"
-            onClick={closeUploadModal}
-          />
-          <div className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b border-exclu-arsenic/40">
-              <h2 className="text-lg font-semibold text-exclu-cloud">Upload new content</h2>
-              <button
-                onClick={closeUploadModal}
-                className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors"
-              >
-                <X className="w-5 h-5 text-exclu-space" />
-              </button>
-            </div>
-            <form className="p-4 space-y-4" onSubmit={handleAssetUpload}>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-exclu-space" htmlFor="asset-title">
-                  Title (optional)
-                </label>
-                <Input
-                  id="asset-title"
-                  value={assetTitle}
-                  onChange={(e) => setAssetTitle(e.target.value)}
-                  placeholder="Example: Behind the scenes shot"
-                  className="h-10 bg-white border-exclu-arsenic/60 text-black placeholder:text-slate-500"
-                />
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-exclu-arsenic/60 bg-exclu-ink/60 px-4 py-6 flex flex-col items-center justify-center text-center gap-3">
-                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary">
-                  <Plus className="w-6 h-6" />
-                </div>
-                <div className="space-y-1 w-full">
-                  <p className="text-sm font-medium text-exclu-cloud">
-                    {selectedFiles.length === 0
-                      ? 'Choose one or more files'
-                      : selectedFiles.length === 1
-                      ? selectedFiles[0].name
-                      : `${selectedFiles[0].name} + ${selectedFiles.length - 1} more`}
-                  </p>
-                  <p className="text-[11px] text-exclu-space/70">
-                    MP4, MOV, JPG, PNG supported
-                  </p>
-                  {previewUrls[0] && (
-                    <div className="mt-3 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40 max-h-40">
-                      {selectedFiles[0] && selectedFiles[0].type.startsWith('video/') ? (
-                        <video src={previewUrls[0]} className="w-full h-40 object-cover" muted loop autoPlay />
-                      ) : (
-                        <img
-                          src={previewUrls[0]}
-                          className="w-full h-40 object-cover"
-                          alt={selectedFiles[0]?.name || 'Preview'}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-                <label className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-exclu-cloud text-xs font-medium text-black cursor-pointer hover:bg-white transition-colors">
-                  <span>Select files</span>
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    multiple
-                    className="hidden"
-                    onChange={handleAssetFileChange}
-                  />
-                </label>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full border-exclu-arsenic/60"
-                  onClick={closeUploadModal}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="hero"
-                  size="sm"
-                  className="rounded-full"
-                  disabled={isUploadingAsset || selectedFiles.length === 0}
-                >
-                  {isUploadingAsset ? 'Uploading…' : 'Upload'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Preview Modal */}
       {previewAsset && (

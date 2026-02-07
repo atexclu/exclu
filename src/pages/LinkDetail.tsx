@@ -3,10 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
+import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Eye, Coins, ArrowRight, MessageCircle } from 'lucide-react';
+import { Eye, Coins, ArrowRight, MessageCircle, Image as ImageIcon, Video, X, Plus, Trash2 } from 'lucide-react';
 
 interface LinkDetailData {
   id: string;
@@ -18,6 +18,8 @@ interface LinkDetailData {
   slug: string;
   click_count?: number;
   created_at: string;
+  storage_path: string | null;
+  mime_type: string | null;
 }
 
 interface PurchaseRow {
@@ -32,6 +34,7 @@ interface PurchaseRow {
 
 const LinkDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [link, setLink] = useState<LinkDetailData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +42,7 @@ const LinkDetail = () => {
   const [revenueCents, setRevenueCents] = useState(0);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [contentPreviewUrl, setContentPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -63,7 +67,7 @@ const LinkDetail = () => {
       try {
         const { data, error: linkError } = await supabase
           .from('links')
-          .select('id, title, description, price_cents, currency, status, slug, click_count, created_at')
+          .select('id, title, description, price_cents, currency, status, slug, click_count, created_at, storage_path, mime_type')
           .eq('id', id)
           .eq('creator_id', user.id)
           .single();
@@ -95,6 +99,17 @@ const LinkDetail = () => {
         setSalesCount(sales);
         setRevenueCents(revenue);
         setPurchases(safePurchases);
+
+        // Load content preview if storage_path exists
+        if (data.storage_path) {
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from('paid-content')
+            .createSignedUrl(data.storage_path, 60 * 60);
+          
+          if (!signedError && signedData?.signedUrl) {
+            setContentPreviewUrl(signedData.signedUrl);
+          }
+        }
       } catch (err) {
         console.error('Error loading link detail', err);
         if (!isMounted) return;
@@ -171,6 +186,44 @@ const LinkDetail = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!link || !id) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${link.title}"? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('You must be logged in to delete this link.');
+      }
+
+      const { error: deleteError } = await supabase
+        .from('links')
+        .delete()
+        .eq('id', id)
+        .eq('creator_id', user.id);
+
+      if (deleteError) {
+        console.error(deleteError);
+        throw new Error('Unable to delete link. Please try again.');
+      }
+
+      toast.success('Link deleted successfully.');
+      navigate('/app/links');
+    } catch (err: any) {
+      console.error('Error deleting link', err);
+      toast.error(err?.message || 'Unable to delete link right now.');
+    }
+  };
+
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-5xl mx-auto">
@@ -178,37 +231,48 @@ const LinkDetail = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="mt-4 sm:mt-6 mb-8 flex flex-col sm:flex-row items-start justify-between gap-4"
+          className="mt-4 sm:mt-6 mb-8"
         >
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-exclu-space/70 mb-2">Link overview</p>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-1">
-              {isLoading ? 'Loading…' : link ? link.title : 'Link not found'}
-            </h1>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-xs uppercase tracking-[0.2em] text-exclu-space/70 mb-2">Link overview</p>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-exclu-cloud mb-1">
+                {isLoading ? 'Loading…' : link ? link.title : 'Link not found'}
+              </h1>
+              {link && (
+                <p className="text-exclu-space text-sm max-w-xl">
+                  {link.description || 'This is one of your premium pieces of content. Here you can see how it performs.'}
+                </p>
+              )}
+            </div>
+
             {link && (
-              <p className="text-exclu-space text-sm max-w-xl">
-                {link.description || 'This is one of your premium pieces of content. Here you can see how it performs.'}
-              </p>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full border-exclu-arsenic/70 w-full sm:w-auto"
+                  onClick={copyPublicUrl}
+                >
+                  Copy public link
+                </Button>
+                <Button asChild variant="ghost" size="sm" className="rounded-full text-xs text-exclu-space w-full sm:w-auto">
+                  <RouterLink to={`/app/links/${link.id}/edit`}>
+                    Edit link
+                  </RouterLink>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 w-full sm:w-auto"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Delete
+                </Button>
+              </div>
             )}
           </div>
-
-          {link && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full border-exclu-arsenic/70"
-                onClick={copyPublicUrl}
-              >
-                Copy public link
-              </Button>
-              <Button asChild variant="ghost" size="sm" className="rounded-full text-xs text-exclu-space">
-                <RouterLink to={`/app/links/${link.id}/edit`}>
-                  Edit link
-                </RouterLink>
-              </Button>
-            </div>
-          )}
         </motion.section>
 
         {error && !isLoading && (
@@ -267,49 +331,80 @@ const LinkDetail = () => {
               </CardContent>
             </Card>
 
-            {/* Visual preview / reveal-style card */}
+            {/* Content preview card */}
             <Card className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-glow-lg">
               <CardContent className="p-0">
-                <div className="relative h-64 sm:h-72 md:h-80 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),transparent_55%),radial-gradient(circle_at_bottom,_rgba(180,83,9,0.5),transparent_60%)] blur-xl opacity-70" />
-                  <div className="absolute inset-0 bg-[url('/textures/noise.svg')] opacity-30 mix-blend-soft-light" />
-                  <div className="absolute inset-0 backdrop-blur-3xl bg-black/50" />
+                <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 px-4 pt-4 pb-2">Content</p>
+                
+                {contentPreviewUrl ? (
+                    <div className="relative h-64 sm:h-72 md:h-80">
+                      {link?.mime_type?.startsWith('video/') ? (
+                        <video
+                          src={contentPreviewUrl}
+                          className="w-full h-full object-cover"
+                          controls
+                        />
+                      ) : (
+                        <img
+                          src={contentPreviewUrl}
+                          className="w-full h-full object-cover"
+                          alt={link?.title || 'Content'}
+                        />
+                      )}
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full bg-black/60 backdrop-blur-sm border-white/20 text-white hover:bg-black/80"
+                          onClick={() => {
+                            // TODO: Implémenter la suppression du contenu
+                            toast.info('Delete content feature coming soon');
+                          }}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative h-64 sm:h-72 md:h-80 flex items-center justify-center bg-exclu-phantom/20">
+                      <div className="flex flex-col items-center text-center gap-3 px-6">
+                        <div className="w-16 h-16 rounded-full bg-exclu-arsenic/30 flex items-center justify-center">
+                          <ImageIcon className="w-8 h-8 text-exclu-space" />
+                        </div>
+                        <p className="text-sm font-medium text-exclu-cloud">No content attached</p>
+                        <p className="text-xs text-exclu-space/80 max-w-sm">
+                          Add photos or videos to this link from the edit page
+                        </p>
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 rounded-full"
+                        >
+                          <RouterLink to={`/app/links/${link?.id}/edit`}>
+                            <Plus className="w-4 h-4 mr-1.5" />
+                            Add content
+                          </RouterLink>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
-                  <div className="relative z-10 flex flex-col items-center text-center gap-3 px-6">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70">Preview</p>
-                    <p className="text-xl sm:text-2xl font-semibold text-exclu-cloud">
-                      Content hidden until purchase
-                    </p>
-                    <p className="text-xs text-exclu-space/80 max-w-sm">
-                      Fans visiting the public page will see a blurred version of your content with this price and can unlock it
-                      with a single payment.
-                    </p>
-                    <Button
-                      asChild
-                      variant="hero"
-                      size="sm"
-                      className="mt-2 rounded-full inline-flex items-center gap-1.5"
-                    >
-                      <RouterLink to={link ? `/l/${link.slug}` : '#'} target="_blank" rel="noreferrer">
-                        View public page
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </RouterLink>
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="px-6 py-4 border-t border-exclu-arsenic/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="px-6 py-4 border-t border-exclu-arsenic/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs text-exclu-space/80">
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Chat with your fans about this content (coming soon).</span>
+                    <Eye className="w-4 h-4" />
+                    <span>Preview how fans will see this content</span>
                   </div>
                   <Button
-                    variant="outline"
+                    asChild
+                    variant="hero"
                     size="sm"
-                    disabled
-                    className="rounded-full border-dashed border-exclu-arsenic/60 text-[11px] text-exclu-space/80"
+                    className="rounded-full"
                   >
-                    Chat (coming soon)
+                    <RouterLink to={link ? `/l/${link.slug}` : '#'} target="_blank" rel="noreferrer">
+                      View public page
+                      <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                    </RouterLink>
                   </Button>
                 </div>
               </CardContent>

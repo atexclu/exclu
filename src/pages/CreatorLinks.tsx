@@ -1,10 +1,13 @@
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 interface LinkRow {
   id: string;
@@ -13,17 +16,27 @@ interface LinkRow {
   price_cents: number;
   currency: string;
   status: string;
+  show_on_profile: boolean;
   created_at: string;
   click_count?: number;
   storage_path: string | null;
   previewUrl?: string | null;
   isVideo?: boolean;
+  is_public: boolean;
 }
 
 const CreatorLinks = () => {
   const [links, setLinks] = useState<LinkRow[]>([]);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadPrice, setUploadPrice] = useState('');
+  const [uploadDescription, setUploadDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -45,9 +58,28 @@ const CreatorLinks = () => {
         return;
       }
 
+      // Check Stripe Connect status first
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('stripe_connect_status, stripe_account_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (profileError) {
+        console.error('Error loading profile', profileError);
+      }
+
+      const connectStatus = profile?.stripe_connect_status ?? null;
+      const hasStripeAccount = !!profile?.stripe_account_id;
+      const isConnectComplete = connectStatus === 'complete';
+      const canCreate = hasStripeAccount && isConnectComplete;
+      setCanCreateLinks(canCreate);
+
       const { data, error } = await supabase
         .from('links')
-        .select('id, title, slug, price_cents, currency, status, created_at, click_count, storage_path')
+        .select('id, title, slug, price_cents, currency, status, show_on_profile, created_at, click_count, storage_path, is_public')
         .eq('creator_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -103,7 +135,8 @@ const CreatorLinks = () => {
 
         setLinks(withPreviews);
 
-        if (withPreviews.length === 0) {
+        // Only redirect to /app/links/new if user has no links AND Stripe is connected
+        if (withPreviews.length === 0 && canCreate) {
           navigate('/app/links/new', { replace: true });
         }
       }
@@ -116,6 +149,71 @@ const CreatorLinks = () => {
       isMounted = false;
     };
   }, []);
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+
+    setIsUploading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error('You must be logged in');
+      setIsUploading(false);
+      return;
+    }
+
+    const userId = user.id;
+    const filePath = `paid-content/${userId}/${uploadFile.name}`;
+
+    const { data, error } = await supabase.storage
+      .from('paid-content')
+      .upload(filePath, uploadFile, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      setIsUploading(false);
+      toast.error('Failed to upload file');
+      return;
+    }
+
+    const { data: insertData, error: insertError } = await supabase
+      .from('links')
+      .insert({
+        creator_id: userId,
+        title: uploadTitle,
+        price: parseFloat(uploadPrice),
+        description: uploadDescription || null,
+        storage_path: filePath,
+        mime_type: uploadFile.type,
+        status: 'published',
+        is_public: isPublic,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      setIsUploading(false);
+      toast.error('Failed to create link');
+      return;
+    }
+
+    toast.success('Content created successfully!');
+    setUploadFile(null);
+    setUploadTitle('');
+    setUploadPrice('');
+    setUploadDescription('');
+    setIsPublic(false);
+    setIsUploadModalOpen(false);
+    setIsUploading(false);
+    
+    // Refresh the list
+    window.location.reload();
+  };
 
   return (
     <AppShell>
@@ -142,13 +240,62 @@ const CreatorLinks = () => {
           <p className="text-sm text-red-400 mb-4">{error}</p>
         )}
 
-        {!isLoading && !error && links.length === 0 && (
+        {!isLoading && !error && canCreateLinks === false && (
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="mt-6 sm:mt-10 max-w-xl mx-auto"
+          >
+            <Card className="bg-exclu-ink/90 border border-exclu-arsenic/70 rounded-2xl shadow-lg">
+              <CardHeader className="px-6 pt-6 pb-3 space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-exclu-cloud/10 px-3 py-1 text-[11px] font-medium text-exclu-cloud">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  <span>Finish your payout setup first</span>
+                </div>
+                <CardTitle className="text-base text-exclu-cloud mt-1">
+                  Connect Stripe to manage paid links
+                </CardTitle>
+                <CardDescription className="text-xs text-exclu-space/80">
+                  You need to connect your Stripe account to create and manage paid content links that appear on your profile.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6 pb-5 space-y-4 text-[13px] text-exclu-space/85">
+                <ul className="space-y-1.5 list-disc list-inside">
+                  <li>Open your dashboard and complete the Stripe Connect onboarding.</li>
+                  <li>Stripe will ask for your legal name, address, and bank details.</li>
+                  <li>Once your account is approved, you can create and sell paid links instantly.</li>
+                </ul>
+                <div className="flex flex-col sm:flex-row gap-3 mt-3">
+                  <Button
+                    asChild
+                    variant="hero"
+                    size="sm"
+                    className="rounded-full flex-1"
+                  >
+                    <RouterLink to="/app">Go to dashboard</RouterLink>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full border-exclu-arsenic/70 flex-1"
+                  >
+                    <RouterLink to="/app/settings">Open payouts & settings</RouterLink>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.section>
+        )}
+
+        {!isLoading && !error && links.length === 0 && canCreateLinks === true && (
           <p className="text-sm text-exclu-space/80">
             You don&apos;t have any links yet. Click "New link" to create your first one.
           </p>
         )}
 
-        {!isLoading && !error && links.length > 0 && (
+        {!isLoading && !error && links.length > 0 && canCreateLinks === true && (
           <>
             {/* Mobile: Card layout */}
             <div className="sm:hidden space-y-3">
@@ -193,13 +340,6 @@ const CreatorLinks = () => {
                         <span className="text-sm font-semibold text-exclu-cloud">
                           {link.price_cents / 100} {link.currency}
                         </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-                          link.status === 'published' 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-exclu-arsenic/40 text-exclu-space'
-                        }`}>
-                          {link.status}
-                        </span>
                       </div>
                       <div className="flex items-center gap-3 mt-1.5 text-[11px] text-exclu-space/70">
                         <span>{new Date(link.created_at).toLocaleDateString()}</span>
@@ -228,6 +368,27 @@ const CreatorLinks = () => {
                       <Copy className="w-3.5 h-3.5" />
                       Copy link
                     </button>
+                    <div 
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-exclu-ink border border-exclu-arsenic/40"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] text-exclu-space/70">Visible</span>
+                      <Switch
+                        checked={link.show_on_profile}
+                        onCheckedChange={async (checked) => {
+                          const { error } = await supabase
+                            .from('links')
+                            .update({ show_on_profile: checked })
+                            .eq('id', link.id);
+                          if (error) {
+                            toast.error('Failed to update visibility');
+                          } else {
+                            toast.success(checked ? 'Link is now visible' : 'Link is now hidden');
+                            setLinks(links.map(l => l.id === link.id ? { ...l, show_on_profile: checked } : l));
+                          }
+                        }}
+                      />
+                    </div>
                     <RouterLink
                       to={`/app/links/${link.id}/edit`}
                       onClick={(e) => {
@@ -249,7 +410,6 @@ const CreatorLinks = () => {
                   <tr>
                     <th className="px-4 py-3 text-left">Title</th>
                     <th className="px-4 py-3 text-left">Price</th>
-                    <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-left">Created</th>
                     <th className="px-4 py-3 text-left">Clicks</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -302,7 +462,6 @@ const CreatorLinks = () => {
                       <td className="px-4 py-3 text-exclu-space">
                         {link.price_cents / 100} {link.currency}
                       </td>
-                      <td className="px-4 py-3 text-exclu-space capitalize">{link.status}</td>
                       <td className="px-4 py-3 text-exclu-space/80">
                         {new Date(link.created_at).toLocaleDateString()}
                       </td>
@@ -311,6 +470,27 @@ const CreatorLinks = () => {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <div 
+                            className="flex items-center gap-2 px-2 py-1 rounded-lg bg-exclu-ink border border-exclu-arsenic/40"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-[10px] text-exclu-space/70">Visible</span>
+                            <Switch
+                              checked={link.show_on_profile}
+                              onCheckedChange={async (checked) => {
+                                const { error } = await supabase
+                                  .from('links')
+                                  .update({ show_on_profile: checked })
+                                  .eq('id', link.id);
+                                if (error) {
+                                  toast.error('Failed to update visibility');
+                                } else {
+                                  toast.success(checked ? 'Link is now visible' : 'Link is now hidden');
+                                  setLinks(links.map(l => l.id === link.id ? { ...l, show_on_profile: checked } : l));
+                                }
+                              }}
+                            />
+                          </div>
                           <button
                             type="button"
                             onClick={async (e) => {

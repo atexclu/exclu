@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import CursorGlow from '@/components/CursorGlow';
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
@@ -14,8 +15,16 @@ import FinalCTASection from '@/components/FinalCTASection';
 import Footer from '@/components/Footer';
 
 const Index = () => {
+  useEffect(() => {
+    // Force dark mode on landing page
+    document.documentElement.classList.add('dark');
+    return () => {
+      // Don't remove on unmount - let ThemeProvider handle it
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden relative">
+    <div className="dark min-h-screen bg-background text-foreground overflow-x-hidden relative">
       {/* Subtle noise texture overlay */}
       <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.02] bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjU2IDI1NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZmlsdGVyIGlkPSJub2lzZSI+PGZlVHVyYnVsZW5jZSB0eXBlPSJmcmFjdGFsTm9pc2UiIGJhc2VGcmVxdWVuY3k9IjAuOCIgbnVtT2N0YXZlcz0iNCIgc3RpdGNoVGlsZXM9InN0aXRjaCIvPjwvZmlsdGVyPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbHRlcj0idXJsKCNub2lzZSkiLz48L3N2Zz4=')]" />
       

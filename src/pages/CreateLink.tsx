@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { motion } from 'framer-motion';
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
@@ -239,10 +240,9 @@ const CreateLink = () => {
           status: 'published',
           show_on_profile: showOnProfile,
         })
-        .select('id')
-        .limit(1);
+        .select();
 
-      if (insertError || !insertedLinks || insertedLinks.length === 0) {
+      if (insertError) {
         console.error(insertError);
         throw new Error('Unable to create link. Please try again.');
       }
@@ -442,20 +442,18 @@ const CreateLink = () => {
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-exclu-space">Visibility on public profile</p>
-                      <label className="flex items-center gap-2 text-[11px] text-exclu-space/80">
-                        <input
-                          type="checkbox"
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-exclu-space">Visibility</p>
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
+                          <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                        </div>
+                        <Switch
                           checked={showOnProfile}
-                          onChange={(e) => setShowOnProfile(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded border-exclu-arsenic/70 bg-exclu-ink"
+                          onCheckedChange={setShowOnProfile}
                         />
-                        <span>
-                          Show this link on my public profile page
-                          <span className="text-exclu-space/60"> (fans will still be able to access it if you share the URL directly)</span>
-                        </span>
-                      </label>
+                      </div>
                     </div>
                   </div>
 

@@ -58,7 +58,7 @@ const HowItWorksSection = () => {
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
             From upload to payout in{' '}
-            <span className="gradient-text">minutes</span>
+            <span className="text-[#CFFF16]">minutes</span>
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
             No complicated setup. No approval process. Start earning from your content today.

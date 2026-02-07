@@ -1,16 +1,24 @@
 # Exclu
 
-Exclu permet aux créateurs de vendre leurs contenus digitaux (photos, vidéos, fichiers, accès exclusifs…) via des liens payants débloquables en un clic, sans création de compte côté fan.
+> **Creator monetization platform with 0% commission**
 
-**Modèle de commission :**
-- **Premium** ($39/mois) : 0% de commission
-- **Free** : 10% de commission par vente
+Exclu enables creators to sell digital content (photos, videos, files, exclusive access) through payable links unlockable in one click, without requiring fans to create an account.
 
-Ce dépôt contient l'application complète Exclu :
-- **Landing page marketing** 
-- **Dashboard créateur** (gestion des liens, analytics, earnings)
-- **Pages publiques** (profil créateur, liens payants avec paywall)
-- **Intégration Stripe Connect** pour les paiements
+## Features
+
+- 🎨 **Creator Dashboard**: Manage links, analytics, and earnings
+- 🔗 **Payable Links**: One-click unlock system
+- 💰 **Stripe Connect**: Direct payments to creators
+- 📊 **Real-time Analytics**: Profile views, link clicks, conversion rates
+- 🎨 **Customizable Profiles**: Themes, colors, social links
+- 📱 **Mobile Optimized**: Responsive design
+- 🔒 **Secure**: Row-level security, encrypted payments
+- 🌐 **SEO Optimized**: Open Graph previews for social media
+
+## Pricing
+
+- **Premium** ($39/month): 0% commission
+- **Free**: 10% commission per sale
 
 ---
 

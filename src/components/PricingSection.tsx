@@ -53,7 +53,7 @@ const PricingSection = () => {
             Simple Pricing
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
-            Choose your plan. <span className="gradient-text">Start earning.</span>
+            Choose your plan. <span className="text-[#CFFF16]">Start earning.</span>
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
             Start free with 10% commission, or go premium for 0% commission. Fans always pay a 5% processing fee.

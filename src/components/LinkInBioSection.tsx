@@ -79,7 +79,7 @@ const LinkInBioSection = () => {
             </span>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
               Your storefront,{' '}
-              <span className="gradient-text">one tap away</span>
+              <span className="text-[#CFFF16]">one tap away</span>
             </h2>
             <p className="text-lg text-exclu-space mb-8 leading-relaxed">
               Create a beautiful link-in-bio page that converts. Each piece of content is a paid link. Fans just tap, pay, and unlock. No signup forms. No passwords. Just pure, frictionless sales.

@@ -47,7 +47,7 @@ const ChatSection = () => {
             </span>
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
               Human chat.{' '}
-              <span className="gradient-text">Real connection.</span>
+              <span className="text-[#CFFF16]">Real connection.</span>
             </h2>
             <p className="text-lg text-exclu-space mb-8 leading-relaxed">
               Forget AI bots and automated replies. Exclu is built for authentic creator-fan relationships. Real conversations lead to real trust and real sales.
@@ -69,7 +69,7 @@ const ChatSection = () => {
                   className="glass-card rounded-2xl p-5"
                 >
                   <stat.icon className="w-6 h-6 text-primary mb-3" />
-                  <p className="text-2xl font-bold gradient-text">{stat.value}</p>
+                  <p className="text-2xl font-bold text-[#CFFF16]">{stat.value}</p>
                   <p className="text-sm text-exclu-graphite">{stat.label}</p>
                 </motion.div>
               ))}

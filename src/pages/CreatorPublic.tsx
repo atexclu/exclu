@@ -4,8 +4,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, Lock } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe } from 'lucide-react';
 import logo from '@/assets/logo-white.svg';
+import Aurora from '@/components/ui/Aurora';
+import SplitText from '@/components/ui/SplitText';
+import { getAuroraGradient } from '@/lib/auroraGradients';
 import {
   SiX,
   SiInstagram,
@@ -23,8 +26,9 @@ interface CreatorProfileData {
   avatar_url: string | null;
   bio: string | null;
   handle: string | null;
-  external_url: string | null;
+  location: string | null;
   theme_color: string | null;
+  aurora_gradient?: string | null;
   social_links: Record<string, string> | null;
   is_creator_subscribed?: boolean | null;
   show_join_banner?: boolean | null;
@@ -86,10 +90,10 @@ const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
   tiktok: { label: 'TikTok', icon: <SiTiktok className="w-4 h-4" /> },
   telegram: { label: 'Telegram', icon: <SiTelegram className="w-4 h-4" /> },
   onlyfans: { label: 'OnlyFans', icon: <SiOnlyfans className="w-4 h-4" /> },
-  fansly: { label: 'Fansly', icon: <SiOnlyfans className="w-4 h-4" /> },
-  linktree: { label: 'Linktree', icon: <SiLinktree className="w-4 h-4" /> },
   youtube: { label: 'YouTube', icon: <SiYoutube className="w-4 h-4" /> },
   snapchat: { label: 'Snapchat', icon: <SiSnapchat className="w-4 h-4" /> },
+  linktree: { label: 'Linktree', icon: <SiLinktree className="w-4 h-4" /> },
+  website: { label: 'Website', icon: <Globe className="w-4 h-4" /> },
 };
 
 const CreatorPublic = () => {
@@ -98,60 +102,114 @@ const CreatorPublic = () => {
 
   const [profile, setProfile] = useState<CreatorProfileData | null>(null);
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
+  const [publicContent, setPublicContent] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'links' | 'content'>('links');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    
     const fetchCreator = async () => {
       if (!handle) return;
       setIsLoading(true);
       setError(null);
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, display_name, avatar_url, bio, handle, external_url, is_creator, theme_color, social_links, is_creator_subscribed, show_join_banner')
-        .eq('handle', handle)
-        .maybeSingle();
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status')
+          .eq('handle', handle)
+          .abortSignal(abortController.signal)
+          .maybeSingle();
 
-      if (profileError || !profileData) {
-        console.error('Error loading creator profile', profileError);
-        setError('This creator profile is not available.');
-        setProfile(null);
+        if (profileError || !profileData) {
+          console.error('Error loading creator profile', profileError);
+          setError('This creator profile is not available.');
+          setProfile(null);
+          setLinks([]);
+          setIsLoading(false);
+          return;
+        }
+
+      // Load paid links - only show if creator has Stripe fully connected
+      const isStripeComplete = profileData.stripe_connect_status === 'complete';
+      
+        if (isStripeComplete) {
+          const { data: linksData, error: linksError } = await supabase
+            .from('links')
+            .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
+            .eq('creator_id', profileData.id)
+            .eq('status', 'published')
+            .eq('show_on_profile', true)
+            .abortSignal(abortController.signal)
+            .order('created_at', { ascending: false });
+
+          if (linksError) {
+            console.error('Error loading creator links', linksError);
+            setError('Unable to load this creator content right now.');
+            setLinks([]);
+          } else {
+            setLinks((linksData ?? []) as CreatorLinkCard[]);
+          }
+        } else {
+        // Creator hasn't completed Stripe setup - don't show paid links
         setLinks([]);
+      }
+
+        // Load public content from assets table
+        const { data: publicData, error: publicError } = await supabase
+          .from('assets')
+          .select('id, title, storage_path, mime_type')
+          .eq('creator_id', profileData.id)
+          .eq('is_public', true)
+          .abortSignal(abortController.signal)
+          .order('created_at', { ascending: false });
+
+        if (!publicError && publicData) {
+          // Generate signed URLs
+          const withUrls = await Promise.all(
+            publicData.map(async (item) => {
+              if (!item.storage_path) return { ...item, previewUrl: null };
+              const { data: signed } = await supabase.storage
+                .from('paid-content')
+                .createSignedUrl(item.storage_path, 60 * 60);
+              return { ...item, previewUrl: signed?.signedUrl || null };
+            })
+          );
+          setPublicContent(withUrls);
+        }
+
+        setProfile(profileData as unknown as CreatorProfileData);
+
+        // Increment profile view count (best-effort) via Edge Function
+        if (profileData.handle) {
+          console.log('[CreatorPublic] Calling increment-profile-view for handle:', profileData.handle);
+          supabase.functions
+            .invoke('increment-profile-view', { body: { handle: profileData.handle } })
+            .then((result) => {
+              console.log('[CreatorPublic] increment-profile-view result:', result);
+            })
+            .catch((err) => {
+              console.error('[CreatorPublic] Error incrementing profile view count', err);
+            });
+        }
+
         setIsLoading(false);
-        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log('Request was aborted');
+        } else {
+          console.error('Error in fetchCreator:', err);
+        }
       }
-
-      const { data: linksData, error: linksError } = await supabase
-        .from('links')
-        .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
-        .eq('creator_id', profileData.id)
-        .eq('status', 'published')
-        .eq('show_on_profile', true)
-        .order('created_at', { ascending: false });
-
-      if (linksError) {
-        console.error('Error loading creator links', linksError);
-        setError('Unable to load this creator content right now.');
-        setLinks([]);
-      } else {
-        setLinks((linksData ?? []) as CreatorLinkCard[]);
-      }
-
-      setProfile(profileData as unknown as CreatorProfileData);
-
-      // Increment profile view count (best-effort) via Edge Function
-      if (profileData.handle) {
-        supabase.functions
-          .invoke('increment-profile-view', { body: { handle: profileData.handle } })
-          .catch((err) => {
-            console.error('Error incrementing profile view count', err);
-          });
-      }
-      setIsLoading(false);
     };
 
     fetchCreator();
+    
+    return () => {
+      abortController.abort();
+    };
   }, [handle]);
 
   const handleLinkClick = (link: CreatorLinkCard) => {
@@ -161,11 +219,6 @@ const CreatorPublic = () => {
   const handleSocialClick = (url: string) => {
     if (!url) return;
     window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleExternalClick = () => {
-    if (!profile?.external_url) return;
-    window.open(profile.external_url, '_blank', 'noopener,noreferrer');
   };
 
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
@@ -202,10 +255,30 @@ const CreatorPublic = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-white flex flex-col relative overflow-x-hidden">
+      {/* Desktop: Aurora animated background from top */}
+      <div className="hidden sm:block fixed inset-0 z-0 pointer-events-none">
+        <Aurora
+          colorStops={getAuroraGradient(profile?.aurora_gradient || 'aurora').colors}
+          blend={0.5}
+          amplitude={1.0}
+          speed={1}
+        />
+      </div>
+
+      {/* Mobile: Aurora animated background from bottom of profile photo */}
+      <div className="sm:hidden absolute inset-x-0 top-[55vh] h-[120vh] z-0 pointer-events-none">
+        <Aurora
+          colorStops={getAuroraGradient(profile?.aurora_gradient || 'aurora').colors}
+          blend={0.5}
+          amplitude={1.0}
+          speed={1}
+        />
+      </div>
+
       {/* Mobile: Hero image header */}
       <motion.div
-        className="sm:hidden relative -mx-4 mb-4 overflow-hidden"
+        className="sm:hidden relative -mx-4 overflow-hidden z-10"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -217,80 +290,29 @@ const CreatorPublic = () => {
               alt={displayName}
               className="w-full h-auto max-h-[70vh] object-cover"
             />
+            {/* Shadow at bottom of image - fading up */}
+            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
+            {/* Shadow below image - fading down */}
+            <div className="absolute inset-x-0 bottom-[-80px] h-20 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10" />
             {/* Soft dark overlay, reduced intensity */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/20 to-black/60" />
-            {/* Subtle color fade slightly overlapping the bottom of the image */}
-            <div
-              className="absolute inset-x-0 bottom-[-20px] h-32 pointer-events-none opacity-60"
-              style={{
-                background: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 35%, ${theme.bg} 75%, rgba(0,0,0,1) 100%)`,
-              }}
-            />
-            {/* Name & handle overlay */}
-            <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
+            {/* Smooth transition gradient centered on bottom edge: transparent at top, black at center (bottom edge), transparent at bottom */}
+            <div className="absolute inset-x-0 bottom-[-20px] h-40 pointer-events-none">
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black to-transparent opacity-90" />
+            </div>
+            {/* Name overlay */}
+            <div className="absolute inset-x-5 bottom-11 flex flex-col items-center text-center">
               <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
                 {displayName}
               </h1>
-              {profile?.handle && (
-                <p className="text-sm text-white/85">@{profile.handle}</p>
-              )}
             </div>
           </>
         )}
       </motion.div>
 
-      {/* Desktop: Animated halo background behind the profile */}
-      <div className="hidden sm:block fixed inset-0 z-0 bg-gradient-to-b from-black via-exclu-ink to-black">
-        {/* Main soft halo traversing the viewport */}
-        <motion.div
-          className="pointer-events-none absolute top-1/4 left-1/2 w-[520px] h-[520px] -translate-x-1/2 rounded-full blur-3xl"
-          style={{
-            background: `radial-gradient(circle, ${theme.bg} 0%, rgba(0,0,0,0.22) 45%, transparent 75%)`,
-          }}
-          initial={{ x: -260, y: -160, scale: 0.96, opacity: 0.3 }}
-          animate={{
-            x: [-320, 240, -200, 260, -260],
-            y: [-180, -40, 180, 60, -160],
-            scale: [0.96, 1.05, 1.02, 1.08, 1.0],
-            opacity: [0.25, 0.5, 0.65, 0.5, 0.25],
-          }}
-          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
-        {/* Secondary white halo for depth, clearly moving and pulsing */}
-        <motion.div
-          className="pointer-events-none absolute top-[-10%] left-[5%] w-[380px] h-[380px] rounded-full blur-3xl"
-          style={{
-            background: 'radial-gradient(circle, rgba(255,255,255,0.22) 0%, transparent 70%)',
-          }}
-          initial={{ x: 160, y: 20, scale: 0.94, opacity: 0.3 }}
-          animate={{
-            x: [160, -140, 220, -200, 140],
-            y: [20, -160, 120, 200, 40],
-            scale: [0.94, 1.02, 1.06, 1.01, 0.97],
-            opacity: [0.25, 0.55, 0.7, 0.55, 0.25],
-          }}
-          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
-        {/* Tertiary soft halo, slightly tinted, for extra depth */}
-        <motion.div
-          className="pointer-events-none absolute bottom-[-10%] right-[10%] w-[420px] h-[420px] rounded-full blur-3xl"
-          style={{
-            background: `radial-gradient(circle, ${theme.bg} 0%, rgba(0,0,0,0.22) 40%, transparent 75%)`,
-          }}
-          initial={{ x: 60, y: 120, scale: 0.92, opacity: 0.3 }}
-          animate={{
-            x: [60, -220, 200, -160, 80],
-            y: [120, -100, 220, 40, 140],
-            scale: [0.92, 1.03, 1.06, 1.0, 0.95],
-            opacity: [0.25, 0.5, 0.65, 0.5, 0.25],
-          }}
-          transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
-        />
-      </div>
-
       <main className="relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24 sm:pt-12 sm:pb-10">
+        {/* Inner shadow at top - strong at top, quick fade */}
+        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
         <div className="max-w-md mx-auto w-full flex flex-col flex-1">
           {/* Profile Section */}
           <motion.div
@@ -302,13 +324,13 @@ const CreatorPublic = () => {
             {/* Avatar - smaller on mobile since it's in background */}
             <div className="relative inline-block mb-6 hidden sm:inline-block">
               <motion.div
-                className={`absolute inset-0 rounded-3xl bg-gradient-to-br ${theme.gradient} blur-xl opacity-40 scale-110`}
+                className="absolute inset-0 rounded-3xl bg-black/40 blur-xl opacity-40 scale-110"
                 initial={{ opacity: 0.2, scale: 1 }}
                 animate={{ opacity: [0.2, 0.45, 0.25], scale: [1, 1.03, 0.98] }}
                 transition={{ duration: 20, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
               />
               <div
-                className={`relative max-w-[220px] md:max-w-[260px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ${theme.ring}`}
+                className="relative max-w-[220px] md:max-w-[260px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ring-black/20"
               >
                 {profile?.avatar_url ? (
                   <img
@@ -327,19 +349,33 @@ const CreatorPublic = () => {
             </div>
 
             {/* Name & Handle */}
-            <h1 className="hidden sm:block text-2xl sm:text-3xl font-extrabold text-white mb-1 drop-shadow-lg">{displayName}</h1>
-            {profile?.handle && (
-              <p className="hidden sm:block text-sm text-white/70 mb-3">@{profile.handle}</p>
+            <div className="hidden sm:block mb-1">
+              <SplitText
+                text={displayName}
+                className="text-2xl sm:text-3xl font-extrabold text-white drop-shadow-lg"
+                delay={50}
+                duration={1.25}
+                ease="power3.out"
+                splitType="chars"
+                from={{ opacity: 0, y: 40 }}
+                to={{ opacity: 1, y: 0 }}
+                threshold={0.1}
+                rootMargin="-100px"
+                textAlign="center"
+                tag="h1"
+              />
+            </div>
+            {profile?.location && (
+              <p className="text-xs text-white/80 mb-2 drop-shadow">{profile.location}</p>
             )}
             {profile?.bio && (
-              <p className="text-sm text-white/80 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
+              <p className="text-sm text-white/90 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
             )}
 
             {/* Social Links - Story bubbles style */}
             {activeSocials.length > 0 && (
               <>
-                {/* Desktop: circular story bubbles */}
-                <div className="hidden sm:flex justify-center gap-3 mb-6">
+                <div className="flex justify-center gap-3 mb-4">
                   {activeSocials.map(([platform, url]) => {
                     const platformConfig = socialPlatforms[platform];
                     if (!platformConfig) return null;
@@ -358,72 +394,63 @@ const CreatorPublic = () => {
                     );
                   })}
                 </div>
-
-                {/* Mobile: full-width gradient buttons */}
-                <div className="sm:hidden space-y-3 mb-6">
-                  {activeSocials.map(([platform, url]) => {
-                    const platformConfig = socialPlatforms[platform];
-                    if (!platformConfig) return null;
-                    const gradient = getSocialGradient(platform);
-                    return (
-                      <motion.button
-                        key={platform}
-                        type="button"
-                        onClick={() => handleSocialClick(url)}
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={`w-full h-12 rounded-full bg-gradient-to-r ${gradient} flex items-center justify-between px-4 text-sm font-medium text-white shadow-lg shadow-black/40`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="w-7 h-7 rounded-full bg-black/30 flex items-center justify-center text-base">
-                            {platformConfig.icon}
-                          </span>
-                          <span>{platformConfig.label}</span>
-                        </div>
-                        <ArrowUpRight className="w-4 h-4" />
-                      </motion.button>
-                    );
-                  })}
-                </div>
               </>
+            )}
+
+            {/* Tabs Links/Content */}
+            {(links.length > 0 || publicContent.length > 0) && (
+              <div className="relative mb-6">
+                <div className="flex justify-center gap-12 relative">
+                  <button
+                    onClick={() => setActiveTab('links')}
+                    className={`relative py-3 text-sm font-medium transition-colors ${
+                      activeTab === 'links'
+                        ? 'text-white'
+                        : 'text-white/50 hover:text-white/70'
+                    }`}
+                  >
+                    Links
+                    {activeTab === 'links' && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute -bottom-3 left-0 right-0 h-[2px] bg-white rounded-full z-10"
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('content')}
+                    className={`relative py-3 text-sm font-medium transition-colors ${
+                      activeTab === 'content'
+                        ? 'text-white'
+                        : 'text-white/50 hover:text-white/70'
+                    }`}
+                  >
+                    Content
+                    {activeTab === 'content' && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute -bottom-3 left-0 right-0 h-[2px] bg-white rounded-full z-10"
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/20" />
+              </div>
             )}
           </motion.div>
 
-          {/* Main CTA Button */}
-          {profile?.external_url && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="mb-4"
-            >
-              <Button
-                onClick={handleExternalClick}
-                className={`w-full h-14 rounded-full text-white font-semibold text-lg shadow-xl ${theme.button} transition-all`}
-              >
-                My exclusive link
-                <ArrowUpRight className="w-5 h-5 ml-2" />
-              </Button>
-            </motion.div>
-          )}
-
-          {/* Content Links */}
+          {/* Content Area */}
           <div className="flex-1 overflow-y-auto space-y-3">
             {isLoading && (
               <p className="text-sm text-white/60 text-center py-4">Loading content…</p>
             )}
 
-            {!isLoading && !error && links.length === 0 && (
-              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                No exclusive content available yet.
-              </div>
-            )}
-
-            {!isLoading && links.length > 0 && (
+            {/* Links Tab */}
+            {!isLoading && activeTab === 'links' && (
+              links.length > 0 ? (
               <>
-                <p className="text-xs uppercase tracking-wider text-white/50 text-center mb-2">
-                  Exclusive Content
-                </p>
                 {links.map((link, index) => {
                   const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
                   return (
@@ -450,6 +477,60 @@ const CreatorPublic = () => {
                   );
                 })}
               </>
+              ) : (
+                <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
+                  No exclusive content available yet.
+                </div>
+              )
+            )}
+
+            {/* Content Tab */}
+            {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  {publicContent.map((content, index) => {
+                    const isVideo = content.mime_type?.startsWith('video/');
+                    return (
+                      <motion.div
+                        key={content.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3, delay: 0.05 * index }}
+                        className="relative aspect-square rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 group cursor-pointer"
+                      >
+                        {content.previewUrl ? (
+                          isVideo ? (
+                            <video
+                              src={content.previewUrl}
+                              className="w-full h-full object-cover"
+                              muted
+                              loop
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={content.previewUrl}
+                              alt={content.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          )
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="w-8 h-8 text-white/40" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
+              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
+                No public content available yet.
+              </div>
             )}
 
             {error && !isLoading && (
@@ -482,9 +563,8 @@ const CreatorPublic = () => {
                 <img src={logo} alt="Exclu" className="h-4" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-semibold text-white/90">Exclu</span>
-                <span className="text-[11px] text-exclu-space/70">
-                  Start selling your own premium content with Exclu.
+                <span className="text-xs text-white">
+                  Start selling your own premium content without commission with Exclu.
                 </span>
               </div>
             </div>
@@ -501,6 +581,7 @@ const CreatorPublic = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

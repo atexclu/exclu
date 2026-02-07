@@ -3,12 +3,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { motion } from 'framer-motion';
 import { useEffect, useState, FormEvent } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Image as ImageIcon, Film, Sparkles, X } from 'lucide-react';
+import { UploadCloud, Film, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { AttachedContentManager, AttachedMedia } from '@/components/AttachedContentManager';
 
 type LibraryAsset = {
   id: string;
@@ -32,12 +34,9 @@ const EditLink = () => {
   const [existingMediaIsVideo, setExistingMediaIsVideo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([]);
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
-  const [existingAssetIds, setExistingAssetIds] = useState<string[]>([]);
-  const [attachedAssets, setAttachedAssets] = useState<LibraryAsset[]>([]);
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [attachedMedia, setAttachedMedia] = useState<AttachedMedia[]>([]);
+  const [initialAttachedMedia, setInitialAttachedMedia] = useState<AttachedMedia[]>([]);
+  const [showOnProfile, setShowOnProfile] = useState(false);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -46,7 +45,7 @@ const EditLink = () => {
       
       const { data, error } = await supabase
         .from('links')
-        .select('title, description, price_cents, currency, storage_path')
+        .select('title, description, price_cents, currency, storage_path, show_on_profile')
         .eq('id', id)
         .single();
 
@@ -60,6 +59,7 @@ const EditLink = () => {
       setTitle(data.title ?? '');
       setDescription(data.description ?? '');
       setPrice(String((data.price_cents ?? 0) / 100 || 0));
+      setShowOnProfile(data.show_on_profile ?? false);
 
       // Load existing media preview if storage_path exists
       if (data.storage_path) {
@@ -84,10 +84,6 @@ const EditLink = () => {
         .order('position', { ascending: true });
 
       if (linkMedia && linkMedia.length > 0) {
-        const assetIds = linkMedia.map((lm) => lm.asset_id);
-        setExistingAssetIds(assetIds);
-        setSelectedAssetIds(assetIds);
-
         // Generate previews for attached assets
         const attachedWithPreviews = await Promise.all(
           linkMedia.map(async (lm: any) => {
@@ -99,13 +95,19 @@ const EditLink = () => {
               .createSignedUrl(asset.storage_path, 60 * 60);
 
             return {
-              ...asset,
+              id: asset.id,
+              asset_id: asset.id,
+              storage_path: asset.storage_path,
+              mime_type: asset.mime_type,
+              title: asset.title,
               previewUrl: signed?.signedUrl || null,
-            } as LibraryAsset;
+            } as AttachedMedia;
           })
         );
 
-        setAttachedAssets(attachedWithPreviews.filter(Boolean) as LibraryAsset[]);
+        const validMedia = attachedWithPreviews.filter(Boolean) as AttachedMedia[];
+        setAttachedMedia(validMedia);
+        setInitialAttachedMedia(validMedia);
       }
 
       setIsLoading(false);
@@ -114,67 +116,6 @@ const EditLink = () => {
     fetchLink();
   }, [id, navigate]);
 
-  // Fetch library assets
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchLibraryAssets = async () => {
-      setIsLoadingLibrary(true);
-      setLibraryError(null);
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        setIsLoadingLibrary(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, title, created_at, storage_path, mime_type')
-        .eq('creator_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(12);
-
-      if (!isMounted) return;
-
-      if (error) {
-        console.error('Error loading assets for link editing', error);
-        setLibraryError('Unable to load your library right now.');
-      } else {
-        const baseAssets = (data ?? []) as LibraryAsset[];
-
-        const withPreviews = await Promise.all(
-          baseAssets.map(async (asset) => {
-            if (!asset.storage_path) return { ...asset, previewUrl: null };
-
-            const { data: signed, error: signedError } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(asset.storage_path, 60 * 60);
-
-            if (signedError || !signed?.signedUrl) {
-              return { ...asset, previewUrl: null };
-            }
-
-            return { ...asset, previewUrl: signed.signedUrl };
-          })
-        );
-
-        setLibraryAssets(withPreviews);
-      }
-
-      setIsLoadingLibrary(false);
-    };
-
-    fetchLibraryAssets();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -269,6 +210,7 @@ const EditLink = () => {
           title: safeTitle,
           description: description.trim() || null,
           price_cents: Math.round(priceNumber * 100),
+          show_on_profile: showOnProfile,
         })
         .eq('id', id)
         .eq('creator_id', user.id);
@@ -307,35 +249,43 @@ const EditLink = () => {
         }
       }
 
-      // 3. Update link_media if selection changed
-      const addedAssets = selectedAssetIds.filter((assetId) => !existingAssetIds.includes(assetId));
-      const removedAssets = existingAssetIds.filter((assetId) => !selectedAssetIds.includes(assetId));
+      // 3. Update link_media based on attachedMedia changes
+      const initialAssetIds = initialAttachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
+      const currentAssetIds = attachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
+      
+      const addedAssets = currentAssetIds.filter((assetId) => !initialAssetIds.includes(assetId));
+      const removedAssets = initialAssetIds.filter((assetId) => !currentAssetIds.includes(assetId));
+      const hasOrderChanged = JSON.stringify(initialAssetIds) !== JSON.stringify(currentAssetIds);
 
-      if (removedAssets.length > 0) {
+      // Delete all existing link_media entries if there are changes
+      if (removedAssets.length > 0 || hasOrderChanged) {
         const { error: deleteError } = await supabase
           .from('link_media')
           .delete()
-          .eq('link_id', id)
-          .in('asset_id', removedAssets);
+          .eq('link_id', id);
 
         if (deleteError) {
           console.error('Error removing link_media', deleteError);
         }
       }
 
-      if (addedAssets.length > 0) {
-        const existingCount = existingAssetIds.length - removedAssets.length;
-        const rows = addedAssets.map((assetId, index) => ({
-          link_id: id,
-          asset_id: assetId,
-          position: existingCount + index,
-        }));
+      // Re-insert all current attachments with correct positions
+      if (attachedMedia.length > 0 && (addedAssets.length > 0 || hasOrderChanged)) {
+        const rows = attachedMedia
+          .filter((m) => m.asset_id)
+          .map((media, index) => ({
+            link_id: id,
+            asset_id: media.asset_id!,
+            position: index,
+          }));
 
-        const { error: insertError } = await supabase.from('link_media').insert(rows);
+        if (rows.length > 0) {
+          const { error: insertError } = await supabase.from('link_media').insert(rows);
 
-        if (insertError) {
-          console.error('Error adding link_media', insertError);
-          toast.error('Some library media could not be attached.');
+          if (insertError) {
+            console.error('Error adding link_media', insertError);
+            toast.error('Some media could not be attached.');
+          }
         }
       }
 
@@ -435,6 +385,31 @@ const EditLink = () => {
                           <span className="text-xs text-exclu-space">EUR</span>
                         </div>
                       </div>
+
+                      {/* Attached Content Manager */}
+                      {id && (
+                        <AttachedContentManager
+                          linkId={id}
+                          attachedMedia={attachedMedia}
+                          onMediaChange={setAttachedMedia}
+                          disabled={isSubmitting}
+                        />
+                      )}
+                    </div>
+
+                    {/* Visibility settings */}
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-exclu-space">Visibility</p>
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
+                          <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                        </div>
+                        <Switch
+                          checked={showOnProfile}
+                          onCheckedChange={setShowOnProfile}
+                        />
+                      </div>
                     </div>
 
                     {/* Upload + preview + library info */}
@@ -494,122 +469,6 @@ const EditLink = () => {
                             onChange={handleFileChange}
                           />
                         </label>
-                      </div>
-
-                      {/* Library selection */}
-                      <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/70 p-3 flex flex-col gap-2 text-[11px] text-exclu-space/80">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="h-4 w-4 text-exclu-space/80" />
-                            <p className="font-medium text-exclu-cloud text-xs">Or attach media from your library</p>
-                          </div>
-                          {selectedAssetIds.length > 0 && (
-                            <span className="text-[10px] text-exclu-space/70">
-                              {selectedAssetIds.length} selected
-                            </span>
-                          )}
-                        </div>
-
-                        {isLoadingLibrary && (
-                          <p className="text-[11px] text-exclu-space/80">Loading your library…</p>
-                        )}
-
-                        {libraryError && !isLoadingLibrary && (
-                          <p className="text-[11px] text-red-400">{libraryError}</p>
-                        )}
-
-                        {!isLoadingLibrary && !libraryError && libraryAssets.length === 0 && (
-                          <p className="text-[11px] text-exclu-space/80">
-                            You haven&apos;t added anything to your library yet. Upload content in the Content tab.
-                          </p>
-                        )}
-
-                        {!isLoadingLibrary && !libraryError && libraryAssets.length > 0 && (
-                          <div className="max-h-52 overflow-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {libraryAssets.map((asset) => {
-                              const isSelected = selectedAssetIds.includes(asset.id);
-                              return (
-                                <button
-                                  key={asset.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedAssetIds((prev) =>
-                                      prev.includes(asset.id)
-                                        ? prev.filter((aid) => aid !== asset.id)
-                                        : [...prev, asset.id]
-                                    );
-                                  }}
-                                  className={`group relative overflow-hidden rounded-xl border text-left transition-all duration-200 ${
-                                    isSelected
-                                      ? 'border-primary/80 bg-exclu-ink'
-                                      : 'border-exclu-arsenic/60 bg-exclu-ink/80 hover:bg-exclu-ink'
-                                  }`}
-                                >
-                                  {asset.previewUrl ? (
-                                    asset.mime_type?.startsWith('video/') ? (
-                                      <video
-                                        src={asset.previewUrl}
-                                        className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
-                                        muted
-                                        loop
-                                        playsInline
-                                      />
-                                    ) : (
-                                      <img
-                                        src={asset.previewUrl}
-                                        className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
-                                        alt={asset.title || 'Library asset'}
-                                      />
-                                    )
-                                  ) : (
-                                    <div className="w-full h-24 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                                  )}
-
-                                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                                  <div className="pointer-events-none absolute inset-x-0 bottom-0 p-1.5 flex flex-col">
-                                    <p className="text-[10px] font-medium text-exclu-cloud truncate">
-                                      {asset.title || 'Untitled asset'}
-                                    </p>
-                                    <p className="text-[9px] text-exclu-space/80">
-                                      {new Date(asset.created_at).toLocaleDateString()}
-                                    </p>
-                                  </div>
-
-                                  {isSelected && (
-                                    <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-primary shadow-lg shadow-primary/50" />
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Preview of selected/attached assets */}
-                        {selectedAssetIds.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-exclu-arsenic/40">
-                            <p className="text-[10px] text-exclu-space/70 mb-2">Attached content:</p>
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                              {selectedAssetIds.map((assetId) => {
-                                const asset = libraryAssets.find((a) => a.id === assetId) || attachedAssets.find((a) => a.id === assetId);
-                                if (!asset) return null;
-                                return (
-                                  <div key={assetId} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-exclu-arsenic/60">
-                                    {asset.previewUrl ? (
-                                      asset.mime_type?.startsWith('video/') ? (
-                                        <video src={asset.previewUrl} className="w-full h-full object-cover" muted playsInline />
-                                      ) : (
-                                        <img src={asset.previewUrl} className="w-full h-full object-cover" alt={asset.title || 'Attached'} />
-                                      )
-                                    ) : (
-                                      <div className="w-full h-full bg-exclu-phantom/30" />
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>

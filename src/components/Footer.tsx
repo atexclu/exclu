@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
-import logo from '@/assets/logo-white.svg';
+import { useTheme } from '@/contexts/ThemeContext';
+import logoBlack from '@/assets/logo-black.svg';
+import logoWhite from '@/assets/logo-white.svg';
 import { Instagram, Send } from 'lucide-react';
 
 // X (Twitter) icon component
@@ -10,6 +12,8 @@ const XIcon = ({ className }: { className?: string }) => (
 );
 
 const Footer = () => {
+  const { resolvedTheme } = useTheme();
+  
   const links = {
     product: [
       { label: 'Features', href: '/#features' },
@@ -49,7 +53,7 @@ const Footer = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-16">
           {/* Logo & Tagline */}
           <div className="col-span-2 md:col-span-1">
-            <img src={logo} alt="Exclu" className="h-6 mb-4" />
+            <img src={resolvedTheme === 'light' ? logoBlack : logoWhite} alt="Exclu" className="h-6 mb-4" />
             <p className="text-exclu-space text-sm leading-relaxed">
               Your content. Your revenue. No middleman.
             </p>

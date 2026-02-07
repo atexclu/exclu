@@ -430,14 +430,8 @@ const AppDashboard = () => {
         <section className="mt-4 sm:mt-6 mb-6">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
                 <span>Welcome back{profileName ? `, ${profileName}` : ''}</span>
-                {isCreatorSubscribed && (
-                  <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 via-primary/10 to-emerald-500/20 border border-emerald-400/40 text-[11px] text-emerald-200 shadow-glow">
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>Premium · 0% commission</span>
-                  </span>
-                )}
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
@@ -494,18 +488,18 @@ const AppDashboard = () => {
         {/* Notice for creators with existing links but incomplete or limited Stripe Connect */}
         {!isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
           <section className="mb-4 max-w-2xl">
-            <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px] text-amber-100/90">
+            <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px]">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <CreditCard className="w-3.5 h-3.5 text-amber-300" />
+                  <CreditCard className="w-3.5 h-3.5 text-amber-900 dark:text-amber-300" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="font-medium text-amber-100">
+                  <p className="font-medium text-amber-900 dark:text-amber-100">
                     {stripeConnectStatus === 'restricted'
                       ? 'Action needed to restore payouts on Stripe'
                       : 'Finish your Stripe payout setup to unlock payments'}
                   </p>
-                  <p className="text-[11px] sm:text-xs text-amber-100/80">
+                  <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-100/80">
                     {stripeConnectStatus === 'restricted'
                       ? 'Stripe has temporarily limited your payout account. Open Stripe to provide the missing information or fix any issues so payouts can be enabled again.'
                       : 'Fans can already see your links, but checkout is disabled until you complete your payout details on Stripe.'}
@@ -532,17 +526,18 @@ const AppDashboard = () => {
         <section className="mt-1 mb-4">
           <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
             {[
-              { key: 'metrics' as const, label: 'Metrics' },
-              { key: 'earnings' as const, label: 'Earnings' },
+              { key: 'metrics', label: 'Metrics' },
+              { key: 'earnings', label: 'Earnings' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-3 py-1 rounded-full transition-colors ${activeTab === tab.key
-                  ? 'bg-exclu-cloud text-black shadow-sm'
-                  : 'text-exclu-space hover:text-exclu-cloud'
-                  }`}
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'earnings')}
+                className={`px-4 py-1.5 rounded-full font-medium transition-all ${
+                  activeTab === tab.key
+                    ? 'bg-primary text-white dark:text-black shadow-sm'
+                    : 'hover:text-exclu-cloud'
+                }`}
               >
                 {tab.label}
               </button>
@@ -637,7 +632,7 @@ const AppDashboard = () => {
                           setHoveredPoint(null);
                         }}
                         className={`px-3 py-1 rounded-full transition-colors ${activeRange === item.key
-                          ? 'bg-exclu-cloud text-black shadow-sm'
+                          ? 'bg-exclu-cloud text-white dark:text-black shadow-sm'
                           : 'text-exclu-space hover:text-exclu-cloud'
                           }`}
                       >

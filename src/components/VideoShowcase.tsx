@@ -22,7 +22,7 @@ const VideoShowcase = () => {
             See It In Action
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-exclu-cloud mb-6">
-            Watch how <span className="gradient-text">Exclu</span> works
+            Watch how <span className="text-[#CFFF16]">Exclu</span> works
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
             From upload to payout in under a minute. See the seamless experience for both creators and fans.

@@ -122,7 +122,7 @@ const Onboarding = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, external_url, country')
+        .select('display_name, handle, country')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -278,7 +278,6 @@ const Onboarding = () => {
             id: user.id,
             display_name: displayName.trim(),
             handle: trimmedHandle,
-            external_url: mainExternalUrl,
             is_creator: true,
             country,
           },
