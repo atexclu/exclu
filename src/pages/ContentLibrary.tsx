@@ -626,7 +626,7 @@ const ContentLibrary = () => {
                       asset.mime_type?.startsWith('video/') ? (
                         <video
                           src={asset.previewUrl}
-                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
+                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105 block"
                           muted
                           loop
                           playsInline
@@ -634,7 +634,7 @@ const ContentLibrary = () => {
                       ) : (
                         <img
                           src={asset.previewUrl}
-                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105"
+                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105 block"
                           alt={asset.title || 'Library asset'}
                         />
                       )

@@ -142,7 +142,7 @@ function generateCreatorProfileHTML(profile: CreatorProfile): string {
   const displayName = profile.display_name || profile.handle || 'Creator';
   const handle = profile.handle || 'creator';
   const bio = profile.bio || 'Check out my exclusive content on Exclu';
-  const avatarUrl = profile.avatar_url || 'https://exclu.at/default-avatar.png';
+  const avatarUrl = profile.avatar_url || 'https://exclu.at/Logo%20white.png';
   const profileUrl = `https://exclu.at/@${handle}`;
 
   return `<!DOCTYPE html>
@@ -231,13 +231,50 @@ function generatePublicLinkHTML(link: LinkData & { preview_image_url?: string | 
 }
 
 function generateCreatorOGImage(profile: CreatorProfile): string {
-  // For now, return avatar. Later, you can implement dynamic OG image generation
-  return profile.avatar_url || 'https://exclu.at/default-avatar.png';
+  // Generate a data URL with SVG for creator profile OG image
+  const displayName = profile.display_name || profile.handle || 'Creator';
+  const handle = profile.handle || 'creator';
+  const avatarUrl = profile.avatar_url || '';
+  
+  // If no avatar, use a simple black background with text
+  if (!avatarUrl) {
+    const svg = `
+      <svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1200" height="630" fill="#000000"/>
+        <text x="600" y="315" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">@${escapeHtml(handle)}</text>
+      </svg>
+    `.trim();
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  }
+  
+  // If avatar exists, return the avatar URL (it will be displayed on black background via CSS in the preview)
+  return avatarUrl;
 }
 
 function generateLinkOGImage(link: LinkData & { preview_image_url?: string | null }): string {
-  // For now, return preview image. Later, you can implement dynamic OG image generation
-  return link.preview_image_url || 'https://exclu.at/default-link-og.png';
+  // If preview image exists, use it
+  if (link.preview_image_url) {
+    return link.preview_image_url;
+  }
+  
+  // Generate SVG with gradient background and white text
+  const title = link.title || 'Exclusive Content';
+  const svg = `
+    <svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#8B1874;stop-opacity:1" />
+          <stop offset="50%" style="stop-color:#C2185B;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#4A0E3F;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="630" fill="url(#grad)"/>
+      <text x="600" y="315" font-family="Arial, sans-serif" font-size="56" font-weight="bold" fill="#FFFFFF" text-anchor="middle" dominant-baseline="middle">${escapeHtml(title)}</text>
+      <text x="600" y="400" font-family="Arial, sans-serif" font-size="24" fill="#FFFFFF" opacity="0.8" text-anchor="middle" dominant-baseline="middle">Unlock on Exclu</text>
+    </svg>
+  `.trim();
+  
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
 function generateDefaultHTML(): Response {
@@ -252,12 +289,12 @@ function generateDefaultHTML(): Response {
   <meta property="og:url" content="https://exclu.at">
   <meta property="og:title" content="Exclu — Your Content. Your Revenue. No Middleman.">
   <meta property="og:description" content="Sell exclusive content with 0% commission. Keep 100% of your earnings.">
-  <meta property="og:image" content="https://exclu.at/og-default.png">
+  <meta property="og:image" content="https://exclu.at/Logo%20white.png">
   
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Exclu — Your Content. Your Revenue. No Middleman.">
   <meta name="twitter:description" content="Sell exclusive content with 0% commission. Keep 100% of your earnings.">
-  <meta name="twitter:image" content="https://exclu.at/og-default.png">
+  <meta name="twitter:image" content="https://exclu.at/Logo%20white.png">
   
   <meta http-equiv="refresh" content="0; url=https://exclu.at">
 </head>

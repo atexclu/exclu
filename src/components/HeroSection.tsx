@@ -19,8 +19,8 @@ const HeroSection = () => {
     <section ref={sectionRef} className="relative min-h-[80vh] flex flex-col justify-center overflow-hidden pt-24 pb-16 px-4 sm:px-6">
       {/* Subtle Background Effects */}
       <div className="absolute inset-0 radial-gradient opacity-40" />
-      <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-white/5 rounded-full blur-[150px] animate-pulse-glow" />
-      <div className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] bg-white/3 rounded-full blur-[120px] animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
+      <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-white/8 rounded-full blur-[150px] animate-pulse-glow" />
+      <div className="absolute bottom-1/3 right-1/4 w-[400px] h-[400px] bg-white/6 rounded-full blur-[120px] animate-pulse-glow" style={{ animationDelay: '1.5s' }} />
       
       {/* Grid pattern overlay */}
       <div className="absolute inset-0 grid-pattern opacity-20" />
@@ -56,7 +56,7 @@ const HeroSection = () => {
             </motion.div>
 
             {/* Subtle glow behind the device */}
-            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-primary/15 via-transparent to-accent/15 rounded-3xl blur-3xl" />
+            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-white/10 via-transparent to-white/5 rounded-3xl blur-3xl" />
           </motion.div>
 
           {/* Text Content */}
@@ -105,7 +105,7 @@ const HeroSection = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.4 }}
-              className="flex flex-wrap items-center justify-center lg:justify-start gap-3 text-xs sm:text-sm text-exclu-graphite"
+              className="flex flex-wrap items-center justify-center lg:justify-start gap-3 text-xs sm:text-sm text-white"
             >
               <div className="inline-flex items-center gap-2 rounded-full border border-exclu-arsenic/60 bg-exclu-phantom/70 px-4 py-2">
                 <Lock className="w-4 h-4 text-primary" />
