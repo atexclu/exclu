@@ -7,21 +7,6 @@ export const config = {
 const SUPABASE_URL = 'https://qexnwezetjlbwltyccks.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleG53ZXpldGpsYndsdHljY2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyOTcyNjcsImV4cCI6MjA4Mzg3MzI2N30.BwE47MEU7KVm3NWXbX7hK1osCc00dQ0s8Y0Qudh5eyE';
 
-async function fetchImageAsDataUrl(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const contentType = res.headers.get('content-type') || 'image/png';
-    const buffer = await res.arrayBuffer();
-    const base64 = btoa(
-      new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    );
-    return `data:${contentType};base64,${base64}`;
-  } catch {
-    return null;
-  }
-}
-
 export default async function handler(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -29,13 +14,13 @@ export default async function handler(req: Request) {
     const handle = searchParams.get('handle') || '';
     const slug = searchParams.get('slug') || '';
 
+    let displayName = '';
+    let subtitle = '';
     let avatarUrl: string | null = null;
-    let bgImageUrl: string;
 
     if (type === 'profile' && handle) {
-      bgImageUrl = 'https://exclu.at/og-profile-default.png';
       const profileRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?handle=eq.${encodeURIComponent(handle)}&select=avatar_url&limit=1`,
+        `${SUPABASE_URL}/rest/v1/profiles?handle=eq.${encodeURIComponent(handle)}&select=display_name,handle,bio,avatar_url&limit=1`,
         {
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -44,11 +29,13 @@ export default async function handler(req: Request) {
         }
       );
       const profiles = await profileRes.json();
-      avatarUrl = profiles?.[0]?.avatar_url || null;
+      const profile = profiles?.[0];
+      displayName = profile?.display_name || profile?.handle || handle;
+      subtitle = profile?.bio || 'Check out my exclusive content';
+      avatarUrl = profile?.avatar_url || null;
     } else if (type === 'link' && slug) {
-      bgImageUrl = 'https://exclu.at/og-link-default.png';
       const linkRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/links?slug=eq.${encodeURIComponent(slug)}&select=creator_id&limit=1`,
+        `${SUPABASE_URL}/rest/v1/links?slug=eq.${encodeURIComponent(slug)}&select=title,description,creator_id&limit=1`,
         {
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -57,10 +44,13 @@ export default async function handler(req: Request) {
         }
       );
       const links = await linkRes.json();
-      const creatorId = links?.[0]?.creator_id;
-      if (creatorId) {
+      const link = links?.[0];
+      displayName = link?.title || 'Exclusive Content';
+      subtitle = link?.description || 'Unlock exclusive content on Exclu';
+
+      if (link?.creator_id) {
         const profileRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(creatorId)}&select=avatar_url&limit=1`,
+          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(link.creator_id)}&select=avatar_url,display_name&limit=1`,
           {
             headers: {
               'apikey': SUPABASE_ANON_KEY,
@@ -71,23 +61,13 @@ export default async function handler(req: Request) {
         const profiles = await profileRes.json();
         avatarUrl = profiles?.[0]?.avatar_url || null;
       }
-    } else {
-      bgImageUrl = 'https://exclu.at/og-profile-default.png';
     }
 
-    // Fetch images as data URLs so Satori can render them
-    const [bgDataUrl, avatarDataUrl] = await Promise.all([
-      fetchImageAsDataUrl(bgImageUrl),
-      avatarUrl ? fetchImageAsDataUrl(avatarUrl) : Promise.resolve(null),
-    ]);
-
-    // If we can't load the background, redirect to static fallback
-    if (!bgDataUrl) {
-      const fallback = type === 'link'
-        ? 'https://exclu.at/og-link-default.png'
-        : 'https://exclu.at/og-profile-default.png';
-      return Response.redirect(fallback, 302);
-    }
+    const isProfile = type === 'profile';
+    const bgGradient = isProfile
+      ? 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%)'
+      : 'linear-gradient(135deg, #8B1874 0%, #C2185B 50%, #4A0E3F 100%)';
+    const accentColor = isProfile ? '#22C55E' : '#FFFFFF';
 
     return new ImageResponse(
       (
@@ -96,47 +76,101 @@ export default async function handler(req: Request) {
             width: '1200px',
             height: '630px',
             display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: bgGradient,
+            fontFamily: 'sans-serif',
             position: 'relative',
           }}
         >
-          <img
-            src={bgDataUrl}
-            width={1200}
-            height={630}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '1200px',
-              height: '630px',
-            }}
-          />
-
-          {avatarDataUrl ? (
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              width={140}
+              height={140}
+              style={{
+                borderRadius: '70px',
+                border: `4px solid ${accentColor}`,
+                marginBottom: '24px',
+              }}
+            />
+          ) : (
             <div
               style={{
-                position: 'absolute',
-                top: '30px',
-                right: '30px',
-                width: '120px',
-                height: '120px',
-                borderRadius: '60px',
-                border: '4px solid rgba(255, 255, 255, 0.9)',
+                width: '140px',
+                height: '140px',
+                borderRadius: '70px',
+                backgroundColor: isProfile ? '#1a1a2e' : 'rgba(255,255,255,0.15)',
                 display: 'flex',
-                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px',
+                border: `4px solid ${accentColor}`,
+                fontSize: '56px',
+                color: accentColor,
               }}
             >
-              <img
-                src={avatarDataUrl}
-                width={120}
-                height={120}
-                style={{
-                  width: '120px',
-                  height: '120px',
-                }}
-              />
+              {displayName.charAt(0).toUpperCase()}
             </div>
-          ) : null}
+          )}
+
+          <div
+            style={{
+              fontSize: '48px',
+              fontWeight: 700,
+              color: '#FFFFFF',
+              marginBottom: '12px',
+              display: 'flex',
+              maxWidth: '900px',
+              textAlign: 'center',
+            }}
+          >
+            {displayName.length > 40 ? displayName.substring(0, 40) + '...' : displayName}
+          </div>
+
+          <div
+            style={{
+              fontSize: '24px',
+              color: 'rgba(255,255,255,0.7)',
+              marginBottom: '32px',
+              maxWidth: '800px',
+              textAlign: 'center',
+              display: 'flex',
+            }}
+          >
+            {subtitle.length > 100 ? subtitle.substring(0, 100) + '...' : subtitle}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: isProfile ? '#22C55E' : '#FFFFFF',
+              color: isProfile ? '#000000' : '#8B1874',
+              fontSize: '22px',
+              fontWeight: 700,
+              padding: '12px 36px',
+              borderRadius: '9999px',
+            }}
+          >
+            {isProfile ? 'View Exclu Profile' : 'Unlock now on Exclu'}
+          </div>
+
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '24px',
+              right: '36px',
+              fontSize: '22px',
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.4)',
+              display: 'flex',
+            }}
+          >
+            exclu.at
+          </div>
         </div>
       ),
       {
