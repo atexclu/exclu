@@ -24,3 +24,9 @@ verify_jwt = false
 
 [functions.admin-get-user-overview]
 verify_jwt = false
+
+[functions.generate-signed-urls]
+verify_jwt = false
+
+[functions.send-link-content-email]
+verify_jwt = false

@@ -746,7 +746,7 @@ const PublicLink = () => {
                       );
                     }
                   }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-xs font-semibold hover:bg-white/90 transition-all active:scale-95 shrink-0"
+                  className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-xs font-semibold hover:bg-white/90 transition-all active:scale-95 shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download{unlockedContent.filter((i) => i.previewUrl).length > 1 ? ` (${unlockedContent.filter((i) => i.previewUrl).length})` : ''}</span>
@@ -830,6 +830,29 @@ const PublicLink = () => {
                   </div>
                 )}
               </motion.div>
+
+              {/* Mobile Download Button — below gallery */}
+              <button
+                onClick={() => {
+                  const downloadable = unlockedContent.filter((i) => i.previewUrl);
+                  if (downloadable.length === 0) return;
+                  if (downloadable.length === 1) {
+                    downloadFile(downloadable[0].previewUrl!);
+                  } else {
+                    downloadAllAsZip(
+                      downloadable.map((item, idx) => ({
+                        url: item.previewUrl!,
+                        filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
+                      })),
+                      link.title || 'exclu-content',
+                    );
+                  }
+                }}
+                className="sm:hidden flex items-center justify-center gap-2 w-full py-3 rounded-full bg-white text-black text-sm font-semibold hover:bg-white/90 transition-all active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download{unlockedContent.filter((i) => i.previewUrl).length > 1 ? ` (${unlockedContent.filter((i) => i.previewUrl).length})` : ''}</span>
+              </button>
 
               {/* Info Row: Purchase Recap + Creator */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
