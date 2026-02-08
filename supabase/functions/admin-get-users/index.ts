@@ -189,6 +189,11 @@ serve(async (req) => {
         .from('profiles')
         .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
 
+      // For aggregated sorts, fetch all profiles (override default 1000 row limit)
+      if (needsFullFetch) {
+        query = query.range(0, 9999);
+      }
+
       // Apply DB-level sorting only for sorts that don't depend on aggregated data
       if (!needsFullFetch) {
         if (sortBy === 'created_asc') {

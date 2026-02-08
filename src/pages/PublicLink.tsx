@@ -204,6 +204,7 @@ const PublicLink = () => {
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const [paymentNotFound, setPaymentNotFound] = useState(false);
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
@@ -298,6 +299,8 @@ const PublicLink = () => {
             setIsUnlocked(true);
             setAccessExpiresAt(polledPurchase.access_expires_at ?? null);
             setPurchaseData(polledPurchase);
+          } else {
+            setPaymentNotFound(true);
           }
           setIsVerifyingPayment(false);
         }
@@ -457,8 +460,38 @@ const PublicLink = () => {
             </motion.div>
           )}
 
+          {/* PAYMENT NOT FOUND — polling exhausted */}
+          {paymentNotFound && !isVerifyingPayment && link && !isUnlocked && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-32 gap-6 max-w-md mx-auto"
+            >
+              <div className="w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-xl flex items-center justify-center">
+                <Lock className="w-8 h-8 text-white/60" />
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold text-white">Access expired</h2>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Your session has expired. If you purchased this content, check your email for a direct access link. Otherwise, you can purchase it again below.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full border-white/20 text-white hover:bg-white/10 mt-2"
+                onClick={() => {
+                  window.location.href = `/l/${slug}`;
+                }}
+              >
+                Back to content page
+              </Button>
+            </motion.div>
+          )}
+
           {/* LOCKED STATE - New Grid Layout */}
-          {!isLoading && !isVerifyingPayment && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
+          {!isLoading && !isVerifyingPayment && !paymentNotFound && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
               {/* LEFT: Card with Effects */}
               <motion.div
