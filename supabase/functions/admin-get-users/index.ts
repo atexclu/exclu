@@ -349,11 +349,13 @@ serve(async (req) => {
     const linksCountByUser = new Map<string, number>();
     const linkOwnerById = new Map<string, string>();
 
-    if (userIds.length > 0) {
-      const { data: linksAll, error: linksError } = await supabaseAdmin
-        .from('links')
-        .select('id, creator_id')
-        .in('creator_id', userIds);
+    {
+      // For aggregated sorts we need ALL links/assets, not just the current page's users
+      let linksQuery = supabaseAdmin.from('links').select('id, creator_id');
+      if (!needsFullFetch && userIds.length > 0) {
+        linksQuery = linksQuery.in('creator_id', userIds);
+      }
+      const { data: linksAll, error: linksError } = await linksQuery.range(0, 9999);
 
       if (linksError) {
         console.error('Error loading links in admin-get-users', linksError);
@@ -370,11 +372,12 @@ serve(async (req) => {
 
     // Compute per-user asset counts
     const assetsCountByUser = new Map<string, number>();
-    if (userIds.length > 0) {
-      const { data: assetsAll, error: assetsError } = await supabaseAdmin
-        .from('assets')
-        .select('id, creator_id')
-        .in('creator_id', userIds);
+    {
+      let assetsQuery = supabaseAdmin.from('assets').select('id, creator_id');
+      if (!needsFullFetch && userIds.length > 0) {
+        assetsQuery = assetsQuery.in('creator_id', userIds);
+      }
+      const { data: assetsAll, error: assetsError } = await assetsQuery.range(0, 9999);
 
       if (assetsError) {
         console.error('Error loading assets in admin-get-users', assetsError);

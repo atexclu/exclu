@@ -18,3 +18,4 @@ CREATE INDEX IF NOT EXISTS idx_links_storage_path ON links(storage_path);
 -- Add comment
 COMMENT ON COLUMN links.mime_type IS 'MIME type of the content (e.g., image/jpeg, video/mp4)';
 COMMENT ON COLUMN links.storage_path IS 'Path to the content file in Supabase storage (paid-content bucket)';
+n
