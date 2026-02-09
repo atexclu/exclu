@@ -223,7 +223,7 @@ const CreatorLinks = () => {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">
               Your links
             </h1>
-            <p className="text-exclu-space text-sm max-w-xl">
+            <p className="text-exclu-space text-xs sm:text-sm max-w-xl">
               Create and manage the links your fans will pay to unlock.
             </p>
           </div>

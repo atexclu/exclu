@@ -351,7 +351,7 @@ const ContentLibrary = () => {
         <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Content</h1>
-            <p className="text-exclu-space text-sm max-w-xl">
+            <p className="text-exclu-space text-xs sm:text-sm max-w-xl">
               Your media library. Click on any item to view it in full size.
             </p>
           </div>
