@@ -186,8 +186,8 @@ const EditLink = () => {
     }
 
     const priceNumber = Number(price);
-    if (!Number.isFinite(priceNumber) || priceNumber <= 0) {
-      toast.error('Please enter a valid price greater than 0.');
+    if (!Number.isFinite(priceNumber) || priceNumber < 5) {
+      toast.error('Minimum price is $5.00.');
       return;
     }
 
@@ -376,7 +376,7 @@ const EditLink = () => {
                           <Input
                             id="price"
                             type="number"
-                            min={1}
+                            min={5}
                             step={0.5}
                             value={price}
                             onChange={(e) => setPrice(e.target.value)}

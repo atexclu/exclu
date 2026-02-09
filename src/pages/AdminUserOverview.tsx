@@ -405,11 +405,20 @@ const AdminUserOverview = () => {
                         >
                           <div className="relative aspect-[4/3] bg-exclu-void/60 flex items-center justify-center">
                             {asset.preview_url ? (
-                              <img
-                                src={asset.preview_url}
-                                alt={asset.title || 'Asset preview'}
-                                className="w-full h-full object-cover"
-                              />
+                              asset.mime_type?.startsWith('video/') ? (
+                                <video
+                                  src={asset.preview_url}
+                                  className="w-full h-full object-cover"
+                                  muted
+                                  playsInline
+                                />
+                              ) : (
+                                <img
+                                  src={asset.preview_url}
+                                  alt={asset.title || 'Asset preview'}
+                                  className="w-full h-full object-cover"
+                                />
+                              )
                             ) : (
                               <span className="text-exclu-space/70">No preview</span>
                             )}
