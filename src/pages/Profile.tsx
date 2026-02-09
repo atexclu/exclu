@@ -900,9 +900,9 @@ const Profile = () => {
                       {stripeAccountId && stripeConnectStatus !== 'complete' && (
                         <Button
                           onClick={handleStripeConnect}
-                          variant="outline"
+                          variant="hero"
                           disabled={isStripeLoading}
-                          className="rounded-full border-amber-500/40 text-amber-300"
+                          className="rounded-full"
                         >
                           {isStripeLoading ? 'Loading...' : 'Review Stripe setup'}
                         </Button>
