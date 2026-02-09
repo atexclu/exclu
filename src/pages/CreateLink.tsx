@@ -56,7 +56,6 @@ const CreateLink = () => {
     } catch (err: any) {
       console.error('Error during Stripe Connect', err);
       toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
-    } finally {
       setIsConnecting(false);
     }
   };

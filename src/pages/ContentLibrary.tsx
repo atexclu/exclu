@@ -640,11 +640,12 @@ const ContentLibrary = () => {
                       onClick={() => setPreviewAsset(asset)}
                       className="w-full text-left cursor-pointer"
                     >
+                    <div className="relative w-full aspect-square">
                     {asset.previewUrl ? (
                       asset.mime_type?.startsWith('video/') ? (
                         <video
                           src={asset.previewUrl}
-                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105 block"
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           muted
                           loop
                           playsInline
@@ -652,25 +653,29 @@ const ContentLibrary = () => {
                       ) : (
                         <img
                           src={asset.previewUrl}
-                          className="w-full h-32 sm:h-40 object-cover transition-transform duration-300 group-hover:scale-105 block"
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           alt={asset.title || 'Library asset'}
                         />
                       )
                     ) : (
-                      <div className="w-full h-32 sm:h-40 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                      <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
                     )}
+
+                    {/* Permanent bottom gradient for text readability */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
 
                     {/* Hover gradient overlay */}
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
                     {/* Bottom text overlay */}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
-                      <p className="text-[11px] sm:text-xs font-medium text-exclu-cloud truncate">
+                      <p className="text-[11px] sm:text-xs font-medium text-white truncate">
                         {asset.title || 'Untitled asset'}
                       </p>
-                      <p className="text-[10px] text-exclu-space/80">
+                      <p className="text-[10px] text-white/70">
                         {new Date(asset.created_at).toLocaleDateString()}
                       </p>
+                    </div>
                     </div>
                     </button>
                   </div>
