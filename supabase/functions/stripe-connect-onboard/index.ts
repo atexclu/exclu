@@ -340,8 +340,8 @@ serve(async (req) => {
     // Create an Account Link for onboarding
     const accountLink = await stripe.accountLinks.create({
       account: stripeAccountId,
-      refresh_url: `${siteUrl.replace(/\/$/, '')}/app?stripe_onboarding=refresh`,
-      return_url: `${siteUrl.replace(/\/$/, '')}/app?stripe_onboarding=return`,
+      refresh_url: `${siteUrl.replace(/\/$/, '')}/app/settings?stripe_onboarding=refresh`,
+      return_url: `${siteUrl.replace(/\/$/, '')}/app/settings?stripe_onboarding=return`,
       type: 'account_onboarding',
     });
 
