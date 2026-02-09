@@ -108,7 +108,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                     className="relative z-10"
                   >
                     <motion.div
-                      className={`relative flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
+                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
                         active
                           ? 'text-black dark:text-foreground'
                           : 'text-muted-foreground hover:text-foreground'

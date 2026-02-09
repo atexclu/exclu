@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -66,6 +66,7 @@ const LinkInBioEditor = () => {
   const [publicContent, setPublicContent] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
+  const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'colors'>('photo');
 
   const [debouncedData] = useDebounce(editorData, 10000);
@@ -368,23 +369,47 @@ const LinkInBioEditor = () => {
                         {!stripeConnected ? (
                           <div className="rounded-2xl border-2 border-dashed border-border bg-muted/20 p-8 text-center space-y-4">
                             <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-                              <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                              </svg>
+                              <CreditCard className="w-8 h-8 text-primary" />
                             </div>
                             <div>
                               <h3 className="text-lg font-semibold text-foreground mb-2">
                                 Connect Stripe to manage paid links
                               </h3>
                               <p className="text-sm text-muted-foreground mb-4">
-                                You need to connect your Stripe account to create and manage paid content links that appear on your profile.
+                                Connect your Stripe account to create and sell paid content links on your profile.
                               </p>
                               <Button
                                 variant="hero"
-                                onClick={() => window.location.href = '/app/settings#payments'}
+                                disabled={isStripeLoading}
+                                onClick={async () => {
+                                  setIsStripeLoading(true);
+                                  try {
+                                    const { data: { session } } = await supabase.auth.getSession();
+                                    if (!session?.access_token) {
+                                      toast.error('Please sign in again to connect Stripe.');
+                                      return;
+                                    }
+                                    const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
+                                      headers: {
+                                        Authorization: '',
+                                        'x-supabase-auth': session.access_token,
+                                      },
+                                    });
+                                    if (error) throw new Error('Unable to start Stripe Connect onboarding.');
+                                    const url = (data as any)?.url;
+                                    if (!url) throw new Error('Stripe Connect URL not available.');
+                                    window.location.href = url;
+                                  } catch (err: any) {
+                                    console.error('Error during Stripe Connect', err);
+                                    toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
+                                  } finally {
+                                    setIsStripeLoading(false);
+                                  }
+                                }}
                                 className="rounded-full"
                               >
-                                Connect Stripe Account
+                                <CreditCard className="w-4 h-4 mr-2" />
+                                {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
                               </Button>
                             </div>
                           </div>

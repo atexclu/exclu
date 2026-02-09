@@ -37,7 +37,31 @@ const CreatorLinks = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
   const navigate = useNavigate();
+
+  const handleConnectStripe = async () => {
+    setIsConnecting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Please sign in again to connect Stripe.');
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
+        headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      });
+      if (error) throw new Error('Unable to start Stripe Connect onboarding.');
+      const url = (data as any)?.url;
+      if (!url) throw new Error('Stripe Connect URL not available.');
+      window.location.href = url;
+    } catch (err: any) {
+      console.error('Error during Stripe Connect', err);
+      toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -247,45 +271,28 @@ const CreatorLinks = () => {
             transition={{ duration: 0.5, ease: 'easeOut' }}
             className="mt-6 sm:mt-10 max-w-xl mx-auto"
           >
-            <Card className="bg-exclu-ink/90 border border-exclu-arsenic/70 rounded-2xl shadow-lg">
-              <CardHeader className="px-6 pt-6 pb-3 space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-exclu-cloud/10 px-3 py-1 text-[11px] font-medium text-exclu-cloud">
-                  <CreditCard className="h-3.5 w-3.5" />
-                  <span>Finish your payout setup first</span>
-                </div>
-                <CardTitle className="text-base text-exclu-cloud mt-1">
+            <div className="rounded-2xl border-2 border-dashed border-border bg-muted/20 p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+                <CreditCard className="w-8 h-8 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">
                   Connect Stripe to manage paid links
-                </CardTitle>
-                <CardDescription className="text-xs text-exclu-space/80">
-                  You need to connect your Stripe account to create and manage paid content links that appear on your profile.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-5 space-y-4 text-[13px] text-exclu-space/85">
-                <ul className="space-y-1.5 list-disc list-inside">
-                  <li>Open your dashboard and complete the Stripe Connect onboarding.</li>
-                  <li>Stripe will ask for your legal name, address, and bank details.</li>
-                  <li>Once your account is approved, you can create and sell paid links instantly.</li>
-                </ul>
-                <div className="flex flex-col sm:flex-row gap-3 mt-3">
-                  <Button
-                    asChild
-                    variant="hero"
-                    size="sm"
-                    className="rounded-full flex-1"
-                  >
-                    <RouterLink to="/app">Go to dashboard</RouterLink>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full border-exclu-arsenic/70 flex-1"
-                  >
-                    <RouterLink to="/app/settings">Open payouts & settings</RouterLink>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Connect your Stripe account to create and sell paid content links on your profile.
+                </p>
+                <Button
+                  variant="hero"
+                  disabled={isConnecting}
+                  onClick={handleConnectStripe}
+                  className="rounded-full"
+                >
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  {isConnecting ? 'Loading...' : 'Connect Stripe'}
+                </Button>
+              </div>
+            </div>
           </motion.section>
         )}
 
