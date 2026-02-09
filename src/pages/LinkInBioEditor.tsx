@@ -297,7 +297,6 @@ const LinkInBioEditor = () => {
                       {saveStatus === 'saved' && (
                         <span className="flex items-center gap-1.5 text-xs text-emerald-600">
                           <div className="w-2 h-2 rounded-full bg-emerald-600" />
-                          Saved
                         </span>
                       )}
                       <Button

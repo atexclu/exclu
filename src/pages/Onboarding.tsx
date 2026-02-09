@@ -6,21 +6,21 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX } from 'react-icons/si';
+import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
 
 type PlatformKey =
+  | 'instagram'
+  | 'twitter'
+  | 'tiktok'
   | 'onlyfans'
   | 'fansly'
-  | 'myclub'
-  | 'mym'
-  | 'tiktok'
-  | 'instagram'
+  | 'youtube'
+  | 'telegram'
   | 'snapchat'
-  | 'x'
-  | 'other';
+  | 'linktree';
 
 const STRIPE_SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
   { code: 'US', label: 'United States' },
@@ -55,26 +55,26 @@ const Onboarding = () => {
   const [handle, setHandle] = useState('');
   const [country, setCountry] = useState('');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
+    instagram: '',
+    twitter: '',
+    tiktok: '',
     onlyfans: '',
     fansly: '',
-    myclub: '',
-    mym: '',
-    tiktok: '',
-    instagram: '',
+    youtube: '',
+    telegram: '',
     snapchat: '',
-    x: '',
-    other: '',
+    linktree: '',
   });
   const [activePlatforms, setActivePlatforms] = useState<Record<PlatformKey, boolean>>({
+    instagram: false,
+    twitter: false,
+    tiktok: false,
     onlyfans: false,
     fansly: false,
-    myclub: false,
-    mym: false,
-    tiktok: false,
-    instagram: false,
+    youtube: false,
+    telegram: false,
     snapchat: false,
-    x: false,
-    other: false,
+    linktree: false,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -138,43 +138,42 @@ const Onboarding = () => {
       setHandle(profile?.handle || '');
       setCountry(profile?.country || '');
 
-      // Charger les liens de plateformes externes existants
-      const { data: links, error: linksError } = await supabase
-        .from('profile_links')
-        .select('platform, url')
-        .eq('profile_id', user.id);
+      // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
+      const { data: fullProfile } = await supabase
+        .from('profiles')
+        .select('social_links, stripe_connect_status')
+        .eq('id', user.id)
+        .maybeSingle();
 
       if (!isMounted) return;
 
-      if (linksError) {
-        console.error('Error loading profile_links for onboarding', linksError);
-      } else if (links && Array.isArray(links)) {
+      const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
+      if (Object.keys(existingSocialLinks).length > 0) {
         setPlatformUrls((prev) => {
           const next = { ...prev };
-          links.forEach((link: any) => {
-            const key = link.platform as PlatformKey;
-            if (key && Object.prototype.hasOwnProperty.call(next, key)) {
-              next[key] = link.url || '';
+          Object.entries(existingSocialLinks).forEach(([key, url]) => {
+            if (Object.prototype.hasOwnProperty.call(next, key)) {
+              next[key as PlatformKey] = url || '';
             }
           });
           return next;
         });
 
-        // Auto-activate platforms that already have a URL
         setActivePlatforms((prev) => {
           const next = { ...prev };
-          (links as any[]).forEach((link: any) => {
-            const key = link.platform as PlatformKey;
-            if (key && link.url && link.url.length > 0) {
-              next[key] = true;
+          Object.entries(existingSocialLinks).forEach(([key, url]) => {
+            if (Object.prototype.hasOwnProperty.call(next, key) && url && url.length > 0) {
+              next[key as PlatformKey] = true;
             }
           });
           return next;
         });
       }
 
-      // Si le handle est déjà défini, on peut rediriger directement vers le dashboard
-      if (profile?.handle) {
+      // Only redirect to dashboard if onboarding is fully completed
+      // (handle exists AND stripe connect has been started/completed)
+      const stripeStatus = fullProfile?.stripe_connect_status;
+      if (profile?.handle && stripeStatus && stripeStatus !== 'not_started') {
         navigate('/app');
         return;
       }
@@ -259,17 +258,14 @@ const Onboarding = () => {
         return;
       }
 
-      const mainExternalUrlCandidate =
-        platformUrls.onlyfans.trim() ||
-        platformUrls.fansly.trim() ||
-        platformUrls.myclub.trim() ||
-        platformUrls.mym.trim() ||
-        platformUrls.other.trim() ||
-        '';
-
-      const mainExternalUrl = mainExternalUrlCandidate
-        ? normalizeExternalUrl(mainExternalUrlCandidate)
-        : null;
+      // Build social_links JSONB from platform URLs
+      const socialLinksObj: Record<string, string> = {};
+      (Object.entries(platformUrls) as [PlatformKey, string][]).forEach(([platform, url]) => {
+        const normalized = normalizeExternalUrl(url);
+        if (normalized) {
+          socialLinksObj[platform] = normalized;
+        }
+      });
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -280,6 +276,7 @@ const Onboarding = () => {
             handle: trimmedHandle,
             is_creator: true,
             country,
+            social_links: socialLinksObj,
           },
           { onConflict: 'id' }
         );
@@ -287,32 +284,6 @@ const Onboarding = () => {
       if (updateError) {
         console.error(updateError);
         throw new Error('Unable to save your profile. Please try again.');
-      }
-
-      // Mettre à jour les liens de plateformes externes
-      const platformRows = (Object.entries(platformUrls) as [PlatformKey, string][]) // type narrowing
-        .map(([platform, url]) => ({ platform, url: url.trim() }))
-        .map((entry) => ({ platform: entry.platform, url: normalizeExternalUrl(entry.url) }))
-        .filter((entry) => entry.url)
-        .map((entry) => ({ profile_id: user.id, platform: entry.platform, url: entry.url as string }));
-
-      // On simplifie : on supprime les anciens liens de ce profil puis on insère les nouveaux
-      const { error: deleteError } = await supabase
-        .from('profile_links')
-        .delete()
-        .eq('profile_id', user.id);
-
-      if (deleteError) {
-        console.error('Error deleting existing profile_links', deleteError);
-        throw new Error('Unable to update your external links. Please try again.');
-      }
-
-      if (platformRows.length > 0) {
-        const { error: insertError } = await supabase.from('profile_links').insert(platformRows);
-        if (insertError) {
-          console.error('Error inserting profile_links', insertError);
-          throw new Error('Unable to save your external platform links.');
-        }
       }
 
       toast.success('Profile saved! Now choose your plan.');
@@ -519,19 +490,43 @@ const Onboarding = () => {
                     {/* Platform icon selector */}
                     <div className="mt-2 grid grid-cols-3 sm:grid-cols-5 gap-2">
                       {([
+                        'instagram',
+                        'twitter',
+                        'tiktok',
                         'onlyfans',
                         'fansly',
-                        'myclub',
-                        'mym',
-                        'tiktok',
-                        'instagram',
+                        'youtube',
+                        'telegram',
                         'snapchat',
-                        'x',
-                        'other',
+                        'linktree',
                       ] as PlatformKey[]).map((platform) => {
                         const isActive = activePlatforms[platform];
                         const baseClasses =
                           'flex flex-col items-center justify-center gap-1 rounded-xl border text-[10px] px-2 py-2 transition-all';
+
+                        const iconMap: Record<PlatformKey, React.ReactNode> = {
+                          instagram: <SiInstagram className="w-4 h-4" />,
+                          twitter: <SiX className="w-4 h-4" />,
+                          tiktok: <SiTiktok className="w-4 h-4" />,
+                          onlyfans: <SiOnlyfans className="w-4 h-4" />,
+                          fansly: <SiOnlyfans className="w-4 h-4" />,
+                          youtube: <SiYoutube className="w-4 h-4" />,
+                          telegram: <SiTelegram className="w-4 h-4" />,
+                          snapchat: <SiSnapchat className="w-4 h-4" />,
+                          linktree: <SiLinktree className="w-4 h-4" />,
+                        };
+
+                        const labelMap: Record<PlatformKey, string> = {
+                          instagram: 'Instagram',
+                          twitter: 'X (Twitter)',
+                          tiktok: 'TikTok',
+                          onlyfans: 'OnlyFans',
+                          fansly: 'Fansly',
+                          youtube: 'YouTube',
+                          telegram: 'Telegram',
+                          snapchat: 'Snapchat',
+                          linktree: 'Linktree',
+                        };
 
                         return (
                           <button
@@ -552,26 +547,10 @@ const Onboarding = () => {
                             }
                           >
                             <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-exclu-cloud/10 text-exclu-cloud text-xs">
-                              {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
-                              {platform === 'fansly' && <span className="text-[9px] font-semibold">FS</span>}
-                              {platform === 'myclub' && <span className="text-[9px] font-semibold">MC</span>}
-                              {platform === 'mym' && <span className="text-[9px] font-semibold">MYM</span>}
-                              {platform === 'tiktok' && <SiTiktok className="w-4 h-4" />}
-                              {platform === 'instagram' && <SiInstagram className="w-4 h-4" />}
-                              {platform === 'snapchat' && <SiSnapchat className="w-4 h-4" />}
-                              {platform === 'x' && <SiX className="w-4 h-4" />}
-                              {platform === 'other' && <span className="text-[9px] font-semibold">WEB</span>}
+                              {iconMap[platform]}
                             </span>
                             <span className="truncate max-w-[4rem]">
-                              {platform === 'onlyfans' && 'OnlyFans'}
-                              {platform === 'fansly' && 'Fansly'}
-                              {platform === 'myclub' && 'my.club'}
-                              {platform === 'mym' && 'MYM'}
-                              {platform === 'tiktok' && 'TikTok'}
-                              {platform === 'instagram' && 'Instagram'}
-                              {platform === 'snapchat' && 'Snapchat'}
-                              {platform === 'x' && 'X'}
-                              {platform === 'other' && 'Other'}
+                              {labelMap[platform]}
                             </span>
                           </button>
                         );
@@ -582,55 +561,53 @@ const Onboarding = () => {
                     <div className="mt-3 space-y-2">
                       <AnimatePresence initial={false}>
                         {([
+                          'instagram',
+                          'twitter',
+                          'tiktok',
                           'onlyfans',
                           'fansly',
-                          'myclub',
-                          'mym',
-                          'tiktok',
-                          'instagram',
+                          'youtube',
+                          'telegram',
                           'snapchat',
-                          'x',
-                          'other',
+                          'linktree',
                         ] as PlatformKey[]).map((platform) => {
                           if (!activePlatforms[platform]) return null;
 
-                          const placeholder =
-                            platform === 'onlyfans'
-                              ? 'https://onlyfans.com/yourname'
-                              : platform === 'fansly'
-                              ? 'https://fansly.com/yourname'
-                              : platform === 'myclub'
-                              ? 'https://my.club/yourname'
-                              : platform === 'mym'
-                              ? 'https://mym.fans/yourname'
-                              : platform === 'tiktok'
-                              ? 'https://www.tiktok.com/@yourname'
-                              : platform === 'instagram'
-                              ? 'https://www.instagram.com/yourname'
-                              : platform === 'snapchat'
-                              ? 'https://www.snapchat.com/add/yourname'
-                              : platform === 'x'
-                              ? 'https://x.com/yourname'
-                              : 'https://yourwebsite.com/links';
+                          const placeholderMap: Record<PlatformKey, string> = {
+                            instagram: 'https://instagram.com/yourhandle',
+                            twitter: 'https://x.com/yourhandle',
+                            tiktok: 'https://tiktok.com/@yourhandle',
+                            onlyfans: 'https://onlyfans.com/yourhandle',
+                            fansly: 'https://fansly.com/yourhandle',
+                            youtube: 'https://youtube.com/@yourhandle',
+                            telegram: 'https://t.me/yourhandle',
+                            snapchat: 'https://snapchat.com/add/yourhandle',
+                            linktree: 'https://linktr.ee/yourhandle',
+                          };
 
-                          const label =
-                            platform === 'onlyfans'
-                              ? 'OnlyFans'
-                              : platform === 'fansly'
-                              ? 'Fansly'
-                              : platform === 'myclub'
-                              ? 'my.club'
-                              : platform === 'mym'
-                              ? 'MYM'
-                              : platform === 'tiktok'
-                              ? 'TikTok'
-                              : platform === 'instagram'
-                              ? 'Instagram'
-                              : platform === 'snapchat'
-                              ? 'Snapchat'
-                              : platform === 'x'
-                              ? 'X'
-                              : 'Other link';
+                          const labelMap: Record<PlatformKey, string> = {
+                            instagram: 'Instagram',
+                            twitter: 'X (Twitter)',
+                            tiktok: 'TikTok',
+                            onlyfans: 'OnlyFans',
+                            fansly: 'Fansly',
+                            youtube: 'YouTube',
+                            telegram: 'Telegram',
+                            snapchat: 'Snapchat',
+                            linktree: 'Linktree',
+                          };
+
+                          const iconMap: Record<PlatformKey, React.ReactNode> = {
+                            instagram: <SiInstagram className="w-4 h-4" />,
+                            twitter: <SiX className="w-4 h-4" />,
+                            tiktok: <SiTiktok className="w-4 h-4" />,
+                            onlyfans: <SiOnlyfans className="w-4 h-4" />,
+                            fansly: <SiOnlyfans className="w-4 h-4" />,
+                            youtube: <SiYoutube className="w-4 h-4" />,
+                            telegram: <SiTelegram className="w-4 h-4" />,
+                            snapchat: <SiSnapchat className="w-4 h-4" />,
+                            linktree: <SiLinktree className="w-4 h-4" />,
+                          };
 
                           return (
                             <motion.div
@@ -643,17 +620,9 @@ const Onboarding = () => {
                             >
                               <label className="text-[11px] font-medium text-exclu-space flex items-center gap-2 mb-1">
                                 <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-exclu-cloud/10 text-[10px] text-exclu-cloud font-semibold">
-                                  {platform === 'onlyfans' && <SiOnlyfans className="w-4 h-4" />}
-                                  {platform === 'fansly' && 'FS'}
-                                  {platform === 'myclub' && 'MC'}
-                                  {platform === 'mym' && 'MYM'}
-                                  {platform === 'tiktok' && <SiTiktok className="w-4 h-4" />}
-                                  {platform === 'instagram' && <SiInstagram className="w-4 h-4" />}
-                                  {platform === 'snapchat' && <SiSnapchat className="w-4 h-4" />}
-                                  {platform === 'x' && <SiX className="w-4 h-4" />}
-                                  {platform === 'other' && 'WEB'}
+                                  {iconMap[platform]}
                                 </span>
-                                {label}
+                                {labelMap[platform]}
                               </label>
                               <Input
                                 type="url"
@@ -664,7 +633,7 @@ const Onboarding = () => {
                                     [platform]: e.target.value,
                                   }))
                                 }
-                                placeholder={placeholder}
+                                placeholder={placeholderMap[platform]}
                                 className="h-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-[13px]"
                               />
                             </motion.div>
