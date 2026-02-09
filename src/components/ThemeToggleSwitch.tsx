@@ -19,12 +19,12 @@ export function ThemeToggleSwitch() {
       {/* Track */}
       <div className="relative flex items-center gap-1">
         {/* Sun icon */}
-        <div className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${!isDark ? 'text-white' : 'text-muted-foreground'}`}>
+        <div className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full transition-colors ${!isDark ? 'text-white' : 'text-muted-foreground'}`}>
           <Sun className="w-4 h-4" />
         </div>
 
         {/* Moon icon */}
-        <div className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${isDark ? 'text-black' : 'text-muted-foreground'}`}>
+        <div className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full transition-colors ${isDark ? 'text-black' : 'text-muted-foreground'}`}>
           <Moon className="w-4 h-4" />
         </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,6 +43,7 @@ interface CreatorLink {
 const LinkInBioEditor = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navRef = useRef<HTMLElement>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   
   const [editorData, setEditorData] = useState<LinkInBioData>({
@@ -266,7 +267,7 @@ const LinkInBioEditor = () => {
                 {/* Top menu - horizontal on all screen sizes */}
                 <div className="mb-6">
                   <div className="flex items-center justify-between gap-4 mb-6">
-                    <nav className="flex gap-1 overflow-x-auto scrollbar-hide pb-2">
+                    <nav ref={navRef} className="flex gap-1 overflow-x-auto scrollbar-hide pb-2">
                       {sections.map((section) => {
                         const Icon = section.icon;
                         const isActive = activeSection === section.id;
@@ -274,7 +275,17 @@ const LinkInBioEditor = () => {
                           <button
                             key={section.id}
                             type="button"
-                            onClick={() => setActiveSection(section.id)}
+                            onClick={(e) => {
+                              setActiveSection(section.id);
+                              const btn = e.currentTarget;
+                              const nav = navRef.current;
+                              if (nav) {
+                                const navRect = nav.getBoundingClientRect();
+                                const btnRect = btn.getBoundingClientRect();
+                                const scrollLeft = nav.scrollLeft + (btnRect.left + btnRect.width / 2) - (navRect.left + navRect.width / 2);
+                                nav.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                              }
+                            }}
                             className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
                               isActive
                                 ? 'bg-primary/10 text-primary border border-primary/30'

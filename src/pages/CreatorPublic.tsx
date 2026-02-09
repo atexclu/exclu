@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, Globe } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play } from 'lucide-react';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import SplitText from '@/components/ui/SplitText';
@@ -104,6 +104,7 @@ const CreatorPublic = () => {
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'links' | 'content'>('links');
+  const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -498,6 +499,7 @@ const CreatorPublic = () => {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3, delay: 0.05 * index }}
                         className="relative aspect-square rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 group cursor-pointer"
+                        onClick={() => setSelectedContent(content)}
                       >
                         {content.previewUrl ? (
                           isVideo ? (
@@ -521,6 +523,13 @@ const CreatorPublic = () => {
                           </div>
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {isVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
+                              <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                            </div>
+                          </div>
+                        )}
                       </motion.div>
                     );
                   })}
@@ -583,6 +592,44 @@ const CreatorPublic = () => {
         </div>
       )}
 
+      {/* Content Lightbox Modal */}
+      {selectedContent && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setSelectedContent(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setSelectedContent(null)}
+            className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+          <div
+            className="max-w-3xl max-h-[85vh] w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {selectedContent.mime_type?.startsWith('video/') ? (
+              <video
+                src={selectedContent.previewUrl}
+                className="w-full max-h-[85vh] rounded-2xl"
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : (
+              <img
+                src={selectedContent.previewUrl}
+                alt={selectedContent.title}
+                className="w-full max-h-[85vh] object-contain rounded-2xl"
+              />
+            )}
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 };

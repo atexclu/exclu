@@ -389,7 +389,7 @@ export function PublicContentSection({ userId, onUpdate, onContentUpdate }: Publ
             Create content and mark it as "public" to display it in your public gallery
           </p>
           <a
-            href="/app/content-library"
+            href="/app/content"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Create Content

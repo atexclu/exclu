@@ -494,43 +494,59 @@ const ContentLibrary = () => {
             <>
               {/* Toolbar with filters and bulk actions */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-3">
-                  <p className="text-xs text-exclu-space/70">{getFilteredAssets().length} item{getFilteredAssets().length > 1 ? 's' : ''}</p>
-                  
-                  {/* Visibility filter */}
-                  <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
-                    <button
-                      onClick={() => setVisibilityFilter('all')}
-                      className={`px-4 py-1.5 rounded-full font-medium transition-all ${
-                        visibilityFilter === 'all'
-                          ? 'bg-primary text-white dark:text-black shadow-sm'
-                          : 'hover:text-exclu-cloud'
-                      }`}
-                    >
-                      All
-                    </button>
-                    <button
-                      onClick={() => setVisibilityFilter('public')}
-                      className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
-                        visibilityFilter === 'public'
-                          ? 'bg-primary text-white dark:text-black shadow-sm'
-                          : 'hover:text-exclu-cloud'
-                      }`}
-                    >
-                      <Eye className="w-3 h-3" />
-                      Public
-                    </button>
-                    <button
-                      onClick={() => setVisibilityFilter('private')}
-                      className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
-                        visibilityFilter === 'private'
-                          ? 'bg-primary text-white dark:text-black shadow-sm'
-                          : 'hover:text-exclu-cloud'
-                      }`}
-                    >
-                      <EyeOff className="w-3 h-3" />
-                      Private
-                    </button>
+                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs text-exclu-space/70">{getFilteredAssets().length} item{getFilteredAssets().length > 1 ? 's' : ''}</p>
+                    
+                    {/* Visibility filter */}
+                    <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+                      <button
+                        onClick={() => setVisibilityFilter('all')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all ${
+                          visibilityFilter === 'all'
+                            ? 'bg-primary text-white dark:text-black shadow-sm'
+                            : 'hover:text-exclu-cloud'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setVisibilityFilter('public')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
+                          visibilityFilter === 'public'
+                            ? 'bg-primary text-white dark:text-black shadow-sm'
+                            : 'hover:text-exclu-cloud'
+                        }`}
+                      >
+                        <Eye className="w-3 h-3" />
+                        Public
+                      </button>
+                      <button
+                        onClick={() => setVisibilityFilter('private')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
+                          visibilityFilter === 'private'
+                            ? 'bg-primary text-white dark:text-black shadow-sm'
+                            : 'hover:text-exclu-cloud'
+                        }`}
+                      >
+                        <EyeOff className="w-3 h-3" />
+                        Private
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Select all - visible inline on mobile */}
+                  <div className="sm:hidden">
+                    {selectedAssets.size === 0 && getFilteredAssets().length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectAllVisible}
+                        className="rounded-full text-xs h-8"
+                      >
+                        Select all
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -576,16 +592,18 @@ const ContentLibrary = () => {
                   </div>
                 )}
 
-                {/* Select all button */}
+                {/* Select all button - desktop only (mobile version is inline above) */}
                 {selectedAssets.size === 0 && getFilteredAssets().length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={selectAllVisible}
-                    className="rounded-full text-xs h-8"
-                  >
-                    Select all
-                  </Button>
+                  <div className="hidden sm:block">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={selectAllVisible}
+                      className="rounded-full text-xs h-8"
+                    >
+                      Select all
+                    </Button>
+                  </div>
                 )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
