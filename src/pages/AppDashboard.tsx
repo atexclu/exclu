@@ -431,7 +431,7 @@ const AppDashboard = () => {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                <span>Welcome back{profileName ? <>, <span className="text-[#CFFF16]">{profileName}</span></> : ''}</span>
+                <span>Welcome back{profileName ? <>, <span className="text-black dark:text-[#CFFF16]">{profileName}</span></> : ''}</span>
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
