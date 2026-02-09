@@ -362,10 +362,6 @@
 }
 
 /* Hide scrollbar */
-.light .text-stroke-light {
-  -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.2);
-}
-
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;

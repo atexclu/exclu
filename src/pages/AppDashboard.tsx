@@ -431,16 +431,11 @@ const AppDashboard = () => {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                <span>Welcome back{profileName ? <>, <span className="text-[#CFFF16] text-stroke-light">{profileName}</span></> : ''}</span>
+                <span>Welcome back{profileName ? <>, <span className="text-[#CFFF16]">{profileName}</span></> : ''}</span>
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
                 Here's an overview of your performance
               </p>
-              {profileViewCount !== null && (
-                <p className="text-xs text-exclu-space/60 mt-0.5">
-                  Profile visits: {profileViewCount.toLocaleString('en-US')}
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-2">
               {publicProfileUrl && (
