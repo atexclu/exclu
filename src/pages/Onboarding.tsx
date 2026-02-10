@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2 } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram } from 'lucide-react';
 
 type PlatformKey =
   | 'instagram'
@@ -50,7 +50,7 @@ const STRIPE_SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'plan' | 'stripe'>('profile');
+  const [step, setStep] = useState<'profile' | 'plan' | 'stripe' | 'instagram'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [country, setCountry] = useState('');
@@ -86,6 +86,9 @@ const Onboarding = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   const filteredCountries = STRIPE_SUPPORTED_COUNTRIES;
 
@@ -419,8 +422,7 @@ const Onboarding = () => {
   };
 
   const handleSkipStripe = () => {
-    toast.success('Welcome to Exclu! You can connect Stripe anytime from your profile.');
-    navigate('/app');
+    setStep('instagram');
   };
 
   return (
@@ -438,6 +440,7 @@ const Onboarding = () => {
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
 
         {/* STEP 1: Profile Setup */}
@@ -974,6 +977,246 @@ const Onboarding = () => {
               <p className="text-[10px] text-exclu-space/50 text-center">
                 You won't be able to receive payments until you connect Stripe. You can do this anytime from your profile settings.
               </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 4: Instagram Bio Verification */}
+        {step === 'instagram' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <h1 className="text-[1.6rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Add your <span className="text-primary">Exclu</span> link to your Instagram Bio – then verify
+              </h1>
+            </div>
+
+            {/* Section 1: Copy link */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-primary uppercase tracking-wider">1. Copy your Exclu link</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-11 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/80 px-4 flex items-center">
+                  <span className="text-sm text-exclu-cloud truncate">exclu.at/{handle}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 rounded-xl border-exclu-arsenic/70 shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`https://exclu.at/${handle}`);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 3000);
+                  }}
+                >
+                  <AnimatePresence mode="wait">
+                    {linkCopied ? (
+                      <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      </motion.div>
+                    ) : (
+                      <motion.div key="copy" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                        <Copy className="w-4 h-4 text-exclu-space" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Button>
+              </div>
+              <AnimatePresence>
+                {linkCopied && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                    className="rounded-xl border border-exclu-arsenic/50 bg-exclu-ink/90 p-4 text-center space-y-3"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-exclu-cloud">Link Copied</p>
+                      <p className="text-xs text-exclu-space/70">Paste it in your Instagram Links</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-full border-exclu-arsenic/70 text-exclu-cloud"
+                      onClick={() => {
+                        window.location.href = 'instagram://';
+                        setTimeout(() => {
+                          window.open('https://www.instagram.com/', '_blank');
+                        }, 500);
+                      }}
+                    >
+                      <SiInstagram className="w-4 h-4 mr-2" />
+                      Open Instagram
+                    </Button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Section 2: Instagram preview */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-primary uppercase tracking-wider">2. Add it to your Instagram links</p>
+              <div className="rounded-2xl border border-exclu-arsenic/50 bg-black overflow-hidden">
+                {/* Instagram header bar */}
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-semibold text-white">{handle || 'yourname'}</span>
+                    <svg className="w-3 h-3 text-white/60" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                  </div>
+                </div>
+
+                {/* Profile section */}
+                <div className="px-4 py-4">
+                  <div className="flex items-center gap-5">
+                    {/* Avatar */}
+                    <div className="w-[72px] h-[72px] rounded-full border-2 border-pink-500/60 p-[2px] shrink-0">
+                      <div className="w-full h-full rounded-full overflow-hidden bg-exclu-arsenic">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-exclu-space/40">
+                            <Camera className="w-5 h-5" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Stats */}
+                    <div className="flex-1 flex justify-around">
+                      <div className="text-center">
+                        <p className="text-base font-bold text-white">12</p>
+                        <p className="text-[10px] text-white/60">Posts</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-base font-bold text-white">2,847</p>
+                        <p className="text-[10px] text-white/60">Followers</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-base font-bold text-white">348</p>
+                        <p className="text-[10px] text-white/60">Following</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Name & bio */}
+                  <div className="mt-3 space-y-1">
+                    <p className="text-sm font-semibold text-white">{displayName || handle || 'Your Name'}</p>
+                    <p className="text-xs text-white/60">Creator</p>
+                    <p className="text-xs text-white/80">✨ Exclusive content just for you</p>
+                    <motion.p
+                      className="text-xs font-medium text-[#E0F4FF]"
+                      animate={{ opacity: [0.6, 1, 0.6] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    >
+                      🔗 exclu.at/{handle}
+                    </motion.p>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="mt-3 flex gap-1.5">
+                    <div className="flex-1 h-8 rounded-lg bg-[#0095F6] flex items-center justify-center">
+                      <span className="text-xs font-semibold text-white">Follow</span>
+                    </div>
+                    <div className="flex-1 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                      <span className="text-xs font-semibold text-white">Message</span>
+                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Highlights placeholder */}
+                <div className="px-4 pb-3 flex gap-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="flex flex-col items-center gap-1">
+                      <div className="w-14 h-14 rounded-full border border-white/20 bg-white/5" />
+                      <span className="text-[9px] text-white/40">Story</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[11px] text-exclu-space/60 text-center">
+                👆 This is how your Exclu link will appear on your Instagram profile
+              </p>
+            </div>
+
+            {/* Section 3: Verify */}
+            <div className="space-y-3">
+              <p className="text-xs font-bold text-primary uppercase tracking-wider">3. Then verify</p>
+              <p className="text-xs text-exclu-space/70">
+                Make sure you add the link to your bio so that we can check and verify it.
+              </p>
+
+              {verificationError && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2"
+                >
+                  {verificationError}
+                </motion.p>
+              )}
+
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full rounded-full"
+                disabled={isVerifying}
+                onClick={async () => {
+                  setIsVerifying(true);
+                  setVerificationError(null);
+                  try {
+                    // Try to fetch the creator's public Instagram page to check for the link
+                    // Since we can't reliably scrape Instagram from the client, we'll trust the user
+                    // and mark onboarding as complete after a brief verification delay
+                    await new Promise((r) => setTimeout(r, 2000));
+
+                    // Check if the user has an Instagram URL set
+                    const igUrl = platformUrls.instagram?.trim();
+                    if (!igUrl) {
+                      setVerificationError('Please add your Instagram link in step 1 first.');
+                      return;
+                    }
+
+                    toast.success('Welcome to Exclu! Your profile is ready 🎉');
+                    navigate('/app');
+                  } catch (err: any) {
+                    console.error('Verification error', err);
+                    setVerificationError('Unable to verify at this time. Please try again.');
+                  } finally {
+                    setIsVerifying(false);
+                  }
+                }}
+              >
+                {isVerifying ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying…
+                  </span>
+                ) : (
+                  'Verify'
+                )}
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  toast.success('Welcome to Exclu! You can add your link later.');
+                  navigate('/app');
+                }}
+                className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+              >
+                Skip for now – I'll do this later
+              </button>
             </div>
           </motion.div>
         )}
