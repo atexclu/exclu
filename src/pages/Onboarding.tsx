@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock } from 'lucide-react';
 
 type PlatformKey =
   | 'instagram'
@@ -86,6 +86,7 @@ const Onboarding = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [exclusiveContentText, setExclusiveContentText] = useState('Exclusive content');
   const [linkCopied, setLinkCopied] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -149,7 +150,7 @@ const Onboarding = () => {
       // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
       const { data: fullProfile } = await supabase
         .from('profiles')
-        .select('social_links, stripe_connect_status, avatar_url')
+        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -158,6 +159,10 @@ const Onboarding = () => {
       if (fullProfile?.avatar_url) {
         setAvatarUrl(fullProfile.avatar_url);
         setAvatarPreview(fullProfile.avatar_url);
+      }
+
+      if (fullProfile?.exclusive_content_text) {
+        setExclusiveContentText(fullProfile.exclusive_content_text);
       }
 
       const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
@@ -329,6 +334,7 @@ const Onboarding = () => {
             country,
             social_links: socialLinksObj,
             avatar_url: finalAvatarUrl,
+            exclusive_content_text: exclusiveContentText.trim() || null,
           },
           { onConflict: 'id' }
         );
@@ -732,6 +738,35 @@ const Onboarding = () => {
                         })}
                       </AnimatePresence>
                     </div>
+                  </div>
+
+                  {/* Exclusive content button customization */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-exclu-space">
+                      Exclusive content button
+                    </p>
+                    <p className="text-[11px] text-exclu-space/70">
+                      This gradient button will appear at the top of your public profile. Customize the text to attract your audience.
+                    </p>
+                    <Input
+                      value={exclusiveContentText}
+                      onChange={(e) => setExclusiveContentText(e.target.value)}
+                      placeholder="Exclusive content"
+                      maxLength={50}
+                      className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    />
+                    {/* Live preview */}
+                    <div className="flex justify-center pt-1">
+                      <div className="w-full h-12 rounded-full bg-gradient-to-r from-primary via-[#e0ff66] to-primary flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+                        <Lock className="w-4 h-4 text-black" />
+                        <span className="text-sm font-bold text-black truncate max-w-[200px]">
+                          {exclusiveContentText || 'Exclusive content'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-exclu-space/50 text-center">
+                      Preview of how it will look on your profile
+                    </p>
                   </div>
 
                     <Button

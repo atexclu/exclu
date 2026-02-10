@@ -32,6 +32,7 @@ interface CreatorProfileData {
   social_links: Record<string, string> | null;
   is_creator_subscribed?: boolean | null;
   show_join_banner?: boolean | null;
+  exclusive_content_text?: string | null;
 }
 
 interface CreatorLinkCard {
@@ -119,7 +120,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -451,39 +452,66 @@ const CreatorPublic = () => {
 
             {/* Links Tab */}
             {!isLoading && activeTab === 'links' && (
-              links.length > 0 ? (
               <>
-                {links.map((link, index) => {
-                  const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
-                  return (
-                    <motion.button
-                      key={link.id}
-                      type="button"
-                      onClick={() => handleLinkClick(link)}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: 0.1 * index }}
-                      className={`w-full h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all flex items-center justify-between px-5 group`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Lock className="w-4 h-4 text-white/60" />
-                        <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>
-                          {priceLabel}
-                        </span>
-                        <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
-                      </div>
-                    </motion.button>
-                  );
-                })}
+                {/* Exclusive content gradient button */}
+                {profile?.exclusive_content_text && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      if (links.length > 0) {
+                        handleLinkClick(links[0]);
+                      }
+                    }}
+                    className="w-full h-14 rounded-full bg-gradient-to-r from-[#CFFF16] via-[#e0ff66] to-[#CFFF16] flex items-center justify-center gap-2 shadow-lg shadow-[#CFFF16]/20 hover:shadow-[#CFFF16]/30 transition-shadow"
+                  >
+                    <Lock className="w-4 h-4 text-black" />
+                    <span className="text-sm font-bold text-black truncate max-w-[220px]">
+                      {profile.exclusive_content_text}
+                    </span>
+                    <ArrowUpRight className="w-4 h-4 text-black/60" />
+                  </motion.button>
+                )}
+
+                {/* Individual links */}
+                {links.length > 0 ? (
+                  links.map((link, index) => {
+                    const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
+                    return (
+                      <motion.button
+                        key={link.id}
+                        type="button"
+                        onClick={() => handleLinkClick(link)}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
+                        className={`w-full h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all flex items-center justify-between px-5 group`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Lock className="w-4 h-4 text-white/60" />
+                          <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-bold bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>
+                            {priceLabel}
+                          </span>
+                          <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
+                        </div>
+                      </motion.button>
+                    );
+                  })
+                ) : (
+                  !profile?.exclusive_content_text && (
+                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
+                      No exclusive content available yet.
+                    </div>
+                  )
+                )}
               </>
-              ) : (
-                <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                  No exclusive content available yet.
-                </div>
-              )
             )}
 
             {/* Content Tab */}

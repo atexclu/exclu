@@ -90,10 +90,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             setThemeState(userTheme);
             applyTheme(resolveTheme(userTheme));
           } else {
-            // Pas de préférence en base, utiliser system
-            const systemTheme = getSystemTheme();
-            setThemeState('system');
-            applyTheme(systemTheme);
+            // Pas de préférence en base, utiliser dark par défaut
+            setThemeState('dark');
+            applyTheme('dark');
           }
         } else {
           // Utilisateur non connecté, utiliser localStorage
@@ -103,10 +102,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             setThemeState(savedTheme);
             applyTheme(resolveTheme(savedTheme));
           } else {
-            // Première visite, détecter la préférence système
-            const systemTheme = getSystemTheme();
-            setThemeState('system');
-            applyTheme(systemTheme);
+            // Première visite, utiliser dark par défaut
+            setThemeState('dark');
+            applyTheme('dark');
           }
         }
       } catch (error) {
