@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2 } from 'lucide-react';
 
 type PlatformKey =
   | 'instagram'
@@ -81,6 +81,11 @@ const Onboarding = () => {
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'premium'>('premium');
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const filteredCountries = STRIPE_SUPPORTED_COUNTRIES;
 
@@ -141,11 +146,16 @@ const Onboarding = () => {
       // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
       const { data: fullProfile } = await supabase
         .from('profiles')
-        .select('social_links, stripe_connect_status')
+        .select('social_links, stripe_connect_status, avatar_url')
         .eq('id', user.id)
         .maybeSingle();
 
       if (!isMounted) return;
+
+      if (fullProfile?.avatar_url) {
+        setAvatarUrl(fullProfile.avatar_url);
+        setAvatarPreview(fullProfile.avatar_url);
+      }
 
       const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
       if (Object.keys(existingSocialLinks).length > 0) {
@@ -171,9 +181,10 @@ const Onboarding = () => {
       }
 
       // Only redirect to dashboard if onboarding is fully completed
-      // (handle exists AND stripe connect has been started/completed)
+      // (handle + avatar_url + at least 1 social link + stripe connect started)
       const stripeStatus = fullProfile?.stripe_connect_status;
-      if (profile?.handle && stripeStatus && stripeStatus !== 'not_started') {
+      const hasSocialLinks = Object.values(existingSocialLinks).some((url) => url && url.length > 0);
+      if (profile?.handle && fullProfile?.avatar_url && hasSocialLinks && stripeStatus && stripeStatus !== 'not_started') {
         navigate('/app');
         return;
       }
@@ -215,6 +226,19 @@ const Onboarding = () => {
 
     if (!country) {
       toast.error('Please select your country.');
+      return;
+    }
+
+    if (!avatarPreview && !avatarFile) {
+      toast.error('Please upload a profile photo.');
+      return;
+    }
+
+    // Check at least one external link is provided
+    const hasAtLeastOneLink = (Object.entries(platformUrls) as [PlatformKey, string][])
+      .some(([platform, url]) => activePlatforms[platform] && url.trim().length > 0);
+    if (!hasAtLeastOneLink) {
+      toast.error('Please add at least one external platform link.');
       return;
     }
 
@@ -267,6 +291,30 @@ const Onboarding = () => {
         }
       });
 
+      // Upload avatar if a new file was selected
+      let finalAvatarUrl = avatarUrl;
+      if (avatarFile) {
+        setIsUploadingAvatar(true);
+        const fileExt = avatarFile.name.split('.').pop() ?? 'jpg';
+        const filePath = `avatars/${user.id}/avatar.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(filePath, avatarFile, { cacheControl: '3600', upsert: true });
+
+        if (uploadError) {
+          console.error('Avatar upload error', uploadError);
+          toast.error('Failed to upload profile photo. Please try again.');
+          setIsUploadingAvatar(false);
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        finalAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+        setAvatarUrl(finalAvatarUrl);
+        setIsUploadingAvatar(false);
+      }
+
       const { error: updateError } = await supabase
         .from('profiles')
         .upsert(
@@ -277,6 +325,7 @@ const Onboarding = () => {
             is_creator: true,
             country,
             social_links: socialLinksObj,
+            avatar_url: finalAvatarUrl,
           },
           { onConflict: 'id' }
         );
@@ -420,6 +469,45 @@ const Onboarding = () => {
                   <p className="text-sm text-exclu-space">Loading your profile…</p>
                 ) : (
                   <form className="space-y-4" onSubmit={handleSubmit}>
+                  {/* Avatar upload */}
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-xs font-medium text-exclu-space">Profile photo <span className="text-red-400">*</span></p>
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="relative w-20 h-20 rounded-full border-2 border-dashed border-exclu-arsenic/70 hover:border-primary/60 transition-colors overflow-hidden group"
+                    >
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Avatar preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-exclu-ink/60">
+                          <Camera className="w-5 h-5 text-exclu-space/60 group-hover:text-primary transition-colors" />
+                        </div>
+                      )}
+                      {avatarPreview && (
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Camera className="w-5 h-5 text-white" />
+                        </div>
+                      )}
+                    </button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setAvatarFile(file);
+                          setAvatarPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                    />
+                    <p className="text-[11px] text-exclu-space/70">
+                      {avatarPreview ? 'Click to change' : 'Upload a photo'}
+                    </p>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label htmlFor="display_name" className="text-xs font-medium text-exclu-space">
                       Display name
@@ -481,7 +569,7 @@ const Onboarding = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-exclu-space">External platforms (optional)</p>
+                    <p className="text-xs font-medium text-exclu-space">External platforms <span className="text-red-400">(at least 1 required)</span></p>
                     <p className="text-[11px] text-exclu-space/70">
                       Add links to your main platforms. These will appear as small buttons on your public profile and
                       in your dashboard.

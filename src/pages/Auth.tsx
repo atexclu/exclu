@@ -140,7 +140,7 @@ const Auth = () => {
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('handle')
+          .select('handle, avatar_url, social_links')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -148,7 +148,10 @@ const Auth = () => {
           console.error('Error loading profile after login', profileError);
         }
 
-        if (!profile?.handle) {
+        const socialLinks = (profile?.social_links as Record<string, string> | null) || {};
+        const hasSocialLinks = Object.values(socialLinks).some((url) => url && url.length > 0);
+
+        if (!profile?.handle || !profile?.avatar_url || !hasSocialLinks) {
           navigate('/onboarding');
         } else {
           navigate('/app');
