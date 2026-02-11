@@ -35,6 +35,7 @@ interface CreatorProfileData {
   exclusive_content_text?: string | null;
   exclusive_content_link_id?: string | null;
   exclusive_content_url?: string | null;
+  exclusive_content_image_url?: string | null;
 }
 
 interface CreatorLinkCard {
@@ -122,7 +123,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -462,7 +463,7 @@ const CreatorPublic = () => {
             {/* Links Tab */}
             {!isLoading && activeTab === 'links' && (
               <>
-                {/* Exclusive content gradient button */}
+                {/* Exclusive content button */}
                 {profile?.exclusive_content_text && (
                   <motion.button
                     type="button"
@@ -486,13 +487,38 @@ const CreatorPublic = () => {
                         : links[0];
                       if (targetLink) handleLinkClick(targetLink);
                     }}
-                    className={`w-full h-14 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg transition-shadow`}
+                    className={profile.exclusive_content_image_url
+                      ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative'
+                      : `w-full h-14 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg transition-shadow`
+                    }
                   >
-                    <Lock className="w-4 h-4 text-white" />
-                    <span className="text-sm font-bold text-white truncate max-w-[220px]">
-                      {profile.exclusive_content_text}
-                    </span>
-                    <ArrowUpRight className="w-4 h-4 text-white/70" />
+                    {profile.exclusive_content_image_url ? (
+                      <>
+                        <img
+                          src={profile.exclusive_content_image_url}
+                          alt={profile.exclusive_content_text}
+                          className="w-full h-44 object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                        <div className="absolute bottom-4 inset-x-4 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Lock className="w-4 h-4 text-white" />
+                            <span className="text-sm font-bold text-white truncate max-w-[200px]">
+                              {profile.exclusive_content_text}
+                            </span>
+                          </div>
+                          <ArrowUpRight className="w-4 h-4 text-white/70" />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4 text-white" />
+                        <span className="text-sm font-bold text-white truncate max-w-[220px]">
+                          {profile.exclusive_content_text}
+                        </span>
+                        <ArrowUpRight className="w-4 h-4 text-white/70" />
+                      </>
+                    )}
                   </motion.button>
                 )}
 

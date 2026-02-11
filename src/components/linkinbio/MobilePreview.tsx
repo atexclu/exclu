@@ -28,6 +28,8 @@ interface LinkInBioData {
   location: string | null;
   exclusive_content_text: string | null;
   exclusive_content_link_id: string | null;
+  exclusive_content_url: string | null;
+  exclusive_content_image_url: string | null;
 }
 
 interface CreatorLink {
@@ -266,15 +268,31 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {/* Links Tab */}
                   {activeTab === 'links' && (
                     <div className="space-y-2">
-                      {/* Exclusive content gradient button */}
+                      {/* Exclusive content button */}
                       {data.exclusive_content_text && (
-                        <div className={`w-full h-12 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg`}>
-                          <Lock className="w-3.5 h-3.5 text-white" />
-                          <span className="text-xs font-bold text-white truncate max-w-[160px]">
-                            {data.exclusive_content_text}
-                          </span>
-                          <ArrowUpRight className="w-3.5 h-3.5 text-white/70" />
-                        </div>
+                        data.exclusive_content_image_url ? (
+                          <div className="relative rounded-xl overflow-hidden border border-white/20 shadow-lg">
+                            <img src={data.exclusive_content_image_url} alt="Exclusive" className="w-full h-28 object-cover" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                            <div className="absolute bottom-2.5 inset-x-3 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Lock className="w-3 h-3 text-white" />
+                                <span className="text-xs font-bold text-white truncate max-w-[130px]">
+                                  {data.exclusive_content_text}
+                                </span>
+                              </div>
+                              <ArrowUpRight className="w-3.5 h-3.5 text-white/70" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`w-full h-12 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg`}>
+                            <Lock className="w-3.5 h-3.5 text-white" />
+                            <span className="text-xs font-bold text-white truncate max-w-[160px]">
+                              {data.exclusive_content_text}
+                            </span>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-white/70" />
+                          </div>
+                        )
                       )}
 
                       {visibleLinks.length > 0 && (

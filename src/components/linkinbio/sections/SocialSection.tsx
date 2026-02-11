@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
-import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight, ExternalLink } from 'lucide-react';
+import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight, ExternalLink, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
 import {
   DndContext,
   closestCenter,
@@ -44,9 +46,11 @@ interface SocialSectionProps {
   exclusiveContentText?: string | null;
   exclusiveContentLinkId?: string | null;
   exclusiveContentUrl?: string | null;
+  exclusiveContentImageUrl?: string | null;
   themeColor?: string;
   links?: CreatorLink[];
-  onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null; exclusive_content_url: string | null }>) => void;
+  userId?: string | null;
+  onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null; exclusive_content_url: string | null; exclusive_content_image_url: string | null }>) => void;
 }
 
 const themeGradients: Record<string, { gradient: string; shadow: string }> = {
@@ -146,8 +150,30 @@ function SortableItem({ id, platform, value, onChange, onRemove }: SortableItemP
   );
 }
 
-export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, exclusiveContentUrl, themeColor, links = [], onUpdate }: SocialSectionProps) {
+export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, exclusiveContentUrl, exclusiveContentImageUrl, themeColor, links = [], userId, onUpdate }: SocialSectionProps) {
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userId) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
+    if (!file.type.startsWith('image/')) { toast.error('Please upload an image file'); return; }
+    setIsUploadingImage(true);
+    try {
+      const fileExt = file.name.split('.').pop() ?? 'jpg';
+      const filePath = `avatars/${userId}/exclusive-content.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+      if (uploadError) { toast.error('Failed to upload image'); return; }
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const newUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      onUpdate({ exclusive_content_image_url: newUrl });
+      toast.success('Image uploaded!');
+    } catch { toast.error('Upload failed'); } finally { setIsUploadingImage(false); }
+  };
   const themeStyle = themeGradients[themeColor || 'pink'] || themeGradients.pink;
   const selectedLink = links.find((l) => l.id === exclusiveContentLinkId);
   // Track platforms being edited (just added with empty URL)
@@ -299,18 +325,78 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
           </p>
         </div>
 
-        {/* Live preview */}
-        <div className="flex justify-center pt-2">
-          <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-center gap-2 shadow-lg ${themeStyle.shadow}`}>
-            <Lock className="w-4 h-4 text-white" />
-            <span className="text-sm font-bold text-white truncate max-w-[200px]">
-              {exclusiveContentText || 'Exclusive content'}
-            </span>
-          </div>
+        {/* Preview image upload */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+            <ImageIcon className="w-3 h-3" />
+            Preview image (optional)
+          </label>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+          {exclusiveContentImageUrl ? (
+            <div className="relative rounded-xl overflow-hidden border border-border">
+              <img src={exclusiveContentImageUrl} alt="Exclusive content preview" className="w-full h-40 object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute bottom-3 inset-x-3 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-white" />
+                  <span className="text-sm font-bold text-white truncate max-w-[160px]">
+                    {exclusiveContentText || 'Exclusive content'}
+                  </span>
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-white/70" />
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpdate({ exclusive_content_image_url: null })}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isUploadingImage}
+              className="w-full h-24 rounded-xl border-2 border-dashed border-border hover:border-primary/50 bg-muted/20 flex flex-col items-center justify-center gap-1.5 transition-colors"
+            >
+              {isUploadingImage ? (
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <Upload className="w-5 h-5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Upload preview image</span>
+                </>
+              )}
+            </button>
+          )}
+          <p className="text-[10px] text-muted-foreground">
+            If set, displays as a clickable image card instead of the gradient button.
+          </p>
         </div>
-        <p className="text-[10px] text-muted-foreground text-center">
-          Preview of how it will look on your profile
-        </p>
+
+        {/* Live preview (gradient button — only shown when no image) */}
+        {!exclusiveContentImageUrl && (
+          <>
+            <div className="flex justify-center pt-2">
+              <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-center gap-2 shadow-lg ${themeStyle.shadow}`}>
+                <Lock className="w-4 h-4 text-white" />
+                <span className="text-sm font-bold text-white truncate max-w-[200px]">
+                  {exclusiveContentText || 'Exclusive content'}
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground text-center">
+              Preview of how it will look on your profile
+            </p>
+          </>
+        )}
       </div>
 
       {/* Configured Exclusive Link card */}
