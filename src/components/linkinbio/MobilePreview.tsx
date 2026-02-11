@@ -26,6 +26,8 @@ interface LinkInBioData {
   social_links: Record<string, string>;
   show_join_banner: boolean;
   location: string | null;
+  exclusive_content_text: string | null;
+  exclusive_content_link_id: string | null;
 }
 
 interface CreatorLink {
@@ -254,11 +256,24 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   )}
 
                   {/* Links Tab */}
-                  {activeTab === 'links' && visibleLinks.length > 0 && (
+                  {activeTab === 'links' && (
                     <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-wider text-white/50 text-center mb-2">
-                        Exclusive Content
-                      </p>
+                      {/* Exclusive content gradient button */}
+                      {data.exclusive_content_text && (
+                        <div className={`w-full h-12 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg`}>
+                          <Lock className="w-3.5 h-3.5 text-white" />
+                          <span className="text-xs font-bold text-white truncate max-w-[160px]">
+                            {data.exclusive_content_text}
+                          </span>
+                          <ArrowUpRight className="w-3.5 h-3.5 text-white/70" />
+                        </div>
+                      )}
+
+                      {visibleLinks.length > 0 && (
+                        <p className="text-xs uppercase tracking-wider text-white/50 text-center mb-2">
+                          Exclusive Content
+                        </p>
+                      )}
                       {visibleLinks.map((link) => {
                         const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
                         return (
@@ -279,6 +294,12 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                           </div>
                         );
                       })}
+
+                      {!data.exclusive_content_text && visibleLinks.length === 0 && (
+                        <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
+                          No content links yet
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -321,12 +342,6 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                           );
                         })}
                       </div>
-                    </div>
-                  )}
-
-                  {activeTab === 'links' && visibleLinks.length === 0 && (
-                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                      No content links yet
                     </div>
                   )}
 

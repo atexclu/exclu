@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { GripVertical, Plus, X } from 'lucide-react';
+import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -29,10 +29,33 @@ import {
   SiLinktree,
 } from 'react-icons/si';
 
+interface CreatorLink {
+  id: string;
+  title: string;
+  description?: string | null;
+  price_cents: number;
+  currency: string;
+  slug: string;
+  show_on_profile?: boolean;
+}
+
 interface SocialSectionProps {
   socialLinks: Record<string, string>;
-  onUpdate: (updates: { social_links: Record<string, string> }) => void;
+  exclusiveContentText?: string | null;
+  exclusiveContentLinkId?: string | null;
+  themeColor?: string;
+  links?: CreatorLink[];
+  onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null }>) => void;
 }
+
+const themeGradients: Record<string, { gradient: string; shadow: string }> = {
+  pink: { gradient: 'from-pink-500 via-rose-400 to-pink-500', shadow: 'shadow-pink-500/20' },
+  purple: { gradient: 'from-purple-500 via-violet-400 to-purple-500', shadow: 'shadow-purple-500/20' },
+  blue: { gradient: 'from-blue-500 via-cyan-400 to-blue-500', shadow: 'shadow-blue-500/20' },
+  orange: { gradient: 'from-orange-500 via-amber-400 to-orange-500', shadow: 'shadow-orange-500/20' },
+  green: { gradient: 'from-green-500 via-emerald-400 to-green-500', shadow: 'shadow-green-500/20' },
+  red: { gradient: 'from-red-500 via-rose-400 to-red-500', shadow: 'shadow-red-500/20' },
+};
 
 const socialPlatforms = [
   { id: 'instagram', label: 'Instagram', icon: <SiInstagram className="w-5 h-5" />, placeholder: 'https://instagram.com/yourhandle', gradient: 'from-[#f97316] to-[#ec4899]' },
@@ -122,7 +145,10 @@ function SortableItem({ id, platform, value, onChange, onRemove }: SortableItemP
   );
 }
 
-export function SocialSection({ socialLinks, onUpdate }: SocialSectionProps) {
+export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, themeColor, links = [], onUpdate }: SocialSectionProps) {
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const themeStyle = themeGradients[themeColor || 'pink'] || themeGradients.pink;
+  const selectedLink = links.find((l) => l.id === exclusiveContentLinkId);
   // Track platforms being edited (just added with empty URL)
   const [editingPlatforms, setEditingPlatforms] = useState<string[]>([]);
   
@@ -182,6 +208,117 @@ export function SocialSection({ socialLinks, onUpdate }: SocialSectionProps) {
 
   return (
     <div className="space-y-6">
+      {/* Exclusive content button customization */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">Exclusive Content Button</h3>
+        <p className="text-xs text-muted-foreground">
+          This gradient button appears at the top of your public profile. Customize the text and choose which link it opens.
+        </p>
+
+        {/* Button label */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Button label</label>
+          <Input
+            value={exclusiveContentText || ''}
+            onChange={(e) => onUpdate({ exclusive_content_text: e.target.value || null })}
+            placeholder="e.g. Unlock My VIP Content"
+            maxLength={50}
+            className="h-10 bg-muted/50 border-border text-sm"
+          />
+        </div>
+
+        {/* Link picker */}
+        {links.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Opens link</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowLinkPicker(!showLinkPicker)}
+                className="w-full h-10 px-3 rounded-md border border-border bg-muted/50 text-sm flex items-center justify-between hover:border-primary/50 transition-colors"
+              >
+                <span className={selectedLink ? 'text-foreground' : 'text-muted-foreground'}>
+                  {selectedLink ? selectedLink.title : 'Select a link...'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showLinkPicker ? 'rotate-180' : ''}`} />
+              </button>
+              {showLinkPicker && (
+                <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-card shadow-lg overflow-hidden">
+                  {links.map((link) => {
+                    const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
+                    return (
+                      <button
+                        key={link.id}
+                        type="button"
+                        onClick={() => {
+                          onUpdate({ exclusive_content_link_id: link.id });
+                          setShowLinkPicker(false);
+                        }}
+                        className={`w-full px-3 py-2.5 text-left text-sm flex items-center justify-between hover:bg-muted/50 transition-colors ${
+                          exclusiveContentLinkId === link.id ? 'bg-primary/10 text-primary' : 'text-foreground'
+                        }`}
+                      >
+                        <span className="truncate">{link.title}</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">{priceLabel}</span>
+                      </button>
+                    );
+                  })}
+                  {exclusiveContentLinkId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdate({ exclusive_content_link_id: null });
+                        setShowLinkPicker(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs text-red-500 hover:bg-red-500/10 border-t border-border"
+                    >
+                      Remove link
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Live preview */}
+        <div className="flex justify-center pt-2">
+          <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-center gap-2 shadow-lg ${themeStyle.shadow}`}>
+            <Lock className="w-4 h-4 text-white" />
+            <span className="text-sm font-bold text-white truncate max-w-[200px]">
+              {exclusiveContentText || 'Exclusive content'}
+            </span>
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground text-center">
+          Preview of how it will look on your profile
+        </p>
+      </div>
+
+      {/* Configured Exclusive Link card */}
+      {exclusiveContentText && selectedLink && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">Exclusive Link</h3>
+          <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-between px-5 ${themeStyle.shadow} shadow-lg`}>
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-white" />
+              <span className="text-sm font-bold text-white truncate max-w-[160px]">
+                {exclusiveContentText}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-white/80">
+                {(selectedLink.price_cents / 100).toFixed(2)} {selectedLink.currency}
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-white/70" />
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Opens → {selectedLink.title}
+          </p>
+        </div>
+      )}
+
       {/* Active Social Links */}
       {activePlatforms.length > 0 && (
         <div className="space-y-3">

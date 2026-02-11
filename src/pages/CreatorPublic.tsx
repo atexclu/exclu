@@ -33,6 +33,7 @@ interface CreatorProfileData {
   is_creator_subscribed?: boolean | null;
   show_join_banner?: boolean | null;
   exclusive_content_text?: string | null;
+  exclusive_content_link_id?: string | null;
 }
 
 interface CreatorLinkCard {
@@ -120,7 +121,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text, exclusive_content_link_id')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -463,17 +464,18 @@ const CreatorPublic = () => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => {
-                      if (links.length > 0) {
-                        handleLinkClick(links[0]);
-                      }
+                      const targetLink = profile.exclusive_content_link_id
+                        ? links.find((l) => l.id === profile.exclusive_content_link_id)
+                        : links[0];
+                      if (targetLink) handleLinkClick(targetLink);
                     }}
-                    className="w-full h-14 rounded-full bg-gradient-to-r from-[#CFFF16] via-[#e0ff66] to-[#CFFF16] flex items-center justify-center gap-2 shadow-lg shadow-[#CFFF16]/20 hover:shadow-[#CFFF16]/30 transition-shadow"
+                    className={`w-full h-14 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg transition-shadow`}
                   >
-                    <Lock className="w-4 h-4 text-black" />
-                    <span className="text-sm font-bold text-black truncate max-w-[220px]">
+                    <Lock className="w-4 h-4 text-white" />
+                    <span className="text-sm font-bold text-white truncate max-w-[220px]">
                       {profile.exclusive_content_text}
                     </span>
-                    <ArrowUpRight className="w-4 h-4 text-black/60" />
+                    <ArrowUpRight className="w-4 h-4 text-white/70" />
                   </motion.button>
                 )}
 

@@ -757,15 +757,15 @@ const Onboarding = () => {
                     />
                     {/* Live preview */}
                     <div className="flex justify-center pt-1">
-                      <div className="w-full h-12 rounded-full bg-gradient-to-r from-primary via-[#e0ff66] to-primary flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
-                        <Lock className="w-4 h-4 text-black" />
-                        <span className="text-sm font-bold text-black truncate max-w-[200px]">
+                      <div className="w-full h-12 rounded-full bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20">
+                        <Lock className="w-4 h-4 text-white" />
+                        <span className="text-sm font-bold text-white truncate max-w-[200px]">
                           {exclusiveContentText || 'Exclusive content'}
                         </span>
                       </div>
                     </div>
                     <p className="text-[10px] text-exclu-space/50 text-center">
-                      Preview of how it will look on your profile
+                      Preview — color will match your profile theme
                     </p>
                   </div>
 

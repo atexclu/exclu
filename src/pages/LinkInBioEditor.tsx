@@ -24,6 +24,8 @@ interface LinkInBioData {
   social_links: Record<string, string>;
   show_join_banner: boolean;
   location: string | null;
+  exclusive_content_text: string | null;
+  exclusive_content_link_id: string | null;
   link_order: {
     social_order: string[];
     content_order: string[];
@@ -56,6 +58,8 @@ const LinkInBioEditor = () => {
     social_links: {},
     show_join_banner: true,
     location: null,
+    exclusive_content_text: null,
+    exclusive_content_link_id: null,
     link_order: {
       social_order: [],
       content_order: [],
@@ -90,7 +94,7 @@ const LinkInBioEditor = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, location, link_order, profile_draft, is_creator_subscribed, stripe_connect_status, stripe_account_id')
+        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, location, link_order, profile_draft, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -115,6 +119,8 @@ const LinkInBioEditor = () => {
           social_links: profile.social_links || {},
           show_join_banner: profile.show_join_banner !== false,
           location: profile.location || null,
+          exclusive_content_text: profile.exclusive_content_text || null,
+          exclusive_content_link_id: profile.exclusive_content_link_id || null,
           link_order: profile.link_order || { social_order: [], content_order: [] },
         };
 
@@ -179,6 +185,8 @@ const LinkInBioEditor = () => {
           social_links: editorData.social_links,
           show_join_banner: editorData.show_join_banner,
           location: editorData.location,
+          exclusive_content_text: editorData.exclusive_content_text,
+          exclusive_content_link_id: editorData.exclusive_content_link_id,
           link_order: editorData.link_order,
         })
         .eq('id', userId);
@@ -359,6 +367,10 @@ const LinkInBioEditor = () => {
                       <div className="space-y-4">
                         <SocialSection
                           socialLinks={editorData.social_links}
+                          exclusiveContentText={editorData.exclusive_content_text}
+                          exclusiveContentLinkId={editorData.exclusive_content_link_id}
+                          themeColor={editorData.theme_color}
+                          links={links}
                           onUpdate={updateEditorData}
                         />
                       </div>
