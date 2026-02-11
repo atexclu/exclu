@@ -1,69 +1,25 @@
 import { Switch } from '@/components/ui/switch';
-import { Palette, Sparkles, Crown, Waves } from 'lucide-react';
+import { Sparkles, Crown, Palette } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
-  themeColor: string;
   showJoinBanner: boolean;
   isPremium: boolean;
   auroraGradient?: string;
-  onUpdate: (updates: { theme_color?: string; show_join_banner?: boolean; aurora_gradient?: string }) => void;
+  onUpdate: (updates: { show_join_banner?: boolean; aurora_gradient?: string }) => void;
 }
 
-const themeOptions = [
-  { id: 'pink', label: 'Pink', gradient: 'from-pink-500 to-rose-500' },
-  { id: 'purple', label: 'Purple', gradient: 'from-purple-500 to-violet-500' },
-  { id: 'blue', label: 'Blue', gradient: 'from-blue-500 to-cyan-500' },
-  { id: 'orange', label: 'Orange', gradient: 'from-orange-500 to-amber-500' },
-  { id: 'green', label: 'Green', gradient: 'from-green-500 to-emerald-500' },
-  { id: 'red', label: 'Red', gradient: 'from-red-500 to-rose-600' },
-];
-
-export function OptionsSection({ themeColor, showJoinBanner, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
+export function OptionsSection({ showJoinBanner, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
   return (
     <div className="space-y-6">
-      {/* Theme Color */}
+      {/* Profile Gradient Color */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <Palette className="w-5 h-5 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Theme Color</h3>
+          <h3 className="text-sm font-semibold text-foreground">Profile Color</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          Applies to the verified badge, exclusive content button, and link accents
-        </p>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {themeOptions.map((option) => (
-            <button
-              key={option.id}
-              onClick={() => onUpdate({ theme_color: option.id })}
-              className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                themeColor === option.id
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                  : 'border-border hover:border-primary/50 hover:bg-muted/50'
-              }`}
-            >
-              <div className={`w-full h-8 rounded-lg bg-gradient-to-r ${option.gradient}`} />
-              <span className="text-xs font-medium text-foreground">{option.label}</span>
-              {themeColor === option.id && (
-                <div className="absolute top-2 right-2">
-                  <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                    <Sparkles className="w-2.5 h-2.5 text-primary-foreground" />
-                  </div>
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Aurora Background Gradient */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Waves className="w-5 h-5 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Background Gradient</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Choose the animated gradient color for your profile background
+          Applies to the background animation, verified badge, exclusive content button, and link accents
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight, ExternalLink, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { getAuroraGradient } from '@/lib/auroraGradients';
 import {
   DndContext,
   closestCenter,
@@ -47,20 +48,12 @@ interface SocialSectionProps {
   exclusiveContentLinkId?: string | null;
   exclusiveContentUrl?: string | null;
   exclusiveContentImageUrl?: string | null;
-  themeColor?: string;
+  auroraGradient?: string;
   links?: CreatorLink[];
   userId?: string | null;
   onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null; exclusive_content_url: string | null; exclusive_content_image_url: string | null }>) => void;
 }
 
-const themeGradients: Record<string, { stops: [string, string]; shadowColor: string }> = {
-  pink: { stops: ['#ec4899', '#f43f5e'], shadowColor: 'rgba(236,72,153,0.2)' },
-  purple: { stops: ['#a855f7', '#8b5cf6'], shadowColor: 'rgba(139,92,246,0.2)' },
-  blue: { stops: ['#3b82f6', '#06b6d4'], shadowColor: 'rgba(59,130,246,0.2)' },
-  orange: { stops: ['#f97316', '#f59e0b'], shadowColor: 'rgba(249,115,22,0.2)' },
-  green: { stops: ['#22c55e', '#10b981'], shadowColor: 'rgba(34,197,94,0.2)' },
-  red: { stops: ['#ef4444', '#e11d48'], shadowColor: 'rgba(239,68,68,0.2)' },
-};
 
 const socialPlatforms = [
   { id: 'instagram', label: 'Instagram', icon: <SiInstagram className="w-5 h-5" />, placeholder: 'https://instagram.com/yourhandle', gradient: 'from-[#f97316] to-[#ec4899]' },
@@ -150,7 +143,7 @@ function SortableItem({ id, platform, value, onChange, onRemove }: SortableItemP
   );
 }
 
-export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, exclusiveContentUrl, exclusiveContentImageUrl, themeColor, links = [], userId, onUpdate }: SocialSectionProps) {
+export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, exclusiveContentUrl, exclusiveContentImageUrl, auroraGradient, links = [], userId, onUpdate }: SocialSectionProps) {
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -184,7 +177,8 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
     onUpdate({ exclusive_content_image_url: null });
     toast.success('Image removed');
   };
-  const themeStyle = themeGradients[themeColor || 'pink'] || themeGradients.pink;
+  const auroraColors = getAuroraGradient(auroraGradient || 'purple_dream').colors;
+  const themeStyle = { stops: [auroraColors[0], auroraColors[2]] as [string, string], shadowColor: `${auroraColors[0]}33` };
   const selectedLink = links.find((l) => l.id === exclusiveContentLinkId);
   // Track platforms being edited (just added with empty URL)
   const [editingPlatforms, setEditingPlatforms] = useState<string[]>([]);

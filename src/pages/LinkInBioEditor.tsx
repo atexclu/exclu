@@ -380,7 +380,7 @@ const LinkInBioEditor = () => {
                           exclusiveContentLinkId={editorData.exclusive_content_link_id}
                           exclusiveContentUrl={editorData.exclusive_content_url}
                           exclusiveContentImageUrl={editorData.exclusive_content_image_url}
-                          themeColor={editorData.theme_color}
+                          auroraGradient={editorData.aurora_gradient}
                           links={links}
                           userId={userId}
                           onUpdate={updateEditorData}
@@ -458,7 +458,6 @@ const LinkInBioEditor = () => {
                     {activeSection === 'colors' && (
                       <div className="space-y-4">
                         <OptionsSection
-                          themeColor={editorData.theme_color}
                           showJoinBanner={editorData.show_join_banner}
                           isPremium={isPremium}
                           auroraGradient={editorData.aurora_gradient}

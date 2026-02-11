@@ -47,51 +47,6 @@ interface CreatorLinkCard {
   slug: string;
 }
 
-// Theme color configurations
-const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string; stops: [string, string] }> = {
-  pink: {
-    gradient: 'from-pink-500 to-rose-500',
-    button: 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600',
-    ring: 'ring-pink-500/50',
-    bg: 'rgba(236, 72, 153, 0.9)',
-    stops: ['#ec4899', '#f43f5e'],
-  },
-  purple: {
-    gradient: 'from-purple-500 to-violet-500',
-    button: 'bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600',
-    ring: 'ring-purple-500/50',
-    bg: 'rgba(139, 92, 246, 0.9)',
-    stops: ['#a855f7', '#8b5cf6'],
-  },
-  blue: {
-    gradient: 'from-blue-500 to-cyan-500',
-    button: 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600',
-    ring: 'ring-blue-500/50',
-    bg: 'rgba(59, 130, 246, 0.9)',
-    stops: ['#3b82f6', '#06b6d4'],
-  },
-  orange: {
-    gradient: 'from-orange-500 to-amber-500',
-    button: 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600',
-    ring: 'ring-orange-500/50',
-    bg: 'rgba(249, 115, 22, 0.9)',
-    stops: ['#f97316', '#f59e0b'],
-  },
-  green: {
-    gradient: 'from-green-500 to-emerald-500',
-    button: 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600',
-    ring: 'ring-green-500/50',
-    bg: 'rgba(34, 197, 94, 0.9)',
-    stops: ['#22c55e', '#10b981'],
-  },
-  red: {
-    gradient: 'from-red-500 to-rose-600',
-    button: 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700',
-    ring: 'ring-red-500/50',
-    bg: 'rgba(239, 68, 68, 0.9)',
-    stops: ['#ef4444', '#e11d48'],
-  },
-};
 
 // Social platform configurations using real brand icons (monochrome)
 const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
@@ -240,8 +195,8 @@ const CreatorPublic = () => {
   };
 
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
-  const themeColor = profile?.theme_color || 'pink';
-  const theme = themeColors[themeColor] || themeColors.pink;
+  const aurora = getAuroraGradient(profile?.aurora_gradient || 'purple_dream');
+  const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
   const socialLinks = profile?.social_links || {};
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
@@ -317,7 +272,7 @@ const CreatorPublic = () => {
                   {displayName}
                 </h1>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0 drop-shadow-lg">
-                  <defs><linearGradient id="badge-grad-m" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={theme.stops[0]} /><stop offset="100%" stopColor={theme.stops[1]} /></linearGradient></defs>
+                  <defs><linearGradient id="badge-grad-m" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
                   <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-m)" stroke="url(#badge-grad-m)" />
                   <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
                 </svg>
@@ -384,7 +339,7 @@ const CreatorPublic = () => {
                 tag="h1"
               />
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 flex-shrink-0 drop-shadow-lg">
-                <defs><linearGradient id="badge-grad-d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={theme.stops[0]} /><stop offset="100%" stopColor={theme.stops[1]} /></linearGradient></defs>
+                <defs><linearGradient id="badge-grad-d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
                 <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-d)" stroke="url(#badge-grad-d)" />
                 <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
               </svg>
@@ -505,7 +460,7 @@ const CreatorPublic = () => {
                       ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative'
                       : 'w-full h-14 rounded-full flex items-center justify-center gap-2 shadow-lg transition-shadow'
                     }
-                    style={!profile.exclusive_content_image_url ? { background: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` } : undefined}
+                    style={!profile.exclusive_content_image_url ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}
                   >
                     {profile.exclusive_content_image_url ? (
                       <>
@@ -556,7 +511,7 @@ const CreatorPublic = () => {
                           <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` }}>
+                          <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>
                             {priceLabel}
                           </span>
                           <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
