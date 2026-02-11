@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, MapPin, BadgeCheck } from 'lucide-react';
 import Aurora from '@/components/ui/Aurora';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import logo from '@/assets/logo-white.svg';
@@ -173,7 +173,10 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
                   {/* Name overlay on image */}
                   <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
-                    <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
+                    <div className="flex items-center gap-1">
+                      <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
+                      <BadgeCheck className="w-4 h-4 flex-shrink-0 drop-shadow-lg" style={{ color: theme.bg }} />
+                    </div>
                   </div>
                 </div>
 
@@ -182,7 +185,12 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-20" />
                   {/* Location & Bio */}
                   <div className="relative z-10 text-center mb-4 pt-6">
-                    {data.location && <p className="text-xs text-white/80 mb-2">{data.location}</p>}
+                    {data.location && (
+                      <p className="text-xs text-white/80 mb-2 flex items-center justify-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {data.location}
+                      </p>
+                    )}
                     {data.bio && <p className="text-sm text-white/90 max-w-xs mx-auto mb-4">{data.bio}</p>}
                   </div>
 

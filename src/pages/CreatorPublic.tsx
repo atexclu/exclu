@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, BadgeCheck } from 'lucide-react';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import SplitText from '@/components/ui/SplitText';
@@ -34,6 +34,7 @@ interface CreatorProfileData {
   show_join_banner?: boolean | null;
   exclusive_content_text?: string | null;
   exclusive_content_link_id?: string | null;
+  exclusive_content_url?: string | null;
 }
 
 interface CreatorLinkCard {
@@ -121,7 +122,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text, exclusive_content_link_id')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -304,9 +305,12 @@ const CreatorPublic = () => {
             <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/80" />
             {/* Name overlay */}
             <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
-              <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
-                {displayName}
-              </h1>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
+                  {displayName}
+                </h1>
+                <BadgeCheck className={`w-5 h-5 flex-shrink-0 drop-shadow-lg`} style={{ color: theme.bg }} />
+              </div>
             </div>
           </>
         )}
@@ -353,7 +357,7 @@ const CreatorPublic = () => {
             </div>
 
             {/* Name & Handle */}
-            <div className="hidden sm:block mb-1">
+            <div className="hidden sm:flex items-center justify-center gap-2 mb-1">
               <SplitText
                 text={displayName}
                 className="text-2xl sm:text-3xl font-extrabold text-white drop-shadow-lg"
@@ -368,9 +372,13 @@ const CreatorPublic = () => {
                 textAlign="center"
                 tag="h1"
               />
+              <BadgeCheck className="w-6 h-6 flex-shrink-0 drop-shadow-lg" style={{ color: theme.bg }} />
             </div>
             {profile?.location && (
-              <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow">{profile.location}</p>
+              <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {profile.location}
+              </p>
             )}
             {profile?.bio && (
               <p className="text-sm text-white/90 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
@@ -464,6 +472,15 @@ const CreatorPublic = () => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => {
+                      if (profile.exclusive_content_url) {
+                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                        if (isMobile) {
+                          window.location.href = profile.exclusive_content_url;
+                        } else {
+                          window.open(profile.exclusive_content_url, '_blank', 'noopener,noreferrer');
+                        }
+                        return;
+                      }
                       const targetLink = profile.exclusive_content_link_id
                         ? links.find((l) => l.id === profile.exclusive_content_link_id)
                         : links[0];

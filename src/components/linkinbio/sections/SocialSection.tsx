@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { GripVertical, Plus, X, Lock, ChevronDown, ArrowUpRight, ExternalLink } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -43,9 +43,10 @@ interface SocialSectionProps {
   socialLinks: Record<string, string>;
   exclusiveContentText?: string | null;
   exclusiveContentLinkId?: string | null;
+  exclusiveContentUrl?: string | null;
   themeColor?: string;
   links?: CreatorLink[];
-  onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null }>) => void;
+  onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null; exclusive_content_url: string | null }>) => void;
 }
 
 const themeGradients: Record<string, { gradient: string; shadow: string }> = {
@@ -145,7 +146,7 @@ function SortableItem({ id, platform, value, onChange, onRemove }: SortableItemP
   );
 }
 
-export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, themeColor, links = [], onUpdate }: SocialSectionProps) {
+export function SocialSection({ socialLinks, exclusiveContentText, exclusiveContentLinkId, exclusiveContentUrl, themeColor, links = [], onUpdate }: SocialSectionProps) {
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const themeStyle = themeGradients[themeColor || 'pink'] || themeGradients.pink;
   const selectedLink = links.find((l) => l.id === exclusiveContentLinkId);
@@ -280,6 +281,23 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
             </div>
           </div>
         )}
+
+        {/* Custom redirect URL */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+            <ExternalLink className="w-3 h-3" />
+            Redirect URL
+          </label>
+          <Input
+            value={exclusiveContentUrl || ''}
+            onChange={(e) => onUpdate({ exclusive_content_url: e.target.value || null })}
+            placeholder="https://example.com/my-content"
+            className="h-10 bg-muted/50 border-border text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Custom URL to open when clicked. Overrides the link picker above.
+          </p>
+        </div>
 
         {/* Live preview */}
         <div className="flex justify-center pt-2">
