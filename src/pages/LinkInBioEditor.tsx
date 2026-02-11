@@ -77,7 +77,7 @@ const LinkInBioEditor = () => {
   const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'colors'>('photo');
 
-  const [debouncedData] = useDebounce(editorData, 10000);
+  const [debouncedData] = useDebounce(editorData, 1500);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -98,7 +98,7 @@ const LinkInBioEditor = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, location, link_order, profile_draft, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -113,7 +113,7 @@ const LinkInBioEditor = () => {
         const isStripeComplete = profile.stripe_connect_status === 'complete';
         setStripeConnected(hasStripeAccount && isStripeComplete);
         
-        const dataToLoad = profile.profile_draft || {
+        const dataToLoad: LinkInBioData = {
           display_name: profile.display_name || '',
           handle: profile.handle || '',
           bio: profile.bio || '',
@@ -196,6 +196,7 @@ const LinkInBioEditor = () => {
           exclusive_content_url: editorData.exclusive_content_url,
           exclusive_content_image_url: editorData.exclusive_content_image_url,
           link_order: editorData.link_order,
+          profile_draft: null,
         })
         .eq('id', userId);
 
