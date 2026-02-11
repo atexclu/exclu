@@ -150,7 +150,7 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
           />
         </div>
 
-        <div className="flex items-center gap-3 px-1">
+        <div className="relative z-10 flex items-center gap-3 px-1">
           <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <input
             type="range"
@@ -164,7 +164,7 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
           <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </div>
 
-        <div className="flex gap-3">
+        <div className="relative z-10 flex gap-3">
           <Button
             type="button"
             variant="outline"

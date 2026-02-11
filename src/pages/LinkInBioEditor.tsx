@@ -25,6 +25,7 @@ interface LinkInBioData {
   show_join_banner: boolean;
   show_certification: boolean;
   show_deeplinks: boolean;
+  show_available_now: boolean;
   location: string | null;
   exclusive_content_text: string | null;
   exclusive_content_link_id: string | null;
@@ -63,6 +64,7 @@ const LinkInBioEditor = () => {
     show_join_banner: true,
     show_certification: true,
     show_deeplinks: true,
+    show_available_now: false,
     location: null,
     exclusive_content_text: null,
     exclusive_content_link_id: null,
@@ -102,7 +104,7 @@ const LinkInBioEditor = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -128,6 +130,7 @@ const LinkInBioEditor = () => {
           show_join_banner: profile.show_join_banner !== false,
           show_certification: profile.show_certification !== false,
           show_deeplinks: profile.show_deeplinks !== false,
+          show_available_now: profile.show_available_now === true,
           location: profile.location || null,
           exclusive_content_text: profile.exclusive_content_text || null,
           exclusive_content_link_id: profile.exclusive_content_link_id || null,
@@ -198,6 +201,7 @@ const LinkInBioEditor = () => {
           show_join_banner: editorData.show_join_banner,
           show_certification: editorData.show_certification,
           show_deeplinks: editorData.show_deeplinks,
+          show_available_now: editorData.show_available_now,
           location: editorData.location,
           exclusive_content_text: editorData.exclusive_content_text,
           exclusive_content_link_id: editorData.exclusive_content_link_id,
@@ -272,7 +276,7 @@ const LinkInBioEditor = () => {
     { id: 'social' as const, label: 'Social', icon: Share2 },
     { id: 'links' as const, label: 'Links', icon: LinkIcon },
     { id: 'content' as const, label: 'Content', icon: ImageIcon },
-    { id: 'colors' as const, label: 'Colors', icon: Palette },
+    { id: 'colors' as const, label: 'Design', icon: Palette },
   ];
 
   if (isLoading) {
@@ -469,6 +473,7 @@ const LinkInBioEditor = () => {
                           showJoinBanner={editorData.show_join_banner}
                           showCertification={editorData.show_certification}
                           showDeeplinks={editorData.show_deeplinks}
+                          showAvailableNow={editorData.show_available_now}
                           isPremium={isPremium}
                           auroraGradient={editorData.aurora_gradient}
                           onUpdate={updateEditorData}

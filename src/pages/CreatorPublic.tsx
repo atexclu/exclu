@@ -34,6 +34,7 @@ interface CreatorProfileData {
   show_join_banner?: boolean | null;
   show_certification?: boolean | null;
   show_deeplinks?: boolean | null;
+  show_available_now?: boolean | null;
   exclusive_content_text?: string | null;
   exclusive_content_link_id?: string | null;
   exclusive_content_url?: string | null;
@@ -86,7 +87,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -350,10 +351,26 @@ const CreatorPublic = () => {
                 </svg>
               )}
             </div>
-            {profile?.location && (
+            {(profile?.location || profile?.show_available_now) && (
               <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {profile.location}
+                {profile?.location && (
+                  <>
+                    <MapPin className="w-3 h-3" />
+                    {profile.location}
+                  </>
+                )}
+                {profile?.location && profile?.show_available_now && (
+                  <span className="mx-1">·</span>
+                )}
+                {profile?.show_available_now && (
+                  <span className="inline-flex items-center gap-1 text-emerald-400">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                    </span>
+                    Available now
+                  </span>
+                )}
               </p>
             )}
             {profile?.bio && (
