@@ -23,6 +23,7 @@ interface LinkInBioData {
   aurora_gradient: string;
   social_links: Record<string, string>;
   show_join_banner: boolean;
+  show_certification: boolean;
   location: string | null;
   exclusive_content_text: string | null;
   exclusive_content_link_id: string | null;
@@ -59,6 +60,7 @@ const LinkInBioEditor = () => {
     aurora_gradient: 'purple_dream',
     social_links: {},
     show_join_banner: true,
+    show_certification: true,
     location: null,
     exclusive_content_text: null,
     exclusive_content_link_id: null,
@@ -98,7 +100,7 @@ const LinkInBioEditor = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -122,6 +124,7 @@ const LinkInBioEditor = () => {
           aurora_gradient: profile.aurora_gradient || 'purple_dream',
           social_links: profile.social_links || {},
           show_join_banner: profile.show_join_banner !== false,
+          show_certification: profile.show_certification !== false,
           location: profile.location || null,
           exclusive_content_text: profile.exclusive_content_text || null,
           exclusive_content_link_id: profile.exclusive_content_link_id || null,
@@ -190,6 +193,7 @@ const LinkInBioEditor = () => {
           aurora_gradient: editorData.aurora_gradient,
           social_links: editorData.social_links,
           show_join_banner: editorData.show_join_banner,
+          show_certification: editorData.show_certification,
           location: editorData.location,
           exclusive_content_text: editorData.exclusive_content_text,
           exclusive_content_link_id: editorData.exclusive_content_link_id,
@@ -459,6 +463,7 @@ const LinkInBioEditor = () => {
                       <div className="space-y-4">
                         <OptionsSection
                           showJoinBanner={editorData.show_join_banner}
+                          showCertification={editorData.show_certification}
                           isPremium={isPremium}
                           auroraGradient={editorData.aurora_gradient}
                           onUpdate={updateEditorData}

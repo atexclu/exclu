@@ -25,6 +25,7 @@ interface LinkInBioData {
   aurora_gradient: string;
   social_links: Record<string, string>;
   show_join_banner: boolean;
+  show_certification: boolean;
   location: string | null;
   exclusive_content_text: string | null;
   exclusive_content_link_id: string | null;
@@ -140,11 +141,13 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
                     <div className="flex items-center gap-1">
                       <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0 drop-shadow-lg">
-                        <defs><linearGradient id={`badge-grad-mp-${data.aurora_gradient}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
-                        <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill={`url(#badge-grad-mp-${data.aurora_gradient})`} stroke={`url(#badge-grad-mp-${data.aurora_gradient})`} />
-                        <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
-                      </svg>
+                      {data.show_certification !== false && (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0 drop-shadow-lg">
+                          <defs><linearGradient id={`badge-grad-mp-${data.aurora_gradient}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
+                          <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill={`url(#badge-grad-mp-${data.aurora_gradient})`} stroke={`url(#badge-grad-mp-${data.aurora_gradient})`} />
+                          <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                        </svg>
+                      )}
                     </div>
                   </div>
                 </div>
