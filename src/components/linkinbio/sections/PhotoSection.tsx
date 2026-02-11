@@ -14,7 +14,6 @@ interface PhotoSectionProps {
 
 async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   const image = new Image();
-  image.crossOrigin = 'anonymous';
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
     image.onerror = reject;
@@ -144,6 +143,7 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
             aspect={1}
             cropShape="rect"
             showGrid={false}
+            objectFit="cover"
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
@@ -228,8 +228,8 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
             className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/40 transition-all cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100"
           >
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/90 shadow-lg">
-              <RefreshCw className="w-4 h-4 text-foreground" />
-              <span className="text-sm font-medium text-foreground">Replace photo</span>
+              <RefreshCw className="w-4 h-4 text-black" />
+              <span className="text-sm font-medium text-black">Replace photo</span>
             </div>
           </div>
         </div>
