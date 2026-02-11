@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Camera, Upload, X, ZoomIn, ZoomOut, Check } from 'lucide-react';
+import { Camera, Upload, ZoomIn, ZoomOut, Check, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
@@ -22,13 +22,14 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   });
 
   const canvas = document.createElement('canvas');
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
+  const size = Math.min(pixelCrop.width, 1024);
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(
     image,
     pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, pixelCrop.width, pixelCrop.height,
+    0, 0, size, size,
   );
 
   return new Promise((resolve, reject) => {
@@ -42,6 +43,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Crop state
   const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
@@ -53,10 +55,7 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
     setCroppedAreaPixels(croppedPixels);
   }, []);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file) return;
-
+  const handleFileSelect = useCallback((file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File size must be less than 5MB');
       return;
@@ -65,12 +64,17 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
       toast.error('Please upload an image file (JPG, PNG, WebP)');
       return;
     }
-
+    if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
     const objectUrl = URL.createObjectURL(file);
     setRawImageUrl(objectUrl);
     setCrop({ x: 0, y: 0 });
     setZoom(1);
-  }, []);
+  }, [rawImageUrl]);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) handleFileSelect(file);
+  }, [handleFileSelect]);
 
   const handleConfirmCrop = async () => {
     if (!rawImageUrl || !croppedAreaPixels || !userId) return;
@@ -93,10 +97,11 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
       const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
 
+      URL.revokeObjectURL(rawImageUrl);
       onUpdate({ avatar_url: newAvatarUrl });
       setPreviewUrl(newAvatarUrl);
       setRawImageUrl(null);
-      toast.success('Avatar uploaded successfully!');
+      toast.success('Photo saved!');
     } catch (err) {
       console.error('Error uploading avatar', err);
       toast.error('Failed to upload avatar.');
@@ -108,53 +113,57 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
   const handleCancelCrop = () => {
     if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
     setRawImageUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  const triggerFileInput = () => fileInputRef.current?.click();
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
     maxFiles: 1,
-    disabled: isUploading || !!rawImageUrl,
+    noClick: true,
+    noKeyboard: true,
+    disabled: isUploading,
   });
-
-  const handleRemove = () => {
-    onUpdate({ avatar_url: null });
-    setPreviewUrl(null);
-    toast.success('Avatar removed');
-  };
 
   const currentAvatar = previewUrl || avatarUrl;
 
-  // Crop mode
+  // ── Crop mode ──
   if (rawImageUrl) {
     return (
       <div className="space-y-4">
-        <p className="text-sm font-semibold text-foreground text-center">Adjust your photo</p>
-        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black">
+        <p className="text-sm font-semibold text-foreground text-center">Crop your photo</p>
+        <p className="text-xs text-muted-foreground text-center">Drag to reposition • Scroll or use the slider to zoom</p>
+
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border">
           <Cropper
             image={rawImageUrl}
             crop={crop}
             zoom={zoom}
             aspect={1}
             cropShape="rect"
+            showGrid={false}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
           />
         </div>
-        <div className="flex items-center gap-3 px-2">
+
+        <div className="flex items-center gap-3 px-1">
           <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <input
             type="range"
             min={1}
             max={3}
-            step={0.05}
+            step={0.02}
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}
-            className="flex-1 accent-primary h-1.5"
+            className="flex-1 accent-primary h-1.5 cursor-pointer"
           />
           <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </div>
+
         <div className="flex gap-3">
           <Button
             type="button"
@@ -177,7 +186,7 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
             ) : (
               <>
                 <Check className="w-4 h-4 mr-2" />
-                Confirm
+                Save
               </>
             )}
           </Button>
@@ -186,78 +195,98 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Current Avatar Preview */}
-      {currentAvatar && (
-        <div className="flex flex-col gap-4">
-          <div className="relative w-full">
-            <div className="w-full aspect-square rounded-3xl overflow-hidden border-4 border-primary/20 ring-4 ring-primary/10">
-              <img
-                src={currentAvatar}
-                alt="Profile"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <button
-              onClick={handleRemove}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white hover:bg-gray-100 text-red-500 flex items-center justify-center shadow-lg transition-colors"
-              aria-label="Remove avatar"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <p className="text-sm text-muted-foreground text-center">Current profile picture</p>
-        </div>
-      )}
+  // ── Has avatar: show preview + replace button ──
+  if (currentAvatar) {
+    return (
+      <div {...getRootProps()} className="space-y-4">
+        <input {...getInputProps()} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileSelect(file);
+          }}
+        />
 
-      {/* Upload Zone */}
+        <div className="relative w-full group">
+          <div className={`w-full aspect-square rounded-2xl overflow-hidden border-2 transition-colors ${
+            isDragActive ? 'border-primary bg-primary/5' : 'border-border'
+          }`}>
+            <img
+              src={currentAvatar}
+              alt="Profile"
+              className="w-full h-full object-cover"
+            />
+          </div>
+
+          {/* Hover overlay */}
+          <div
+            onClick={triggerFileInput}
+            className="absolute inset-0 rounded-2xl bg-black/0 group-hover:bg-black/40 transition-all cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100"
+          >
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/90 shadow-lg">
+              <RefreshCw className="w-4 h-4 text-foreground" />
+              <span className="text-sm font-medium text-foreground">Replace photo</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center">
+          Click or drag a new photo to replace
+        </p>
+      </div>
+    );
+  }
+
+  // ── No avatar: upload zone ──
+  return (
+    <div className="space-y-4">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileSelect(file);
+        }}
+      />
+
       <div
         {...getRootProps()}
+        onClick={triggerFileInput}
         className={`relative rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
           isDragActive
-            ? 'border-primary bg-primary/5 scale-[1.02]'
+            ? 'border-primary bg-primary/5 scale-[1.01]'
             : 'border-border hover:border-primary/50 hover:bg-muted/30'
-        } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+        }`}
       >
         <input {...getInputProps()} />
-        <div className="p-12 flex flex-col items-center justify-center text-center gap-4">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${
+        <div className="p-10 flex flex-col items-center justify-center text-center gap-3">
+          <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
             isDragActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
           }`}>
-            {isUploading ? (
-              <div className="w-6 h-6 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : isDragActive ? (
-              <Upload className="w-8 h-8" />
+            {isDragActive ? (
+              <Upload className="w-7 h-7" />
             ) : (
-              <Camera className="w-8 h-8" />
+              <Camera className="w-7 h-7" />
             )}
           </div>
 
-          <div className="space-y-2">
-            <p className="text-base font-semibold text-foreground">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">
               {isDragActive ? 'Drop your photo here' : 'Upload profile picture'}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Drag & drop or click to browse
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               JPG, PNG, or WebP • Max 5MB
             </p>
           </div>
-
-          {!isUploading && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-full mt-2"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Upload className="w-4 h-4 mr-2" />
-              Choose File
-            </Button>
-          )}
         </div>
       </div>
     </div>

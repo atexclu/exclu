@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload } from 'lucide-react';
 
 type PlatformKey =
   | 'instagram'
@@ -88,6 +88,9 @@ const Onboarding = () => {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [exclusiveContentText, setExclusiveContentText] = useState('Exclusive content');
   const [exclusiveContentUrl, setExclusiveContentUrl] = useState('');
+  const [exclusiveContentImageUrl, setExclusiveContentImageUrl] = useState<string | null>(null);
+  const [isUploadingExclusiveImage, setIsUploadingExclusiveImage] = useState(false);
+  const exclusiveImageInputRef = useRef<HTMLInputElement>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -151,7 +154,7 @@ const Onboarding = () => {
       // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
       const { data: fullProfile } = await supabase
         .from('profiles')
-        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text, exclusive_content_url')
+        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text, exclusive_content_url, exclusive_content_image_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -167,6 +170,9 @@ const Onboarding = () => {
       }
       if (fullProfile?.exclusive_content_url) {
         setExclusiveContentUrl(fullProfile.exclusive_content_url);
+      }
+      if (fullProfile?.exclusive_content_image_url) {
+        setExclusiveContentImageUrl(fullProfile.exclusive_content_image_url);
       }
 
       const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
@@ -346,6 +352,7 @@ const Onboarding = () => {
             avatar_url: finalAvatarUrl,
             exclusive_content_text: exclusiveContentText.trim() || null,
             exclusive_content_url: exclusiveContentUrl.trim() || null,
+            exclusive_content_image_url: exclusiveContentImageUrl,
           },
           { onConflict: 'id' }
         );
@@ -751,43 +758,123 @@ const Onboarding = () => {
                     </div>
                   </div>
 
-                  {/* Exclusive content button customization */}
-                  <div className="space-y-2">
+                  {/* Exclusive content */}
+                  <div className="space-y-3">
                     <p className="text-xs font-medium text-exclu-space">
-                      Exclusive content button
+                      Exclusive content
                     </p>
-                    <p className="text-[11px] text-exclu-space/70">
-                      This gradient button will appear at the top of your public profile. Customize the text to attract your audience.
+                    <p className="text-[11px] text-exclu-space/70 leading-relaxed">
+                      This button will appear at the top of your public profile.<br />
+                      Customize the text, image and url to attract your audience.
                     </p>
-                    <Input
-                      value={exclusiveContentText}
-                      onChange={(e) => setExclusiveContentText(e.target.value)}
-                      placeholder="Exclusive content"
-                      maxLength={50}
-                      className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
-                    />
-                    <Input
-                      value={exclusiveContentUrl}
-                      onChange={(e) => setExclusiveContentUrl(e.target.value)}
-                      placeholder="https://your-link.com"
-                      required
-                      className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
-                    />
-                    {!exclusiveContentUrl.trim() && (
-                      <p className="text-[11px] text-red-500">A redirect URL is required for the exclusive button.</p>
-                    )}
-                    {/* Live preview */}
-                    <div className="flex justify-center pt-1">
-                      <div className="w-full h-12 rounded-full bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20">
-                        <Lock className="w-4 h-4 text-white" />
-                        <span className="text-sm font-bold text-white truncate max-w-[200px]">
-                          {exclusiveContentText || 'Exclusive content'}
-                        </span>
-                      </div>
+
+                    {/* Button text */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-exclu-space/80">Button text</label>
+                      <Input
+                        value={exclusiveContentText}
+                        onChange={(e) => setExclusiveContentText(e.target.value)}
+                        placeholder="Exclusive content"
+                        maxLength={50}
+                        className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      />
                     </div>
-                    <p className="text-[10px] text-exclu-space/50 text-center">
-                      Preview — color will match your profile theme
-                    </p>
+
+                    {/* Redirect URL */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-exclu-space/80">Redirect URL</label>
+                      <Input
+                        value={exclusiveContentUrl}
+                        onChange={(e) => setExclusiveContentUrl(e.target.value)}
+                        placeholder="https://your-link.com"
+                        required
+                        className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      />
+                      {!exclusiveContentUrl.trim() && (
+                        <p className="text-[11px] text-red-500">A redirect URL is required.</p>
+                      )}
+                    </div>
+
+                    {/* Cover image upload */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-exclu-space/80">Cover image <span className="text-exclu-space/50">(optional)</span></label>
+                      <input
+                        ref={exclusiveImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
+                          if (!file.type.startsWith('image/')) { toast.error('Please upload an image file'); return; }
+                          setIsUploadingExclusiveImage(true);
+                          try {
+                            const { data: { user } } = await supabase.auth.getUser();
+                            if (!user) { toast.error('Not authenticated'); return; }
+                            const fileExt = file.name.split('.').pop() ?? 'jpg';
+                            const filePath = `avatars/${user.id}/exclusive-content.${fileExt}`;
+                            const { error: uploadError } = await supabase.storage
+                              .from('avatars')
+                              .upload(filePath, file, { cacheControl: '3600', upsert: true });
+                            if (uploadError) { toast.error('Failed to upload image'); return; }
+                            const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+                            const newUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+                            setExclusiveContentImageUrl(newUrl);
+                            toast.success('Image uploaded!');
+                          } catch { toast.error('Upload failed'); } finally { setIsUploadingExclusiveImage(false); }
+                        }}
+                      />
+                      {exclusiveContentImageUrl ? (
+                        <div className="relative rounded-xl overflow-hidden border border-exclu-arsenic/20">
+                          <img
+                            src={exclusiveContentImageUrl}
+                            alt="Exclusive content cover"
+                            className="w-full h-32 object-cover"
+                          />
+                          <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => exclusiveImageInputRef.current?.click()}
+                              className="px-3 py-1.5 rounded-full bg-white/90 text-xs font-medium text-black hover:bg-white transition-colors"
+                            >
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const { data: { user } } = await supabase.auth.getUser();
+                                if (!user) return;
+                                const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+                                const paths = extensions.map((ext) => `avatars/${user.id}/exclusive-content.${ext}`);
+                                await supabase.storage.from('avatars').remove(paths);
+                                setExclusiveContentImageUrl(null);
+                                toast.success('Image removed');
+                              }}
+                              className="px-3 py-1.5 rounded-full bg-red-500/90 text-xs font-medium text-white hover:bg-red-600 transition-colors"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => exclusiveImageInputRef.current?.click()}
+                          disabled={isUploadingExclusiveImage}
+                          className="w-full h-24 rounded-xl border-2 border-dashed border-exclu-arsenic/30 hover:border-exclu-arsenic/50 bg-white/50 flex flex-col items-center justify-center gap-1.5 transition-colors"
+                        >
+                          {isUploadingExclusiveImage ? (
+                            <Loader2 className="w-5 h-5 text-exclu-space/50 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="w-5 h-5 text-exclu-space/50" />
+                              <span className="text-[11px] text-exclu-space/60">Upload cover image</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                     <Button
