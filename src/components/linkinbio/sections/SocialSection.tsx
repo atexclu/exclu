@@ -174,6 +174,16 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
       toast.success('Image uploaded!');
     } catch { toast.error('Upload failed'); } finally { setIsUploadingImage(false); }
   };
+
+  const handleImageRemove = async () => {
+    if (!userId) return;
+    // Delete all possible extensions from storage
+    const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+    const paths = extensions.map((ext) => `avatars/${userId}/exclusive-content.${ext}`);
+    await supabase.storage.from('avatars').remove(paths);
+    onUpdate({ exclusive_content_image_url: null });
+    toast.success('Image removed');
+  };
   const themeStyle = themeGradients[themeColor || 'pink'] || themeGradients.pink;
   const selectedLink = links.find((l) => l.id === exclusiveContentLinkId);
   // Track platforms being edited (just added with empty URL)
@@ -353,7 +363,7 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
               </div>
               <button
                 type="button"
-                onClick={() => onUpdate({ exclusive_content_image_url: null })}
+                onClick={handleImageRemove}
                 className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center"
               >
                 <X className="w-4 h-4" />

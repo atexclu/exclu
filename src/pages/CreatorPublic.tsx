@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, BadgeCheck } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin } from 'lucide-react';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import SplitText from '@/components/ui/SplitText';
@@ -48,42 +48,48 @@ interface CreatorLinkCard {
 }
 
 // Theme color configurations
-const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string }> = {
+const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string; stops: [string, string] }> = {
   pink: {
     gradient: 'from-pink-500 to-rose-500',
     button: 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600',
     ring: 'ring-pink-500/50',
     bg: 'rgba(236, 72, 153, 0.9)',
+    stops: ['#ec4899', '#f43f5e'],
   },
   purple: {
     gradient: 'from-purple-500 to-violet-500',
     button: 'bg-gradient-to-r from-purple-500 to-violet-500 hover:from-purple-600 hover:to-violet-600',
     ring: 'ring-purple-500/50',
     bg: 'rgba(139, 92, 246, 0.9)',
+    stops: ['#a855f7', '#8b5cf6'],
   },
   blue: {
     gradient: 'from-blue-500 to-cyan-500',
     button: 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600',
     ring: 'ring-blue-500/50',
     bg: 'rgba(59, 130, 246, 0.9)',
+    stops: ['#3b82f6', '#06b6d4'],
   },
   orange: {
     gradient: 'from-orange-500 to-amber-500',
     button: 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600',
     ring: 'ring-orange-500/50',
     bg: 'rgba(249, 115, 22, 0.9)',
+    stops: ['#f97316', '#f59e0b'],
   },
   green: {
     gradient: 'from-green-500 to-emerald-500',
     button: 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600',
     ring: 'ring-green-500/50',
     bg: 'rgba(34, 197, 94, 0.9)',
+    stops: ['#22c55e', '#10b981'],
   },
   red: {
     gradient: 'from-red-500 to-rose-600',
     button: 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700',
     ring: 'ring-red-500/50',
     bg: 'rgba(239, 68, 68, 0.9)',
+    stops: ['#ef4444', '#e11d48'],
   },
 };
 
@@ -310,7 +316,11 @@ const CreatorPublic = () => {
                 <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
                   {displayName}
                 </h1>
-                <BadgeCheck className={`w-5 h-5 flex-shrink-0 drop-shadow-lg`} style={{ color: theme.bg }} />
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0 drop-shadow-lg">
+                  <defs><linearGradient id="badge-grad-m" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={theme.stops[0]} /><stop offset="100%" stopColor={theme.stops[1]} /></linearGradient></defs>
+                  <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-m)" stroke="url(#badge-grad-m)" />
+                  <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                </svg>
               </div>
             </div>
           </>
@@ -373,7 +383,11 @@ const CreatorPublic = () => {
                 textAlign="center"
                 tag="h1"
               />
-              <BadgeCheck className="w-6 h-6 flex-shrink-0 drop-shadow-lg" style={{ color: theme.bg }} />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 flex-shrink-0 drop-shadow-lg">
+                <defs><linearGradient id="badge-grad-d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={theme.stops[0]} /><stop offset="100%" stopColor={theme.stops[1]} /></linearGradient></defs>
+                <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-d)" stroke="url(#badge-grad-d)" />
+                <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+              </svg>
             </div>
             {profile?.location && (
               <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
@@ -464,7 +478,7 @@ const CreatorPublic = () => {
             {!isLoading && activeTab === 'links' && (
               <>
                 {/* Exclusive content button */}
-                {profile?.exclusive_content_text && (
+                {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
                   <motion.button
                     type="button"
                     initial={{ opacity: 0, y: 10 }}
@@ -550,7 +564,7 @@ const CreatorPublic = () => {
                     );
                   })
                 ) : (
-                  !profile?.exclusive_content_text && (
+                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
                     <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
                       No exclusive content available yet.
                     </div>

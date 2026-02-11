@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, MapPin, BadgeCheck } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, MapPin } from 'lucide-react';
 import Aurora from '@/components/ui/Aurora';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import logo from '@/assets/logo-white.svg';
@@ -47,42 +47,48 @@ interface MobilePreviewProps {
   publicContent?: any[];
 }
 
-const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string }> = {
+const themeColors: Record<string, { gradient: string; button: string; ring: string; bg: string; stops: [string, string] }> = {
   pink: {
     gradient: 'from-pink-500 to-rose-500',
     button: 'bg-gradient-to-r from-pink-500 to-rose-500',
     ring: 'ring-pink-500/50',
     bg: 'rgba(236, 72, 153, 0.9)',
+    stops: ['#ec4899', '#f43f5e'],
   },
   purple: {
     gradient: 'from-purple-500 to-violet-500',
     button: 'bg-gradient-to-r from-purple-500 to-violet-500',
     ring: 'ring-purple-500/50',
     bg: 'rgba(139, 92, 246, 0.9)',
+    stops: ['#a855f7', '#8b5cf6'],
   },
   blue: {
     gradient: 'from-blue-500 to-cyan-500',
     button: 'bg-gradient-to-r from-blue-500 to-cyan-500',
     ring: 'ring-blue-500/50',
     bg: 'rgba(59, 130, 246, 0.9)',
+    stops: ['#3b82f6', '#06b6d4'],
   },
   orange: {
     gradient: 'from-orange-500 to-amber-500',
     button: 'bg-gradient-to-r from-orange-500 to-amber-500',
     ring: 'ring-orange-500/50',
     bg: 'rgba(249, 115, 22, 0.9)',
+    stops: ['#f97316', '#f59e0b'],
   },
   green: {
     gradient: 'from-green-500 to-emerald-500',
     button: 'bg-gradient-to-r from-green-500 to-emerald-500',
     ring: 'ring-green-500/50',
     bg: 'rgba(34, 197, 94, 0.9)',
+    stops: ['#22c55e', '#10b981'],
   },
   red: {
     gradient: 'from-red-500 to-rose-600',
     button: 'bg-gradient-to-r from-red-500 to-rose-600',
     ring: 'ring-red-500/50',
     bg: 'rgba(239, 68, 68, 0.9)',
+    stops: ['#ef4444', '#e11d48'],
   },
 };
 
@@ -177,7 +183,11 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
                     <div className="flex items-center gap-1">
                       <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
-                      <BadgeCheck className="w-4 h-4 flex-shrink-0 drop-shadow-lg" style={{ color: theme.bg }} />
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0 drop-shadow-lg">
+                        <defs><linearGradient id={`badge-grad-mp-${data.theme_color}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={theme.stops[0]} /><stop offset="100%" stopColor={theme.stops[1]} /></linearGradient></defs>
+                        <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill={`url(#badge-grad-mp-${data.theme_color})`} stroke={`url(#badge-grad-mp-${data.theme_color})`} />
+                        <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                      </svg>
                     </div>
                   </div>
                 </div>
@@ -269,7 +279,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {activeTab === 'links' && (
                     <div className="space-y-2">
                       {/* Exclusive content button */}
-                      {data.exclusive_content_text && (
+                      {data.exclusive_content_text && (data.exclusive_content_url || data.exclusive_content_link_id) && (
                         data.exclusive_content_image_url ? (
                           <div className="relative rounded-xl overflow-hidden border border-white/20 shadow-lg">
                             <img src={data.exclusive_content_image_url} alt="Exclusive" className="w-full h-28 object-cover" />
@@ -321,7 +331,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         );
                       })}
 
-                      {!data.exclusive_content_text && visibleLinks.length === 0 && (
+                      {!(data.exclusive_content_text && (data.exclusive_content_url || data.exclusive_content_link_id)) && visibleLinks.length === 0 && (
                         <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
                           No content links yet
                         </div>
