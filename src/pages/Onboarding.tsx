@@ -87,6 +87,7 @@ const Onboarding = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [exclusiveContentText, setExclusiveContentText] = useState('Exclusive content');
+  const [exclusiveContentUrl, setExclusiveContentUrl] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -150,7 +151,7 @@ const Onboarding = () => {
       // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
       const { data: fullProfile } = await supabase
         .from('profiles')
-        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text')
+        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text, exclusive_content_url')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -163,6 +164,9 @@ const Onboarding = () => {
 
       if (fullProfile?.exclusive_content_text) {
         setExclusiveContentText(fullProfile.exclusive_content_text);
+      }
+      if (fullProfile?.exclusive_content_url) {
+        setExclusiveContentUrl(fullProfile.exclusive_content_url);
       }
 
       const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
@@ -247,6 +251,12 @@ const Onboarding = () => {
       .some(([platform, url]) => activePlatforms[platform] && url.trim().length > 0);
     if (!hasAtLeastOneLink) {
       toast.error('Please add at least one external platform link.');
+      return;
+    }
+
+    // Validate exclusive content URL is provided
+    if (!exclusiveContentUrl.trim()) {
+      toast.error('Please enter a redirect URL for your exclusive content button.');
       return;
     }
 
@@ -335,6 +345,7 @@ const Onboarding = () => {
             social_links: socialLinksObj,
             avatar_url: finalAvatarUrl,
             exclusive_content_text: exclusiveContentText.trim() || null,
+            exclusive_content_url: exclusiveContentUrl.trim() || null,
           },
           { onConflict: 'id' }
         );
@@ -755,6 +766,16 @@ const Onboarding = () => {
                       maxLength={50}
                       className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
                     />
+                    <Input
+                      value={exclusiveContentUrl}
+                      onChange={(e) => setExclusiveContentUrl(e.target.value)}
+                      placeholder="https://your-link.com"
+                      required
+                      className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    />
+                    {!exclusiveContentUrl.trim() && (
+                      <p className="text-[11px] text-red-500">A redirect URL is required for the exclusive button.</p>
+                    )}
                     {/* Live preview */}
                     <div className="flex justify-center pt-1">
                       <div className="w-full h-12 rounded-full bg-gradient-to-r from-pink-500 via-rose-400 to-pink-500 flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20">

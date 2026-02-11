@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Palette, Link2, Image, ShieldCheck } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Palette, Link2, Image, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
@@ -29,7 +29,7 @@ const navItems: NavItem[] = [
 ];
 
 const AppShell = ({ children, rightActions }: AppShellProps) => {
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -145,6 +145,22 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
           )}
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Dark/Light mode toggle — desktop only */}
+            <motion.button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="hidden sm:flex items-center justify-center w-9 h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Toggle theme"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              {resolvedTheme === 'dark' ? (
+                <Sun className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <Moon className="w-4 h-4 text-muted-foreground" />
+              )}
+            </motion.button>
             <Link
               to="/app/settings"
               className="group relative"
