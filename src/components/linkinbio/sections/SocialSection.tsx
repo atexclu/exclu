@@ -53,13 +53,13 @@ interface SocialSectionProps {
   onUpdate: (updates: Partial<{ social_links: Record<string, string>; exclusive_content_text: string | null; exclusive_content_link_id: string | null; exclusive_content_url: string | null; exclusive_content_image_url: string | null }>) => void;
 }
 
-const themeGradients: Record<string, { gradient: string; shadow: string }> = {
-  pink: { gradient: 'from-pink-500 via-rose-400 to-pink-500', shadow: 'shadow-pink-500/20' },
-  purple: { gradient: 'from-purple-500 via-violet-400 to-purple-500', shadow: 'shadow-purple-500/20' },
-  blue: { gradient: 'from-blue-500 via-cyan-400 to-blue-500', shadow: 'shadow-blue-500/20' },
-  orange: { gradient: 'from-orange-500 via-amber-400 to-orange-500', shadow: 'shadow-orange-500/20' },
-  green: { gradient: 'from-green-500 via-emerald-400 to-green-500', shadow: 'shadow-green-500/20' },
-  red: { gradient: 'from-red-500 via-rose-400 to-red-500', shadow: 'shadow-red-500/20' },
+const themeGradients: Record<string, { stops: [string, string]; shadowColor: string }> = {
+  pink: { stops: ['#ec4899', '#f43f5e'], shadowColor: 'rgba(236,72,153,0.2)' },
+  purple: { stops: ['#a855f7', '#8b5cf6'], shadowColor: 'rgba(139,92,246,0.2)' },
+  blue: { stops: ['#3b82f6', '#06b6d4'], shadowColor: 'rgba(59,130,246,0.2)' },
+  orange: { stops: ['#f97316', '#f59e0b'], shadowColor: 'rgba(249,115,22,0.2)' },
+  green: { stops: ['#22c55e', '#10b981'], shadowColor: 'rgba(34,197,94,0.2)' },
+  red: { stops: ['#ef4444', '#e11d48'], shadowColor: 'rgba(239,68,68,0.2)' },
 };
 
 const socialPlatforms = [
@@ -395,7 +395,7 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
         {!exclusiveContentImageUrl && (
           <>
             <div className="flex justify-center pt-2">
-              <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-center gap-2 shadow-lg ${themeStyle.shadow}`}>
+              <div className="w-full h-12 rounded-full flex items-center justify-center gap-2 shadow-lg" style={{ background: `linear-gradient(to right, ${themeStyle.stops[0]}, ${themeStyle.stops[1]})`, boxShadow: `0 10px 15px -3px ${themeStyle.shadowColor}` }}>
                 <Lock className="w-4 h-4 text-white" />
                 <span className="text-sm font-bold text-white truncate max-w-[200px]">
                   {exclusiveContentText || 'Exclusive content'}
@@ -413,7 +413,7 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
       {exclusiveContentText && selectedLink && (
         <div className="rounded-xl border border-border bg-card p-4 space-y-2">
           <h3 className="text-sm font-semibold text-foreground">Exclusive Link</h3>
-          <div className={`w-full h-12 rounded-full bg-gradient-to-r ${themeStyle.gradient} flex items-center justify-between px-5 ${themeStyle.shadow} shadow-lg`}>
+          <div className="w-full h-12 rounded-full flex items-center justify-between px-5 shadow-lg" style={{ background: `linear-gradient(to right, ${themeStyle.stops[0]}, ${themeStyle.stops[1]})`, boxShadow: `0 10px 15px -3px ${themeStyle.shadowColor}` }}>
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-white" />
               <span className="text-sm font-bold text-white truncate max-w-[160px]">

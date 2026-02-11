@@ -503,8 +503,9 @@ const CreatorPublic = () => {
                     }}
                     className={profile.exclusive_content_image_url
                       ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative'
-                      : `w-full h-14 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg transition-shadow`
+                      : 'w-full h-14 rounded-full flex items-center justify-center gap-2 shadow-lg transition-shadow'
                     }
+                    style={!profile.exclusive_content_image_url ? { background: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` } : undefined}
                   >
                     {profile.exclusive_content_image_url ? (
                       <>
@@ -555,7 +556,7 @@ const CreatorPublic = () => {
                           <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-sm font-bold bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>
+                          <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` }}>
                             {priceLabel}
                           </span>
                           <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />

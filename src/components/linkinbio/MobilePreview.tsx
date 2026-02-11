@@ -295,7 +295,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             </div>
                           </div>
                         ) : (
-                          <div className={`w-full h-12 rounded-full ${theme.button} flex items-center justify-center gap-2 shadow-lg`}>
+                          <div className="w-full h-12 rounded-full flex items-center justify-center gap-2 shadow-lg" style={{ background: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` }}>
                             <Lock className="w-3.5 h-3.5 text-white" />
                             <span className="text-xs font-bold text-white truncate max-w-[160px]">
                               {data.exclusive_content_text}
@@ -322,7 +322,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                               <span className="text-white text-sm font-medium truncate max-w-[140px]">{link.title}</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className={`text-xs font-bold bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>
+                              <span className="text-xs font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${theme.stops[0]}, ${theme.stops[1]})` }}>
                                 {priceLabel}
                               </span>
                               <ArrowUpRight className="w-3.5 h-3.5 text-white/60" />
