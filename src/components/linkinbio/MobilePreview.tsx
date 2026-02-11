@@ -167,7 +167,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
               {/* Content */}
               <div className="relative z-[1] pt-11">
                 {/* Avatar - Full Width with gradient overlay */}
-                <div className="relative w-full h-64">
+                <div className="relative w-full aspect-square">
                   {data.avatar_url ? (
                     <img src={data.avatar_url} alt={displayName} className="w-full h-full object-cover" />
                   ) : (

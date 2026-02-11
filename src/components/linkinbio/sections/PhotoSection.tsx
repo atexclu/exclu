@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Camera, Upload, X } from 'lucide-react';
+import { Camera, Upload, X, ZoomIn, ZoomOut, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import Cropper, { Area } from 'react-easy-crop';
 
 interface PhotoSectionProps {
   avatarUrl: string | null;
@@ -11,36 +12,77 @@ interface PhotoSectionProps {
   onUpdate: (updates: { avatar_url: string | null }) => void;
 }
 
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = reject;
+    image.src = imageSrc;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(
+    image,
+    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, pixelCrop.width, pixelCrop.height,
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Canvas toBlob failed'));
+    }, 'image/jpeg', 0.92);
+  });
+}
+
 export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (!file || !userId) return;
+  // Crop state
+  const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
 
-    // Validate file size (max 5MB)
+  const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
+    setCroppedAreaPixels(croppedPixels);
+  }, []);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File size must be less than 5MB');
       return;
     }
-
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload an image file (JPG, PNG, WebP)');
       return;
     }
 
+    const objectUrl = URL.createObjectURL(file);
+    setRawImageUrl(objectUrl);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+  }, []);
+
+  const handleConfirmCrop = async () => {
+    if (!rawImageUrl || !croppedAreaPixels || !userId) return;
     setIsUploading(true);
 
     try {
-      const fileExt = file.name.split('.').pop() ?? 'jpg';
-      const filePath = `avatars/${userId}/avatar.${fileExt}`;
+      const croppedBlob = await getCroppedImg(rawImageUrl, croppedAreaPixels);
+      const filePath = `avatars/${userId}/avatar.jpg`;
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, croppedBlob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
 
       if (uploadError) {
         console.error('Avatar upload error', uploadError);
@@ -48,13 +90,12 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
         return;
       }
 
-      // Get public URL
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
       const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
 
-      // Update local state
       onUpdate({ avatar_url: newAvatarUrl });
       setPreviewUrl(newAvatarUrl);
+      setRawImageUrl(null);
       toast.success('Avatar uploaded successfully!');
     } catch (err) {
       console.error('Error uploading avatar', err);
@@ -62,15 +103,18 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
     } finally {
       setIsUploading(false);
     }
-  }, [userId, onUpdate]);
+  };
+
+  const handleCancelCrop = () => {
+    if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
+    setRawImageUrl(null);
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'image/*': ['.jpg', '.jpeg', '.png', '.webp'],
-    },
+    accept: { 'image/*': ['.jpg', '.jpeg', '.png', '.webp'] },
     maxFiles: 1,
-    disabled: isUploading,
+    disabled: isUploading || !!rawImageUrl,
   });
 
   const handleRemove = () => {
@@ -80,6 +124,67 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
   };
 
   const currentAvatar = previewUrl || avatarUrl;
+
+  // Crop mode
+  if (rawImageUrl) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm font-semibold text-foreground text-center">Adjust your photo</p>
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black">
+          <Cropper
+            image={rawImageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="rect"
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+        </div>
+        <div className="flex items-center gap-3 px-2">
+          <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <input
+            type="range"
+            min={1}
+            max={3}
+            step={0.05}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="flex-1 accent-primary h-1.5"
+          />
+          <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        </div>
+        <div className="flex gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 rounded-full"
+            onClick={handleCancelCrop}
+            disabled={isUploading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="hero"
+            className="flex-1 rounded-full"
+            onClick={handleConfirmCrop}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Confirm
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -155,8 +260,6 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
           )}
         </div>
       </div>
-
-      {/* Tips */}
     </div>
   );
 }
