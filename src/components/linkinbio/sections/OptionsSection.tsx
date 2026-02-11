@@ -1,16 +1,17 @@
 import { Switch } from '@/components/ui/switch';
-import { Sparkles, Crown, Palette, BadgeCheck } from 'lucide-react';
+import { Sparkles, Crown, Palette, BadgeCheck, Smartphone } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
   showJoinBanner: boolean;
   showCertification: boolean;
+  showDeeplinks: boolean;
   isPremium: boolean;
   auroraGradient?: string;
-  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; aurora_gradient?: string }) => void;
+  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; aurora_gradient?: string }) => void;
 }
 
-export function OptionsSection({ showJoinBanner, showCertification, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
+export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
   return (
     <div className="space-y-6">
       {/* Profile Gradient Color */}
@@ -94,6 +95,30 @@ export function OptionsSection({ showJoinBanner, showCertification, isPremium, a
             <Switch
               checked={showCertification}
               onCheckedChange={(checked) => onUpdate({ show_certification: checked })}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Deep Links (Premium Only) */}
+      {isPremium && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-foreground">Deep Links</h3>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-[10px] text-primary font-medium">
+                  <Crown className="w-3 h-3" />
+                  Premium
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                On mobile, social links open directly in their native app instead of the browser
+              </p>
+            </div>
+            <Switch
+              checked={showDeeplinks}
+              onCheckedChange={(checked) => onUpdate({ show_deeplinks: checked })}
             />
           </div>
         </div>

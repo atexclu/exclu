@@ -33,6 +33,7 @@ interface CreatorProfileData {
   is_creator_subscribed?: boolean | null;
   show_join_banner?: boolean | null;
   show_certification?: boolean | null;
+  show_deeplinks?: boolean | null;
   exclusive_content_text?: string | null;
   exclusive_content_link_id?: string | null;
   exclusive_content_url?: string | null;
@@ -85,7 +86,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -185,10 +186,10 @@ const CreatorPublic = () => {
 
   const handleSocialClick = (url: string) => {
     if (!url) return;
-    // On mobile, navigate directly so the OS can intercept and open the native app (deep link).
-    // window.open with _blank can prevent deep linking on some mobile browsers.
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
+    const deeplinksEnabled = profile?.is_creator_subscribed && profile?.show_deeplinks !== false;
+    if (isMobile && deeplinksEnabled) {
+      // Navigate directly so the OS can intercept and open the native app (deep link).
       window.location.href = url;
     } else {
       window.open(url, '_blank', 'noopener,noreferrer');
