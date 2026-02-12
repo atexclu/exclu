@@ -138,10 +138,12 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/20 to-black/60" />
                   {/* Shadow at bottom of image - fading up */}
                   <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
+                  {/* Bottom shadow overlay (100% black -> 0% over 150px) */}
+                  <div className="absolute inset-x-0 bottom-0 h-[150px] bg-gradient-to-t from-black to-transparent pointer-events-none z-10" />
                   {/* Name overlay on image */}
-                  <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-30">
+                  <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-30 translate-y-[12px]">
                     <div className="flex items-center gap-1">
-                      <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
+                      <h1 className="text-lg font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
                       {data.show_certification !== false && (
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0 drop-shadow-lg">
                           <defs><linearGradient id={`badge-grad-mp-${data.aurora_gradient}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
@@ -153,7 +155,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
 
                     {/* Social Links: placed under creator name (like public profile) */}
                     {activeSocials.length > 0 && (
-                      <div className="mt-4 flex justify-center gap-3">
+                      <div className="mt-3 flex justify-center gap-2.5">
                         {activeSocials.map(([platform, url]) => {
                           const platformConfig = socialPlatforms[platform];
                           if (!platformConfig) return null;
@@ -171,7 +173,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                               onClick={handleClick}
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.95 }}
-                              className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/20 cursor-pointer"
+                              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/20 cursor-pointer"
                             >
                               <span className="text-white text-xs">{platformConfig.icon}</span>
                             </motion.button>

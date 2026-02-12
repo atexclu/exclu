@@ -99,7 +99,73 @@ async function sendContentAccessEmail(toEmail: string, linkTitle: string, access
   return false;
 }
 
-serve(async (req) => {
+async function sendStripeVerifiedEmail(toEmail: string, displayName: string | null, paymentsUrl: string | null): Promise<boolean> {
+  if (!brevoApiKey || !brevoSenderEmail) {
+    console.warn('Brevo not configured (BREVO_API_KEY or BREVO_SENDER_EMAIL missing); skipping email send');
+    return false;
+  }
+
+  const safeName = displayName?.trim() || 'creator';
+  const subject = 'Your Stripe account is verified — payouts are ready';
+  const ctaUrl = paymentsUrl || 'https://exclu.at';
+  const htmlContent = `
+    <html>
+      <body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #050816; color: #f9fafb; padding: 24px;">
+        <div style="max-width: 480px; margin: 0 auto; background-color: #020617; border-radius: 16px; padding: 24px; border: 1px solid #1f2937;">
+          <h1 style="font-size: 20px; margin: 0 0 12px 0;">Stripe verification complete ✅</h1>
+          <p style="font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
+            Hi ${safeName}, your Stripe Connect account has been verified and is now active. You can receive payouts from fans.
+          </p>
+          <p style="margin: 0 0 20px 0;">
+            <a href="${ctaUrl}" style="display: inline-block; padding: 10px 18px; background-color: #f97316; color: #0b1120; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Open payout settings</a>
+          </p>
+          <p style="font-size: 12px; line-height: 1.6; color: #9ca3af; margin: 0;">
+            If you didn't request this, you can ignore this email.
+          </p>
+        </div>
+        <p style="font-size: 11px; color: #4b5563; margin-top: 16px; text-align: center;">
+          Sent by Exclu · Please do not reply directly to this automated email.
+        </p>
+      </body>
+    </html>
+  `;
+
+  const payload = JSON.stringify({
+    sender: { email: brevoSenderEmail, name: brevoSenderName },
+    to: [{ email: toEmail }],
+    subject,
+    htmlContent,
+  });
+
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': brevoApiKey, 'Content-Type': 'application/json' },
+        body: payload,
+      });
+
+      if (response.ok) {
+        console.log(`Brevo email sent to ${toEmail} (attempt ${attempt})`);
+        return true;
+      }
+
+      const errorBody = await response.text();
+      console.error(`Brevo email failed (attempt ${attempt}/${MAX_ATTEMPTS})`, response.status, errorBody);
+    } catch (err) {
+      console.error(`Brevo email error (attempt ${attempt}/${MAX_ATTEMPTS})`, err);
+    }
+
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
+  return false;
+}
+
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200 });
   }
@@ -274,6 +340,21 @@ serve(async (req) => {
             connectStatus = 'restricted';
           }
 
+          // Load previous status + email flag so we can send an email exactly once when the
+          // account becomes active.
+          const { data: existingProfile, error: profileLoadError } = await supabase
+            .from('profiles')
+            .select('stripe_connect_status, stripe_verified_email_sent_at, display_name')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (profileLoadError) {
+            console.error('Error loading profile for Connect status update:', profileLoadError);
+          }
+
+          const previousStatus = existingProfile?.stripe_connect_status ?? null;
+          const emailAlreadySent = Boolean(existingProfile?.stripe_verified_email_sent_at);
+
           const { error: updateError } = await supabase
             .from('profiles')
             .update({ stripe_connect_status: connectStatus })
@@ -283,6 +364,45 @@ serve(async (req) => {
             console.error('Error updating Connect status:', updateError);
           } else {
             console.log('Connect status updated for user:', userId, 'status:', connectStatus);
+          }
+
+          const becameComplete = connectStatus === 'complete' && previousStatus !== 'complete';
+
+          if (becameComplete && !emailAlreadySent) {
+            try {
+              const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(userId);
+              if (authError) {
+                console.error('Error loading auth user for Stripe verified email:', authError);
+              }
+
+              const creatorEmail = authUser?.user?.email ?? null;
+              if (!creatorEmail) {
+                console.warn('No creator email found; skipping Stripe verified email for user:', userId);
+                break;
+              }
+
+              const base = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
+              const paymentsUrl = `${base}/app/profile#payments`;
+
+              const emailSent = await sendStripeVerifiedEmail(
+                creatorEmail,
+                existingProfile?.display_name ?? null,
+                paymentsUrl,
+              );
+
+              if (emailSent) {
+                const { error: emailFlagError } = await supabase
+                  .from('profiles')
+                  .update({ stripe_verified_email_sent_at: new Date().toISOString() })
+                  .eq('id', userId);
+
+                if (emailFlagError) {
+                  console.error('Error setting stripe_verified_email_sent_at:', emailFlagError);
+                }
+              }
+            } catch (emailErr) {
+              console.error('Error sending Stripe verified email:', emailErr);
+            }
           }
         }
         break;
