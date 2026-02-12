@@ -345,10 +345,14 @@ const CreateLink = () => {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">
-                  Connect Stripe to start selling
+                  {stripeConnectStatus === 'restricted'
+                    ? 'Your Stripe account is restricted'
+                    : 'Connect Stripe to start selling'}
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Connect your Stripe account to create and sell paid content links.
+                  {stripeConnectStatus === 'restricted'
+                    ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
+                    : 'Connect your Stripe account to create and sell paid content links.'}
                 </p>
                 <Button
                   variant="hero"
@@ -357,7 +361,11 @@ const CreateLink = () => {
                   className="rounded-full"
                 >
                   <CreditCard className="w-4 h-4 mr-2" />
-                  {isConnecting ? 'Loading...' : 'Connect Stripe'}
+                  {isConnecting
+                    ? 'Loading...'
+                    : stripeConnectStatus === 'restricted'
+                      ? 'Review Stripe setup'
+                      : 'Connect Stripe'}
                 </Button>
               </div>
             </div>

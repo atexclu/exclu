@@ -813,9 +813,15 @@ const AppDashboard = () => {
               <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
-                    <p className="text-sm font-semibold text-yellow-400 mb-1">Connect Stripe to receive payouts</p>
+                    <p className="text-sm font-semibold text-yellow-400 mb-1">
+                      {stripeConnectStatus === 'restricted'
+                        ? 'Your Stripe account is restricted'
+                        : 'Connect Stripe to receive payouts'}
+                    </p>
                     <p className="text-xs text-yellow-400/70">
-                      You need to connect your Stripe account to withdraw your earnings. It only takes a few minutes.
+                      {stripeConnectStatus === 'restricted'
+                        ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
+                        : 'You need to connect your Stripe account to withdraw your earnings. It only takes a few minutes.'}
                     </p>
                   </div>
                   <Button
@@ -832,7 +838,7 @@ const AppDashboard = () => {
                     ) : (
                       <span className="flex items-center gap-2">
                         <ExternalLink className="w-4 h-4" />
-                        Connect Stripe
+                        {stripeConnectStatus === 'restricted' ? 'Review Stripe setup' : 'Connect Stripe'}
                       </span>
                     )}
                   </Button>

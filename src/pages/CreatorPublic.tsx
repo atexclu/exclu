@@ -313,10 +313,10 @@ const CreatorPublic = () => {
 
       <main className="relative z-10 flex-1 flex flex-col px-4 pt-10 pb-24 sm:pt-12 sm:pb-10">
         {/* Inner shadow at top - mobile: black to transparent over 150px */}
-        <div className="sm:hidden absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-20" />
+        <div className="sm:hidden absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
         {/* Inner shadow at top - desktop */}
-        <div className="hidden sm:block absolute inset-x-0 top-0 h-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
-        <div className="max-w-md mx-auto w-full flex flex-col flex-1">
+        <div className="hidden sm:block absolute inset-x-0 top-0 h-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-0" />
+        <div className="max-w-md mx-auto w-full flex flex-col flex-1 relative z-10">
           {/* Profile Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}

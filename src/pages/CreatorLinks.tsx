@@ -37,6 +37,7 @@ const CreatorLinks = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const navigate = useNavigate();
 
@@ -95,6 +96,7 @@ const CreatorLinks = () => {
       }
 
       const connectStatus = profile?.stripe_connect_status ?? null;
+      setStripeConnectStatus(connectStatus);
       const hasStripeAccount = !!profile?.stripe_account_id;
       const isConnectComplete = connectStatus === 'complete';
       const canCreate = hasStripeAccount && isConnectComplete;
@@ -276,10 +278,14 @@ const CreatorLinks = () => {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">
-                  Connect Stripe to manage paid links
+                  {stripeConnectStatus === 'restricted'
+                    ? 'Your Stripe account is restricted'
+                    : 'Connect Stripe to manage paid links'}
                 </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Connect your Stripe account to create and sell paid content links on your profile.
+                  {stripeConnectStatus === 'restricted'
+                    ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
+                    : 'Connect your Stripe account to create and sell paid content links on your profile.'}
                 </p>
                 <Button
                   variant="hero"
@@ -288,7 +294,11 @@ const CreatorLinks = () => {
                   className="rounded-full"
                 >
                   <CreditCard className="w-4 h-4 mr-2" />
-                  {isConnecting ? 'Loading...' : 'Connect Stripe'}
+                  {isConnecting
+                    ? 'Loading...'
+                    : stripeConnectStatus === 'restricted'
+                      ? 'Review Stripe setup'
+                      : 'Connect Stripe'}
                 </Button>
               </div>
             </div>

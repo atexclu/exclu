@@ -80,6 +80,7 @@ const LinkInBioEditor = () => {
   const [publicContent, setPublicContent] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
+  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'colors'>('photo');
 
@@ -117,6 +118,7 @@ const LinkInBioEditor = () => {
         // Check Stripe connection status - both account ID and complete status required
         const hasStripeAccount = Boolean(profile.stripe_account_id);
         const isStripeComplete = profile.stripe_connect_status === 'complete';
+        setStripeConnectStatus(profile.stripe_connect_status ?? null);
         setStripeConnected(hasStripeAccount && isStripeComplete);
         
         const dataToLoad: LinkInBioData = {
@@ -409,10 +411,14 @@ const LinkInBioEditor = () => {
                             </div>
                             <div>
                               <h3 className="text-lg font-semibold text-foreground mb-2">
-                                Connect Stripe to manage paid links
+                                {stripeConnectStatus === 'restricted'
+                                  ? 'Your Stripe account is restricted'
+                                  : 'Connect Stripe to manage paid links'}
                               </h3>
                               <p className="text-sm text-muted-foreground mb-4">
-                                Connect your Stripe account to create and sell paid content links on your profile.
+                                {stripeConnectStatus === 'restricted'
+                                  ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
+                                  : 'Connect your Stripe account to create and sell paid content links on your profile.'}
                               </p>
                               <Button
                                 variant="hero"
@@ -444,7 +450,11 @@ const LinkInBioEditor = () => {
                                 className="rounded-full"
                               >
                                 <CreditCard className="w-4 h-4 mr-2" />
-                                {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
+                                {isStripeLoading
+                                  ? 'Loading...'
+                                  : stripeConnectStatus === 'restricted'
+                                    ? 'Review Stripe setup'
+                                    : 'Connect Stripe'}
                               </Button>
                             </div>
                           </div>
