@@ -170,10 +170,10 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                           <span className="mx-1">·</span>
                         )}
                         {data.show_available_now && (
-                          <span className="inline-flex items-center gap-1 text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-white">
                             <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: gradientStops[0] }} />
+                              <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: gradientStops[0] }} />
                             </span>
                             Available now
                           </span>

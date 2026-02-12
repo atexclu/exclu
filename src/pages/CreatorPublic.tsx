@@ -268,8 +268,10 @@ const CreatorPublic = () => {
             />
             {/* Soft dark overlay */}
             <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/80" />
+            {/* Bottom shadow overlay (100% black -> 0% over 150px) */}
+            <div className="absolute inset-x-0 bottom-0 h-[150px] bg-gradient-to-t from-black to-transparent pointer-events-none z-10" />
             {/* Name overlay */}
-            <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
+            <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-20 translate-y-[20px]">
               <div className="flex items-center gap-1.5">
                 <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
                   {displayName}
@@ -282,6 +284,28 @@ const CreatorPublic = () => {
                   </svg>
                 )}
               </div>
+
+              {/* Social Links (mobile only): placed under creator name */}
+              {activeSocials.length > 0 && (
+                <div className="mt-4 flex justify-center gap-3">
+                  {activeSocials.map(([platform, url]) => {
+                    const platformConfig = socialPlatforms[platform];
+                    if (!platformConfig) return null;
+                    return (
+                      <motion.button
+                        key={platform}
+                        type="button"
+                        onClick={() => handleSocialClick(url)}
+                        whileTap={{ scale: 0.95 }}
+                        className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 active:ring-white/60 transition-all"
+                        title={platformConfig.label}
+                      >
+                        <span className="text-white">{platformConfig.icon}</span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -289,9 +313,9 @@ const CreatorPublic = () => {
 
       <main className="relative z-10 flex-1 flex flex-col px-4 pt-10 pb-24 sm:pt-12 sm:pb-10">
         {/* Inner shadow at top - mobile: black to transparent over 150px */}
-        <div className="sm:hidden absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black to-transparent pointer-events-none z-20" />
+        <div className="sm:hidden absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-20" />
         {/* Inner shadow at top - desktop */}
-        <div className="hidden sm:block absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
+        <div className="hidden sm:block absolute inset-x-0 top-0 h-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-20" />
         <div className="max-w-md mx-auto w-full flex flex-col flex-1">
           {/* Profile Section */}
           <motion.div
@@ -363,10 +387,10 @@ const CreatorPublic = () => {
                   <span className="mx-1">·</span>
                 )}
                 {profile?.show_available_now && (
-                  <span className="inline-flex items-center gap-1 text-emerald-400">
+                  <span className="inline-flex items-center gap-1 text-white">
                     <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: gradientStops[0] }} />
+                      <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: gradientStops[0] }} />
                     </span>
                     Available now
                   </span>
@@ -377,29 +401,27 @@ const CreatorPublic = () => {
               <p className="text-sm text-white/90 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
             )}
 
-            {/* Social Links - Story bubbles style */}
+            {/* Social Links - Story bubbles style (desktop only) */}
             {activeSocials.length > 0 && (
-              <>
-                <div className="flex justify-center gap-3 mb-4">
-                  {activeSocials.map(([platform, url]) => {
-                    const platformConfig = socialPlatforms[platform];
-                    if (!platformConfig) return null;
-                    return (
-                      <motion.button
-                        key={platform}
-                        type="button"
-                        onClick={() => handleSocialClick(url)}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all"
-                        title={platformConfig.label}
-                      >
-                        <span className="text-white">{platformConfig.icon}</span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </>
+              <div className="hidden sm:flex justify-center gap-3 mb-4">
+                {activeSocials.map(([platform, url]) => {
+                  const platformConfig = socialPlatforms[platform];
+                  if (!platformConfig) return null;
+                  return (
+                    <motion.button
+                      key={platform}
+                      type="button"
+                      onClick={() => handleSocialClick(url)}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all"
+                      title={platformConfig.label}
+                    >
+                      <span className="text-white">{platformConfig.icon}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
             )}
 
             {/* Tabs Links/Content */}
@@ -447,7 +469,7 @@ const CreatorPublic = () => {
           </motion.div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-y-auto space-y-3">
+          <div className="flex-1 space-y-3">
             {isLoading && (
               <p className="text-sm text-white/60 text-center py-4">Loading content…</p>
             )}
@@ -480,7 +502,7 @@ const CreatorPublic = () => {
                       if (targetLink) handleLinkClick(targetLink);
                     }}
                     className={profile.exclusive_content_image_url
-                      ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative'
+                      ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative select-none'
                       : 'w-full h-14 rounded-full flex items-center justify-center gap-2 shadow-lg transition-shadow'
                     }
                     style={!profile.exclusive_content_image_url ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}
