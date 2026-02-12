@@ -188,7 +188,7 @@ const CreatorPublic = () => {
   const handleSocialClick = (url: string) => {
     if (!url) return;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const deeplinksEnabled = profile?.is_creator_subscribed && profile?.show_deeplinks !== false;
+    const deeplinksEnabled = profile?.is_creator_subscribed === true && profile?.show_deeplinks === true;
     if (isMobile && deeplinksEnabled) {
       // Navigate directly so the OS can intercept and open the native app (deep link).
       window.location.href = url;
