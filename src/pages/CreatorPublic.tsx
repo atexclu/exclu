@@ -376,7 +376,7 @@ const CreatorPublic = () => {
               )}
             </div>
             {(profile?.location || profile?.show_available_now) && (
-              <p className="text-xs text-white/80 mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
+              <p className="text-xs text-white mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
                 {profile?.location && (
                   <>
                     <MapPin className="w-3 h-3" />
@@ -398,7 +398,7 @@ const CreatorPublic = () => {
               </p>
             )}
             {profile?.bio && (
-              <p className="text-sm text-white/90 max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
+              <p className="text-sm text-white max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
             )}
 
             {/* Social Links - Story bubbles style (desktop only) */}

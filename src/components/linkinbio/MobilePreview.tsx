@@ -139,7 +139,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {/* Shadow at bottom of image - fading up */}
                   <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
                   {/* Name overlay on image */}
-                  <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center">
+                  <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-30">
                     <div className="flex items-center gap-1">
                       <h1 className="text-xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
                       {data.show_certification !== false && (
@@ -150,6 +150,35 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         </svg>
                       )}
                     </div>
+
+                    {/* Social Links: placed under creator name (like public profile) */}
+                    {activeSocials.length > 0 && (
+                      <div className="mt-4 flex justify-center gap-3">
+                        {activeSocials.map(([platform, url]) => {
+                          const platformConfig = socialPlatforms[platform];
+                          if (!platformConfig) return null;
+
+                          const handleClick = () => {
+                            if (url) {
+                              window.open(url, '_blank', 'noopener,noreferrer');
+                            }
+                          };
+
+                          return (
+                            <motion.button
+                              key={platform}
+                              type="button"
+                              onClick={handleClick}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/20 cursor-pointer"
+                            >
+                              <span className="text-white text-xs">{platformConfig.icon}</span>
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -159,7 +188,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {/* Location & Bio */}
                   <div className="relative z-10 text-center mb-4 pt-6">
                     {(data.location || data.show_available_now) && (
-                      <p className="text-xs text-white/80 mb-2 flex items-center justify-center gap-1">
+                      <p className="text-xs text-white mb-2 flex items-center justify-center gap-1">
                         {data.location && (
                           <>
                             <MapPin className="w-3 h-3" />
@@ -180,39 +209,8 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         )}
                       </p>
                     )}
-                    {data.bio && <p className="text-sm text-white/90 max-w-xs mx-auto mb-4">{data.bio}</p>}
+                    {data.bio && <p className="text-sm text-white max-w-xs mx-auto mb-4">{data.bio}</p>}
                   </div>
-
-                  {/* Social Links - Horizontal scrollable bubbles */}
-                  {activeSocials.length > 0 && (
-                    <div className="mb-4 -mx-4 px-4 pt-2">
-                      <div className="flex gap-3 justify-center overflow-x-auto scrollbar-hide pb-2">
-                        {activeSocials.map(([platform, url]) => {
-                          const platformConfig = socialPlatforms[platform];
-                          if (!platformConfig) return null;
-                          
-                          const handleClick = () => {
-                            if (url) {
-                              window.open(url, '_blank', 'noopener,noreferrer');
-                            }
-                          };
-                          
-                          return (
-                            <motion.button
-                              key={platform}
-                              type="button"
-                              onClick={handleClick}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.95 }}
-                              className="flex-shrink-0 w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/20 cursor-pointer"
-                            >
-                              <span className="text-white text-xs">{platformConfig.icon}</span>
-                            </motion.button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Tabs Links/Content */}
                   {(visibleLinks.length > 0 || publicContent.length > 0) && (
