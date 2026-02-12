@@ -55,7 +55,7 @@ BEGIN
       GROUP BY table_name
       HAVING COUNT(*) = 4
     ) THEN
-      EXECUTE $$
+      EXECUTE $sql$
         UPDATE public.profiles
         SET
           show_join_banner = true,
@@ -63,9 +63,9 @@ BEGIN
           show_deeplinks = false,
           show_available_now = false
         WHERE COALESCE(is_creator_subscribed, false) = false;
-      $$;
+      $sql$;
 
-      EXECUTE $$
+      EXECUTE $sql$
         UPDATE public.profiles
         SET
           show_join_banner = false,
@@ -73,7 +73,7 @@ BEGIN
           show_deeplinks = true,
           show_available_now = true
         WHERE is_creator_subscribed = true;
-      $$;
+      $sql$;
     END IF;
   END IF;
 END $$;
