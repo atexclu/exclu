@@ -270,9 +270,29 @@ serve(async (req: Request) => {
         if (session.mode === 'subscription' && session.metadata?.supabase_user_id) {
           const userId = session.metadata.supabase_user_id;
 
+          const { data: existingProfile, error: existingProfileError } = await supabase
+            .from('profiles')
+            .select('is_creator_subscribed')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (existingProfileError) {
+            console.error('Error loading profile for subscription activation:', existingProfileError);
+          }
+
+          const wasSubscribed = existingProfile?.is_creator_subscribed === true;
+
+          const updatePayload: Record<string, unknown> = { is_creator_subscribed: true };
+          if (!wasSubscribed) {
+            updatePayload.show_join_banner = false;
+            updatePayload.show_certification = true;
+            updatePayload.show_deeplinks = true;
+            updatePayload.show_available_now = true;
+          }
+
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ is_creator_subscribed: true })
+            .update(updatePayload)
             .eq('id', userId);
 
           if (updateError) {
@@ -292,9 +312,35 @@ serve(async (req: Request) => {
         if (userId) {
           const isActive = ['active', 'trialing'].includes(subscription.status);
 
+          const { data: existingProfile, error: existingProfileError } = await supabase
+            .from('profiles')
+            .select('is_creator_subscribed')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (existingProfileError) {
+            console.error('Error loading profile for subscription update:', existingProfileError);
+          }
+
+          const wasSubscribed = existingProfile?.is_creator_subscribed === true;
+
+          const updatePayload: Record<string, unknown> = { is_creator_subscribed: isActive };
+          if (isActive && !wasSubscribed) {
+            updatePayload.show_join_banner = false;
+            updatePayload.show_certification = true;
+            updatePayload.show_deeplinks = true;
+            updatePayload.show_available_now = true;
+          }
+          if (!isActive && wasSubscribed) {
+            updatePayload.show_join_banner = true;
+            updatePayload.show_certification = false;
+            updatePayload.show_deeplinks = false;
+            updatePayload.show_available_now = false;
+          }
+
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ is_creator_subscribed: isActive })
+            .update(updatePayload)
             .eq('id', userId);
 
           if (updateError) {
@@ -312,9 +358,29 @@ serve(async (req: Request) => {
         const userId = subscription.metadata?.supabase_user_id;
 
         if (userId) {
+          const { data: existingProfile, error: existingProfileError } = await supabase
+            .from('profiles')
+            .select('is_creator_subscribed')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (existingProfileError) {
+            console.error('Error loading profile for subscription deletion:', existingProfileError);
+          }
+
+          const wasSubscribed = existingProfile?.is_creator_subscribed === true;
+
+          const updatePayload: Record<string, unknown> = { is_creator_subscribed: false };
+          if (wasSubscribed) {
+            updatePayload.show_join_banner = true;
+            updatePayload.show_certification = false;
+            updatePayload.show_deeplinks = false;
+            updatePayload.show_available_now = false;
+          }
+
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ is_creator_subscribed: false })
+            .update(updatePayload)
             .eq('id', userId);
 
           if (updateError) {
