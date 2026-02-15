@@ -12,20 +12,28 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('x-supabase-auth');
-    if (!authHeader) {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // Get the admin user from the Supabase access token passed via x-supabase-auth
+    const rawToken = req.headers.get('x-supabase-auth') ?? '';
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim();
+
+    if (!token) {
       return new Response(
-        JSON.stringify({ error: 'Missing x-supabase-auth header' }),
+        JSON.stringify({ error: 'Missing or invalid authorization token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey);
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify admin access
-    const { data: { user: adminUser }, error: authError } = await supabase.auth.getUser(authHeader);
+    const {
+      data: { user: adminUser },
+      error: authError,
+    } = await supabaseAuthClient.auth.getUser(token);
     if (authError || !adminUser) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
