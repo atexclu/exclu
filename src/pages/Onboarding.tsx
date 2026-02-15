@@ -10,6 +10,7 @@ import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegr
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload } from 'lucide-react';
+import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
 
 type PlatformKey =
   | 'instagram'
@@ -50,10 +51,12 @@ const STRIPE_SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'plan' | 'stripe' | 'instagram'>('profile');
+  const [step, setStep] = useState<'profile' | 'plan' | 'instagram' | 'stripe'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
+  const [isHandleLocked, setIsHandleLocked] = useState(false);
   const [country, setCountry] = useState('');
+  const [auroraGradient, setAuroraGradient] = useState('purple_dream');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
     instagram: '',
     twitter: '',
@@ -146,15 +149,31 @@ const Onboarding = () => {
         console.error('Error loading profile for onboarding', profileError);
       }
 
+      const metadataHandleRaw = (user.user_metadata as any)?.handle;
+      const metadataHandle = typeof metadataHandleRaw === 'string' ? metadataHandleRaw.trim() : '';
+      setIsHandleLocked(Boolean(metadataHandle));
+
       const fallbackName = user.email ? user.email.split('@')[0] : 'Creator';
       setDisplayName(profile?.display_name || fallbackName);
-      setHandle(profile?.handle || '');
+      const resolvedHandle = (profile?.handle || metadataHandle || '').trim();
+      setHandle(resolvedHandle);
       setCountry(profile?.country || '');
+
+      if (!profile?.handle && metadataHandle) {
+        supabase
+          .from('profiles')
+          .upsert({ id: user.id, handle: metadataHandle }, { onConflict: 'id' })
+          .then(({ error }) => {
+            if (error) {
+              console.error('Error persisting metadata handle to profile', error);
+            }
+          });
+      }
 
       // Charger les liens sociaux existants depuis profiles.social_links (JSONB)
       const { data: fullProfile } = await supabase
         .from('profiles')
-        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text, exclusive_content_url, exclusive_content_image_url')
+        .select('social_links, stripe_connect_status, avatar_url, exclusive_content_text, exclusive_content_url, exclusive_content_image_url, aurora_gradient')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -174,6 +193,8 @@ const Onboarding = () => {
       if (fullProfile?.exclusive_content_image_url) {
         setExclusiveContentImageUrl(fullProfile.exclusive_content_image_url);
       }
+
+      setAuroraGradient(fullProfile?.aurora_gradient || 'purple_dream');
 
       const existingSocialLinks = (fullProfile?.social_links as Record<string, string>) || {};
       if (Object.keys(existingSocialLinks).length > 0) {
@@ -302,6 +323,9 @@ const Onboarding = () => {
       }
 
       if (existing && existing.length > 0) {
+        if (isHandleLocked) {
+          setIsHandleLocked(false);
+        }
         toast.error('This handle is already taken. Please choose another one.');
         return;
       }
@@ -348,6 +372,7 @@ const Onboarding = () => {
             handle: trimmedHandle,
             is_creator: true,
             country,
+            aurora_gradient: auroraGradient,
             social_links: socialLinksObj,
             avatar_url: finalAvatarUrl,
             exclusive_content_text: exclusiveContentText.trim() || null,
@@ -374,8 +399,7 @@ const Onboarding = () => {
 
   const handlePlanSelection = async () => {
     if (selectedPlan === 'free') {
-      // Go to Stripe Connect step
-      setStep('stripe');
+      setStep('instagram');
       return;
     }
 
@@ -403,8 +427,7 @@ const Onboarding = () => {
   };
 
   const handleSkipToFree = () => {
-    // Go to Stripe Connect step instead of directly to dashboard
-    setStep('stripe');
+    setStep('instagram');
   };
 
   const handleStripeConnect = async () => {
@@ -446,7 +469,8 @@ const Onboarding = () => {
   };
 
   const handleSkipStripe = () => {
-    setStep('instagram');
+    toast.success('Welcome to Exclu! You can connect Stripe later.');
+    navigate('/app');
   };
 
   return (
@@ -463,8 +487,8 @@ const Onboarding = () => {
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
 
         {/* STEP 1: Profile Setup */}
@@ -554,18 +578,20 @@ const Onboarding = () => {
                       Handle (public URL)
                     </label>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-exclu-space/80 bg-exclu-ink px-2 py-1 rounded-full border border-exclu-arsenic/60">
-                        exclu.at/
-                      </span>
-                      <Input
-                        id="handle"
-                        value={handle}
-                        onChange={(e) => setHandle(e.target.value)}
-                        placeholder="yourname"
-                        className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
-                        required
-                      />
-                    </div>
+                    <span className="text-xs text-exclu-space/80 bg-exclu-ink px-2 py-1 rounded-full border border-exclu-arsenic/60">
+                      exclu.at/
+                    </span>
+                    <Input
+                      id="handle"
+                      value={handle}
+                      onChange={(e) => setHandle(e.target.value)}
+                      placeholder="yourname"
+                      className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      readOnly={isHandleLocked}
+                      disabled={isHandleLocked}
+                      required
+                    />
+                  </div>
                     <p className="text-[11px] text-exclu-space/70">
                       3+ characters, letters, numbers and underscores. This must be unique across all creators.
                     </p>
@@ -767,6 +793,57 @@ const Onboarding = () => {
                       This button will appear at the top of your public profile.<br />
                       Customize the text, image and url to attract your audience.
                     </p>
+
+                    <div className="rounded-2xl border border-exclu-arsenic/50 bg-exclu-ink/50 p-4">
+                      <p className="text-[11px] font-medium text-exclu-space/80 mb-3">Preview</p>
+                      <div
+                        className="w-full rounded-2xl overflow-hidden border border-white/10"
+                        style={{ background: getAuroraGradient(auroraGradient).preview }}
+                      >
+                        <div className="px-4 py-4">
+                          <div className="flex items-center gap-3">
+                            {exclusiveContentImageUrl ? (
+                              <img
+                                src={exclusiveContentImageUrl}
+                                alt="Exclusive content"
+                                className="w-12 h-12 rounded-xl object-cover"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-xl bg-black/20" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-white truncate">
+                                {(exclusiveContentText || 'Exclusive content').trim()}
+                              </p>
+                              <p className="text-[11px] text-white/80 truncate">
+                                {(exclusiveContentUrl || 'https://…').trim()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-exclu-space">Profile color</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        {auroraGradients.map((gradient) => (
+                          <button
+                            key={gradient.id}
+                            type="button"
+                            onClick={() => setAuroraGradient(gradient.id)}
+                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                              auroraGradient === gradient.id
+                                ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                                : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
+                            }`}
+                          >
+                            <div className="w-full h-10 rounded-lg" style={{ background: gradient.preview }} />
+                            <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
                     {/* Button text */}
                     <div className="space-y-1">
@@ -1034,97 +1111,7 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 3: Stripe Connect */}
-        {step === 'stripe' && (
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-lg space-y-6"
-          >
-            <div className="text-center space-y-3">
-              <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
-                <span className="text-base font-semibold tracking-tight text-white">Stripe</span>
-              </div>
-              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                Connect your Stripe account
-              </h1>
-              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-                To receive payments from your fans, you need to connect a Stripe account. This only takes a few minutes.
-              </p>
-            </div>
-
-            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Instant payouts</p>
-                      <p className="text-xs text-exclu-space/70">Get paid directly to your bank account</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Secure & trusted</p>
-                      <p className="text-xs text-exclu-space/70">Stripe is used by millions of businesses worldwide</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Easy setup</p>
-                      <p className="text-xs text-exclu-space/70">Connect in just a few clicks</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-3">
-              <Button
-                variant="hero"
-                size="lg"
-                className="w-full rounded-full"
-                onClick={handleStripeConnect}
-                disabled={isConnectingStripe}
-              >
-                {isConnectingStripe ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Redirecting to Stripe…
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4" />
-                    Connect with Stripe
-                  </span>
-                )}
-              </Button>
-
-              <button
-                type="button"
-                onClick={handleSkipStripe}
-                className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
-              >
-                Skip for now – I'll do this later
-              </button>
-
-              <p className="text-[10px] text-exclu-space/50 text-center">
-                You won't be able to receive payments until you connect Stripe. You can do this anytime from your profile settings.
-              </p>
-            </div>
-          </motion.div>
-        )}
-
-        {/* STEP 4: Instagram Bio Verification */}
+        {/* STEP 3: Instagram Bio Verification */}
         {step === 'instagram' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -1331,7 +1318,7 @@ const Onboarding = () => {
                     }
 
                     toast.success('Welcome to Exclu! Your profile is ready 🎉');
-                    navigate('/app');
+                    setStep('stripe');
                   } catch (err: any) {
                     console.error('Verification error', err);
                     setVerificationError('Unable to verify at this time. Please try again.');
@@ -1354,12 +1341,102 @@ const Onboarding = () => {
                 type="button"
                 onClick={() => {
                   toast.success('Welcome to Exclu! You can add your link later.');
-                  navigate('/app');
+                  setStep('stripe');
                 }}
                 className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
               >
                 Skip for now – I'll do this later
               </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 4: Stripe Connect */}
+        {step === 'stripe' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
+                <span className="text-base font-semibold tracking-tight text-white">Stripe</span>
+              </div>
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Connect your Stripe account
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                To receive payments from your fans, you need to connect a Stripe account. This only takes a few minutes.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="p-6 space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Instant payouts</p>
+                      <p className="text-xs text-exclu-space/70">Get paid directly to your bank account</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Secure & trusted</p>
+                      <p className="text-xs text-exclu-space/70">Stripe is used by millions of businesses worldwide</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-exclu-cloud">Easy setup</p>
+                      <p className="text-xs text-exclu-space/70">Connect in just a few clicks</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-3">
+              <Button
+                variant="hero"
+                size="lg"
+                className="w-full rounded-full"
+                onClick={handleStripeConnect}
+                disabled={isConnectingStripe}
+              >
+                {isConnectingStripe ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Redirecting to Stripe…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4" />
+                    Connect with Stripe
+                  </span>
+                )}
+              </Button>
+
+              <button
+                type="button"
+                onClick={handleSkipStripe}
+                className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+              >
+                Skip for now – I'll do this later
+              </button>
+
+              <p className="text-[10px] text-exclu-space/50 text-center">
+                You won't be able to receive payments until you connect Stripe. You can do this anytime from your profile settings.
+              </p>
             </div>
           </motion.div>
         )}

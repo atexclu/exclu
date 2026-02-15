@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard, Menu, ExternalLink } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -12,6 +12,7 @@ import { SocialSection } from '@/components/linkinbio/sections/SocialSection';
 import { ContentSection } from '@/components/linkinbio/sections/ContentSection';
 import { PublicContentSection } from '@/components/linkinbio/sections/PublicContentSection';
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import AppShell from '@/components/AppShell';
 
 interface LinkInBioData {
@@ -83,6 +84,8 @@ const LinkInBioEditor = () => {
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'colors'>('photo');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
   const [debouncedData] = useDebounce(editorData, 1500);
 
@@ -299,7 +302,7 @@ const LinkInBioEditor = () => {
                 {/* Top menu - horizontal on all screen sizes */}
                 <div className="mb-6">
                   <div className="flex items-center justify-between gap-4 mb-6">
-                    <nav ref={navRef} className="flex gap-1 overflow-x-auto scrollbar-hide pb-2">
+                    <nav ref={navRef} className="hidden sm:flex gap-1 overflow-x-auto scrollbar-hide pb-2">
                       {sections.map((section) => {
                         const Icon = section.icon;
                         const isActive = activeSection === section.id;
@@ -330,6 +333,53 @@ const LinkInBioEditor = () => {
                         );
                       })}
                     </nav>
+
+                    <div className="sm:hidden">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="rounded-xl"
+                        onClick={() => setIsMobileNavOpen(true)}
+                      >
+                        <Menu className="w-5 h-5" />
+                      </Button>
+
+                      <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                        <SheetContent side="left" className="p-0">
+                          <div className="p-5 border-b border-border">
+                            <SheetTitle className="text-base">Profile editor</SheetTitle>
+                          </div>
+                          <div className="p-3">
+                            <div className="space-y-1">
+                              {sections.map((section) => {
+                                const Icon = section.icon;
+                                const isActive = activeSection === section.id;
+                                return (
+                                  <button
+                                    key={section.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveSection(section.id);
+                                      setIsMobileNavOpen(false);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                                      isActive
+                                        ? 'bg-primary/10 text-primary'
+                                        : 'hover:bg-muted text-foreground'
+                                    }`}
+                                  >
+                                    <Icon className="w-4 h-4" />
+                                    <span>{section.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </SheetContent>
+                      </Sheet>
+                    </div>
+
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {saveStatus === 'saving' && (
                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -345,13 +395,46 @@ const LinkInBioEditor = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="rounded-full"
+                        className="hidden sm:inline-flex rounded-full"
                         onClick={() => window.open(`/${editorData.handle}`, '_blank')}
                         disabled={!editorData.handle}
                       >
                         <Eye className="w-4 h-4 mr-2" />
                         Preview
                       </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="sm:hidden rounded-full"
+                        onClick={() => setIsMobilePreviewOpen(true)}
+                        disabled={!editorData.handle}
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        Preview
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="sm:hidden rounded-full"
+                        onClick={() => window.open(`/${editorData.handle}`, '_blank')}
+                        disabled={!editorData.handle}
+                      >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        View profile
+                      </Button>
+
+                      <Sheet open={isMobilePreviewOpen} onOpenChange={setIsMobilePreviewOpen}>
+                        <SheetContent side="right" className="p-0">
+                          <div className="p-5 border-b border-border">
+                            <SheetTitle className="text-base">Live preview</SheetTitle>
+                          </div>
+                          <div className="p-4 flex items-center justify-center">
+                            <MobilePreview data={editorData} links={links} isPremium={isPremium} />
+                          </div>
+                        </SheetContent>
+                      </Sheet>
                     </div>
                   </div>
                 </div>
