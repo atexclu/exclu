@@ -135,21 +135,6 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
         <p className="text-sm font-semibold text-foreground text-center">Crop your photo</p>
         <p className="text-xs text-muted-foreground text-center">Drag to reposition • Scroll or use the slider to zoom</p>
 
-        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border">
-          <Cropper
-            image={rawImageUrl}
-            crop={crop}
-            zoom={zoom}
-            aspect={1}
-            cropShape="rect"
-            showGrid={false}
-            objectFit="cover"
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onCropComplete={onCropComplete}
-          />
-        </div>
-
         <div className="relative z-10 flex items-center gap-3 px-1">
           <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <input
@@ -190,6 +175,21 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
               </>
             )}
           </Button>
+        </div>
+
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border">
+          <Cropper
+            image={rawImageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="rect"
+            showGrid={false}
+            objectFit="cover"
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
         </div>
       </div>
     );

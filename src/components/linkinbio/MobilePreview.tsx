@@ -366,14 +366,14 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
 
                   {/* Join Exclu Banner */}
                   {shouldShowJoinBanner && (
-                    <div className="fixed inset-x-4 bottom-4 z-30">
-                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-black/85 border border-exclu-arsenic/60 px-4 py-3 backdrop-blur-md shadow-lg shadow-black/60">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <img src={logo} alt="Exclu" className="h-4" />
+                    <div className="absolute inset-x-4 bottom-4 z-30">
+                      <div className="flex items-center justify-between gap-2 rounded-2xl bg-black/85 border border-exclu-arsenic/60 px-3 py-2 backdrop-blur-md shadow-lg shadow-black/60">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <img src={logo} alt="Exclu" className="h-3" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-xs text-white">
+                            <span className="text-[6px] text-white leading-tight">
                               Start selling your own premium content without commission with Exclu.
                             </span>
                           </div>
@@ -381,7 +381,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         <Button
                           type="button"
                           size="sm"
-                          className="rounded-full text-xs px-3 py-1.5 bg-white text-black hover:bg-slate-100"
+                          className="rounded-full text-[8px] px-1.5 py-0.5 bg-white text-black hover:bg-slate-100 h-auto flex-shrink-0"
                         >
                           Join now
                         </Button>

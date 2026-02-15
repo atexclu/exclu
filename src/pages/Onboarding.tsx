@@ -9,8 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload } from 'lucide-react';
+import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
+import Cropper, { Area } from 'react-easy-crop';
 
 type PlatformKey =
   | 'instagram'
@@ -49,9 +50,36 @@ const STRIPE_SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
   { code: 'MX', label: 'Mexico' },
 ];
 
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = new Image();
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = reject;
+    image.src = imageSrc;
+  });
+
+  const canvas = document.createElement('canvas');
+  const size = Math.min(pixelCrop.width, 1024);
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(
+    image,
+    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, size, size,
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Canvas toBlob failed'));
+    }, 'image/jpeg', 0.92);
+  });
+}
+
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'plan' | 'instagram' | 'stripe'>('profile');
+  const [step, setStep] = useState<'profile' | 'plan' | 'design' | 'instagram' | 'stripe'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [isHandleLocked, setIsHandleLocked] = useState(false);
@@ -89,6 +117,59 @@ const Onboarding = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  
+  // Crop state for avatar
+  const [rawAvatarUrl, setRawAvatarUrl] = useState<string | null>(null);
+  const [avatarCrop, setAvatarCrop] = useState({ x: 0, y: 0 });
+  const [avatarZoom, setAvatarZoom] = useState(1);
+  const [croppedAvatarAreaPixels, setCroppedAvatarAreaPixels] = useState<Area | null>(null);
+
+  const onAvatarCropComplete = (croppedArea: Area, croppedAreaPixels: Area) => {
+    setCroppedAvatarAreaPixels(croppedAreaPixels);
+  };
+
+  const handleAvatarFileSelect = (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file (JPG, PNG, WebP)');
+      return;
+    }
+    if (rawAvatarUrl) URL.revokeObjectURL(rawAvatarUrl);
+    const objectUrl = URL.createObjectURL(file);
+    setRawAvatarUrl(objectUrl);
+    setAvatarCrop({ x: 0, y: 0 });
+    setAvatarZoom(1);
+  };
+
+  const handleConfirmAvatarCrop = async () => {
+    if (!rawAvatarUrl || !croppedAvatarAreaPixels) return;
+    setIsUploadingAvatar(true);
+
+    try {
+      const croppedBlob = await getCroppedImg(rawAvatarUrl, croppedAvatarAreaPixels);
+      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+      
+      URL.revokeObjectURL(rawAvatarUrl);
+      setAvatarFile(croppedFile);
+      setAvatarPreview(URL.createObjectURL(croppedFile));
+      setRawAvatarUrl(null);
+      toast.success('Photo ready!');
+    } catch (err) {
+      console.error('Error cropping avatar', err);
+      toast.error('Failed to crop photo.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleCancelAvatarCrop = () => {
+    if (rawAvatarUrl) URL.revokeObjectURL(rawAvatarUrl);
+    setRawAvatarUrl(null);
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  };
   const [exclusiveContentText, setExclusiveContentText] = useState('Exclusive content');
   const [exclusiveContentUrl, setExclusiveContentUrl] = useState('');
   const [exclusiveContentImageUrl, setExclusiveContentImageUrl] = useState<string | null>(null);
@@ -399,7 +480,7 @@ const Onboarding = () => {
 
   const handlePlanSelection = async () => {
     if (selectedPlan === 'free') {
-      setStep('instagram');
+      setStep('design');
       return;
     }
 
@@ -427,7 +508,7 @@ const Onboarding = () => {
   };
 
   const handleSkipToFree = () => {
-    setStep('instagram');
+    setStep('design');
   };
 
   const handleStripeConnect = async () => {
@@ -487,6 +568,7 @@ const Onboarding = () => {
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'design' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
@@ -521,43 +603,104 @@ const Onboarding = () => {
                 ) : (
                   <form className="space-y-4" onSubmit={handleSubmit}>
                   {/* Avatar upload */}
-                  <div className="flex flex-col items-center gap-2">
-                    <p className="text-xs font-medium text-exclu-space">Profile photo <span className="text-red-400">*</span></p>
-                    <button
-                      type="button"
-                      onClick={() => avatarInputRef.current?.click()}
-                      className="relative w-20 h-20 rounded-full border-2 border-dashed border-exclu-arsenic/70 hover:border-primary/60 transition-colors overflow-hidden group"
-                    >
-                      {avatarPreview ? (
-                        <img src={avatarPreview} alt="Avatar preview" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-exclu-ink/60">
-                          <Camera className="w-5 h-5 text-exclu-space/60 group-hover:text-primary transition-colors" />
-                        </div>
-                      )}
-                      {avatarPreview && (
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Camera className="w-5 h-5 text-white" />
-                        </div>
-                      )}
-                    </button>
-                    <input
-                      ref={avatarInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setAvatarFile(file);
-                          setAvatarPreview(URL.createObjectURL(file));
-                        }
-                      }}
-                    />
-                    <p className="text-[11px] text-exclu-space/70">
-                      {avatarPreview ? 'Click to change' : 'Upload a photo'}
-                    </p>
-                  </div>
+                  {rawAvatarUrl ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-exclu-space text-center">Crop your photo</p>
+                      <p className="text-[11px] text-exclu-space/70 text-center">Drag to reposition • Scroll or use the slider to zoom</p>
+
+                      <div className="flex items-center gap-2 px-1">
+                        <ZoomOut className="w-3.5 h-3.5 text-exclu-space/60 flex-shrink-0" />
+                        <input
+                          type="range"
+                          min={1}
+                          max={3}
+                          step={0.02}
+                          value={avatarZoom}
+                          onChange={(e) => setAvatarZoom(Number(e.target.value))}
+                          className="flex-1 accent-primary h-1.5 cursor-pointer"
+                        />
+                        <ZoomIn className="w-3.5 h-3.5 text-exclu-space/60 flex-shrink-0" />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1 rounded-full text-xs h-9"
+                          onClick={handleCancelAvatarCrop}
+                          disabled={isUploadingAvatar}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="hero"
+                          className="flex-1 rounded-full text-xs h-9"
+                          onClick={handleConfirmAvatarCrop}
+                          disabled={isUploadingAvatar}
+                        >
+                          {isUploadingAvatar ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Check className="w-3.5 h-3.5 mr-1.5" />
+                              Save
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-exclu-arsenic/50">
+                        <Cropper
+                          image={rawAvatarUrl}
+                          crop={avatarCrop}
+                          zoom={avatarZoom}
+                          aspect={1}
+                          cropShape="rect"
+                          showGrid={false}
+                          objectFit="cover"
+                          onCropChange={setAvatarCrop}
+                          onZoomChange={setAvatarZoom}
+                          onCropComplete={onAvatarCropComplete}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-xs font-medium text-exclu-space">Profile photo <span className="text-red-400">*</span></p>
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        className="relative w-20 h-20 rounded-full border-2 border-dashed border-exclu-arsenic/70 hover:border-primary/60 transition-colors overflow-hidden group"
+                      >
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Avatar preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-exclu-ink/60">
+                            <Camera className="w-5 h-5 text-exclu-space/60 group-hover:text-primary transition-colors" />
+                          </div>
+                        )}
+                        {avatarPreview && (
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <Camera className="w-5 h-5 text-white" />
+                          </div>
+                        )}
+                      </button>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleAvatarFileSelect(file);
+                        }}
+                      />
+                      <p className="text-[11px] text-exclu-space/70">
+                        {avatarPreview ? 'Click to change' : 'Upload a photo'}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-1.5">
                     <label htmlFor="display_name" className="text-xs font-medium text-exclu-space">
@@ -821,27 +964,6 @@ const Onboarding = () => {
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <p className="text-xs font-medium text-exclu-space">Profile color</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                        {auroraGradients.map((gradient) => (
-                          <button
-                            key={gradient.id}
-                            type="button"
-                            onClick={() => setAuroraGradient(gradient.id)}
-                            className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                              auroraGradient === gradient.id
-                                ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                                : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
-                            }`}
-                          >
-                            <div className="w-full h-10 rounded-lg" style={{ background: gradient.preview }} />
-                            <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
-                          </button>
-                        ))}
                       </div>
                     </div>
 
@@ -1111,7 +1233,67 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 3: Instagram Bio Verification */}
+        {/* STEP 3: Design */}
+        {step === 'design' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Choose your profile design
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Select a color theme for your creator profile. You can change this anytime from your settings.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardHeader className="px-5 pt-5 pb-3 space-y-1">
+                <CardTitle className="text-base text-exclu-cloud">Profile color theme</CardTitle>
+                <CardDescription className="text-xs text-exclu-space/80">
+                  This gradient will appear on your public profile and exclusive content buttons.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-5 pb-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {auroraGradients.map((gradient) => (
+                    <button
+                      key={gradient.id}
+                      type="button"
+                      onClick={() => setAuroraGradient(gradient.id)}
+                      className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                        auroraGradient === gradient.id
+                          ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                          : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
+                      }`}
+                    >
+                      <div className="w-full h-12 rounded-lg" style={{ background: gradient.preview }} />
+                      <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="hero"
+                size="lg"
+                className="rounded-full px-8"
+                onClick={() => setStep('instagram')}
+              >
+                Continue
+                <ExternalLink className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 4: Instagram Bio Verification */}
         {step === 'instagram' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -1351,7 +1533,7 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 4: Stripe Connect */}
+        {/* STEP 5: Stripe Connect */}
         {step === 'stripe' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
