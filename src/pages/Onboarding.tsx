@@ -1099,6 +1099,97 @@ const Onboarding = () => {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-4xl space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Choose your profile design
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Select a color theme for your creator profile. You can change this anytime from your settings.
+              </p>
+            </div>
+
+            <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
+              {/* Mobile Preview */}
+              <div className="flex justify-center">
+                <MobilePreview
+                  data={{
+                    display_name: displayName || 'Your Name',
+                    handle: handle || 'yourhandle',
+                    bio: '',
+                    avatar_url: avatarPreview || avatarUrl,
+                    theme_color: '#000000',
+                    aurora_gradient: auroraGradient,
+                    social_links: Object.fromEntries(
+                      Object.entries(platformUrls).filter(([key, url]) => activePlatforms[key as PlatformKey] && url)
+                    ),
+                    location: null,
+                    exclusive_content_text: exclusiveContentText,
+                    exclusive_content_url: exclusiveContentUrl,
+                    exclusive_content_image_url: exclusiveContentImageUrl,
+                    exclusive_content_link_id: null,
+                    show_join_banner: false,
+                    show_certification: true,
+                    show_available_now: true,
+                  }}
+                  links={[]}
+                  isPremium={false}
+                  publicContent={[]}
+                />
+              </div>
+
+              {/* Color Selection */}
+              <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+                <CardHeader className="px-5 pt-5 pb-3 space-y-1">
+                  <CardTitle className="text-base text-exclu-cloud">Profile color theme</CardTitle>
+                  <CardDescription className="text-xs text-exclu-space/80">
+                    This gradient will appear on your public profile and exclusive content buttons.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {auroraGradients.map((gradient) => (
+                      <button
+                        key={gradient.id}
+                        type="button"
+                        onClick={() => setAuroraGradient(gradient.id)}
+                        className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                          auroraGradient === gradient.id
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                            : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
+                        }`}
+                      >
+                        <div className="w-full h-12 rounded-lg" style={{ background: gradient.preview }} />
+                        <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="hero"
+                size="lg"
+                className="rounded-full px-8"
+                onClick={() => setStep('plan')}
+              >
+                Continue
+                <ExternalLink className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 3: Plan Selection */}
+        {step === 'plan' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
             className="w-full max-w-2xl space-y-6"
           >
             <div className="text-center space-y-3">
@@ -1234,94 +1325,6 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 3: Plan Selection */}
-        {step === 'plan' && (
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-4xl space-y-6"
-          >
-            <div className="text-center space-y-3">
-              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                Choose your profile design
-              </h1>
-              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-                Select a color theme for your creator profile. You can change this anytime from your settings.
-              </p>
-            </div>
-
-            <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
-              {/* Mobile Preview */}
-              <div className="flex justify-center">
-                <MobilePreview
-                  data={{
-                    display_name: displayName || 'Your Name',
-                    handle: handle || 'yourhandle',
-                    bio: '',
-                    avatar_url: avatarPreview || avatarUrl,
-                    theme_color: '#000000',
-                    aurora_gradient: auroraGradient,
-                    social_links: {},
-                    location: null,
-                    exclusive_content_text: exclusiveContentText,
-                    exclusive_content_url: exclusiveContentUrl,
-                    exclusive_content_image_url: exclusiveContentImageUrl,
-                    exclusive_content_link_id: null,
-                    show_join_banner: false,
-                    show_certification: true,
-                    show_available_now: true,
-                  }}
-                  links={[]}
-                  isPremium={false}
-                  publicContent={[]}
-                />
-              </div>
-
-              {/* Color Selection */}
-              <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-                <CardHeader className="px-5 pt-5 pb-3 space-y-1">
-                  <CardTitle className="text-base text-exclu-cloud">Profile color theme</CardTitle>
-                  <CardDescription className="text-xs text-exclu-space/80">
-                    This gradient will appear on your public profile and exclusive content buttons.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {auroraGradients.map((gradient) => (
-                      <button
-                        key={gradient.id}
-                        type="button"
-                        onClick={() => setAuroraGradient(gradient.id)}
-                        className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                          auroraGradient === gradient.id
-                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                            : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
-                        }`}
-                      >
-                        <div className="w-full h-12 rounded-lg" style={{ background: gradient.preview }} />
-                        <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="flex justify-center">
-              <Button
-                type="button"
-                variant="hero"
-                size="lg"
-                className="rounded-full px-8"
-                onClick={() => setStep('instagram')}
-              >
-                Continue
-                <ExternalLink className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </motion.div>
-        )}
 
         {/* STEP 4: Instagram Bio Verification */}
         {step === 'instagram' && (
