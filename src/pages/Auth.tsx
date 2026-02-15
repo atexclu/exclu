@@ -205,29 +205,47 @@ const Auth = () => {
           </div>
 
           <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-            <CardHeader className="px-5 pt-5 pb-3 space-y-3">
-              <div className="flex rounded-full bg-exclu-ink/90 p-0.5 text-xs">
+            <CardHeader className="px-5 pt-5 pb-3 space-y-4">
+              <div className="flex justify-center gap-8 border-b border-exclu-arsenic/40">
                 <button
                   type="button"
                   onClick={() => setMode('login')}
-                  className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
-                    mode === 'login' || mode === 'reset'
-                      ? 'bg-white text-black shadow-sm'
-                      : 'text-exclu-space hover:text-exclu-cloud'
-                  }`}
+                  className="relative pb-3.5 px-2 transition-all"
                 >
-                  Log in
+                  <span className={`text-base font-bold transition-all ${
+                    mode === 'login' || mode === 'reset'
+                      ? 'text-exclu-cloud'
+                      : 'text-exclu-space/60 hover:text-exclu-space'
+                  }`}>
+                    Log in
+                  </span>
+                  {(mode === 'login' || mode === 'reset') && (
+                    <motion.div
+                      layoutId="auth-tab-indicator"
+                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    />
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setMode('signup')}
-                  className={`flex-1 inline-flex items-center justify-center rounded-full py-1.5 transition-all text-[11px] font-medium ${
-                    mode === 'signup'
-                      ? 'bg-white text-black shadow-sm'
-                      : 'text-exclu-space hover:text-exclu-cloud'
-                  }`}
+                  className="relative pb-3.5 px-2 transition-all"
                 >
-                  Sign up
+                  <span className={`text-base font-bold transition-all ${
+                    mode === 'signup'
+                      ? 'text-exclu-cloud'
+                      : 'text-exclu-space/60 hover:text-exclu-space'
+                  }`}>
+                    Sign up
+                  </span>
+                  {mode === 'signup' && (
+                    <motion.div
+                      layoutId="auth-tab-indicator"
+                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    />
+                  )}
                 </button>
               </div>
               <div className="space-y-1">
@@ -249,14 +267,14 @@ const Auth = () => {
                       Username
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">exclu.at/</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">exclu.at/</span>
                       <Input
                         id="username"
                         name="username"
                         type="text"
                         autoComplete="username"
                         placeholder="yourname"
-                        className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pl-[4.5rem]"
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pl-[4.5rem]"
                         pattern="^[a-zA-Z0-9_]+$"
                         minLength={3}
                         maxLength={30}
@@ -278,7 +296,7 @@ const Auth = () => {
                     type="email"
                     autoComplete="email"
                     placeholder="you@example.com"
-                    className="h-11 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                    className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                     required
                   />
                 </div>
@@ -298,7 +316,7 @@ const Auth = () => {
                       type="password"
                       autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                       placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
-                      className="h-11 !bg-white border-exclu-arsenic/70 !text-black placeholder:text-slate-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                       minLength={6}
                       required
                     />
