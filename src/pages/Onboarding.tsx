@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
 import Cropper, { Area } from 'react-easy-crop';
+import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 
 type PlatformKey =
   | 'instagram'
@@ -79,7 +80,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'plan' | 'design' | 'instagram' | 'stripe'>('profile');
+  const [step, setStep] = useState<'profile' | 'design' | 'plan' | 'instagram' | 'stripe'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [isHandleLocked, setIsHandleLocked] = useState(false);
@@ -468,8 +469,8 @@ const Onboarding = () => {
         throw new Error('Unable to save your profile. Please try again.');
       }
 
-      toast.success('Profile saved! Now choose your plan.');
-      setStep('plan');
+      toast.success('Profile saved! Now choose your design.');
+      setStep('design');
     } catch (err: any) {
       console.error('Error during onboarding save', err);
       toast.error(err?.message || 'Unable to complete onboarding right now.');
@@ -480,7 +481,7 @@ const Onboarding = () => {
 
   const handlePlanSelection = async () => {
     if (selectedPlan === 'free') {
-      setStep('design');
+      setStep('instagram');
       return;
     }
 
@@ -508,7 +509,7 @@ const Onboarding = () => {
   };
 
   const handleSkipToFree = () => {
-    setStep('design');
+    setStep('instagram');
   };
 
   const handleStripeConnect = async () => {
@@ -567,8 +568,8 @@ const Onboarding = () => {
         {/* Step indicator */}
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'design' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
@@ -1092,8 +1093,8 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 2: Plan Selection */}
-        {step === 'plan' && (
+        {/* STEP 2: Design */}
+        {step === 'design' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1233,13 +1234,13 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 3: Design */}
-        {step === 'design' && (
+        {/* STEP 3: Plan Selection */}
+        {step === 'plan' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-lg space-y-6"
+            className="w-full max-w-4xl space-y-6"
           >
             <div className="text-center space-y-3">
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
@@ -1250,33 +1251,62 @@ const Onboarding = () => {
               </p>
             </div>
 
-            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-              <CardHeader className="px-5 pt-5 pb-3 space-y-1">
-                <CardTitle className="text-base text-exclu-cloud">Profile color theme</CardTitle>
-                <CardDescription className="text-xs text-exclu-space/80">
-                  This gradient will appear on your public profile and exclusive content buttons.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-5 pb-5">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {auroraGradients.map((gradient) => (
-                    <button
-                      key={gradient.id}
-                      type="button"
-                      onClick={() => setAuroraGradient(gradient.id)}
-                      className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                        auroraGradient === gradient.id
-                          ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                          : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
-                      }`}
-                    >
-                      <div className="w-full h-12 rounded-lg" style={{ background: gradient.preview }} />
-                      <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
+              {/* Mobile Preview */}
+              <div className="flex justify-center">
+                <MobilePreview
+                  data={{
+                    display_name: displayName || 'Your Name',
+                    handle: handle || 'yourhandle',
+                    bio: '',
+                    avatar_url: avatarPreview || avatarUrl,
+                    theme_color: '#000000',
+                    aurora_gradient: auroraGradient,
+                    social_links: {},
+                    location: null,
+                    exclusive_content_text: exclusiveContentText,
+                    exclusive_content_url: exclusiveContentUrl,
+                    exclusive_content_image_url: exclusiveContentImageUrl,
+                    exclusive_content_link_id: null,
+                    show_join_banner: false,
+                    show_certification: true,
+                    show_available_now: true,
+                  }}
+                  links={[]}
+                  isPremium={false}
+                  publicContent={[]}
+                />
+              </div>
+
+              {/* Color Selection */}
+              <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+                <CardHeader className="px-5 pt-5 pb-3 space-y-1">
+                  <CardTitle className="text-base text-exclu-cloud">Profile color theme</CardTitle>
+                  <CardDescription className="text-xs text-exclu-space/80">
+                    This gradient will appear on your public profile and exclusive content buttons.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="px-5 pb-5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {auroraGradients.map((gradient) => (
+                      <button
+                        key={gradient.id}
+                        type="button"
+                        onClick={() => setAuroraGradient(gradient.id)}
+                        className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
+                          auroraGradient === gradient.id
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                            : 'border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/60'
+                        }`}
+                      >
+                        <div className="w-full h-12 rounded-lg" style={{ background: gradient.preview }} />
+                        <span className="text-[11px] font-medium text-exclu-cloud text-center">{gradient.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             <div className="flex justify-center">
               <Button
