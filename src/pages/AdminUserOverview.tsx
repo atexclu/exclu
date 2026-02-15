@@ -76,6 +76,8 @@ const AdminUserOverview = () => {
   const [selectedAsset, setSelectedAsset] = useState<UserAssetOverview | null>(null);
   const [selectedLink, setSelectedLink] = useState<UserLinkOverview | null>(null);
   const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -221,6 +223,47 @@ const AdminUserOverview = () => {
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!id) return;
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setError('Please sign in again to delete this user.');
+        setIsDeleting(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+        body: { user_id: id },
+        headers: {
+          Authorization: '',
+          'x-supabase-auth': session.access_token,
+        },
+      });
+
+      if (error) {
+        console.error('Error deleting user', error);
+        setError('Failed to delete user. Please try again.');
+        setIsDeleting(false);
+        return;
+      }
+
+      // Success - redirect to users list
+      navigate(returnTo);
+    } catch (err) {
+      console.error('Unexpected error deleting user', err);
+      setError('An unexpected error occurred.');
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <AppShell>
       <main className="px-4 pt-6 pb-8 sm:px-6 lg:px-8">
@@ -232,13 +275,23 @@ const AdminUserOverview = () => {
                 Read-only snapshot of this creator&apos;s dashboard. No actions are performed on their account.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => navigate(returnTo)}
-              className="text-xs sm:text-sm text-exclu-space hover:text-exclu-cloud underline-offset-2 hover:underline"
-            >
-              Back to users
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={!profile || isDeleting}
+                className="px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                Delete user
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(returnTo)}
+                className="text-xs sm:text-sm text-exclu-space hover:text-exclu-cloud underline-offset-2 hover:underline"
+              >
+                Back to users
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 shadow-lg shadow-black/40 overflow-hidden">
@@ -532,6 +585,50 @@ const AdminUserOverview = () => {
               ) : (
                 <p className="text-xs text-exclu-space/70 p-6">No preview available for this link.</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onClick={() => setShowDeleteConfirm(false)}>
+          <div
+            className="relative max-w-md w-full bg-exclu-ink rounded-2xl border border-red-600/50 overflow-hidden p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-exclu-cloud mb-2">Delete user permanently?</h3>
+            <p className="text-sm text-exclu-space mb-4">
+              This will permanently delete <strong>{profile?.display_name || profile?.handle || 'this user'}</strong> and all associated data:
+            </p>
+            <ul className="text-xs text-exclu-space/80 mb-6 space-y-1 list-disc list-inside">
+              <li>Profile and account</li>
+              <li>All creator links and sales</li>
+              <li>All uploaded content (avatars, paid content, public content)</li>
+              <li>All purchases made by this user</li>
+              <li>Stripe Connect account (if connected)</li>
+            </ul>
+            <p className="text-xs text-red-400 font-semibold mb-6">
+              This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 text-sm font-medium text-exclu-cloud bg-exclu-arsenic/50 hover:bg-exclu-arsenic/70 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  handleDeleteUser();
+                }}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete permanently'}
+              </button>
             </div>
           </div>
         </div>
