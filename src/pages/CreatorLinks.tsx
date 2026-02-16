@@ -97,10 +97,10 @@ const CreatorLinks = () => {
 
       const connectStatus = profile?.stripe_connect_status ?? null;
       setStripeConnectStatus(connectStatus);
-      const hasStripeAccount = !!profile?.stripe_account_id;
+      // We rely on the status being 'complete'. 
+      // Even if stripe_account_id is technically missing (e.g. manual DB update), 'complete' status should grant access.
       const isConnectComplete = connectStatus === 'complete';
-      const canCreate = hasStripeAccount && isConnectComplete;
-      setCanCreateLinks(canCreate);
+      setCanCreateLinks(isConnectComplete);
 
       const { data, error } = await supabase
         .from('links')
@@ -161,7 +161,7 @@ const CreatorLinks = () => {
         setLinks(withPreviews);
 
         // Only redirect to /app/links/new if user has no links AND Stripe is connected
-        if (withPreviews.length === 0 && canCreate) {
+        if (withPreviews.length === 0 && isConnectComplete) {
           navigate('/app/links/new', { replace: true });
         }
       }
@@ -235,7 +235,7 @@ const CreatorLinks = () => {
     setIsPublic(false);
     setIsUploadModalOpen(false);
     setIsUploading(false);
-    
+
     // Refresh the list
     window.location.reload();
   };
@@ -384,7 +384,7 @@ const CreatorLinks = () => {
                       <Copy className="w-3.5 h-3.5" />
                       Copy link
                     </button>
-                    <div 
+                    <div
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-exclu-ink border border-exclu-arsenic/40"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -486,7 +486,7 @@ const CreatorLinks = () => {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <div 
+                          <div
                             className="flex items-center gap-2 px-2 py-1 rounded-lg bg-exclu-ink border border-exclu-arsenic/40"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -523,29 +523,29 @@ const CreatorLinks = () => {
                             title="Copy link"
                           >
                             <Copy className="w-4 h-4 text-exclu-space hover:text-primary" />
-                        </button>
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          className="rounded-full border-exclu-arsenic/60 text-xs px-3 py-1 h-auto"
-                        >
-                          <RouterLink
-                            to={`/app/links/${link.id}/edit`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                            }}
+                          </button>
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="rounded-full border-exclu-arsenic/60 text-xs px-3 py-1 h-auto"
                           >
-                            Edit
-                          </RouterLink>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                            <RouterLink
+                              to={`/app/links/${link.id}/edit`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                            >
+                              Edit
+                            </RouterLink>
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </main>

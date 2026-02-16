@@ -18,10 +18,13 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   adminOnly?: boolean;
+  mobileHidden?: boolean;
 }
 
 const navItems: NavItem[] = [
   { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
+  { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
   { path: '/app/profile', label: 'Profile', icon: Palette },
   { path: '/admin/users', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];
@@ -103,7 +106,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className="relative z-10"
+                    className={`relative z-10 ${item.mobileHidden ? 'hidden sm:inline-block' : ''}`}
                   >
                     <motion.div
                       className={`relative z-10 flex items-center gap-2 px-8 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${active
