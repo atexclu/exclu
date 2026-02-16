@@ -562,26 +562,7 @@ const Profile = () => {
                         </div>
                       </div>
 
-                      {/* Handle */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">
-                        <div className="sm:pt-2.5">
-                          <label className="text-sm font-medium text-exclu-cloud">Username</label>
-                          <p className="text-xs text-exclu-space/60 mt-0.5 hidden sm:block">Your unique profile URL</p>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <div className="flex">
-                            <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-exclu-arsenic/50 bg-exclu-phantom/30 text-sm text-exclu-space/70">
-                              exclu.at/
-                            </span>
-                            <Input
-                              value={handle}
-                              onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                              placeholder="yourhandle"
-                              className="h-11 rounded-l-none bg-primary/10 border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                            />
-                          </div>
-                        </div>
-                      </div>
+
 
                       {/* Bio */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 items-start">

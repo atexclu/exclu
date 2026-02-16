@@ -2,8 +2,8 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Palette, Link2, Image, ShieldCheck, Sun, Moon } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
@@ -23,8 +23,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/app/profile', label: 'Profile', icon: Palette },
-  { path: '/app/links', label: 'Links', icon: Link2 },
-  { path: '/app/content', label: 'Content', icon: Image },
   { path: '/admin/users', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];
 
@@ -108,11 +106,10 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                     className="relative z-10"
                   >
                     <motion.div
-                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
-                        active
-                          ? 'text-black dark:text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
+                      className={`relative z-10 flex items-center gap-2 px-8 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${active
+                        ? 'text-black dark:text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                        }`}
                       whileHover={!active ? { scale: 1.04 } : {}}
                       whileTap={{ scale: 0.97 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
@@ -151,11 +148,10 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
               aria-label="Profile settings"
             >
               <motion.div
-                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
-                  location.pathname === '/app/settings'
-                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
-                    : 'border-border/60 group-hover:border-primary/50'
-                }`}
+                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${location.pathname === '/app/settings'
+                  ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                  : 'border-border/60 group-hover:border-primary/50'
+                  }`}
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
@@ -205,8 +201,53 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </header>
 
       {/* Main content */}
-      <div className="pt-16 sm:pt-20 flex-1 flex flex-col">
+      <div className="pt-16 sm:pt-20 flex-1 flex flex-col pb-24 sm:pb-0">
         <main className="flex-1">{children}</main>
+      </div>
+
+      {/* Mobile Floating Dock */}
+      <div className="fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none">
+        <div className="flex items-center gap-8 px-6 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
+          {/* Links Button */}
+          <Link to="/app/links">
+            <motion.div
+              className={`flex flex-col items-center justify-center w-14 h-14 rounded-full transition-colors ${location.pathname.startsWith('/app/links')
+                ? 'text-white bg-white/10'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Link2 className="w-6 h-6" />
+              <span className="text-[10px] font-medium mt-0.5">Links</span>
+            </motion.div>
+          </Link>
+
+          {/* Add Content Button (Center) */}
+          <Link to="/app/content?action=new">
+            <motion.div
+              className="flex items-center justify-center w-16 h-16 rounded-full bg-[#E5FF7D] text-black shadow-lg shadow-[#E5FF7D]/20 transform -translate-y-4 border-4 border-black"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              style={{ y: -16 }} // Ensure it stays lifted
+            >
+              <Plus className="w-8 h-8 stroke-[2.5]" />
+            </motion.div>
+          </Link>
+
+          {/* Content Button */}
+          <Link to="/app/content">
+            <motion.div
+              className={`flex flex-col items-center justify-center w-14 h-14 rounded-full transition-colors ${location.pathname === '/app/content' && !location.search.includes('action=new')
+                ? 'text-white bg-white/10'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Image className="w-6 h-6" />
+              <span className="text-[10px] font-medium mt-0.5">Content</span>
+            </motion.div>
+          </Link>
+        </div>
       </div>
     </div>
   );

@@ -69,122 +69,122 @@ const App = () => {
   }
 
   return (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/help-center" element={<HelpCenter />} />
-          <Route path="/help-center/getting-started" element={<HelpGettingStarted />} />
-          <Route path="/help-center/payouts-pricing" element={<HelpPayoutsPricing />} />
-          <Route path="/help-center/links-content" element={<HelpLinksContent />} />
-          <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route
-            path="/onboarding"
-            element={
-              <ProtectedRoute>
-                <Onboarding />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/users"
-            element={
-              <AdminRoute>
-                <AdminUsers />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/users/:id/overview"
-            element={
-              <AdminRoute>
-                <AdminUserOverview />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/app"
-            element={
-              <ProtectedRoute>
-                <AppDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/links"
-            element={
-              <ProtectedRoute>
-                <CreatorLinks />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/links/new"
-            element={
-              <ProtectedRoute>
-                <CreateLink />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/content"
-            element={
-              <ProtectedRoute>
-                <ContentLibrary />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/links/:id"
-            element={
-              <ProtectedRoute>
-                <LinkDetail />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/links/:id/edit"
-            element={
-              <ProtectedRoute>
-                <EditLink />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/settings"
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/app/profile"
-            element={
-              <ProtectedRoute>
-                <LinkInBioEditor />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/l/:slug" element={<PublicLink />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="/cookies" element={<Cookies />} />
-          {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
-          <Route path="/:handle" element={<CreatorPublic />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-      </TooltipProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/help-center" element={<HelpCenter />} />
+              <Route path="/help-center/getting-started" element={<HelpGettingStarted />} />
+              <Route path="/help-center/payouts-pricing" element={<HelpPayoutsPricing />} />
+              <Route path="/help-center/links-content" element={<HelpLinksContent />} />
+              <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <Onboarding />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/users"
+                element={
+                  <AdminRoute>
+                    <AdminUsers />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/users/:id/overview"
+                element={
+                  <AdminRoute>
+                    <AdminUserOverview />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/app"
+                element={
+                  <ProtectedRoute>
+                    <AppDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/links"
+                element={
+                  <ProtectedRoute>
+                    <CreatorLinks />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/links/new"
+                element={
+                  <ProtectedRoute>
+                    <CreateLink />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/content"
+                element={
+                  <ProtectedRoute>
+                    <ContentLibrary />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/links/:id"
+                element={
+                  <ProtectedRoute>
+                    <LinkDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/links/:id/edit"
+                element={
+                  <ProtectedRoute>
+                    <EditLink />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/settings"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/profile"
+                element={
+                  <ProtectedRoute>
+                    <LinkInBioEditor />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/l/:slug" element={<PublicLink />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/cookies" element={<Cookies />} />
+              {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
+              <Route path="/:handle" element={<CreatorPublic />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 };
 

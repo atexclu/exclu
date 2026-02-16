@@ -1,5 +1,5 @@
 import { Switch } from '@/components/ui/switch';
-import { Sparkles, Crown, Palette, BadgeCheck, Smartphone, CircleDot } from 'lucide-react';
+import { Crown, Palette, BadgeCheck, Smartphone, CircleDot } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
@@ -25,29 +25,21 @@ export function OptionsSection({ showJoinBanner, showCertification, showDeeplink
           Applies to the background animation, verified badge, exclusive content button, and link accents
         </p>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="flex flex-wrap gap-4">
           {auroraGradients.map((gradient) => (
             <button
               key={gradient.id}
+              title={gradient.name}
               onClick={() => onUpdate({ aurora_gradient: gradient.id })}
-              className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border transition-all ${
-                auroraGradient === gradient.id
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                  : 'border-border hover:border-primary/50 hover:bg-muted/50'
-              }`}
+              className="group focus:outline-none"
             >
-              <div 
-                className="w-full h-12 rounded-lg shadow-lg"
+              <div
+                className={`w-12 h-12 rounded-full shadow-lg transition-all duration-300 ${auroraGradient === gradient.id
+                  ? 'ring-[3px] ring-primary ring-offset-2 ring-offset-background scale-110'
+                  : 'ring-1 ring-border group-hover:ring-primary/50 group-hover:scale-105'
+                  }`}
                 style={{ background: gradient.preview }}
               />
-              <span className="text-xs font-medium text-foreground text-center">{gradient.name}</span>
-              {auroraGradient === gradient.id && (
-                <div className="absolute top-2 right-2">
-                  <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                    <Sparkles className="w-3 h-3 text-primary-foreground" />
-                  </div>
-                </div>
-              )}
             </button>
           ))}
         </div>

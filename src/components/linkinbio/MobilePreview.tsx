@@ -79,7 +79,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
         <div className="absolute inset-0 rounded-[3rem] bg-black shadow-2xl ring-1 ring-white/10">
           {/* Notch */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-7 bg-black rounded-b-3xl z-50" />
-          
+
           {/* Screen */}
           <div className="absolute inset-3 rounded-[2.5rem] bg-black overflow-hidden">
             {/* Status Bar */}
@@ -95,9 +95,9 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                 </div>
                 {/* WiFi icon */}
                 <svg width="15" height="11" viewBox="0 0 15 11" fill="none" className="text-white">
-                  <path d="M7.5 10.5C8.05 10.5 8.5 10.05 8.5 9.5C8.5 8.95 8.05 8.5 7.5 8.5C6.95 8.5 6.5 8.95 6.5 9.5C6.5 10.05 6.95 10.5 7.5 10.5Z" fill="currentColor"/>
-                  <path d="M7.5 6.5C8.88 6.5 10.16 7.03 11.12 7.88L12.24 6.62C10.96 5.48 9.3 4.83 7.5 4.83C5.7 4.83 4.04 5.48 2.76 6.62L3.88 7.88C4.84 7.03 6.12 6.5 7.5 6.5Z" fill="currentColor"/>
-                  <path d="M7.5 2.17C9.96 2.17 12.24 3.07 13.98 4.62L15 3.38C12.96 1.54 10.34 0.5 7.5 0.5C4.66 0.5 2.04 1.54 0 3.38L1.02 4.62C2.76 3.07 5.04 2.17 7.5 2.17Z" fill="currentColor"/>
+                  <path d="M7.5 10.5C8.05 10.5 8.5 10.05 8.5 9.5C8.5 8.95 8.05 8.5 7.5 8.5C6.95 8.5 6.5 8.95 6.5 9.5C6.5 10.05 6.95 10.5 7.5 10.5Z" fill="currentColor" />
+                  <path d="M7.5 6.5C8.88 6.5 10.16 7.03 11.12 7.88L12.24 6.62C10.96 5.48 9.3 4.83 7.5 4.83C5.7 4.83 4.04 5.48 2.76 6.62L3.88 7.88C4.84 7.03 6.12 6.5 7.5 6.5Z" fill="currentColor" />
+                  <path d="M7.5 2.17C9.96 2.17 12.24 3.07 13.98 4.62L15 3.38C12.96 1.54 10.34 0.5 7.5 0.5C4.66 0.5 2.04 1.54 0 3.38L1.02 4.62C2.76 3.07 5.04 2.17 7.5 2.17Z" fill="currentColor" />
                 </svg>
                 {/* Battery */}
                 <div className="flex items-center gap-0.5">
@@ -138,10 +138,10 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/20 to-black/60" />
                   {/* Shadow at bottom of image - fading up */}
                   <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
-                  {/* Bottom shadow overlay (100% black -> 0% over 150px) */}
-                  <div className="absolute inset-x-0 bottom-0 h-[150px] bg-gradient-to-t from-black to-transparent pointer-events-none z-10" />
-                  {/* Name overlay on image */}
-                  <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-30 translate-y-[12px]">
+                  {/* Bottom shadow overlay (reduced intensity) */}
+                  <div className="absolute inset-x-0 bottom-0 h-[100px] bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-10" />
+                  {/* Name overlay on image - Lowered */}
+                  <div className="absolute inset-x-5 bottom-0 flex flex-col items-center text-center z-30 translate-y-[32px]">
                     <div className="flex items-center gap-1">
                       <h1 className="text-lg font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
                       {data.show_certification !== false && (
@@ -185,10 +185,11 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                 </div>
 
                 <div className="relative px-4 pb-24">
-                  {/* Inner shadow at top - softer black with 150px gradient fade */}
-                  <div className="absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-20" />
+                  {/* Inner shadow at top - 100% black fading out downwards over 150px */}
+                  <div className="absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
+
                   {/* Location & Bio */}
-                  <div className="relative z-10 text-center mb-4 pt-6">
+                  <div className="relative z-10 text-center mb-4 pt-14">
                     {(data.location || data.show_available_now) && (
                       <p className="text-xs text-white mb-2 flex items-center justify-center gap-1">
                         {data.location && (
@@ -220,21 +221,19 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                       <div className="flex justify-center gap-6">
                         <button
                           onClick={() => setActiveTab('links')}
-                          className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                            activeTab === 'links'
-                              ? 'text-white'
-                              : 'text-white/50 hover:text-white/70'
-                          }`}
+                          className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${activeTab === 'links'
+                            ? 'text-white'
+                            : 'text-white/50 hover:text-white/70'
+                            }`}
                         >
                           Links
                         </button>
                         <button
                           onClick={() => setActiveTab('content')}
-                          className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                            activeTab === 'content'
-                              ? 'text-white'
-                              : 'text-white/50 hover:text-white/70'
-                          }`}
+                          className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${activeTab === 'content'
+                            ? 'text-white'
+                            : 'text-white/50 hover:text-white/70'
+                            }`}
                         >
                           Content
                         </button>

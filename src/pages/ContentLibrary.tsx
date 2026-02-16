@@ -1,5 +1,6 @@
 import AppShell from '@/components/AppShell';
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,18 @@ const ContentLibrary = () => {
   const [isPublic, setIsPublic] = useState(false);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Handle URL actions
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('action') === 'new') {
+      setShowUploadModal(true);
+      // Clean up URL
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate]);
 
   useEffect(() => {
     let isMounted = true;
@@ -253,17 +266,17 @@ const ContentLibrary = () => {
 
   const handleToggleVisibility = async (assetId: string, currentIsPublic: boolean) => {
     const newIsPublic = !currentIsPublic;
-    
+
     const { error } = await supabase
       .from('assets')
       .update({ is_public: newIsPublic })
       .eq('id', assetId);
-    
+
     if (error) {
       console.error('Error updating visibility', error);
       return;
     }
-    
+
     setAssets((prev) =>
       prev.map((asset) =>
         asset.id === assetId ? { ...asset, is_public: newIsPublic } : asset
@@ -410,8 +423,8 @@ const ContentLibrary = () => {
                         {selectedFiles.length === 0
                           ? 'Choose one or more files'
                           : selectedFiles.length === 1
-                          ? selectedFiles[0].name
-                          : `${selectedFiles[0].name} + ${selectedFiles.length - 1} more`}
+                            ? selectedFiles[0].name
+                            : `${selectedFiles[0].name} + ${selectedFiles.length - 1} more`}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         MP4, MOV, JPG, PNG supported
@@ -497,37 +510,34 @@ const ContentLibrary = () => {
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
                   <div className="flex items-center gap-3">
                     <p className="text-xs text-exclu-space/70">{getFilteredAssets().length} item{getFilteredAssets().length > 1 ? 's' : ''}</p>
-                    
+
                     {/* Visibility filter */}
                     <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
                       <button
                         onClick={() => setVisibilityFilter('all')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all ${
-                          visibilityFilter === 'all'
-                            ? 'bg-primary text-white dark:text-black shadow-sm'
-                            : 'hover:text-exclu-cloud'
-                        }`}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all ${visibilityFilter === 'all'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                          }`}
                       >
                         All
                       </button>
                       <button
                         onClick={() => setVisibilityFilter('public')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
-                          visibilityFilter === 'public'
-                            ? 'bg-primary text-white dark:text-black shadow-sm'
-                            : 'hover:text-exclu-cloud'
-                        }`}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${visibilityFilter === 'public'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                          }`}
                       >
                         <Eye className="w-3 h-3" />
                         Public
                       </button>
                       <button
                         onClick={() => setVisibilityFilter('private')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${
-                          visibilityFilter === 'private'
-                            ? 'bg-primary text-white dark:text-black shadow-sm'
-                            : 'hover:text-exclu-cloud'
-                        }`}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${visibilityFilter === 'private'
+                          ? 'bg-primary text-white dark:text-black shadow-sm'
+                          : 'hover:text-exclu-cloud'
+                          }`}
                       >
                         <EyeOff className="w-3 h-3" />
                         Private
@@ -610,11 +620,10 @@ const ContentLibrary = () => {
                 {getFilteredAssets().map((asset) => (
                   <div
                     key={asset.id}
-                    className={`group relative overflow-hidden rounded-2xl border bg-exclu-ink/80 shadow-glow-sm transition-all ${
-                      selectedAssets.has(asset.id)
-                        ? 'border-primary ring-2 ring-primary/50'
-                        : 'border-exclu-arsenic/60 hover:border-primary/50'
-                    }`}
+                    className={`group relative overflow-hidden rounded-2xl border bg-exclu-ink/80 shadow-glow-sm transition-all ${selectedAssets.has(asset.id)
+                      ? 'border-primary ring-2 ring-primary/50'
+                      : 'border-exclu-arsenic/60 hover:border-primary/50'
+                      }`}
                   >
                     {/* Selection checkbox */}
                     <div
@@ -623,11 +632,10 @@ const ContentLibrary = () => {
                     >
                       <button
                         onClick={() => toggleAssetSelection(asset.id)}
-                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                          selectedAssets.has(asset.id)
-                            ? 'bg-primary border-primary'
-                            : 'bg-black/60 border-white/40 backdrop-blur-sm hover:border-white/60'
-                        }`}
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${selectedAssets.has(asset.id)
+                          ? 'bg-primary border-primary'
+                          : 'bg-black/60 border-white/40 backdrop-blur-sm hover:border-white/60'
+                          }`}
                       >
                         {selectedAssets.has(asset.id) && (
                           <Check className="w-4 h-4 text-white" />
@@ -640,43 +648,43 @@ const ContentLibrary = () => {
                       onClick={() => setPreviewAsset(asset)}
                       className="w-full text-left cursor-pointer"
                     >
-                    <div className="relative w-full aspect-square">
-                    {asset.previewUrl ? (
-                      asset.mime_type?.startsWith('video/') ? (
-                        <video
-                          src={asset.previewUrl}
-                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          muted
-                          loop
-                          playsInline
-                        />
-                      ) : (
-                        <img
-                          src={asset.previewUrl}
-                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          alt={asset.title || 'Library asset'}
-                        />
-                      )
-                    ) : (
-                      <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                    )}
+                      <div className="relative w-full aspect-square">
+                        {asset.previewUrl ? (
+                          asset.mime_type?.startsWith('video/') ? (
+                            <video
+                              src={asset.previewUrl}
+                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              muted
+                              loop
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={asset.previewUrl}
+                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              alt={asset.title || 'Library asset'}
+                            />
+                          )
+                        ) : (
+                          <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                        )}
 
-                    {/* Permanent bottom gradient for text readability */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
+                        {/* Permanent bottom gradient for text readability */}
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
 
-                    {/* Hover gradient overlay */}
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        {/* Hover gradient overlay */}
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-                    {/* Bottom text overlay */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
-                      <p className="text-[11px] sm:text-xs font-medium text-white truncate">
-                        {asset.title || 'Untitled asset'}
-                      </p>
-                      <p className="text-[10px] text-white/70">
-                        {new Date(asset.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    </div>
+                        {/* Bottom text overlay */}
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
+                          <p className="text-[11px] sm:text-xs font-medium text-white truncate">
+                            {asset.title || 'Untitled asset'}
+                          </p>
+                          <p className="text-[10px] text-white/70">
+                            {new Date(asset.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
                     </button>
                   </div>
                 ))}
