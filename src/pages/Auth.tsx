@@ -42,9 +42,16 @@ const Auth = () => {
           toast.error('Please enter a new password');
           return;
         }
+        const confirmPassword = String(formData.get('confirmPassword') || '');
+        if (password !== confirmPassword) {
+          toast.error('Passwords do not match');
+          return;
+        }
         const { error } = await supabase.auth.updateUser({ password });
         if (error) throw error;
         toast.success('Password updated successfully! You can now log in.');
+        // Clear URL parameters and redirect to login
+        window.history.replaceState({}, '', '/auth');
         setMode('login');
       } else if (mode === 'reset') {
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
@@ -231,6 +238,7 @@ const Auth = () => {
 
           <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
             <CardHeader className="px-5 pt-5 pb-3 space-y-4">
+              {mode !== 'update-password' && (
               <div className="flex justify-center gap-8 border-b border-exclu-arsenic/40">
                 <button
                   type="button"
@@ -238,13 +246,13 @@ const Auth = () => {
                   className="relative pb-3.5 px-2 transition-all"
                 >
                   <span className={`text-base font-bold transition-all ${
-                    mode === 'login' || mode === 'reset' || mode === 'update-password'
+                    mode === 'login' || mode === 'reset'
                       ? 'text-exclu-cloud'
                       : 'text-exclu-space/60 hover:text-exclu-space'
                   }`}>
                     Log in
                   </span>
-                  {(mode === 'login' || mode === 'reset' || mode === 'update-password') && (
+                  {(mode === 'login' || mode === 'reset') && (
                     <motion.div
                       layoutId="auth-tab-indicator"
                       className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
@@ -273,6 +281,7 @@ const Auth = () => {
                   )}
                 </button>
               </div>
+              )}
               <div className="space-y-1">
                 <CardTitle className="text-base text-exclu-cloud">
                   {mode === 'signup'
@@ -288,22 +297,40 @@ const Auth = () => {
             <CardContent className="px-5 pb-5">
               <form className="space-y-4" onSubmit={handleSubmit}>
                 {mode === 'update-password' && (
-                  <div className="space-y-1.5">
-                    <label htmlFor="password" className="text-[11px] text-exclu-space/80 flex items-center gap-1.5">
-                      <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
-                      New Password
-                    </label>
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      autoComplete="new-password"
-                      placeholder="Enter your new password"
-                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                      minLength={6}
-                      required
-                    />
-                  </div>
+                  <>
+                    <div className="space-y-1.5">
+                      <label htmlFor="password" className="text-[11px] text-exclu-space/80 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
+                        New Password
+                      </label>
+                      <Input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Enter your new password"
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                        minLength={6}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="confirmPassword" className="text-[11px] text-exclu-space/80 flex items-center gap-1.5">
+                        <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
+                        Confirm Password
+                      </label>
+                      <Input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Confirm your new password"
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                        minLength={6}
+                        required
+                      />
+                    </div>
+                  </>
                 )}
 
                 {mode === 'signup' && (
@@ -331,6 +358,7 @@ const Auth = () => {
                   </div>
                 )}
 
+                {mode !== 'update-password' && (
                 <div className="space-y-1.5">
                   <label htmlFor="email" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
                     <Mail className="h-3.5 w-3.5 text-exclu-space/80" />
@@ -346,6 +374,7 @@ const Auth = () => {
                     required
                   />
                 </div>
+                )}
 
                 <div className="space-y-1.5">
                   <label
