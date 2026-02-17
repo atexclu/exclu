@@ -4,16 +4,25 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Lock, Sparkles, AtSign } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 
 const Auth = () => {
-  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('signup');
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset' | 'update-password'>('signup');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Check if user is coming from password reset email
+  useEffect(() => {
+    const urlMode = searchParams.get('mode');
+    if (urlMode === 'update-password') {
+      setMode('update-password');
+    }
+  }, [searchParams]);
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
@@ -21,14 +30,23 @@ const Auth = () => {
     const email = String(formData.get('email') || '').trim();
     const password = String(formData.get('password') || '');
 
-    if (!email) {
+    if (!email && mode !== 'update-password') {
       toast.error('Please fill in your email');
       return;
     }
 
     setIsLoading(true);
     try {
-      if (mode === 'reset') {
+      if (mode === 'update-password') {
+        if (!password) {
+          toast.error('Please enter a new password');
+          return;
+        }
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        toast.success('Password updated successfully! You can now log in.');
+        setMode('login');
+      } else if (mode === 'reset') {
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${siteUrl}/auth?mode=update-password`,
@@ -190,6 +208,8 @@ const Auth = () => {
                 ? 'Create your Exclu account'
                 : mode === 'login'
                 ? 'Log in to Exclu'
+                : mode === 'update-password'
+                ? 'Set your new password'
                 : 'Reset your password'}
             </h1>
             {mode === 'signup' && (
@@ -200,6 +220,11 @@ const Auth = () => {
             {mode === 'reset' && (
               <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
                 Enter your email and we will send you a link to reset your password.
+              </p>
+            )}
+            {mode === 'update-password' && (
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-xs mx-auto">
+                Enter your new password below.
               </p>
             )}
           </div>
@@ -213,13 +238,13 @@ const Auth = () => {
                   className="relative pb-3.5 px-2 transition-all"
                 >
                   <span className={`text-base font-bold transition-all ${
-                    mode === 'login' || mode === 'reset'
+                    mode === 'login' || mode === 'reset' || mode === 'update-password'
                       ? 'text-exclu-cloud'
                       : 'text-exclu-space/60 hover:text-exclu-space'
                   }`}>
                     Log in
                   </span>
-                  {(mode === 'login' || mode === 'reset') && (
+                  {(mode === 'login' || mode === 'reset' || mode === 'update-password') && (
                     <motion.div
                       layoutId="auth-tab-indicator"
                       className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
@@ -254,12 +279,33 @@ const Auth = () => {
                     ? 'Create your credentials'
                     : mode === 'login'
                     ? 'Log in with your email'
+                    : mode === 'update-password'
+                    ? 'Set your new password'
                     : 'Reset your password'}
                 </CardTitle>
               </div>
             </CardHeader>
             <CardContent className="px-5 pb-5">
               <form className="space-y-4" onSubmit={handleSubmit}>
+                {mode === 'update-password' && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="password" className="text-[11px] text-exclu-space/80 flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
+                      New Password
+                    </label>
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Enter your new password"
+                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      minLength={6}
+                      required
+                    />
+                  </div>
+                )}
+
                 {mode === 'signup' && (
                   <div className="space-y-1.5">
                     <label htmlFor="username" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
@@ -309,7 +355,7 @@ const Auth = () => {
                     <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
                     Password
                   </label>
-                  {mode !== 'reset' && (
+                  {mode !== 'reset' && mode !== 'update-password' && (
                     <Input
                       id="password"
                       name="password"
@@ -336,6 +382,8 @@ const Auth = () => {
                     ? 'Sign up'
                     : mode === 'login'
                     ? 'Log in'
+                    : mode === 'update-password'
+                    ? 'Update password'
                     : 'Send reset link'}
                 </Button>
 
