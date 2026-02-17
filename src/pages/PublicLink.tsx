@@ -491,7 +491,7 @@ const PublicLink = () => {
           )}
 
           {/* LOCKED STATE - New Grid Layout */}
-          {!isLoading && !isVerifyingPayment && !paymentNotFound && link && !isUnlocked && contentItems.length > 0 && contentItems[0].storagePath && (
+          {!isLoading && !isVerifyingPayment && !paymentNotFound && link && !isUnlocked && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
               {/* LEFT: Card with Effects */}
               <motion.div
