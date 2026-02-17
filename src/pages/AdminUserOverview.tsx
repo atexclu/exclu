@@ -2,6 +2,7 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Download } from 'lucide-react';
 
 interface UserProfileOverview {
   id: string;
@@ -581,33 +582,61 @@ const AdminUserOverview = () => {
             </div>
             <div className="bg-black flex flex-col items-center justify-start overflow-y-auto max-h-[80vh] p-4 gap-6">
               {selectedLink.media && selectedLink.media.length > 0 ? (
-                selectedLink.media.map((m, idx) => (
-                  <div key={m.id} className="w-full space-y-2">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-[10px] text-exclu-space uppercase tracking-wider">File {idx + 1}</span>
-                      <span className="text-[10px] text-exclu-space/60">{m.mime_type}</span>
-                    </div>
-                    <div className="rounded-xl border border-exclu-arsenic/50 overflow-hidden bg-exclu-void/40 flex items-center justify-center min-h-[200px]">
-                      {m.preview_url ? (
-                        m.mime_type?.startsWith('video/') ? (
-                          <video
-                            src={m.preview_url}
-                            controls
-                            className="max-h-[70vh] max-w-full"
-                          />
+                selectedLink.media.map((m, idx) => {
+                  const isVid = m.mime_type?.startsWith('video/');
+                  const isImg = m.mime_type?.startsWith('image/');
+                  const canPreview = isVid || isImg;
+
+                  return (
+                    <div key={m.id || idx} className="w-full space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] text-exclu-space uppercase tracking-wider">File {idx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-exclu-space/60">{m.mime_type || 'Unknown type'}</span>
+                          {m.preview_url && !canPreview && (
+                            <a
+                              href={m.preview_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-exclu-cloud hover:underline bg-exclu-arsenic/40 px-2 py-0.5 rounded"
+                            >
+                              Open file
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-exclu-arsenic/50 overflow-hidden bg-exclu-void/40 flex items-center justify-center min-h-[200px]">
+                        {m.preview_url ? (
+                          isVid ? (
+                            <video
+                              src={m.preview_url}
+                              controls
+                              className="max-h-[70vh] max-w-full"
+                            />
+                          ) : isImg ? (
+                            <img
+                              src={m.preview_url}
+                              alt={`${selectedLink.title} - file ${idx + 1}`}
+                              className="max-h-[70vh] max-w-full object-contain"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center gap-3 p-12">
+                              <div className="w-12 h-12 rounded-full bg-exclu-arsenic/30 flex items-center justify-center">
+                                <Download className="w-6 h-6 text-exclu-space" />
+                              </div>
+                              <p className="text-xs text-exclu-space text-center">
+                                This file type ({m.mime_type}) cannot be previewed directly.<br />
+                                <a href={m.preview_url} target="_blank" rel="noopener noreferrer" className="text-exclu-cloud underline mt-2 inline-block">Download/Open file</a>
+                              </p>
+                            </div>
+                          )
                         ) : (
-                          <img
-                            src={m.preview_url}
-                            alt={`${selectedLink.title} - file ${idx + 1}`}
-                            className="max-h-[70vh] max-w-full object-contain"
-                          />
-                        )
-                      ) : (
-                        <p className="text-xs text-exclu-space/70 p-6">No preview available for this file.</p>
-                      )}
+                          <p className="text-xs text-exclu-space/70 p-6">No preview available for this file.</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : selectedLink.previewUrl ? (
                 <div className="w-full flex items-center justify-center">
                   {selectedLink.mime_type?.startsWith('video/') ? (
@@ -616,16 +645,26 @@ const AdminUserOverview = () => {
                       controls
                       className="max-h-[80vh] max-w-full"
                     />
-                  ) : (
+                  ) : selectedLink.mime_type?.startsWith('image/') ? (
                     <img
                       src={selectedLink.previewUrl}
                       alt={selectedLink.title || 'Link content'}
                       className="max-h-[80vh] max-w-full object-contain"
                     />
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 p-12">
+                      <p className="text-xs text-exclu-space text-center">
+                        This file ({selectedLink.mime_type}) cannot be previewed.<br />
+                        <a href={selectedLink.previewUrl} target="_blank" rel="noopener noreferrer" className="text-exclu-cloud underline mt-2 inline-block">Open file</a>
+                      </p>
+                    </div>
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-exclu-space/70 p-6">No media available for this link.</p>
+                <div className="flex flex-col items-center gap-2 p-12">
+                  <p className="text-xs text-exclu-space/70 text-center">No media available for this link.</p>
+                  <p className="text-[10px] text-exclu-space/40 text-center break-all max-w-xs">Path: {selectedLink.storage_path || 'None'}</p>
+                </div>
               )}
             </div>
           </div>

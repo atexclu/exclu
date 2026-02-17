@@ -177,6 +177,17 @@ function mapRequirementKeyToMessage(key: string): string {
   return 'Provide additional information requested by Stripe for this account.';
 }
 
+function detectMimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  const videoExts = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'wmv'];
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp'];
+
+  if (videoExts.includes(ext)) return 'video/mp4'; // Default to mp4 for playback
+  if (imageExts.includes(ext)) return 'image/jpeg'; // Default to jpeg
+  if (ext === 'zip') return 'application/zip';
+  return 'application/octet-stream';
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
 
@@ -360,44 +371,60 @@ serve(async (req) => {
           preview_url: string | null;
         }> = [];
 
-        // 1. Add primary media if it exists
-        if (primaryStoragePath) {
+        // Helper to sign and push
+        const addMedia = async (id: string, path: string, mType: string | null, label: string) => {
+          if (!path) return;
           try {
-            const { data: signed } = await supabaseAdmin.storage
+            // Clean path if it has leading bucket name (sometimes happens in legacy data)
+            const cleanPath = path.startsWith('paid-content/') ? path.replace('paid-content/', '') : path;
+
+            const { data: signed, error: signError } = await supabaseAdmin.storage
               .from('paid-content')
-              .createSignedUrl(primaryStoragePath, 60 * 60);
+              .createSignedUrl(cleanPath, 60 * 60);
+
+            if (signError) {
+              console.warn(`[admin-get-user-overview] Failed to sign cleanPath ${cleanPath}:`, signError);
+
+              // Fallback: try with original path if different
+              if (cleanPath !== path) {
+                const { data: signedOrig } = await supabaseAdmin.storage
+                  .from('paid-content')
+                  .createSignedUrl(path, 60 * 60);
+                if (signedOrig?.signedUrl) {
+                  mediaItems.push({
+                    id,
+                    storage_path: path,
+                    mime_type: mType || detectMimeType(path),
+                    title: label,
+                    preview_url: signedOrig.signedUrl,
+                  });
+                  return;
+                }
+              }
+            }
 
             mediaItems.push({
-              id: 'primary',
-              storage_path: primaryStoragePath,
-              mime_type: link.mime_type,
-              title: 'Primary Content',
+              id,
+              storage_path: path,
+              mime_type: mType || detectMimeType(path),
+              title: label,
               preview_url: signed?.signedUrl ?? null,
             });
           } catch (e) {
-            console.error('Error signing primary media:', e);
+            console.error(`[admin-get-user-overview] Error signing media ${id}:`, e);
           }
+        };
+
+        // 1. Add primary media if it exists
+        if (primaryStoragePath) {
+          await addMedia('primary', primaryStoragePath, link.mime_type, 'Primary Content');
         }
 
         // 2. Add additional media from link_media
         for (const lm of linkMedia) {
           const asset = lm.assets;
           if (asset && asset.storage_path) {
-            try {
-              const { data: signed } = await supabaseAdmin.storage
-                .from('paid-content')
-                .createSignedUrl(asset.storage_path, 60 * 60);
-
-              mediaItems.push({
-                id: asset.id,
-                storage_path: asset.storage_path,
-                mime_type: asset.mime_type,
-                title: asset.title,
-                preview_url: signed?.signedUrl ?? null,
-              });
-            } catch (e) {
-              console.error('Error signing gallery media:', e);
-            }
+            await addMedia(asset.id, asset.storage_path, asset.mime_type, asset.title);
           }
         }
 
@@ -409,7 +436,7 @@ serve(async (req) => {
           created_at: (link.created_at as string | null) ?? null,
           published_at: (link.published_at as string | null) ?? null,
           storage_path: primaryStoragePath,
-          mime_type: (link.mime_type as string | null) ?? null,
+          mime_type: (link.mime_type as string | null) ?? mediaItems[0]?.mime_type ?? null,
           previewUrl: mediaItems[0]?.preview_url ?? null,
           media: mediaItems,
         });
