@@ -349,6 +349,19 @@ const PublicLink = () => {
       }
 
       setIsLoading(false);
+      
+      // DEBUG: Log all state values to diagnose display issues
+      console.log('[PublicLink DEBUG] Final state:', {
+        slug,
+        isLoading: false,
+        isVerifyingPayment,
+        paymentNotFound,
+        hasLink: !!link,
+        isUnlocked,
+        contentItemsCount: items.length,
+        linkData: link ? { id: link.id, title: link.title, price_cents: link.price_cents } : null,
+        creatorData: creator ? { id: creator.id, handle: creator.handle } : null
+      });
       } catch (err: any) {
         if (err.name === 'AbortError') {
           console.log('Request was aborted');
@@ -491,7 +504,18 @@ const PublicLink = () => {
           )}
 
           {/* LOCKED STATE - New Grid Layout */}
-          {!isLoading && !isVerifyingPayment && !paymentNotFound && link && !isUnlocked && (
+          {(() => {
+            const shouldShow = !isLoading && !isVerifyingPayment && !paymentNotFound && link && !isUnlocked;
+            console.log('[PublicLink DEBUG] LOCKED STATE condition:', {
+              isLoading,
+              isVerifyingPayment,
+              paymentNotFound,
+              hasLink: !!link,
+              isUnlocked,
+              shouldShow
+            });
+            return shouldShow;
+          })() && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
               {/* LEFT: Card with Effects */}
               <motion.div
