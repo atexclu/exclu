@@ -62,92 +62,120 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[admin-delete-user] Starting deletion for user: ${user_id}`);
+    console.log(`[admin-delete-user] Starting full deletion for user: ${user_id}`);
 
-    // 1. Delete storage files
-    // Delete from avatars bucket
-    const { data: avatarFiles } = await supabase.storage
-      .from('avatars')
-      .list(`${user_id}/`);
-    
+    // --- 1. COLLECT STORAGE PATHS BEFORE DELETING DB RECORDS ---
+
+    // Get all links and their storage paths
+    const { data: userLinks } = await supabase
+      .from('links')
+      .select('id, storage_path')
+      .eq('creator_id', user_id);
+
+    // Get all assets and their storage paths
+    const { data: userAssets } = await supabase
+      .from('assets')
+      .select('id, storage_path')
+      .eq('creator_id', user_id);
+
+    // --- 2. DELETE STORAGE FILES ---
+
+    // Cleanup Avatars
+    const { data: avatarFiles } = await supabase.storage.from('avatars').list(`${user_id}/`);
     if (avatarFiles && avatarFiles.length > 0) {
-      const avatarPaths = avatarFiles.map(file => `${user_id}/${file.name}`);
-      await supabase.storage.from('avatars').remove(avatarPaths);
-      console.log(`[admin-delete-user] Deleted ${avatarPaths.length} files from avatars bucket`);
+      const paths = avatarFiles.map(f => `${user_id}/${f.name}`);
+      await supabase.storage.from('avatars').remove(paths);
+      console.log(`[admin-delete-user] Deleted files from avatars bucket`);
     }
 
-    // Delete from paid-content bucket
-    const { data: paidContentFiles } = await supabase.storage
-      .from('paid-content')
-      .list(`${user_id}/`);
-    
-    if (paidContentFiles && paidContentFiles.length > 0) {
-      const paidContentPaths = paidContentFiles.map(file => `${user_id}/${file.name}`);
-      await supabase.storage.from('paid-content').remove(paidContentPaths);
-      console.log(`[admin-delete-user] Deleted ${paidContentPaths.length} files from paid-content bucket`);
+    // Cleanup Paid Content
+    // First, delete specific files from links and assets (to handle subfolders)
+    const paidContentPathsToClear: string[] = [];
+    userLinks?.forEach(l => { if (l.storage_path) paidContentPathsToClear.push(l.storage_path); });
+    userAssets?.forEach(a => { if (a.storage_path) paidContentPathsToClear.push(a.storage_path); });
+
+    if (paidContentPathsToClear.length > 0) {
+      await supabase.storage.from('paid-content').remove(paidContentPathsToClear);
+      console.log(`[admin-delete-user] Deleted specific files from paid-content bucket`);
     }
 
-    // Delete from public-content bucket
-    const { data: publicContentFiles } = await supabase.storage
-      .from('public-content')
-      .list(`${user_id}/`);
-    
-    if (publicContentFiles && publicContentFiles.length > 0) {
-      const publicContentPaths = publicContentFiles.map(file => `${user_id}/${file.name}`);
-      await supabase.storage.from('public-content').remove(publicContentPaths);
-      console.log(`[admin-delete-user] Deleted ${publicContentPaths.length} files from public-content bucket`);
+    // Also try to list top-level files in user folder
+    const { data: pcTopFiles } = await supabase.storage.from('paid-content').list(`${user_id}/`);
+    if (pcTopFiles && pcTopFiles.length > 0) {
+      const paths = pcTopFiles.map(f => `${user_id}/${f.name}`);
+      await supabase.storage.from('paid-content').remove(paths);
+      console.log(`[admin-delete-user] Deleted top-level files from paid-content bucket`);
     }
 
-    // 2. Delete database records (in order to respect foreign key constraints)
-    
-    // Delete sales (references creator_links)
-    const { error: salesError } = await supabase
-      .from('sales')
-      .delete()
-      .eq('creator_id', user_id);
-    if (salesError) console.error('[admin-delete-user] Error deleting sales:', salesError);
+    // Cleanup Public Content
+    const { data: pubFiles } = await supabase.storage.from('public-content').list(`${user_id}/`);
+    if (pubFiles && pubFiles.length > 0) {
+      const paths = pubFiles.map(f => `${user_id}/${f.name}`);
+      await supabase.storage.from('public-content').remove(paths);
+      console.log(`[admin-delete-user] Deleted files from public-content bucket`);
+    }
 
-    // Delete purchases (references creator_links)
-    const { error: purchasesError } = await supabase
-      .from('purchases')
-      .delete()
-      .eq('buyer_id', user_id);
-    if (purchasesError) console.error('[admin-delete-user] Error deleting purchases:', purchasesError);
+    // --- 3. DATABASE CLEANUP (Order to satisfy foreign keys) ---
 
-    // Delete creator_links
-    const { error: linksError } = await supabase
-      .from('creator_links')
-      .delete()
-      .eq('creator_id', user_id);
-    if (linksError) console.error('[admin-delete-user] Error deleting creator_links:', linksError);
+    // Define table deletions in order
+    // Note: Some tables might have ON DELETE CASCADE, but explicit delete is safer.
 
-    // Delete creator_assets
-    const { error: assetsError } = await supabase
-      .from('creator_assets')
-      .delete()
-      .eq('creator_id', user_id);
-    if (assetsError) console.error('[admin-delete-user] Error deleting creator_assets:', assetsError);
+    const tablesToDelete = [
+      { name: 'link_media', column: 'link_id', in_links: true },
+      { name: 'sales', column: 'creator_id' },
+      { name: 'purchases', column: 'buyer_id' },
+      { name: 'payouts', column: 'creator_id' },
+      { name: 'profile_analytics', column: 'profile_id', in_profiles: true },
+      { name: 'links', column: 'creator_id' },
+      { name: 'assets', column: 'creator_id' },
+      { name: 'agency_members', column: 'chatter_user_id' }, // Delete where user is chatter
+      { name: 'agency_members', column: 'agency_user_id' },  // Delete where user is agency owner
+      { name: 'agencies', column: 'user_id' },
+      { name: 'creator_profiles', column: 'user_id' },
+      { name: 'user_roles', column: 'user_id' },
+      { name: 'referrals', column: 'referred_user_id' },
+      { name: 'affiliate_payouts', column: 'affiliate_id', in_affiliates: true },
+      { name: 'affiliates', column: 'user_id' },
+      { name: 'profiles', column: 'id' },
+    ];
 
-    // Delete public_content
-    const { error: publicContentError } = await supabase
-      .from('public_content')
-      .delete()
-      .eq('creator_id', user_id);
-    if (publicContentError) console.error('[admin-delete-user] Error deleting public_content:', publicContentError);
+    for (const table of tablesToDelete) {
+      try {
+        if (table.in_links) {
+          if (userLinks && userLinks.length > 0) {
+            const linkIds = userLinks.map(l => l.id);
+            await supabase.from(table.name).delete().in(table.column, linkIds);
+          }
+        } else if (table.in_profiles) {
+          // Get creator profiles first
+          const { data: cps } = await supabase.from('creator_profiles').select('id').eq('user_id', user_id);
+          if (cps && cps.length > 0) {
+            const cpIds = cps.map(p => p.id);
+            await supabase.from(table.name).delete().in(table.column, cpIds);
+          }
+        } else if (table.in_affiliates) {
+          const { data: affs } = await supabase.from('affiliates').select('id').eq('user_id', user_id);
+          if (affs && affs.length > 0) {
+            const affIds = affs.map(a => a.id);
+            await supabase.from(table.name).delete().in(table.column, affIds);
+          }
+        } else {
+          await supabase.from(table.name).delete().eq(table.column, user_id);
+        }
+      } catch (err) {
+        console.warn(`[admin-delete-user] Ignored error for table ${table.name}:`, err);
+      }
+    }
 
-    // Delete profile
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', user_id);
-    if (profileError) console.error('[admin-delete-user] Error deleting profile:', profileError);
-
-    // 3. Delete auth user (this will cascade delete any remaining auth-related data)
+    // --- 4. AUTH USER DELETION ---
     const { error: deleteUserError } = await supabase.auth.admin.deleteUser(user_id);
     if (deleteUserError) {
       console.error('[admin-delete-user] Error deleting auth user:', deleteUserError);
       return new Response(
-        JSON.stringify({ error: 'Failed to delete user from auth', details: deleteUserError }),
+        JSON.stringify({
+          error: 'Failed to delete user from auth. Foreign key constraints might still be active.',
+          details: deleteUserError
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

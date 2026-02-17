@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState, FormEvent } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Film, Sparkles, X } from 'lucide-react';
+import { UploadCloud, Film, Sparkles, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AttachedContentManager, AttachedMedia } from '@/components/AttachedContentManager';
 
@@ -42,7 +42,7 @@ const EditLink = () => {
     const fetchLink = async () => {
       if (!id) return;
       setIsLoading(true);
-      
+
       const { data, error } = await supabase
         .from('links')
         .select('title, description, price_cents, currency, storage_path, show_on_profile')
@@ -252,7 +252,7 @@ const EditLink = () => {
       // 3. Update link_media based on attachedMedia changes
       const initialAssetIds = initialAttachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
       const currentAssetIds = attachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
-      
+
       const addedAssets = currentAssetIds.filter((assetId) => !initialAssetIds.includes(assetId));
       const removedAssets = initialAssetIds.filter((assetId) => !currentAssetIds.includes(assetId));
       const hasOrderChanged = JSON.stringify(initialAssetIds) !== JSON.stringify(currentAssetIds);
@@ -294,6 +294,53 @@ const EditLink = () => {
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || 'Something went wrong while updating your link.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!id || !window.confirm('Are you sure you want to delete this link? This action is permanent and will remove all attached media.')) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error('You must be logged in to delete a link.');
+      }
+
+      // 1. Get storage path before deleting to cleanup storage
+      const { data: linkData } = await supabase
+        .from('links')
+        .select('storage_path')
+        .eq('id', id)
+        .single();
+
+      // 2. Delete the link (CASCADE should handle link_media)
+      const { error: deleteError } = await supabase
+        .from('links')
+        .delete()
+        .eq('id', id)
+        .eq('creator_id', user.id);
+
+      if (deleteError) throw deleteError;
+
+      // 3. Cleanup storage if path exists
+      if (linkData?.storage_path) {
+        await supabase.storage.from('paid-content').remove([linkData.storage_path]);
+      }
+
+      toast.success('Link deleted successfully.');
+      navigate('/app/links');
+    } catch (error: any) {
+      console.error('Error deleting link:', error);
+      toast.error(error?.message || 'Failed to delete link.');
     } finally {
       setIsSubmitting(false);
     }
@@ -473,19 +520,44 @@ const EditLink = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 pt-2">
-                    <p className="text-[11px] text-exclu-space/80">
-                      You can change these settings at any time.
-                    </p>
-                    <Button
-                      type="submit"
-                      variant="hero"
-                      size="lg"
-                      className="inline-flex items-center gap-2"
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? 'Saving changes...' : 'Save changes'}
-                    </Button>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6 border-t border-exclu-arsenic/30">
+                    <div className="flex items-center gap-4">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-950/30 rounded-full inline-flex items-center gap-2 px-4 transition-all"
+                        onClick={handleDelete}
+                        disabled={isSubmitting}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete link</span>
+                      </Button>
+                      <p className="hidden sm:block text-[11px] text-exclu-space/60 max-w-[150px]">
+                        This link will be permanently removed.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-4 w-full sm:w-auto">
+                      <Button
+                        asChild
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        className="flex-1 sm:flex-none rounded-full border-exclu-arsenic/70 text-exclu-space hover:bg-exclu-arsenic/20"
+                      >
+                        <RouterLink to="/app/links">Cancel</RouterLink>
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="hero"
+                        size="lg"
+                        className="flex-1 sm:flex-none inline-flex items-center gap-2"
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? 'Saving...' : 'Save changes'}
+                      </Button>
+                    </div>
                   </div>
                 </form>
               )}

@@ -7,6 +7,10 @@ import { toast } from 'sonner';
 import { ExternalLink, X, CreditCard, Check, Copy, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// --- SELF-HEALING & CACHE-BUSTING ---
+// Increment this version when making critical changes to force data re-fetch
+const APP_DASHBOARD_VERSION = '1.0.4';
+
 const AppDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +129,19 @@ const AppDashboard = () => {
           setProfileViewCount(profile.profile_view_count ?? 0);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
+
+          // --- SELF-HEALING: INTERCEPT INCOMPLETE STRIPE STATUS ---
+          // If the profile says it's not complete, we trigger a background check 
+          // to ensure the DB and Stripe are in sync without waiting for a webhook.
+          if (profile.stripe_connect_status !== 'complete' && profile.stripe_connect_status !== 'no_account') {
+            supabase.functions.invoke('stripe-connect-status', {}).then(({ data }) => {
+              if (data?.status && data.status !== profile.stripe_connect_status) {
+                console.log('[Dashboard] Auto-synced Stripe status:', data.status);
+                setStripeConnectStatus(data.status);
+              }
+            }).catch(console.error);
+          }
+
           // Show Stripe modal if not connected (only once per session)
           const stripeModalDismissed = sessionStorage.getItem('stripeModalDismissed');
           if (profile.stripe_connect_status !== 'complete' && !stripeModalDismissed) {
@@ -142,8 +159,18 @@ const AppDashboard = () => {
 
     fetchMetrics();
 
+    // --- SELF-HEALING: REFRESH ON TAB FOCUS ---
+    // This helps when a user goes to Stripe/Email and comes back
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMetrics();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -434,7 +461,7 @@ const AppDashboard = () => {
                 <span>Welcome back{profileName ? <>, <span className="text-black dark:text-[#CFFF16]">{profileName}</span></> : ''}</span>
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
-                Here's an overview of your performance
+                Here's an overview of your performance <span className="text-[10px] opacity-30">v{APP_DASHBOARD_VERSION}</span>
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -528,11 +555,10 @@ const AppDashboard = () => {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key as 'metrics' | 'earnings')}
-                className={`px-4 py-1.5 rounded-full font-medium transition-all ${
-                  activeTab === tab.key
+                className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
                     ? 'bg-primary text-white dark:text-black shadow-sm'
                     : 'hover:text-exclu-cloud'
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
