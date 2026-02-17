@@ -24,6 +24,19 @@ const Auth = () => {
     }
   }, [searchParams]);
 
+  // Handle password recovery from email link with hash fragment
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setMode('update-password');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
