@@ -88,6 +88,13 @@ interface UserOverviewPayload {
     storage_path: string | null;
     mime_type: string | null;
     previewUrl?: string | null;
+    media: Array<{
+      id: string;
+      storage_path: string;
+      mime_type: string | null;
+      title: string | null;
+      preview_url: string | null;
+    }>;
   }>;
   assets: Array<{
     id: string;
@@ -291,7 +298,20 @@ serve(async (req) => {
     // Load a list of the target user's links (most recent first)
     const { data: linksData, error: linksError } = await supabaseAdmin
       .from('links')
-      .select('id, title, status, price_cents, created_at, storage_path, mime_type')
+      .select(`
+        id, 
+        title, 
+        status, 
+        price_cents, 
+        created_at, 
+        storage_path, 
+        mime_type,
+        link_media(
+          asset_id,
+          position,
+          assets(id, title, storage_path, mime_type)
+        )
+      `)
       .eq('creator_id', targetUserId)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -311,27 +331,73 @@ serve(async (req) => {
       status: string | null;
       price_cents: number | null;
       created_at: string | null;
+      published_at: string | null;
       storage_path: string | null;
       mime_type: string | null;
       previewUrl?: string | null;
+      media: Array<{
+        id: string;
+        storage_path: string;
+        mime_type: string | null;
+        title: string | null;
+        preview_url: string | null;
+      }>;
     }> = [];
 
     if (linksData && linksData.length > 0) {
       for (const link of linksData as any[]) {
-        const storagePath = link.storage_path as string | null;
-        let previewUrl: string | null = null;
+        const primaryStoragePath = link.storage_path as string | null;
+        const linkMedia = (link.link_media ?? []) as any[];
 
-        if (storagePath) {
+        // Sort link_media by position
+        linkMedia.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+        const mediaItems: Array<{
+          id: string;
+          storage_path: string;
+          mime_type: string | null;
+          title: string | null;
+          preview_url: string | null;
+        }> = [];
+
+        // 1. Add primary media if it exists
+        if (primaryStoragePath) {
           try {
             const { data: signed } = await supabaseAdmin.storage
               .from('paid-content')
-              .createSignedUrl(storagePath, 60 * 60);
+              .createSignedUrl(primaryStoragePath, 60 * 60);
 
-            if (signed?.signedUrl) {
-              previewUrl = signed.signedUrl;
-            }
+            mediaItems.push({
+              id: 'primary',
+              storage_path: primaryStoragePath,
+              mime_type: link.mime_type,
+              title: 'Primary Content',
+              preview_url: signed?.signedUrl ?? null,
+            });
           } catch (e) {
-            console.error('Error generating signed URL for link in admin-get-user-overview', e);
+            console.error('Error signing primary media:', e);
+          }
+        }
+
+        // 2. Add additional media from link_media
+        for (const lm of linkMedia) {
+          const asset = lm.assets;
+          if (asset && asset.storage_path) {
+            try {
+              const { data: signed } = await supabaseAdmin.storage
+                .from('paid-content')
+                .createSignedUrl(asset.storage_path, 60 * 60);
+
+              mediaItems.push({
+                id: asset.id,
+                storage_path: asset.storage_path,
+                mime_type: asset.mime_type,
+                title: asset.title,
+                preview_url: signed?.signedUrl ?? null,
+              });
+            } catch (e) {
+              console.error('Error signing gallery media:', e);
+            }
           }
         }
 
@@ -341,10 +407,11 @@ serve(async (req) => {
           status: (link.status as string | null) ?? null,
           price_cents: (link.price_cents as number | null) ?? null,
           created_at: (link.created_at as string | null) ?? null,
-          published_at: null,
-          storage_path: storagePath,
+          published_at: (link.published_at as string | null) ?? null,
+          storage_path: primaryStoragePath,
           mime_type: (link.mime_type as string | null) ?? null,
-          previewUrl,
+          previewUrl: mediaItems[0]?.preview_url ?? null,
+          media: mediaItems,
         });
       }
     }
@@ -525,14 +592,14 @@ serve(async (req) => {
     const payload: UserOverviewPayload = {
       profile: profile
         ? {
-            id: profile.id,
-            display_name: profile.display_name ?? null,
-            handle: profile.handle ?? null,
-            created_at: profile.created_at ?? null,
-            is_creator: profile.is_creator ?? null,
-            country: profile.country ?? null,
-            stripe_connect_status: profile.stripe_connect_status ?? null,
-          }
+          id: profile.id,
+          display_name: profile.display_name ?? null,
+          handle: profile.handle ?? null,
+          created_at: profile.created_at ?? null,
+          is_creator: profile.is_creator ?? null,
+          country: profile.country ?? null,
+          stripe_connect_status: profile.stripe_connect_status ?? null,
+        }
         : null,
       links: links,
       assets: safeAssets,

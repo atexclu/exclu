@@ -23,6 +23,13 @@ interface UserLinkOverview {
   storage_path: string | null;
   mime_type: string | null;
   previewUrl?: string | null;
+  media?: Array<{
+    id: string;
+    storage_path: string;
+    mime_type: string | null;
+    title: string | null;
+    preview_url: string | null;
+  }>;
 }
 
 interface UserAssetOverview {
@@ -338,59 +345,59 @@ const AdminUserOverview = () => {
                   <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Payment Account</h2>
 
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-exclu-cloud">Stripe Connect</p>
-                    <p className="text-xs text-exclu-space mt-1">
-                      {formatStripeStatus(stripeDetails?.status ?? profile.stripe_connect_status)}
-                    </p>
-                    {stripeDetails?.account_email && (
-                      <p className="text-[11px] text-exclu-space/70 mt-1">
-                        Stripe account email:
-                        <span className="ml-1 font-medium text-exclu-cloud/90">
-                          {stripeDetails.account_email}
-                        </span>
-                        {stripeDetails.payout_country && (
-                          <span className="ml-1">
-                            · Payout country:{' '}
-                            <span className="font-medium">{stripeDetails.payout_country}</span>
-                          </span>
-                        )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-exclu-cloud">Stripe Connect</p>
+                      <p className="text-xs text-exclu-space mt-1">
+                        {formatStripeStatus(stripeDetails?.status ?? profile.stripe_connect_status)}
                       </p>
-                    )}
-                    {stripeDetails?.friendly_messages && stripeDetails.friendly_messages.length > 0 && (
-                      <div className="mt-2 text-[11px] text-exclu-space/70">
-                        <p className="font-medium text-exclu-space/80 mb-1">
-                          Stripe still needs the following information:
+                      {stripeDetails?.account_email && (
+                        <p className="text-[11px] text-exclu-space/70 mt-1">
+                          Stripe account email:
+                          <span className="ml-1 font-medium text-exclu-cloud/90">
+                            {stripeDetails.account_email}
+                          </span>
+                          {stripeDetails.payout_country && (
+                            <span className="ml-1">
+                              · Payout country:{' '}
+                              <span className="font-medium">{stripeDetails.payout_country}</span>
+                            </span>
+                          )}
                         </p>
-                        <ul className="list-disc list-inside space-y-0.5">
-                          {stripeDetails.friendly_messages.map((msg, idx) => (
-                            <li key={idx}>{msg}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                      )}
+                      {stripeDetails?.friendly_messages && stripeDetails.friendly_messages.length > 0 && (
+                        <div className="mt-2 text-[11px] text-exclu-space/70">
+                          <p className="font-medium text-exclu-space/80 mb-1">
+                            Stripe still needs the following information:
+                          </p>
+                          <ul className="list-disc list-inside space-y-0.5">
+                            {stripeDetails.friendly_messages.map((msg, idx) => (
+                              <li key={idx}>{msg}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                  </div>
 
-                  {links.length === 0 ? (
-                    <p className="text-sm text-exclu-space">This user has no links yet.</p>
-                  ) : (
-                    <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/90">
-                      <table className="min-w-full text-left text-xs sm:text-sm">
-                        <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
-                          <tr>
-                            <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
-                            <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
-                            <th className="px-4 py-2 font-medium text-exclu-space/80">Status</th>
-                            <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
-                            <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {links.map((link) => {
-                            const isVideo = link.mime_type?.startsWith('video/');
-                            return (
+                {links.length === 0 ? (
+                  <p className="text-sm text-exclu-space">This user has no links yet.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/90">
+                    <table className="min-w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
+                        <tr>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Status</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {links.map((link) => {
+                          const isVideo = link.mime_type?.startsWith('video/');
+                          return (
                             <tr
                               key={link.id}
                               className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80 cursor-pointer"
@@ -416,6 +423,11 @@ const AdminUserOverview = () => {
                                   ) : (
                                     <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
                                   )}
+                                  {link.media && link.media.length > 1 && (
+                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold backdrop-blur-sm border border-white/10">
+                                      {link.media.length} files
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-2 align-middle text-exclu-cloud">
@@ -434,11 +446,11 @@ const AdminUserOverview = () => {
                               </td>
                             </tr>
                           );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-2">
@@ -567,23 +579,53 @@ const AdminUserOverview = () => {
                 Close
               </button>
             </div>
-            <div className="bg-black flex items-center justify-center max-h-[80vh]">
-              {selectedLink.previewUrl ? (
-                selectedLink.mime_type?.startsWith('video/') ? (
-                  <video
-                    src={selectedLink.previewUrl}
-                    controls
-                    className="max-h-[80vh] max-w-full"
-                  />
-                ) : (
-                  <img
-                    src={selectedLink.previewUrl}
-                    alt={selectedLink.title || 'Link content'}
-                    className="max-h-[80vh] max-w-full object-contain"
-                  />
-                )
+            <div className="bg-black flex flex-col items-center justify-start overflow-y-auto max-h-[80vh] p-4 gap-6">
+              {selectedLink.media && selectedLink.media.length > 0 ? (
+                selectedLink.media.map((m, idx) => (
+                  <div key={m.id} className="w-full space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[10px] text-exclu-space uppercase tracking-wider">File {idx + 1}</span>
+                      <span className="text-[10px] text-exclu-space/60">{m.mime_type}</span>
+                    </div>
+                    <div className="rounded-xl border border-exclu-arsenic/50 overflow-hidden bg-exclu-void/40 flex items-center justify-center min-h-[200px]">
+                      {m.preview_url ? (
+                        m.mime_type?.startsWith('video/') ? (
+                          <video
+                            src={m.preview_url}
+                            controls
+                            className="max-h-[70vh] max-w-full"
+                          />
+                        ) : (
+                          <img
+                            src={m.preview_url}
+                            alt={`${selectedLink.title} - file ${idx + 1}`}
+                            className="max-h-[70vh] max-w-full object-contain"
+                          />
+                        )
+                      ) : (
+                        <p className="text-xs text-exclu-space/70 p-6">No preview available for this file.</p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : selectedLink.previewUrl ? (
+                <div className="w-full flex items-center justify-center">
+                  {selectedLink.mime_type?.startsWith('video/') ? (
+                    <video
+                      src={selectedLink.previewUrl}
+                      controls
+                      className="max-h-[80vh] max-w-full"
+                    />
+                  ) : (
+                    <img
+                      src={selectedLink.previewUrl}
+                      alt={selectedLink.title || 'Link content'}
+                      className="max-h-[80vh] max-w-full object-contain"
+                    />
+                  )}
+                </div>
               ) : (
-                <p className="text-xs text-exclu-space/70 p-6">No preview available for this link.</p>
+                <p className="text-xs text-exclu-space/70 p-6">No media available for this link.</p>
               )}
             </div>
           </div>
