@@ -122,9 +122,17 @@ const EditLink = () => {
 
     if (selected) {
       const MAX_FILE_SIZE_MB = 500;
+      const isZip = selected.name.toLowerCase().endsWith('.zip') || selected.type === 'application/zip' || selected.type === 'application/x-zip-compressed';
       const isImage = selected.type.startsWith('image/');
       const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
       const isVideo = allowedVideoTypes.includes(selected.type);
+
+      if (isZip) {
+        toast.error('ZIP files are not supported. Please upload the photos and videos individually (you can select multiple files at once).');
+        event.target.value = '';
+        setFile(null);
+        return;
+      }
 
       if (!isImage && !isVideo) {
         toast.error('Please upload an image or a supported video file (MP4, MOV, WebM).');

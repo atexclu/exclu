@@ -65,9 +65,17 @@ const CreateLink = () => {
 
     if (selected) {
       const MAX_FILE_SIZE_MB = 500;
+      const isZip = selected.name.toLowerCase().endsWith('.zip') || selected.type === 'application/zip' || selected.type === 'application/x-zip-compressed';
       const isImage = selected.type.startsWith('image/');
       const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
       const isVideo = allowedVideoTypes.includes(selected.type);
+
+      if (isZip) {
+        toast.error('ZIP files are not supported. Please upload the photos and videos individually (you can select multiple files at once).');
+        event.target.value = '';
+        setFile(null);
+        return;
+      }
 
       if (!isImage && !isVideo) {
         toast.error('Please upload an image or a supported video file (MP4, MOV, WebM).');
@@ -409,248 +417,247 @@ const CreateLink = () => {
                 <CardContent className="px-6 pb-6 space-y-6">
                   <form className="space-y-6" onSubmit={handleSubmit}>
                     <div className="space-y-6">
-                  {/* Text fields */}
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-exclu-space" htmlFor="title">
-                        Title
-                      </label>
-                      <Input
-                        id="title"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Example: Full HD teaser video"
-                        className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-exclu-space" htmlFor="description">
-                        Description (optional)
-                      </label>
-                      <Textarea
-                        id="description"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Give fans a short, enticing description of what they will unlock."
-                        className="min-h-[96px] bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-exclu-space" htmlFor="price">
-                        Price
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="price"
-                          type="number"
-                          min={5}
-                          step={0.5}
-                          value={price}
-                          onChange={(e) => setPrice(e.target.value)}
-                          className="h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
-                        />
-                        <span className="text-xs text-exclu-space">USD</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <p className="text-xs font-medium text-exclu-space">Visibility</p>
-                      <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
-                          <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                      {/* Text fields */}
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-exclu-space" htmlFor="title">
+                            Title
+                          </label>
+                          <Input
+                            id="title"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="Example: Full HD teaser video"
+                            className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                            required
+                          />
                         </div>
-                        <Switch
-                          checked={showOnProfile}
-                          onCheckedChange={setShowOnProfile}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-exclu-space" htmlFor="description">
+                            Description (optional)
+                          </label>
+                          <Textarea
+                            id="description"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Give fans a short, enticing description of what they will unlock."
+                            className="min-h-[96px] bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
+                          />
+                        </div>
 
-                  {/* Upload + preview */}
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium text-exclu-space">Content source</p>
-                    <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-3 sm:p-4 flex flex-col items-center justify-center text-center gap-3">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary mb-1">
-                        {file ? <Film className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-exclu-space" htmlFor="price">
+                            Price
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="price"
+                              type="number"
+                              min={5}
+                              step={0.5}
+                              value={price}
+                              onChange={(e) => setPrice(e.target.value)}
+                              className="h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
+                            />
+                            <span className="text-xs text-exclu-space">USD</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <p className="text-xs font-medium text-exclu-space">Visibility</p>
+                          <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
+                              <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                            </div>
+                            <Switch
+                              checked={showOnProfile}
+                              onCheckedChange={setShowOnProfile}
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1 w-full">
-                        <p className="text-sm font-medium text-exclu-cloud">
-                          {file ? file.name : 'Upload a photo or video'}
-                        </p>
-                        <p className="text-[11px] text-exclu-space/80">
-                          Drag & drop a file here, or click to browse. MP4, MOV, JPG, PNG are supported.
-                        </p>
-                        {previewUrl && (
-                          <div className="mt-3 rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/40">
-                            {file && file.type.startsWith('video/') ? (
-                              <video
-                                src={previewUrl}
-                                className="w-full h-40 object-cover"
-                                muted
-                                loop
-                                autoPlay
-                              />
-                            ) : (
-                              <img src={previewUrl} className="w-full h-40 object-cover" alt={file?.name || 'Preview'} />
+
+                      {/* Upload + preview */}
+                      <div className="space-y-3">
+                        <p className="text-xs font-medium text-exclu-space">Content source</p>
+                        <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-3 sm:p-4 flex flex-col items-center justify-center text-center gap-3">
+                          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary mb-1">
+                            {file ? <Film className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
+                          </div>
+                          <div className="space-y-1 w-full">
+                            <p className="text-sm font-medium text-exclu-cloud">
+                              {file ? file.name : 'Upload a photo or video'}
+                            </p>
+                            <p className="text-[11px] text-exclu-space/80">
+                              Drag & drop a file here, or click to browse. MP4, MOV, JPG, PNG are supported.
+                            </p>
+                            {previewUrl && (
+                              <div className="mt-3 rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/40">
+                                {file && file.type.startsWith('video/') ? (
+                                  <video
+                                    src={previewUrl}
+                                    className="w-full h-40 object-cover"
+                                    muted
+                                    loop
+                                    autoPlay
+                                  />
+                                ) : (
+                                  <img src={previewUrl} className="w-full h-40 object-cover" alt={file?.name || 'Preview'} />
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                      <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-exclu-cloud text-[11px] font-medium text-black cursor-pointer hover:bg-white transition-colors">
-                        <span>Choose file</span>
-                        <input
-                          type="file"
-                          accept="image/*,video/*"
-                          className="hidden"
-                          onChange={handleFileChange}
-                        />
-                      </label>
-                    </div>
-
-                    {/* Library selection */}
-                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/70 p-3 flex flex-col gap-2 text-[11px] text-exclu-space/80">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <div className="flex items-center gap-2">
-                          <ImageIcon className="h-4 w-4 text-exclu-space/80" />
-                          <p className="font-medium text-exclu-cloud text-xs">Or attach media from your library</p>
+                          <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-exclu-cloud text-[11px] font-medium text-black cursor-pointer hover:bg-white transition-colors">
+                            <span>Choose file</span>
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              className="hidden"
+                              onChange={handleFileChange}
+                            />
+                          </label>
                         </div>
-                        {selectedAssetIds.length > 0 && (
-                          <span className="text-[10px] text-exclu-space/70">
-                            {selectedAssetIds.length} selected
-                          </span>
-                        )}
-                      </div>
 
-                      {isLoadingLibrary && (
-                        <p className="text-[11px] text-exclu-space/80">Loading your library…</p>
-                      )}
-
-                      {libraryError && !isLoadingLibrary && (
-                        <p className="text-[11px] text-red-400">{libraryError}</p>
-                      )}
-
-                      {!isLoadingLibrary && !libraryError && libraryAssets.length === 0 && (
-                        <p className="text-[11px] text-exclu-space/80">
-                          You haven&apos;t added anything to your library yet. Upload content in the Content tab.
-                        </p>
-                      )}
-
-                      {!isLoadingLibrary && !libraryError && libraryAssets.length > 0 && (
-                        <div className="max-h-52 overflow-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {libraryAssets.map((asset) => {
-                            const isSelected = selectedAssetIds.includes(asset.id);
-                            return (
-                              <button
-                                key={asset.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedAssetIds((prev) =>
-                                    prev.includes(asset.id)
-                                      ? prev.filter((id) => id !== asset.id)
-                                      : [...prev, asset.id]
-                                  );
-                                }}
-                                className={`group relative overflow-hidden rounded-xl border text-left transition-all duration-200 ${
-                                  isSelected
-                                    ? 'border-primary/80 bg-exclu-ink'
-                                    : 'border-exclu-arsenic/60 bg-exclu-ink/80 hover:bg-exclu-ink'
-                                }`}
-                              >
-                                {asset.previewUrl ? (
-                                  asset.mime_type?.startsWith('video/') ? (
-                                    <video
-                                      src={asset.previewUrl}
-                                      className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
-                                      muted
-                                      loop
-                                      playsInline
-                                    />
-                                  ) : (
-                                    <img
-                                      src={asset.previewUrl}
-                                      className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
-                                      alt={asset.title || 'Library asset'}
-                                    />
-                                  )
-                                ) : (
-                                  <div className="w-full h-24 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                                )}
-
-                                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                                <div className="pointer-events-none absolute inset-x-0 bottom-0 p-1.5 flex flex-col">
-                                  <p className="text-[10px] font-medium text-exclu-cloud truncate">
-                                    {asset.title || 'Untitled asset'}
-                                  </p>
-                                  <p className="text-[9px] text-exclu-space/80">
-                                    {new Date(asset.created_at).toLocaleDateString()}
-                                  </p>
-                                </div>
-
-                                {isSelected && (
-                                  <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-primary shadow-lg shadow-primary/50" />
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Preview of selected library assets */}
-                      {selectedAssetIds.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-exclu-arsenic/40">
-                          <p className="text-[10px] text-exclu-space/70 mb-2">Selected content preview:</p>
-                          <div className="flex gap-2 overflow-x-auto pb-1">
-                            {selectedAssetIds.map((assetId) => {
-                              const asset = libraryAssets.find((a) => a.id === assetId);
-                              if (!asset) return null;
-                              return (
-                                <div key={assetId} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-exclu-arsenic/60">
-                                  {asset.previewUrl ? (
-                                    asset.mime_type?.startsWith('video/') ? (
-                                      <video src={asset.previewUrl} className="w-full h-full object-cover" muted playsInline />
-                                    ) : (
-                                      <img src={asset.previewUrl} className="w-full h-full object-cover" alt={asset.title || 'Selected'} />
-                                    )
-                                  ) : (
-                                    <div className="w-full h-full bg-exclu-phantom/30" />
-                                  )}
-                                </div>
-                              );
-                            })}
+                        {/* Library selection */}
+                        <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/70 p-3 flex flex-col gap-2 text-[11px] text-exclu-space/80">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-2">
+                              <ImageIcon className="h-4 w-4 text-exclu-space/80" />
+                              <p className="font-medium text-exclu-cloud text-xs">Or attach media from your library</p>
+                            </div>
+                            {selectedAssetIds.length > 0 && (
+                              <span className="text-[10px] text-exclu-space/70">
+                                {selectedAssetIds.length} selected
+                              </span>
+                            )}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
 
-                <div className="flex items-center justify-between gap-4 pt-2">
-                  <p className="text-[11px] text-exclu-space/80">
-                    You can change the price at any time.
-                  </p>
-                  <Button
-                    type="submit"
-                    variant="hero"
-                    disabled={isSubmitting}
-                    className="rounded-full px-6"
-                  >
-                    {isSubmitting ? 'Creating…' : 'Create link'}
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </>
-    )}
-  </main>
-</AppShell>
-);
+                          {isLoadingLibrary && (
+                            <p className="text-[11px] text-exclu-space/80">Loading your library…</p>
+                          )}
+
+                          {libraryError && !isLoadingLibrary && (
+                            <p className="text-[11px] text-red-400">{libraryError}</p>
+                          )}
+
+                          {!isLoadingLibrary && !libraryError && libraryAssets.length === 0 && (
+                            <p className="text-[11px] text-exclu-space/80">
+                              You haven&apos;t added anything to your library yet. Upload content in the Content tab.
+                            </p>
+                          )}
+
+                          {!isLoadingLibrary && !libraryError && libraryAssets.length > 0 && (
+                            <div className="max-h-52 overflow-auto grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {libraryAssets.map((asset) => {
+                                const isSelected = selectedAssetIds.includes(asset.id);
+                                return (
+                                  <button
+                                    key={asset.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedAssetIds((prev) =>
+                                        prev.includes(asset.id)
+                                          ? prev.filter((id) => id !== asset.id)
+                                          : [...prev, asset.id]
+                                      );
+                                    }}
+                                    className={`group relative overflow-hidden rounded-xl border text-left transition-all duration-200 ${isSelected
+                                        ? 'border-primary/80 bg-exclu-ink'
+                                        : 'border-exclu-arsenic/60 bg-exclu-ink/80 hover:bg-exclu-ink'
+                                      }`}
+                                  >
+                                    {asset.previewUrl ? (
+                                      asset.mime_type?.startsWith('video/') ? (
+                                        <video
+                                          src={asset.previewUrl}
+                                          className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
+                                          muted
+                                          loop
+                                          playsInline
+                                        />
+                                      ) : (
+                                        <img
+                                          src={asset.previewUrl}
+                                          className="w-full h-24 object-cover transition-transform duration-300 group-hover:scale-105"
+                                          alt={asset.title || 'Library asset'}
+                                        />
+                                      )
+                                    ) : (
+                                      <div className="w-full h-24 bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                                    )}
+
+                                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 p-1.5 flex flex-col">
+                                      <p className="text-[10px] font-medium text-exclu-cloud truncate">
+                                        {asset.title || 'Untitled asset'}
+                                      </p>
+                                      <p className="text-[9px] text-exclu-space/80">
+                                        {new Date(asset.created_at).toLocaleDateString()}
+                                      </p>
+                                    </div>
+
+                                    {isSelected && (
+                                      <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-primary shadow-lg shadow-primary/50" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Preview of selected library assets */}
+                          {selectedAssetIds.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-exclu-arsenic/40">
+                              <p className="text-[10px] text-exclu-space/70 mb-2">Selected content preview:</p>
+                              <div className="flex gap-2 overflow-x-auto pb-1">
+                                {selectedAssetIds.map((assetId) => {
+                                  const asset = libraryAssets.find((a) => a.id === assetId);
+                                  if (!asset) return null;
+                                  return (
+                                    <div key={assetId} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-exclu-arsenic/60">
+                                      {asset.previewUrl ? (
+                                        asset.mime_type?.startsWith('video/') ? (
+                                          <video src={asset.previewUrl} className="w-full h-full object-cover" muted playsInline />
+                                        ) : (
+                                          <img src={asset.previewUrl} className="w-full h-full object-cover" alt={asset.title || 'Selected'} />
+                                        )
+                                      ) : (
+                                        <div className="w-full h-full bg-exclu-phantom/30" />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 pt-2">
+                      <p className="text-[11px] text-exclu-space/80">
+                        You can change the price at any time.
+                      </p>
+                      <Button
+                        type="submit"
+                        variant="hero"
+                        disabled={isSubmitting}
+                        className="rounded-full px-6"
+                      >
+                        {isSubmitting ? 'Creating…' : 'Create link'}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </>
+        )}
+      </main>
+    </AppShell>
+  );
 };
 
 export default CreateLink;

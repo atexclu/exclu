@@ -54,9 +54,8 @@ const SortableItem = ({ media, onRemove, disabled }: SortableItemProps) => {
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative group rounded-xl border ${
-        isDragging ? 'border-primary/60 bg-exclu-ink/60' : 'border-exclu-arsenic/60 bg-exclu-ink/80'
-      } overflow-hidden transition-all`}
+      className={`relative group rounded-xl border ${isDragging ? 'border-primary/60 bg-exclu-ink/60' : 'border-exclu-arsenic/60 bg-exclu-ink/80'
+        } overflow-hidden transition-all`}
     >
       {/* Drag handle */}
       <div
@@ -173,9 +172,15 @@ export const AttachedContentManager = ({
       for (const file of files) {
         // Validate file
         const MAX_FILE_SIZE_MB = 500;
+        const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
         const isImage = file.type.startsWith('image/');
         const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
         const isVideo = allowedVideoTypes.includes(file.type);
+
+        if (isZip) {
+          toast.error(`${file.name}: ZIP files are not supported. Please upload the photos and videos individually.`);
+          continue;
+        }
 
         if (!isImage && !isVideo) {
           toast.error(`${file.name}: Only images and videos (MP4, MOV, WebM) are supported.`);

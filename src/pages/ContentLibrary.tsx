@@ -125,10 +125,17 @@ const ContentLibrary = () => {
     const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
     const accepted: File[] = [];
     let hadInvalid = false;
+    let hadZip = false;
 
     for (const file of files) {
+      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
       const isImage = file.type.startsWith('image/');
       const isVideo = allowedVideoTypes.includes(file.type);
+
+      if (isZip) {
+        hadZip = true;
+        continue;
+      }
 
       if (!isImage && !isVideo) {
         hadInvalid = true;
@@ -143,7 +150,9 @@ const ContentLibrary = () => {
       accepted.push(file);
     }
 
-    if (hadInvalid) {
+    if (hadZip) {
+      setError('ZIP files are not supported. Please upload the photos and videos individually (you can select multiple files at once).');
+    } else if (hadInvalid) {
       setError(
         'Some files were skipped because they are not supported images/videos or are larger than 500 MB.',
       );
