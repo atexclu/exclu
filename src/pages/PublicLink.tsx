@@ -222,6 +222,24 @@ const PublicLink = () => {
       setError(null);
 
       try {
+        // First check if link exists at all (any status)
+        const { data: linkCheck } = await supabase
+          .from('links')
+          .select('id, status')
+          .eq('slug', slug)
+          .abortSignal(signal)
+          .maybeSingle();
+
+        // If link exists but is not published, show deleted message
+        if (linkCheck && linkCheck.status !== 'published') {
+          console.log('[PublicLink] Link exists but status is:', linkCheck.status);
+          setError('deleted');
+          setLink(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Now fetch full published link data
         const { data, error } = await supabase
           .from('links')
           .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
@@ -232,7 +250,7 @@ const PublicLink = () => {
 
       if (error || !data) {
         console.error('Error loading public link', error);
-        setError('This link is not available or no longer exists.');
+        setError('not-found');
         setLink(null);
         setIsLoading(false);
         return;
@@ -453,8 +471,64 @@ const PublicLink = () => {
 
       <main className="flex-1 flex flex-col relative z-10">
         <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
-          {/* ERROR STATE - Show error but don't block content if data exists */}
-          {error && !link && (
+          {/* DELETED LINK STATE */}
+          {error === 'deleted' && !link && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-32 gap-6 max-w-md mx-auto"
+            >
+              <div className="w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-xl flex items-center justify-center">
+                <Lock className="w-8 h-8 text-white/60" />
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold text-white">Content removed</h2>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  This link has been removed by the creator and is no longer available.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full border-white/20 text-white hover:bg-white/10 mt-2"
+                onClick={() => window.location.href = '/'}
+              >
+                Back to home
+              </Button>
+            </motion.div>
+          )}
+
+          {/* NOT FOUND STATE */}
+          {error === 'not-found' && !link && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-32 gap-6 max-w-md mx-auto"
+            >
+              <div className="w-20 h-20 rounded-full border-2 border-white/20 bg-black/40 backdrop-blur-xl flex items-center justify-center">
+                <Lock className="w-8 h-8 text-white/60" />
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold text-white">Link not found</h2>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  This link doesn't exist or is not available.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full border-white/20 text-white hover:bg-white/10 mt-2"
+                onClick={() => window.location.href = '/'}
+              >
+                Back to home
+              </Button>
+            </motion.div>
+          )}
+
+          {/* GENERIC ERROR STATE - Show error but don't block content if data exists */}
+          {error && error !== 'deleted' && error !== 'not-found' && !link && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
