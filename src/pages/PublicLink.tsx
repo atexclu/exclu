@@ -348,13 +348,26 @@ const PublicLink = () => {
         setUnlockedContent(unlocked);
       }
 
-      setIsLoading(false);
       } catch (err: any) {
         if (err.name === 'AbortError') {
-          console.log('Request was aborted');
+          console.log('[PublicLink] Request was aborted');
         } else {
-          console.error('Error in fetchLink:', err);
+          console.error('[PublicLink] Error in fetchLink:', err);
+          setError(err?.message || 'Failed to load content');
         }
+      } finally {
+        // CRITICAL: Always set isLoading to false, even on error
+        // This prevents eternal loading state that causes black screens
+        setIsLoading(false);
+        console.log('[PublicLink] Final state after fetch:', {
+          hasLink: !!link,
+          isUnlocked,
+          isVerifyingPayment,
+          paymentNotFound,
+          contentItemsCount: contentItems.length,
+          unlockedContentCount: unlockedContent.length,
+          hasError: !!error
+        });
       }
     };
 
@@ -440,6 +453,18 @@ const PublicLink = () => {
 
       <main className="flex-1 flex flex-col relative z-10">
         <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
+          {/* ERROR STATE - Show error but don't block content if data exists */}
+          {error && !link && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+            >
+              <p className="font-medium">Error loading content</p>
+              <p className="text-xs mt-1 opacity-80">{error}</p>
+            </motion.div>
+          )}
+
           {/* VERIFYING PAYMENT STATE */}
           {(() => {
             return isVerifyingPayment && link;
