@@ -110,7 +110,7 @@ const AdminUsers = () => {
     params.set('page', page.toString());
     params.set('search', searchQuery);
     params.set('sort', sortMode);
-    navigate(`/admin/users/${user.id}/overview?returnTo=${encodeURIComponent(`/admin/users?${params.toString()}`)}`);
+    window.open(`/admin/users/${user.id}/overview?returnTo=${encodeURIComponent(`/admin/users?${params.toString()}`)}`, '_blank', 'noopener,noreferrer');
   };
 
   // Le tri est maintenant fait côté serveur, pas besoin de trier ici

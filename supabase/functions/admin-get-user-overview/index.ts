@@ -311,6 +311,7 @@ serve(async (req) => {
       .from('links')
       .select(`
         id, 
+        slug,
         title, 
         status, 
         show_on_profile,

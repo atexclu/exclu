@@ -2,7 +2,7 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download } from 'lucide-react';
+import { Download, ExternalLink } from 'lucide-react';
 
 interface UserProfileOverview {
   id: string;
@@ -16,6 +16,7 @@ interface UserProfileOverview {
 
 interface UserLinkOverview {
   id: string;
+  slug: string | null;
   title: string | null;
   status: string | null;
   show_on_profile: boolean | null;
@@ -285,6 +286,16 @@ const AdminUserOverview = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {profile?.handle && (
+                <button
+                  type="button"
+                  onClick={() => window.open(`/${profile.handle}`, '_blank')}
+                  className="px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View public profile
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
@@ -391,10 +402,10 @@ const AdminUserOverview = () => {
                         <tr>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Status</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Visibility</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -436,9 +447,6 @@ const AdminUserOverview = () => {
                               <td className="px-4 py-2 align-middle text-exclu-cloud">
                                 {link.title || 'Untitled link'}
                               </td>
-                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px] capitalize">
-                                {link.status || '—'}
-                              </td>
                               <td className="px-4 py-2 align-middle text-[11px]">
                                 {link.status === 'published' && link.show_on_profile ? (
                                   <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
@@ -452,11 +460,25 @@ const AdminUserOverview = () => {
                               </td>
                               <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
                                 {typeof link.price_cents === 'number'
-                                  ? `${(link.price_cents / 100).toFixed(2)}`
+                                  ? `$${(link.price_cents / 100).toFixed(2)}`
                                   : '—'}
                               </td>
                               <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
                                 {link.created_at ? new Date(link.created_at).toLocaleString() : '—'}
+                              </td>
+                              <td className="px-4 py-2 align-middle">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (link.slug) {
+                                      window.open(`/l/${link.slug}`, '_blank');
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
+                                  title="Open link in new tab"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </button>
                               </td>
                             </tr>
                           );
