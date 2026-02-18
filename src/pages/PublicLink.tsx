@@ -441,7 +441,9 @@ const PublicLink = () => {
       <main className="flex-1 flex flex-col relative z-10">
         <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
           {/* VERIFYING PAYMENT STATE */}
-          {isVerifyingPayment && link && (
+          {(() => {
+            return isVerifyingPayment && link;
+          })() && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -461,7 +463,9 @@ const PublicLink = () => {
           )}
 
           {/* PAYMENT NOT FOUND — polling exhausted */}
-          {paymentNotFound && !isVerifyingPayment && link && !isUnlocked && (
+          {(() => {
+            return paymentNotFound && !isVerifyingPayment && link && !isUnlocked;
+          })() && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -749,7 +753,9 @@ const PublicLink = () => {
           )}
 
           {/* UNLOCKED STATE - Modern Layout */}
-          {!isLoading && link && isUnlocked && (
+          {(() => {
+            return !isLoading && link && isUnlocked;
+          })() && (
             <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
               {/* Success Header */}
               <motion.div
