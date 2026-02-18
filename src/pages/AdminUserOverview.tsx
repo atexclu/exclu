@@ -391,6 +391,7 @@ const AdminUserOverview = () => {
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Status</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Visibility</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
                           <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
                         </tr>
@@ -436,6 +437,17 @@ const AdminUserOverview = () => {
                               </td>
                               <td className="px-4 py-2 align-middle text-exclu-space text-[11px] capitalize">
                                 {link.status || '—'}
+                              </td>
+                              <td className="px-4 py-2 align-middle text-[11px]">
+                                {link.status === 'published' ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
+                                    Visible
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-medium">
+                                    Non visible
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
                                 {typeof link.price_cents === 'number'
