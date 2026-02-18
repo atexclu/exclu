@@ -18,6 +18,7 @@ interface UserLinkOverview {
   id: string;
   title: string | null;
   status: string | null;
+  show_on_profile: boolean | null;
   price_cents: number | null;
   created_at: string | null;
   published_at: string | null;
@@ -439,7 +440,7 @@ const AdminUserOverview = () => {
                                 {link.status || '—'}
                               </td>
                               <td className="px-4 py-2 align-middle text-[11px]">
-                                {link.status === 'published' ? (
+                                {link.status === 'published' && link.show_on_profile ? (
                                   <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
                                     Visible
                                   </span>

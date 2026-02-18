@@ -313,6 +313,7 @@ serve(async (req) => {
         id, 
         title, 
         status, 
+        show_on_profile,
         price_cents, 
         created_at, 
         storage_path, 
