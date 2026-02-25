@@ -824,20 +824,19 @@ Système permettant à tout utilisateur de recruter de nouveaux créateurs et de
 | Type | Commission | Récurrence |
 |------|------------|------------|
 | Recrutement créateur | 35% de l'abonnement premium | Récurrente (tant que le créateur est premium) |
-| Recrutement fan | 5% première transaction | One-shot |
 
 **Exemple** :
 - Affilié recrute un créateur qui souscrit Premium ($39/mois)
 - L'affilié touche $13.65/mois tant que le créateur reste premium
 
-### 8.3 Dashboard Affilié
+### 8.3 Dashboard Affilié (à faire en anglais biensûr, voir description détaillée ci-dessous pour plus de détails)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  📊 Mon Programme d'Affiliation                             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  💰 Revenus ce mois : $245.50                              │
+│  💰 Revenus : $245.50                              │
 │  👥 Créateurs recrutés : 12                                │
 │  📈 Taux de conversion : 8.5%                              │
 │                                                             │
@@ -846,7 +845,11 @@ Système permettant à tout utilisateur de recruter de nouveaux créateurs et de
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │ exclu.at/signup?ref=abc123xyz                       │ 📋│
 │  └─────────────────────────────────────────────────────┘   │
-│                                                             │
+│     Envoyer par email                               │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Entrez l'adresse email du créateur            │ │
+│  └─────────────────────────────────────────────────────┘   │
+│  réseaux sociaux à ajouter                                  │
 ├─────────────────────────────────────────────────────────────┤
 │  📋 Historique des recrutements                            │
 │  ┌──────────┬─────────────┬────────────┬──────────────┐   │
@@ -860,11 +863,11 @@ Système permettant à tout utilisateur de recruter de nouveaux créateurs et de
 
 ### 8.4 Accès au Programme
 
-- **Ouvert à tous** : Créateurs, fans, partenaires externes
+- **Ouvert** : Créateurs seulement 
 - **Activation** : Automatique à la création de compte
-- **Versement** : Manuel pour le moment (prévu automatisation future)
+- **Versement** : Versement mensuel dès que l'on perçoit l'abonnement d'un créateur étant été affilié, on vérifie si une part doit être reversée au créateur, si oui on le fait. L'argent n'est pas reversé via stripe directement sur le compte du créateur, mais plutôt sur une cagnotte "Revenus" dans le dashboard du créateur referral, et au délà de 100$ il pleut claim le montant total sur son compte stripe. (Paiement effectué manuellement par nous, pas de versement automatique).
 
-### 8.5 Implications Techniques
+### 8.5 Implications Techniques (pas forcément à jour, juste une aide)
 
 ```sql
 CREATE TABLE affiliates (
@@ -892,6 +895,60 @@ CREATE TABLE affiliate_payouts (
   status TEXT DEFAULT 'pending',
   paid_at TIMESTAMPTZ
 );
+
+(vérifie que c'est toujours d'actualité ce code, fait en sorte peut être de ne pas avoir de table séparée pour les paiements, mais plutôt de mutualiser les infos dans une table si c'est possible. Si tu penses que c'est mieux de séparer, explique pourquoi).
+
+
+Description détaillée de l'interface du programme d'affiliation et expérience utilisateur :
+
+J'aimerais que côté créateur, on puisse facilement partager son lien de parrainage. Pour cela, dans le dashboard, en plus de "Metrics" & "Earnings" dans le menu sous le titre Welcome back, j'aimerais qu'on puisse avoir un bouton "Referral" qui mène à une page où on peut partager son lien de parrainage. Je précise, pour accéder à cette page il faut s'être connecté à stripe, pas forcément besoin d'avoir un abonnement premium.
+
+Sur cette page, on retrouve :
+
+3 Cards comme celles dans "Metrics", mais affichant :
+Revenus: $245.50
+Créateurs recrutés : 12
+Taux de conversion : 8.5% -> Ce taux c'est le nombre de créateurs qui ont pris un abonnement premium sur le total de créateurs recrutés.
+
+Dessous un encadré qui prends toute la largeur avec dedans :
+
+- Le lien de parrainage que on peut copier dans un input, en dessous 
+- Un input mail et un bouton "envoyer" à droite en ligne permettant de l'envoyer par email directement.
+Pour l'envoi par email, il faut que le mail soit grâce à un template html que tu doit créer, pour l'aspect tu doit reprendre ceux existants qui sont déjà dans le projet. Pour le code sur l'envoi etc c'est déjà fonctionnel ceux qui sont déjà dans le projet donc regarde comment on les renvoi via supabase auth / brevo et adapte pour ce nouveau mail. Pour le contenu de ce mail en anglais, il faut que ça soit un texte simple qui dit en gros : 
+
+"Username createur" vous invite à le rejoindre sur Exclu
+
+[Accepter l'invitation]
+
+Explication courte de ce qu'est exclu en anglais.
+
+Et en dessous, 
+- Des boutons pour partager le lien de parrainage sur les réseaux sociaux (Twitter, Insta, Tiktok, etc.). Ces boutons doivent ouvrir une fenêtre de partage du réseau social concerné avec le lien de parrainage pré-rempli du message suivant :
+
+"Still giving away 20% to OnlyFans ? 😅
+
+Smart 🔞 creators are moving to Exclu.
+
+0% commission 💸
+Get paid fast 💵
+Sell from your bio, anywhere 🔗
+
+Every day you wait = money lost.
+
+Switch now 📲 exclu.at
+
+(Limited FREE access link)"
+
+En dessous un tableau dans un encadré avec l'historique des recrutements, avec les colonnes : Date, Créateur, Status, Commission.
+
+Pour la preview du lien d'affiliation, l'image de preview du lien quand on le partage doit être "og_invit.png" rangée dans "public".
+Le text preview du lien doit être : «  Mystery invite 👀 »
+Avant d'implémpenter regarde bien comment c'est codé quand on partage un lien de profil, et fait en sorte que ça soit le même style et code pour le affiliate link.
+
+Une fois que le créateur a cliqué sur le lien d'affiliation, il doit être redirigé vers la page d'inscription de exclu.at avec le code de parrainage pré-rempli. Une fois son compte validé, il apparait dans les créateurs recrutés du créateur qui l'a parrainé. Il faut que si un créateur passe en premium, seulement tant que son abonnement est actif, 35% soit reversé au créateur qui l'a parrainé chaque mois au moment où l'on reçoit le paiement de l'abonnement du créateur parrainé. Il faut que ce revenu s'actualise en temps réel dans le dashboard du créateur qui l'a parrainé dans la partie referal. On ne paye pas ces montants réellement, juste on crédite les gains sur la cagnotte et dès que l'user atteint 100$ il peut demander un virement sur son compte stripe. (Paiement effectué manuellement par nous, pas de versement automatique).
+
+Il faut que l'ui soit soignée, qu'elle s'adapte bien comme le reste de la plateforme au mode sobre et jour, qu'elle soit responsive mobile et desktop.
+
 ```
 
 ---

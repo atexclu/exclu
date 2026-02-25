@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2 } from 'lucide-react';
+import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- SELF-HEALING & CACHE-BUSTING ---
@@ -22,7 +23,14 @@ const AppDashboard = () => {
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'metrics' | 'earnings'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'earnings' | 'referral'>('metrics');
+  // Referral state
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referralLinkCopied, setReferralLinkCopied] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [activeMetric, setActiveMetric] = useState<'published' | 'sales' | 'revenue'>('published');
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
@@ -67,7 +75,7 @@ const AppDashboard = () => {
         // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count')
+          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents')
           .eq('id', user.id)
           .single();
 
@@ -87,14 +95,19 @@ const AppDashboard = () => {
         const linksCount = safeLinks.length;
         const publishedCount = safeLinks.filter((link: any) => link.status === 'published').length;
 
-        // Purchases metrics (RLS limite déjà aux achats du créateur)
-        const { data: purchases, error: purchasesError } = await supabase
-          .from('purchases')
-          .select('id, link_id, amount_cents, created_at');
+        // Purchases metrics – filter by this creator's link IDs for proper data isolation
+        const creatorLinkIds = safeLinks.map((l: any) => l.id);
+        let safePurchases: any[] = [];
+        if (creatorLinkIds.length > 0) {
+          const { data: purchases, error: purchasesError } = await supabase
+            .from('purchases')
+            .select('id, link_id, amount_cents, created_at')
+            .in('link_id', creatorLinkIds)
+            .eq('status', 'succeeded');
 
-        if (purchasesError) throw purchasesError;
-
-        const safePurchases = purchases ?? [];
+          if (purchasesError) throw purchasesError;
+          safePurchases = purchases ?? [];
+        }
         const salesCount = safePurchases.length;
         const revenueSum = safePurchases.reduce((sum, p: any) => sum + (p.amount_cents ?? 0), 0);
 
@@ -129,6 +142,36 @@ const AppDashboard = () => {
           setProfileViewCount(profile.profile_view_count ?? 0);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
+          setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
+
+          // Referral code (auto-generate client-side if missing)
+          let code = profile.referral_code;
+          if (!code) {
+            const prefix = (profile.handle || 'exclu').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 6);
+            code = `${prefix}-${Math.random().toString(36).substring(2, 8)}`;
+            supabase.from('profiles').update({ referral_code: code }).eq('id', user.id).then(() => { });
+          }
+          setReferralCode(code);
+
+          // Load referrals
+          const { data: referralsData } = await supabase
+            .from('referrals')
+            .select('id, referred_id, status, commission_earned_cents, created_at')
+            .eq('referrer_id', user.id)
+            .order('created_at', { ascending: false });
+
+          if (referralsData && referralsData.length > 0 && isMounted) {
+            const referredIds = referralsData.map((r: any) => r.referred_id);
+            const { data: referredProfiles } = await supabase
+              .from('profiles')
+              .select('id, handle, display_name, avatar_url')
+              .in('id', referredIds);
+            const profileMap = new Map((referredProfiles || []).map((p: any) => [p.id, p]));
+            setReferrals(referralsData.map((r: any) => {
+              const rp = profileMap.get(r.referred_id);
+              return { ...r, referred_handle: rp?.handle || null, referred_display_name: rp?.display_name || null };
+            }));
+          }
 
           // --- SELF-HEALING: INTERCEPT INCOMPLETE STRIPE STATUS ---
           // If the profile says it's not complete, we trigger a background check 
@@ -174,57 +217,8 @@ const AppDashboard = () => {
     };
   }, []);
 
-  // Handle return from Stripe Onboarding
-  useEffect(() => {
-    const checkStripeReturn = async () => {
-      const mode = searchParams.get('stripe_onboarding');
-
-      if (!mode) return;
-
-      // Clean up the URL params immediately so we don't re-trigger on reload
-      // We do this using replace to keep history clean
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('stripe_onboarding');
-      setSearchParams(newParams, { replace: true });
-
-      if (mode === 'refresh') {
-        toast.error('Connection incomplete. Please try connecting to Stripe again.');
-        return;
-      }
-
-      if (mode === 'return') {
-        const toastId = toast.loading('Verifying Stripe connection...');
-
-        try {
-          // Force a check against Stripe API (bypassing potential webhook delays)
-          // The edge function now also auto-updates the DB if needed.
-          const { data, error: funcError } = await supabase.functions.invoke('stripe-connect-status', {
-            // No body needed
-          });
-
-          if (funcError) throw funcError;
-
-          if (data && data.status) {
-            setStripeConnectStatus(data.status);
-
-            if (data.status === 'complete') {
-              toast.success('Stripe connected successfully! You can now receive payouts.', { id: toastId });
-              setShowStripeModal(false);
-            } else if (data.status === 'restricted') {
-              toast.warning('Stripe connected but requires more information.', { id: toastId });
-            } else {
-              toast.info('Stripe connection is still pending verification.', { id: toastId });
-            }
-          }
-        } catch (err) {
-          console.error('Error verifying Stripe return:', err);
-          toast.error('Could not verify connection status. Please refresh the page.', { id: toastId });
-        }
-      }
-    };
-
-    checkStripeReturn();
-  }, [searchParams, setSearchParams]);
+  // We removed the stripe_onboarding=return effect here
+  // because the user is now redirected to /app/stripe-validation.
 
   const handleStripeConnect = async () => {
     setIsConnectingStripe(true);
@@ -497,8 +491,9 @@ const AppDashboard = () => {
                 to="/app/profile"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-xs text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors whitespace-nowrap"
               >
-                <span>Settings</span>
+                <span>Profile</span>
               </RouterLink>
+
             </div>
           </div>
         </section>
@@ -544,20 +539,21 @@ const AppDashboard = () => {
           </section>
         )}
 
-        {/* Metrics / Earnings toggle */}
+        {/* Metrics / Earnings / Referral toggle */}
         <section className="mt-1 mb-4">
           <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
             {[
               { key: 'metrics', label: 'Metrics' },
               { key: 'earnings', label: 'Earnings' },
+              { key: 'referral', label: 'Referral' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as 'metrics' | 'earnings')}
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'earnings' | 'referral')}
                 className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
-                    ? 'bg-primary text-white dark:text-black shadow-sm'
-                    : 'hover:text-exclu-cloud'
+                  ? 'bg-primary text-white dark:text-black shadow-sm'
+                  : 'hover:text-exclu-cloud'
                   }`}
               >
                 {tab.label}
@@ -953,6 +949,281 @@ const AppDashboard = () => {
             </div>
           </section>
         )}
+
+        {activeTab === 'referral' && (() => {
+          const COMMISSION_RATE = 0.35;
+          const PREMIUM_USD = 39;
+          const MIN_PAYOUT_CENTS = 10000;
+          const totalReferred = referrals.length;
+          const totalConverted = referrals.filter((r: any) => r.status === 'converted').length;
+          const conversionRate = totalReferred > 0 ? Math.round((totalConverted / totalReferred) * 100) : 0;
+          const canRequestPayout = affiliateEarningsCents >= MIN_PAYOUT_CENTS;
+          const fmtAmt = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          const referralLink = referralCode ? `${window.location.origin}/auth?mode=signup&ref=${referralCode}` : null;
+
+          const SHARE_MSG = `Still giving away 20% to OnlyFans ? 😅\n\nSmart 🔞 creators are moving to Exclu.\n\n0% commission 💸\nGet paid fast 💵\nSell from your bio, anywhere 🔗\n\nEvery day you wait = money lost.\n\nSwitch now 📲 exclu.at\n\n(Limited FREE access link)`;
+
+          const handleCopy = async () => {
+            if (!referralLink) return;
+            await navigator.clipboard.writeText(referralLink).catch(() => { });
+            setReferralLinkCopied(true);
+            setTimeout(() => setReferralLinkCopied(false), 2500);
+          };
+
+
+          const handleShare = (platform: string) => {
+            if (!referralLink) return;
+            const fullMsg = SHARE_MSG + '\n' + referralLink;
+            const t = encodeURIComponent(fullMsg);
+            const u = encodeURIComponent(referralLink);
+            const m = encodeURIComponent(SHARE_MSG);
+            // Instagram doesn't support direct share URLs — copy to clipboard instead
+            if (platform === 'instagram') {
+              navigator.clipboard.writeText(fullMsg).catch(() => { });
+              toast.success('Message copied! Paste it on Instagram 📋');
+              return;
+            }
+            const urls: Record<string, string> = {
+              twitter: `https://twitter.com/intent/tweet?text=${t}`,
+              telegram: `https://t.me/share/url?url=${u}&text=${m}`,
+              snapchat: `https://www.snapchat.com/scan?attachmentUrl=${u}`,
+            };
+            if (urls[platform]) { window.open(urls[platform], '_blank', 'noopener,noreferrer'); }
+            else { navigator.clipboard.writeText(fullMsg).catch(() => { }); }
+          };
+
+
+          const handleSendEmail = async () => {
+            if (!inviteEmail || !inviteEmail.includes('@')) return;
+            setIsSendingEmail(true);
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              // Use x-supabase-auth header — same pattern as stripe-connect-onboard
+              // to avoid Supabase gateway JWT validation conflict
+              const { error } = await supabase.functions.invoke('send-referral-invite', {
+                body: { to_email: inviteEmail },
+                headers: {
+                  Authorization: '',
+                  'x-supabase-auth': session?.access_token ?? '',
+                },
+              });
+              if (!error) { setInviteEmail(''); toast.success(`Invite sent to ${inviteEmail}!`); }
+              else { toast.error('Failed to send invite. Please try again.'); }
+            } catch { toast.error('Failed to send invite. Please try again.'); }
+            finally { setIsSendingEmail(false); }
+          };
+
+          const socialPlatformsList = [
+            { p: 'twitter', label: 'X', icon: <SiX className="w-5 h-5" />, gradient: 'from-slate-900 to-slate-700' },
+            { p: 'telegram', label: 'Telegram', icon: <SiTelegram className="w-5 h-5" />, gradient: 'from-sky-500 to-cyan-500' },
+            { p: 'instagram', label: 'Instagram', icon: <SiInstagram className="w-5 h-5" />, gradient: 'from-[#f97316] to-[#ec4899]' },
+            { p: 'snapchat', label: 'Snapchat', icon: <SiSnapchat className="w-5 h-5" />, gradient: 'from-yellow-300 to-yellow-500' },
+          ];
+
+          return (
+            <section className="mt-2 space-y-4">
+
+              {/* Stat cards — always 2x2 grid on all screen sizes */}
+              <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                  <p className="text-xs text-exclu-space mb-1">Affiliate earnings</p>
+                  <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fmtAmt(affiliateEarningsCents)}</p>
+                  <p className="text-[11px] text-exclu-space/80 mt-1">Credited to your referral pot.</p>
+                </div>
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                  <p className="text-xs text-exclu-space mb-1">Creators recruited</p>
+                  <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : totalReferred}</p>
+                  <p className="text-[11px] text-exclu-space/80 mt-1">Signed up via your link.</p>
+                </div>
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                  <p className="text-xs text-exclu-space mb-1">Conversion rate</p>
+                  <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `${conversionRate}%`}</p>
+                  <p className="text-[11px] text-exclu-space/80 mt-1">{totalConverted} premium out of {totalReferred}.</p>
+                </div>
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                  <p className="text-xs text-exclu-space mb-1">Payout status</p>
+                  <p className={`text-2xl font-bold ${canRequestPayout ? 'text-green-400' : 'text-exclu-cloud'}`}>
+                    {isLoading ? '—' : (canRequestPayout ? 'Claimable' : fmtAmt(MIN_PAYOUT_CENTS - affiliateEarningsCents))}
+                  </p>
+                  <p className="text-[11px] text-exclu-space/80 mt-1">{canRequestPayout ? 'Ready — contact us to withdraw.' : `to reach the $${MIN_PAYOUT_CENTS / 100} min.`}</p>
+                </div>
+              </div>
+
+              {/* Referral link + email + social */}
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 space-y-4">
+
+                {/* Header with info tooltip */}
+                <div className="flex items-center gap-2">
+                  <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Your referral link</p>
+                  <div className="relative group/info">
+                    {/* Info icon */}
+                    <button type="button" className="w-4 h-4 rounded-full border border-exclu-arsenic/60 text-exclu-space/50 hover:text-exclu-cloud hover:border-exclu-space/60 transition-colors flex items-center justify-center">
+                      <span className="text-[9px] font-bold leading-none">i</span>
+                    </button>
+                    {/* Tooltip — slide up on hover, opaque bg */}
+                    <div className="
+                      absolute left-0 bottom-[calc(100%+8px)] w-72 z-50
+                      rounded-2xl border border-slate-200 dark:border-exclu-arsenic/60
+                      bg-white dark:bg-[#0e0e16]
+                      shadow-xl p-4
+                      opacity-0 translate-y-2 pointer-events-none
+                      group-hover/info:opacity-100 group-hover/info:translate-y-0 group-hover/info:pointer-events-auto
+                      transition-all duration-200 ease-out
+                    ">
+                      <p className="text-xs font-semibold text-slate-900 dark:text-exclu-cloud mb-2">How it works 💡</p>
+                      <div className="space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-exclu-space/80">
+                        <p>
+                          <span className="font-medium text-slate-900 dark:text-exclu-cloud">For you :</span>{' '}
+                          We give you <span className="text-primary font-semibold">35%</span> of the revenue Exclu generates from your referrals. Withdrawals start at $100.
+                        </p>
+                        <p>
+                          <span className="font-medium text-slate-900 dark:text-exclu-cloud">For friends :</span>{' '}
+                          <span className="text-primary font-semibold">+$100</span> bonus if they reach $1k in revenue within 90 days.
+                        </p>
+                        <p className="text-slate-400 dark:text-exclu-space/50 text-[10px] pt-1 border-t border-slate-200 dark:border-exclu-arsenic/40">
+                          *Each referral doubles as an entry ticket to win our monthly Mystery Box: Birkins, Cash Prizes.
+                        </p>
+                      </div>
+                      {/* Arrow */}
+                      <div className="absolute -bottom-1.5 left-3 w-3 h-3 rotate-45 border-b border-r border-slate-200 dark:border-exclu-arsenic/60 bg-white dark:bg-[#0e0e16]" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Link + copy — blanc en clair, sombre en dark */}
+                <div className="flex gap-2">
+                  <div className="flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-exclu-arsenic/50 bg-white dark:bg-black/30 px-3 py-2.5">
+                    <p className="text-xs text-black dark:text-exclu-space/80 font-mono truncate">{referralLink ?? 'Generating…'}</p>
+                  </div>
+                  <Button
+                    type="button" size="sm"
+                    variant={referralLinkCopied ? 'outline' : 'hero'}
+                    className="rounded-xl px-4 flex-shrink-0 transition-all"
+                    onClick={handleCopy}
+                    disabled={!referralLink}
+                  >
+                    {referralLinkCopied
+                      ? <span className="flex items-center gap-1.5 text-green-400"><Check className="w-3.5 h-3.5" />Copied!</span>
+                      : <span className="flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" />Copy</span>}
+                  </Button>
+                </div>
+
+                {/* Email invite — blanc en clair, sombre en dark */}
+                <div>
+                  <p className="text-[11px] text-exclu-space/60 mb-2 flex items-center gap-1.5"><Mail className="w-3 h-3" />Send a personal invite by email</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      placeholder="creator@example.com"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSendEmail(); }}
+                      className="flex-1 h-9 rounded-xl border border-slate-200 dark:border-exclu-arsenic/50 bg-white dark:bg-black/30 px-3 text-sm text-black dark:text-exclu-cloud placeholder:text-slate-400 dark:placeholder:text-exclu-space/40 outline-none focus:ring-1 focus:ring-primary/50"
+                    />
+                    <Button
+                      type="button" variant="hero" size="sm"
+                      className="rounded-xl px-3 flex-shrink-0"
+                      onClick={handleSendEmail}
+                      disabled={isSendingEmail || !inviteEmail}
+                    >
+                      {isSendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span className="flex items-center gap-1"><Send className="w-3 h-3" />Send</span>}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Social share — 4 platforms in 1 row (no TikTok; Instagram copies) */}
+                <div>
+                  <p className="text-[11px] text-exclu-space/60 mb-3">Share on social media</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {socialPlatformsList.map(({ p, label, icon, gradient }) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => handleShare(p)}
+                        className="flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl border border-exclu-arsenic/60 bg-exclu-arsenic/10 hover:bg-exclu-arsenic/20 hover:border-exclu-arsenic/80 transition-all group"
+                      >
+                        <div className={`w-9 h-9 rounded-full bg-gradient-to-r ${gradient} flex items-center justify-center text-white flex-shrink-0`}>
+                          {icon}
+                        </div>
+                        <p className="text-[10px] font-medium text-exclu-cloud/80 group-hover:text-exclu-cloud truncate w-full text-center">{label}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Activity table */}
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                <div className="px-5 py-4 border-b border-exclu-arsenic/40 flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Recruitment history</p>
+                  {referrals.length > 0 && <p className="text-[11px] text-exclu-space/70">{referrals.length} creator{referrals.length > 1 ? 's' : ''}</p>}
+                </div>
+
+                {isLoading && <p className="px-5 py-4 text-sm text-exclu-space/80">Loading…</p>}
+
+                {!isLoading && referrals.length === 0 && (
+                  <p className="px-5 py-6 text-sm text-exclu-space/80">
+                    No recruitments yet — share your link to start earning!
+                  </p>
+                )}
+
+                {!isLoading && referrals.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
+                        <tr>
+                          <th className="px-5 py-2 text-left">Creator</th>
+                          <th className="px-3 py-2 text-left">Date</th>
+                          <th className="px-3 py-2 text-left">Status</th>
+                          <th className="px-3 py-2 text-right">Commission</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {referrals.map((r: any) => (
+                          <tr key={r.id} className="border-t border-exclu-arsenic/40 hover:bg-white/[0.02] transition-colors">
+                            <td className="px-5 py-3 text-exclu-cloud font-medium">
+                              {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                              {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
+                            </td>
+                            <td className="px-3 py-3 text-exclu-space/80 text-xs">
+                              {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${r.status === 'converted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                : r.status === 'inactive' ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                  : 'bg-blue-500/10 text-blue-300 border border-blue-500/40'
+                                }`}>
+                                {r.status === 'converted' ? 'Premium' : r.status === 'inactive' ? 'Inactive' : 'Free'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-right font-medium">
+                              <span className={r.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}>
+                                {r.commission_earned_cents > 0 ? fmtAmt(r.commission_earned_cents) : '—'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Payout request */}
+                {canRequestPayout && (
+                  <div className="px-5 py-4 border-t border-exclu-arsenic/40">
+                    <a
+                      href="mailto:hello@exclu.at?subject=Affiliate payout request"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-primary text-black hover:opacity-90 transition-opacity"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />Request payout
+                    </a>
+                  </div>
+                )}
+              </div>
+
+            </section>
+          );
+        })()}
 
       </main>
     </AppShell>

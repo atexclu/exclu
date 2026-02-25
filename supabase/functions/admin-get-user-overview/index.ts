@@ -2,10 +2,10 @@ import Stripe from 'npm:stripe';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+const supabaseUrl = Deno.env.get('PROJECT_URL') ?? Deno.env.get('VITE_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL');
 const supabaseServiceRoleKey =
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
-const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseAnonKey = Deno.env.get('VITE_SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 

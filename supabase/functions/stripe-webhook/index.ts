@@ -262,6 +262,76 @@ serve(async (req: Request) => {
                   console.error('Error sending content access email:', emailErr);
                 }
               }
+
+              // Post-purchase: Check if creator is eligible for the $100 referral bonus
+              if (creatorId) {
+                try {
+                  // 1. Check if the creator was referred and the bonus has not been paid yet
+                  const { data: referral, error: refErr } = await supabase
+                    .from('referrals')
+                    .select('id, created_at, bonus_paid_to_referred')
+                    .eq('referred_id', creatorId)
+                    .eq('bonus_paid_to_referred', false)
+                    .maybeSingle();
+
+                  if (!refErr && referral) {
+                    const signupDate = new Date(referral.created_at);
+                    const now = new Date();
+                    const diffDays = (now.getTime() - signupDate.getTime()) / (1000 * 3600 * 24);
+
+                    if (diffDays <= 90) {
+                      // 2. Calculate the creator's total revenue
+                      const { data: links } = await supabase
+                        .from('links')
+                        .select('id')
+                        .eq('creator_id', creatorId);
+
+                      if (links && links.length > 0) {
+                        const linkIds = links.map((l: any) => l.id);
+
+                        // Sum amount_cents for these links in the purchases table.
+                        const { data: purchases, error: purError } = await supabase
+                          .from('purchases')
+                          .select('amount_cents')
+                          .in('link_id', linkIds)
+                          .eq('status', 'succeeded');
+
+                        if (!purError && purchases) {
+                          const totalRevenue = purchases.reduce((acc: number, p: any) => acc + (p.amount_cents || 0), 0);
+
+                          // $1k = 100,000 cents
+                          if (totalRevenue >= 100000) {
+                            console.log(`Creator ${creatorId} reached $1k within 90 days! Triggering $100 bonus.`);
+
+                            // 3. Mark the bonus as paid in 'referrals'
+                            await supabase
+                              .from('referrals')
+                              .update({ bonus_paid_to_referred: true })
+                              .eq('id', referral.id);
+
+                            // 4. Credit $100 (10000 cents) to the referred creator's affiliate earnings
+                            const { data: creatorProfile } = await supabase
+                              .from('profiles')
+                              .select('affiliate_earnings_cents')
+                              .eq('id', creatorId)
+                              .single();
+
+                            if (creatorProfile) {
+                              const updatedEarnings = (creatorProfile.affiliate_earnings_cents || 0) + 10000;
+                              await supabase
+                                .from('profiles')
+                                .update({ affiliate_earnings_cents: updatedEarnings })
+                                .eq('id', creatorId);
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.error('Error processing referral bonus logic for the referred creator:', err);
+                }
+              }
             }
           }
         }
@@ -468,6 +538,72 @@ serve(async (req: Request) => {
               }
             } catch (emailErr) {
               console.error('Error sending Stripe verified email:', emailErr);
+            }
+          }
+        }
+        break;
+      }
+
+      // Handle successful subscription payments (new & renewals) for affiliate tracking
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionId = invoice.subscription as string | undefined;
+
+        // Only trigger on subscription invoices, specifically for the creator tier.
+        if (subscriptionId && invoice.amount_paid > 0) {
+          // Fetch the subscription to get the user ID
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          const userId = subscription.metadata?.supabase_user_id;
+
+          if (userId) {
+            // Check if this user was referred by someone and their referral status isn't inactive
+            const { data: referralData, error: referralError } = await supabase
+              .from('referrals')
+              .select('id, referrer_id, status, commission_earned_cents')
+              .eq('referred_id', userId)
+              .neq('status', 'inactive')
+              .maybeSingle();
+
+            if (referralError) {
+              console.error('Error fetching referral data for invoice.paid:', referralError);
+            }
+
+            if (referralData && referralData.referrer_id) {
+              // Calculate 35% commission logic
+              const commissionCents = Math.round(invoice.amount_paid * 0.35);
+
+              // 1. Update the referral tracking row
+              const newTotalCommission = (referralData.commission_earned_cents || 0) + commissionCents;
+
+              const updatePayload: Record<string, unknown> = {
+                commission_earned_cents: newTotalCommission,
+                status: 'converted'
+              };
+              if (referralData.status !== 'converted') {
+                updatePayload.converted_at = new Date().toISOString();
+              }
+
+              await supabase
+                .from('referrals')
+                .update(updatePayload)
+                .eq('id', referralData.id);
+
+              // 2. Credit the referrer's affiliate earnings
+              const { data: referrerProfile } = await supabase
+                .from('profiles')
+                .select('affiliate_earnings_cents')
+                .eq('id', referralData.referrer_id)
+                .single();
+
+              if (referrerProfile) {
+                const updatedEarnings = (referrerProfile.affiliate_earnings_cents || 0) + commissionCents;
+                await supabase
+                  .from('profiles')
+                  .update({ affiliate_earnings_cents: updatedEarnings })
+                  .eq('id', referralData.referrer_id);
+
+                console.log(`Affiliate credited! Referrer ${referralData.referrer_id} earned ${commissionCents} cents from invoice ${invoice.id}`);
+              }
             }
           }
         }

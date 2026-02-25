@@ -118,7 +118,7 @@ const AdminUserOverview = () => {
         body: { user_id: id },
         headers: {
           // Same pattern as other admin functions: send the access token via x-supabase-auth
-          Authorization: '',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'x-supabase-auth': session.access_token,
         },
       });
@@ -175,7 +175,7 @@ const AdminUserOverview = () => {
         body: { target_user_id: id },
         headers: {
           // Same pattern as other admin functions: send the access token via x-supabase-auth
-          Authorization: '',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'x-supabase-auth': session.access_token,
         },
       });
@@ -253,7 +253,7 @@ const AdminUserOverview = () => {
       const { data, error } = await supabase.functions.invoke('admin-delete-user', {
         body: { user_id: id },
         headers: {
-          Authorization: '',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'x-supabase-auth': session.access_token,
         },
       });

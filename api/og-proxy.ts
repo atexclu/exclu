@@ -28,9 +28,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     let ogData: { title: string; description: string; image: string; url: string } | null = null;
 
+    // Handle referral invite links (/auth?mode=signup&ref=...)
+    // Must be checked before handle extraction since /auth is an app route
+    if (path.startsWith('/auth') && path.includes('ref=')) {
+      ogData = {
+        title: 'Mystery invite 👀',
+        description: 'Someone invited you to join Exclu — the creator platform with 0% commission.',
+        image: 'https://exclu.at/og_invit.png',
+        url: `https://exclu.at${path}`,
+      };
+    }
+
     // Extract potential handle from path (supports both /@handle and /handle)
     let handle: string | null = null;
-    if (path.startsWith('/@')) {
+    if (!ogData && path.startsWith('/@')) {
       handle = path.slice(2).split('/')[0].split('?')[0];
     } else if (path.startsWith('/') && !path.startsWith('/l/')) {
       const segment = path.slice(1).split('/')[0].split('?')[0];

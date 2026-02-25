@@ -34,6 +34,8 @@ import AdminRoute from "@/components/AdminRoute";
 import AdminUsers from "./pages/AdminUsers";
 import AdminUserOverview from "./pages/AdminUserOverview";
 import LinkInBioEditor from "./pages/LinkInBioEditor";
+import ReferralDashboard from "./pages/ReferralDashboard";
+import StripeValidation from "./pages/StripeValidation";
 
 const queryClient = new QueryClient();
 
@@ -168,6 +170,22 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <LinkInBioEditor />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/referral"
+                element={
+                  <ProtectedRoute>
+                    <ReferralDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/app/stripe-validation"
+                element={
+                  <ProtectedRoute>
+                    <StripeValidation />
                   </ProtectedRoute>
                 }
               />

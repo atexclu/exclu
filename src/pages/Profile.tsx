@@ -433,7 +433,7 @@ const Profile = () => {
           className="mt-4 sm:mt-6"
         >
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">Settings</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">Profile</h1>
             <ThemeToggleSwitch />
           </div>
 

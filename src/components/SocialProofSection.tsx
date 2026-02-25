@@ -17,13 +17,13 @@ const visionWords = visionQuote.split(' ');
 const SocialProofSection = () => {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: '-100px' });
-  
+
   const containerRef = useRef(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ['start end', 'end start'],
   });
-  
+
   const y = useTransform(scrollYProgress, [0, 1], ['30px', '-30px']);
 
   const wordVariants = {
@@ -43,7 +43,7 @@ const SocialProofSection = () => {
     <section ref={containerRef} className="relative py-24 px-6 overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 grid-pattern opacity-20" />
-      
+
       <div className="max-w-6xl mx-auto relative z-10" ref={ref}>
         {/* Stats Grid */}
         <motion.div style={{ y }} className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
@@ -58,7 +58,7 @@ const SocialProofSection = () => {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl glass-card mb-4 group-hover:scale-110 transition-transform duration-300">
                 <stat.icon className="w-7 h-7 text-primary" />
               </div>
-              <p className="text-3xl sm:text-4xl font-extrabold text-exclu-graphite mb-2">{stat.value}</p>
+              <p className="text-3xl sm:text-4xl font-extrabold text-white mb-2">{stat.value}</p>
               <p className="text-exclu-space text-sm">{stat.label}</p>
             </motion.div>
           ))}

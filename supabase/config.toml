@@ -30,3 +30,9 @@ verify_jwt = false
 
 [functions.send-link-content-email]
 verify_jwt = false
+
+[functions.link-referral]
+verify_jwt = false
+
+[functions.send-referral-invite]
+verify_jwt = false

@@ -16,11 +16,13 @@ const Auth = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Check if user is coming from password reset email
+  // Read mode and ref (referral code) from URL params
   useEffect(() => {
     const urlMode = searchParams.get('mode');
     if (urlMode === 'update-password') {
       setMode('update-password');
+    } else if (urlMode === 'signup') {
+      setMode('signup');
     }
   }, [searchParams]);
 
@@ -79,26 +81,28 @@ const Auth = () => {
           toast.error('Please fill in all fields');
           return;
         }
-        
+
         // Validate username format
         if (!/^[a-zA-Z0-9_]+$/.test(username)) {
           toast.error('Username can only contain letters, numbers and underscores');
           return;
         }
-        
+
         // Check if username is already taken
         const { data: existingHandle } = await supabase
           .from('profiles')
           .select('id')
           .eq('handle', username)
           .maybeSingle();
-        
+
         if (existingHandle) {
           toast.error('This username is already taken');
           return;
         }
-        
+
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
+        // Capture referral code if present in URL
+        const refCode = searchParams.get('ref') || null;
         const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
@@ -106,9 +110,27 @@ const Auth = () => {
             emailRedirectTo: `${siteUrl}/onboarding`,
             data: {
               handle: username,
+              referral_code: refCode,
             },
           },
         });
+
+        // If referred, link the referral in the background.
+        // Use anon key as Bearer (not user JWT) — gateway requires Authorization header
+        // even with verify_jwt=false, but the function itself uses service role internally.
+        if (!error && signUpData?.user && refCode) {
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          fetch(`${supabaseUrl}/functions/v1/link-referral`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': supabaseAnonKey,
+              'Authorization': `Bearer ${supabaseAnonKey}`,
+            },
+            body: JSON.stringify({ referral_code: refCode, referred_user_id: signUpData.user.id }),
+          }).catch((e) => console.warn('[Auth] link-referral background call failed:', e));
+        }
 
         if (error) {
           const message = (error.message || '').toLowerCase();
@@ -227,10 +249,10 @@ const Auth = () => {
               {mode === 'signup'
                 ? 'Create your Exclu account'
                 : mode === 'login'
-                ? 'Log in to Exclu'
-                : mode === 'update-password'
-                ? 'Set your new password'
-                : 'Reset your password'}
+                  ? 'Log in to Exclu'
+                  : mode === 'update-password'
+                    ? 'Set your new password'
+                    : 'Reset your password'}
             </h1>
             {mode === 'signup' && (
               <p className="text-primary text-[13px] sm:text-sm max-w-sm mx-auto font-medium">
@@ -252,58 +274,56 @@ const Auth = () => {
           <Card className="bg-exclu-ink/95/90 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
             <CardHeader className="px-5 pt-5 pb-3 space-y-4">
               {mode !== 'update-password' && (
-              <div className="flex justify-center gap-8 border-b border-exclu-arsenic/40">
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="relative pb-3.5 px-2 transition-all"
-                >
-                  <span className={`text-base font-bold transition-all ${
-                    mode === 'login' || mode === 'reset'
+                <div className="flex justify-center gap-8 border-b border-exclu-arsenic/40">
+                  <button
+                    type="button"
+                    onClick={() => setMode('login')}
+                    className="relative pb-3.5 px-2 transition-all"
+                  >
+                    <span className={`text-base font-bold transition-all ${mode === 'login' || mode === 'reset'
                       ? 'text-exclu-cloud'
                       : 'text-exclu-space/60 hover:text-exclu-space'
-                  }`}>
-                    Log in
-                  </span>
-                  {(mode === 'login' || mode === 'reset') && (
-                    <motion.div
-                      layoutId="auth-tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('signup')}
-                  className="relative pb-3.5 px-2 transition-all"
-                >
-                  <span className={`text-base font-bold transition-all ${
-                    mode === 'signup'
+                      }`}>
+                      Log in
+                    </span>
+                    {(mode === 'login' || mode === 'reset') && (
+                      <motion.div
+                        layoutId="auth-tab-indicator"
+                        className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('signup')}
+                    className="relative pb-3.5 px-2 transition-all"
+                  >
+                    <span className={`text-base font-bold transition-all ${mode === 'signup'
                       ? 'text-exclu-cloud'
                       : 'text-exclu-space/60 hover:text-exclu-space'
-                  }`}>
-                    Sign up
-                  </span>
-                  {mode === 'signup' && (
-                    <motion.div
-                      layoutId="auth-tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              </div>
+                      }`}>
+                      Sign up
+                    </span>
+                    {mode === 'signup' && (
+                      <motion.div
+                        layoutId="auth-tab-indicator"
+                        className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-full"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                </div>
               )}
               <div className="space-y-1">
                 <CardTitle className="text-base text-exclu-cloud">
                   {mode === 'signup'
                     ? 'Create your credentials'
                     : mode === 'login'
-                    ? 'Log in with your email'
-                    : mode === 'update-password'
-                    ? 'Set your new password'
-                    : 'Reset your password'}
+                      ? 'Log in with your email'
+                      : mode === 'update-password'
+                        ? 'Set your new password'
+                        : 'Reset your password'}
                 </CardTitle>
               </div>
             </CardHeader>
@@ -372,21 +392,21 @@ const Auth = () => {
                 )}
 
                 {mode !== 'update-password' && (
-                <div className="space-y-1.5">
-                  <label htmlFor="email" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
-                    <Mail className="h-3.5 w-3.5 text-exclu-space/80" />
-                    Email
-                  </label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                    className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                    required
-                  />
-                </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="email" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
+                      <Mail className="h-3.5 w-3.5 text-exclu-space/80" />
+                      Email
+                    </label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      required
+                    />
+                  </div>
                 )}
 
                 <div className="space-y-1.5">
@@ -421,12 +441,12 @@ const Auth = () => {
                   {isLoading
                     ? 'Please wait...'
                     : mode === 'signup'
-                    ? 'Sign up'
-                    : mode === 'login'
-                    ? 'Log in'
-                    : mode === 'update-password'
-                    ? 'Update password'
-                    : 'Send reset link'}
+                      ? 'Sign up'
+                      : mode === 'login'
+                        ? 'Log in'
+                        : mode === 'update-password'
+                          ? 'Update password'
+                          : 'Send reset link'}
                 </Button>
 
                 <p className="text-[10px] text-exclu-space/70 text-center mt-2">

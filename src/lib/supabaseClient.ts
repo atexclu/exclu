@@ -9,4 +9,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase environment variables are missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
+const customFetch = (url: RequestInfo | URL, options?: RequestInit) => {
+  const urlString = url instanceof URL ? url.toString() : url as string;
+  if (import.meta.env.DEV && typeof urlString === 'string' && urlString.includes('/functions/v1/')) {
+    const localUrl = urlString.replace(supabaseUrl ?? '', 'http://127.0.0.1:54321');
+    return fetch(localUrl, options);
+  }
+  return fetch(url, options);
+};
+
+export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
+  global: {
+    fetch: customFetch
+  }
+});

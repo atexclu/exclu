@@ -5,10 +5,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 
 // Prefer the standard Supabase Edge env vars, but fall back to the legacy names
-const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
+const supabaseUrl = Deno.env.get('PROJECT_URL') ?? Deno.env.get('VITE_SUPABASE_URL') ?? Deno.env.get('SUPABASE_URL');
 const supabaseServiceRoleKey =
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
-const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseAnonKey = Deno.env.get('VITE_SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY');
 
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 
@@ -341,7 +341,7 @@ serve(async (req) => {
     const accountLink = await stripe.accountLinks.create({
       account: stripeAccountId,
       refresh_url: `${siteUrl.replace(/\/$/, '')}/app/settings?stripe_onboarding=refresh`,
-      return_url: `${siteUrl.replace(/\/$/, '')}/app/settings?stripe_onboarding=return`,
+      return_url: `${siteUrl.replace(/\/$/, '')}/app/stripe-validation`,
       type: 'account_onboarding',
     });
 
