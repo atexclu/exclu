@@ -2,12 +2,13 @@ import Stripe from 'npm:stripe';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyTest = Deno.env.get('STRIPE_SECRET_KEY_TEST');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 
-if (!stripeSecretKey) {
+if (!stripeSecretKeyLive) {
   throw new Error('Missing STRIPE_SECRET_KEY environment variable');
 }
 
@@ -18,9 +19,6 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 if (!siteUrl) {
   throw new Error('Missing PUBLIC_SITE_URL environment variable');
 }
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16',
-});
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -89,6 +87,11 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const slug = body?.slug as string | undefined;
+    const stripeMode = body?.stripeMode === 'test' ? 'test' : 'live';
+
+    // Pick the right Stripe key: test mode uses STRIPE_SECRET_KEY_TEST if available
+    const stripeKey = stripeMode === 'test' && stripeSecretKeyTest ? stripeSecretKeyTest : stripeSecretKeyLive!;
+    const stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
 
     // Basic email validation to avoid storing malformed addresses.
     const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';

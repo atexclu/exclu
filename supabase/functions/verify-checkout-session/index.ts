@@ -2,15 +2,22 @@ import Stripe from 'npm:stripe';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyTest = Deno.env.get('STRIPE_SECRET_KEY_TEST');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 
-if (!stripeSecretKey) throw new Error('Missing STRIPE_SECRET_KEY');
+if (!stripeSecretKeyLive) throw new Error('Missing STRIPE_SECRET_KEY');
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
 
-const stripe = new Stripe(stripeSecretKey, { apiVersion: '2023-10-16' });
+// Pick the right Stripe key based on whether the session is test or live.
+function getStripe(sessionId: string): Stripe {
+  const isTest = sessionId.startsWith('cs_test_');
+  const key = isTest && stripeSecretKeyTest ? stripeSecretKeyTest : stripeSecretKeyLive!;
+  return new Stripe(key, { apiVersion: '2023-10-16' });
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 const normalizedSiteOrigin = (siteUrl ?? '').replace(/\/$/, '');
@@ -63,7 +70,8 @@ serve(async (req: Request) => {
       });
     }
 
-    // 2. Not in DB yet — verify directly with Stripe
+    // 2. Not in DB yet — verify directly with Stripe (use test key for cs_test_ sessions)
+    const stripe = getStripe(session_id);
     let session: Stripe.Checkout.Session;
     try {
       session = await stripe.checkout.sessions.retrieve(session_id, {
