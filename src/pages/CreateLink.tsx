@@ -259,7 +259,7 @@ const CreateLink = () => {
 
       const slug = generateSlug(safeTitle);
 
-      // 1. Create the link row with status 'published'
+      // 1. Create the link row as 'draft' first — will be published only after upload succeeds
       const { data: insertedLinks, error: insertError } = await supabase
         .from('links')
         .insert({
@@ -269,7 +269,7 @@ const CreateLink = () => {
           price_cents: Math.round(priceNumber * 100),
           currency: 'USD',
           slug,
-          status: 'published',
+          status: 'draft',
           show_on_profile: showOnProfile,
         })
         .select();
@@ -297,6 +297,8 @@ const CreateLink = () => {
 
         if (uploadError) {
           console.error(uploadError);
+          // Clean up the draft link so no empty link is left behind
+          await supabase.from('links').delete().eq('id', linkId);
           throw new Error('Upload failed. Please try again.');
         }
 
@@ -309,8 +311,20 @@ const CreateLink = () => {
 
         if (updateError) {
           console.error(updateError);
+          await supabase.from('links').delete().eq('id', linkId);
           throw new Error('Link was created but media could not be attached.');
         }
+      }
+
+      // 3a. Publish the link now that upload succeeded (or no file was required)
+      const { error: publishError } = await supabase
+        .from('links')
+        .update({ status: 'published' })
+        .eq('id', linkId);
+
+      if (publishError) {
+        console.error(publishError);
+        throw new Error('Content was uploaded but the link could not be published.');
       }
 
       // 3. Attach assets from library via link_media
