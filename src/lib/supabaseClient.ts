@@ -9,9 +9,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase environment variables are missing. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
 
+// Set VITE_USE_LOCAL_FUNCTIONS=false in .env.local to use production Edge Functions
+// while running the frontend locally (Mode B testing — no local supabase functions serve needed).
+const useLocalFunctions = import.meta.env.DEV && import.meta.env.VITE_USE_LOCAL_FUNCTIONS !== 'false';
+
 const customFetch = (url: RequestInfo | URL, options?: RequestInit) => {
   const urlString = url instanceof URL ? url.toString() : url as string;
-  if (import.meta.env.DEV && typeof urlString === 'string' && urlString.includes('/functions/v1/')) {
+  if (useLocalFunctions && typeof urlString === 'string' && urlString.includes('/functions/v1/')) {
     const localUrl = urlString.replace(supabaseUrl ?? '', 'http://127.0.0.1:54321');
     return fetch(localUrl, options);
   }
