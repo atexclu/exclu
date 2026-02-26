@@ -4,6 +4,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+// Optional: separate signing secret for the test-mode webhook endpoint in Stripe Dashboard.
+// If set, the webhook will try the live secret first, then fall back to the test secret.
+const stripeWebhookSecretTest = Deno.env.get('STRIPE_WEBHOOK_SECRET_TEST');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
@@ -181,7 +184,16 @@ serve(async (req: Request) => {
   try {
     // In the Edge runtime (Deno/Web Crypto), Stripe requires the async variant
     // of constructEvent to work with SubtleCryptoProvider.
-    event = await stripe.webhooks.constructEventAsync(body, signature, stripeWebhookSecret);
+    // Try the live secret first; if it fails and a test secret is configured, try that.
+    try {
+      event = await stripe.webhooks.constructEventAsync(body, signature, stripeWebhookSecret!);
+    } catch (liveErr) {
+      if (stripeWebhookSecretTest) {
+        event = await stripe.webhooks.constructEventAsync(body, signature, stripeWebhookSecretTest);
+      } else {
+        throw liveErr;
+      }
+    }
   } catch (err) {
     console.error('Webhook signature verification failed:', err);
     return new Response('Webhook signature verification failed', { status: 400 });
