@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 
 type LibraryAsset = {
   id: string;
@@ -283,12 +284,13 @@ const CreateLink = () => {
 
       // 2. Upload primary file if present (kept as main media)
       if (file) {
-        const fileExtension = file.name.split('.').pop() ?? 'bin';
+        const convertedFile = await maybeConvertHeic(file);
+        const fileExtension = convertedFile.name.split('.').pop() ?? 'bin';
         const objectName = `paid-content/${user.id}/${linkId}/original/content.${fileExtension}`;
 
         const { error: uploadError } = await supabase.storage
           .from('paid-content')
-          .upload(objectName, file, {
+          .upload(objectName, convertedFile, {
             cacheControl: '3600',
             upsert: true,
           });

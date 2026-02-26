@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 
 type LibraryAsset = {
   id: string;
@@ -195,7 +196,8 @@ const ContentLibrary = () => {
 
       const newAssets: LibraryAsset[] = [];
 
-      for (const file of selectedFiles) {
+      for (const rawFile of selectedFiles) {
+        const file = await maybeConvertHeic(rawFile);
         const assetId = crypto.randomUUID();
         const ext = file.name.split('.').pop() ?? 'bin';
         const objectName = `${user.id}/assets/${assetId}/original/content.${ext}`;
@@ -219,7 +221,7 @@ const ContentLibrary = () => {
             creator_id: user.id,
             title: assetTitle.trim() || null,
             storage_path: objectName,
-            mime_type: file.type || null,
+            mime_type: file.type || rawFile.type || null,
             is_public: isPublic,
           })
           .select('id, title, created_at, storage_path, mime_type, is_public')

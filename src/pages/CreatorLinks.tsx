@@ -8,6 +8,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Copy, Check, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 
 interface LinkRow {
   id: string;
@@ -191,11 +192,12 @@ const CreatorLinks = () => {
     }
 
     const userId = user.id;
-    const filePath = `paid-content/${userId}/${uploadFile.name}`;
+    const convertedFile = await maybeConvertHeic(uploadFile);
+    const filePath = `paid-content/${userId}/${convertedFile.name}`;
 
     const { data, error } = await supabase.storage
       .from('paid-content')
-      .upload(filePath, uploadFile, {
+      .upload(filePath, convertedFile, {
         cacheControl: '3600',
         upsert: false,
       });

@@ -7,6 +7,7 @@ import { GripVertical, X, Upload, Film, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 
 export interface AttachedMedia {
   id: string;
@@ -182,7 +183,8 @@ export const AttachedContentManager = ({
           continue;
         }
 
-        if (!isImage && !isVideo) {
+        const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+        if (!isImage && !isVideo && !isHeic) {
           toast.error(`${file.name}: Only images and videos (MP4, MOV, WebM) are supported.`);
           continue;
         }
@@ -192,15 +194,16 @@ export const AttachedContentManager = ({
           continue;
         }
 
-        // Upload to Supabase Storage
-        const fileExtension = file.name.split('.').pop() ?? 'bin';
+        // Upload to Supabase Storage (convert HEIC to JPEG first)
+        const uploadFile = await maybeConvertHeic(file);
+        const fileExtension = uploadFile.name.split('.').pop() ?? 'bin';
         const timestamp = Date.now();
         const randomId = Math.random().toString(36).substring(7);
         const objectName = `paid-content/${user.id}/${linkId}/attachments/${timestamp}-${randomId}.${fileExtension}`;
 
         const { error: uploadError } = await supabase.storage
           .from('paid-content')
-          .upload(objectName, file, {
+          .upload(objectName, uploadFile, {
             cacheControl: '3600',
             upsert: false,
           });
@@ -218,7 +221,7 @@ export const AttachedContentManager = ({
             creator_id: user.id,
             title: file.name,
             storage_path: objectName,
-            mime_type: file.type,
+            mime_type: uploadFile.type,
           })
           .select('id, title, storage_path, mime_type')
           .single();
