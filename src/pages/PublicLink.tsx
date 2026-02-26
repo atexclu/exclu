@@ -124,28 +124,42 @@ const themeColors: Record<string, { gradient: string; glow: string }> = {
   },
 };
 
-// Poll for purchase record with exponential backoff.
-// Returns the purchase row or null if not found after all retries.
-const POLL_INTERVALS_MS = [1000, 2000, 4000, 8000, 16000] as const;
-
-async function pollForPurchase(
+// Verify purchase via Edge Function which checks Stripe directly and inserts if missing.
+// This is the primary verification path — reliable regardless of webhook delivery.
+async function verifyAndEnsurePurchase(
   linkId: string,
   stripeSessionId: string,
   signal: AbortSignal,
 ): Promise<PurchaseData | null> {
-  for (const delay of POLL_INTERVALS_MS) {
+  // Fast path: check DB first (webhook may have already processed it)
+  const { data: existing } = await supabaseAnon
+    .from('purchases')
+    .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
+    .eq('link_id', linkId)
+    .eq('stripe_session_id', stripeSessionId)
+    .maybeSingle();
+
+  if (existing) return existing as PurchaseData;
+  if (signal.aborted) return null;
+
+  // Slow path: verify directly with Stripe via Edge Function (handles webhook delays/failures)
+  const RETRY_DELAYS_MS = [1500, 3000, 6000];
+  for (const delay of RETRY_DELAYS_MS) {
     if (signal.aborted) return null;
     await new Promise((r) => setTimeout(r, delay));
     if (signal.aborted) return null;
 
-    const { data } = await supabaseAnon
-      .from('purchases')
-      .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
-      .eq('link_id', linkId)
-      .eq('stripe_session_id', stripeSessionId)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-checkout-session', {
+        body: { session_id: stripeSessionId, link_id: linkId },
+      });
 
-    if (data) return data as PurchaseData;
+      if (!error && data?.purchase) {
+        return data.purchase as PurchaseData;
+      }
+    } catch (err) {
+      console.warn('[verifyAndEnsurePurchase] attempt failed:', err);
+    }
   }
   return null;
 }
@@ -288,40 +302,24 @@ const PublicLink = () => {
       // Check if user has purchased this link (via session_id in URL)
       let hasPurchased = false;
       if (sessionId) {
-        // First attempt: immediate lookup
-        const { data: purchase } = await supabase
-          .from('purchases')
-          .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
-          .eq('link_id', data.id)
-          .eq('stripe_session_id', sessionId)
-          .maybeSingle();
+        // Show verifying state immediately — verifyAndEnsurePurchase checks DB first,
+        // then falls back to direct Stripe API verification + purchase insertion.
+        setIsVerifyingPayment(true);
+        setIsLoading(false);
 
-        if (purchase) {
-          const pd = purchase as PurchaseData;
+        const verifiedPurchase = await verifyAndEnsurePurchase(data.id, sessionId, signal);
+
+        if (signal.aborted) return;
+
+        if (verifiedPurchase) {
           hasPurchased = true;
           setIsUnlocked(true);
-          setAccessExpiresAt(pd.access_expires_at ?? null);
-          setPurchaseData(pd);
+          setAccessExpiresAt(verifiedPurchase.access_expires_at ?? null);
+          setPurchaseData(verifiedPurchase);
         } else {
-          // Race condition: webhook hasn't created the purchase yet.
-          // Show a "verifying payment" state and poll with exponential backoff.
-          setIsVerifyingPayment(true);
-          setIsLoading(false);
-
-          const polledPurchase = await pollForPurchase(data.id, sessionId, signal);
-
-          if (signal.aborted) return;
-
-          if (polledPurchase) {
-            hasPurchased = true;
-            setIsUnlocked(true);
-            setAccessExpiresAt(polledPurchase.access_expires_at ?? null);
-            setPurchaseData(polledPurchase);
-          } else {
-            setPaymentNotFound(true);
-          }
-          setIsVerifyingPayment(false);
+          setPaymentNotFound(true);
         }
+        setIsVerifyingPayment(false);
       }
 
       // Fetch attached media from link_media
