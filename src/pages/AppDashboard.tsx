@@ -41,6 +41,7 @@ const AppDashboard = () => {
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [showStripeModal, setShowStripeModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
+  const [commissionRate, setCommissionRate] = useState(0.10);
   const [connectPhaseIndex, setConnectPhaseIndex] = useState(0);
 
   const navigate = useNavigate();
@@ -109,8 +110,12 @@ const AppDashboard = () => {
           safePurchases = purchases ?? [];
         }
         const salesCount = safePurchases.length;
-        // Creator earns the sale price minus Exclu's 5% processing fee (amount_cents includes that fee)
-        const revenueSum = safePurchases.reduce((sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05), 0);
+        // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
+        const isPremium = profile?.is_creator_subscribed === true;
+        const rate = isPremium ? 0 : 0.10;
+        const revenueSum = safePurchases.reduce(
+          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - rate)), 0
+        );
 
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
@@ -143,6 +148,7 @@ const AppDashboard = () => {
           setProfileViewCount(profile.profile_view_count ?? 0);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
+          setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
 
           // Referral code (auto-generate client-side if missing)
@@ -312,7 +318,7 @@ const AppDashboard = () => {
         if (purchase.created_at) {
           const d = new Date(purchase.created_at);
           d.setHours(0, 0, 0, 0);
-          const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05);
+          const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
           events.push({ date: d, value });
         }
       });

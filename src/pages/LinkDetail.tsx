@@ -42,6 +42,7 @@ const LinkDetail = () => {
   const [revenueCents, setRevenueCents] = useState(0);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [isPremium, setIsPremium] = useState(false);
   const [contentPreviewUrl, setContentPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,11 +87,19 @@ const LinkDetail = () => {
           throw purchasesError;
         }
 
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('is_creator_subscribed')
+          .eq('id', user.id)
+          .single();
+        const isPremium = profileData?.is_creator_subscribed === true;
+        const commissionRate = isPremium ? 0 : 0.10;
+
         const safePurchases = (purchasesData ?? []) as PurchaseRow[];
         const sales = safePurchases.length;
-        // Creator earns the sale price minus Exclu's 5% processing fee
+        // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
         const revenue = safePurchases.reduce(
-          (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.05),
+          (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
           0
         );
 
@@ -100,6 +109,7 @@ const LinkDetail = () => {
         setSalesCount(sales);
         setRevenueCents(revenue);
         setPurchases(safePurchases);
+        setIsPremium(isPremium);
 
         // Load content preview if storage_path exists
         if (data.storage_path) {
@@ -430,7 +440,7 @@ const LinkDetail = () => {
                     {purchases.map((purchase, index) => {
                       const emailLabel = purchase.buyer_email || 'Unknown buyer';
                       const amountLabel = purchase.amount_cents
-                        ? `$${(Math.round(purchase.amount_cents / 1.05) / 100).toFixed(2)} USD`
+                        ? `$${(Math.round(purchase.amount_cents / 1.05 * (1 - (isPremium ? 0 : 0.10))) / 100).toFixed(2)} USD`
                         : '—';
                       const dateLabel = new Date(purchase.created_at).toLocaleString();
                       const isRefunded = purchase.status === 'refunded';
