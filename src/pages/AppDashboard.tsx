@@ -109,7 +109,8 @@ const AppDashboard = () => {
           safePurchases = purchases ?? [];
         }
         const salesCount = safePurchases.length;
-        const revenueSum = safePurchases.reduce((sum, p: any) => sum + (p.amount_cents ?? 0), 0);
+        // Creator earns the sale price minus Exclu's 5% processing fee (amount_cents includes that fee)
+        const revenueSum = safePurchases.reduce((sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05), 0);
 
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
@@ -311,7 +312,7 @@ const AppDashboard = () => {
         if (purchase.created_at) {
           const d = new Date(purchase.created_at);
           d.setHours(0, 0, 0, 0);
-          const value = metric === 'sales' ? 1 : purchase.amount_cents ?? 0;
+          const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05);
           events.push({ date: d, value });
         }
       });

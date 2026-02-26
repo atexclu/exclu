@@ -88,8 +88,9 @@ const LinkDetail = () => {
 
         const safePurchases = (purchasesData ?? []) as PurchaseRow[];
         const sales = safePurchases.length;
+        // Creator earns the sale price minus Exclu's 5% processing fee
         const revenue = safePurchases.reduce(
-          (sum: number, p: PurchaseRow) => sum + (p.amount_cents ?? 0),
+          (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.05),
           0
         );
 
@@ -429,7 +430,7 @@ const LinkDetail = () => {
                     {purchases.map((purchase, index) => {
                       const emailLabel = purchase.buyer_email || 'Unknown buyer';
                       const amountLabel = purchase.amount_cents
-                        ? `$${(purchase.amount_cents / 100).toFixed(2)} USD`
+                        ? `$${(Math.round(purchase.amount_cents / 1.05) / 100).toFixed(2)} USD`
                         : '—';
                       const dateLabel = new Date(purchase.created_at).toLocaleString();
                       const isRefunded = purchase.status === 'refunded';
