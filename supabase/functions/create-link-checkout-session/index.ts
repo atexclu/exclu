@@ -87,11 +87,13 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const slug = body?.slug as string | undefined;
-    const stripeMode = body?.stripeMode === 'test' ? 'test' : 'live';
 
-    // Pick the right Stripe key: test mode uses STRIPE_SECRET_KEY_TEST if available
-    const stripeKey = stripeMode === 'test' && stripeSecretKeyTest ? stripeSecretKeyTest : stripeSecretKeyLive!;
+    // Auto-detect test mode: use test keys when request comes from localhost
+    const origin = req.headers.get('origin') ?? '';
+    const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+    const stripeKey = isLocalhost && stripeSecretKeyTest ? stripeSecretKeyTest : stripeSecretKeyLive!;
     const stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
+    if (isLocalhost) console.log('Test mode: using test Stripe key for localhost origin', origin);
 
     // Basic email validation to avoid storing malformed addresses.
     const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';

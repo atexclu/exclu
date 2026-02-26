@@ -399,9 +399,8 @@ const PublicLink = () => {
 
     setIsUnlocking(true);
     try {
-      const stripeMode = import.meta.env.VITE_STRIPE_MODE === 'test' ? 'test' : 'live';
       const { data, error } = await supabase.functions.invoke('create-link-checkout-session', {
-        body: { slug, buyerEmail: buyerEmail || null, stripeMode },
+        body: { slug, buyerEmail: buyerEmail || null },
       });
 
       if (error || !(data as any)?.url) {
