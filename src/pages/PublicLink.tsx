@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -138,7 +138,7 @@ async function pollForPurchase(
     await new Promise((r) => setTimeout(r, delay));
     if (signal.aborted) return null;
 
-    const { data } = await supabase
+    const { data } = await supabaseAnon
       .from('purchases')
       .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
       .eq('link_id', linkId)

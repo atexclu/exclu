@@ -66,10 +66,12 @@ const CreateLink = () => {
 
     if (selected) {
       const MAX_FILE_SIZE_MB = 500;
-      const isZip = selected.name.toLowerCase().endsWith('.zip') || selected.type === 'application/zip' || selected.type === 'application/x-zip-compressed';
-      const isImage = selected.type.startsWith('image/');
-      const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
-      const isVideo = allowedVideoTypes.includes(selected.type);
+      const fileName = selected.name.toLowerCase();
+      const isZip = fileName.endsWith('.zip') || selected.type === 'application/zip' || selected.type === 'application/x-zip-compressed';
+      const isHeic = selected.type === 'image/heic' || selected.type === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+      const isImage = selected.type.startsWith('image/') || isHeic;
+      const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
+      const isVideo = selected.type.startsWith('video/') || videoExtensions.some(ext => fileName.endsWith(ext));
 
       if (isZip) {
         toast.error('ZIP files are not supported. Please upload the photos and videos individually (you can select multiple files at once).');
@@ -79,7 +81,7 @@ const CreateLink = () => {
       }
 
       if (!isImage && !isVideo) {
-        toast.error('Please upload an image or a supported video file (MP4, MOV, WebM).');
+        toast.error('Please upload an image or video file.');
         event.target.value = '';
         setFile(null);
         setPreviewUrl((previous) => {

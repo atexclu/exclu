@@ -40,7 +40,7 @@ export default function StripeValidation() {
                 if (data && data.status) {
                     if (data.status === 'complete') {
                         toast.success('Stripe connected successfully!');
-                        navigate('/app/settings'); // Or wherever the subscriptions tab is
+                        navigate('/app/links');
                         return;
                     } else if (data.status === 'restricted') {
                         setError('Stripe connected but requires more information. Please review your Stripe dashboard.');

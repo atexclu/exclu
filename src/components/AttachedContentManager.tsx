@@ -173,19 +173,20 @@ export const AttachedContentManager = ({
       for (const file of files) {
         // Validate file
         const MAX_FILE_SIZE_MB = 500;
-        const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-        const isImage = file.type.startsWith('image/');
-        const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
-        const isVideo = allowedVideoTypes.includes(file.type);
+        const fileName = file.name.toLowerCase();
+        const isZip = fileName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+        const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+        const isImage = file.type.startsWith('image/') || isHeic;
+        const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
+        const isVideo = file.type.startsWith('video/') || videoExtensions.some(ext => fileName.endsWith(ext));
 
         if (isZip) {
           toast.error(`${file.name}: ZIP files are not supported. Please upload the photos and videos individually.`);
           continue;
         }
 
-        const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
-        if (!isImage && !isVideo && !isHeic) {
-          toast.error(`${file.name}: Only images and videos (MP4, MOV, WebM) are supported.`);
+        if (!isImage && !isVideo) {
+          toast.error(`${file.name}: Only images and video files are supported.`);
           continue;
         }
 
