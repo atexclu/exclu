@@ -275,68 +275,68 @@ serve(async (req: Request) => {
                 }
               }
 
-              // Post-purchase: Check if the referred creator reached $1k within 90 days
-              // → if so, credit $100 bonus to the REFERRER (not the referred creator)
+              // Post-purchase: Check if this creator (the referred one) reached $1k net revenue
+              // within 90 days of signup → if so, credit $100 bonus to the REFERRED creator themselves.
               if (creatorId) {
                 try {
-                  // 1. Find the referral row where this creator is the referred one, bonus not yet paid
+                  // 1. Find the referral row for this creator as the referred party, bonus not yet paid
                   const { data: referral, error: refErr } = await supabase
                     .from('referrals')
-                    .select('id, referrer_id, created_at, bonus_paid_to_referrer')
+                    .select('id, referred_id, created_at, bonus_paid_to_referred')
                     .eq('referred_id', creatorId)
-                    .eq('bonus_paid_to_referrer', false)
+                    .eq('bonus_paid_to_referred', false)
                     .maybeSingle();
 
-                  if (!refErr && referral?.referrer_id) {
+                  if (!refErr && referral) {
                     const signupDate = new Date(referral.created_at);
                     const now = new Date();
                     const diffDays = (now.getTime() - signupDate.getTime()) / (1000 * 3600 * 24);
 
                     if (diffDays <= 90) {
-                      // 2. Calculate the referred creator's total revenue (fan price, not creator net)
-                      const { data: links } = await supabase
+                      // 2. Sum all succeeded purchases for this creator's links (including the current one)
+                      const { data: allCreatorLinks } = await supabase
                         .from('links')
                         .select('id')
                         .eq('creator_id', creatorId);
 
-                      if (links && links.length > 0) {
-                        const linkIds = links.map((l: any) => l.id);
+                      if (allCreatorLinks && allCreatorLinks.length > 0) {
+                        const allLinkIds = allCreatorLinks.map((l: any) => l.id);
                         const { data: allPurchases, error: purError } = await supabase
                           .from('purchases')
                           .select('amount_cents')
-                          .in('link_id', linkIds)
+                          .in('link_id', allLinkIds)
                           .eq('status', 'succeeded');
 
                         if (!purError && allPurchases) {
-                          // Use creator net (strip 5% fan fee) to measure $1k milestone
-                          const totalCreatorRevenue = allPurchases.reduce(
+                          // Creator net revenue: strip the 5% fan processing fee
+                          const totalCreatorNetRevenue = allPurchases.reduce(
                             (acc: number, p: any) => acc + Math.round((p.amount_cents || 0) / 1.05), 0
                           );
 
-                          // $1k = 100,000 cents
-                          if (totalCreatorRevenue >= 100000) {
-                            console.log(`Referred creator ${creatorId} reached $1k within 90 days! Crediting $100 bonus to referrer ${referral.referrer_id}`);
+                          // Milestone: $1,000 net = 100,000 cents
+                          if (totalCreatorNetRevenue >= 100000) {
+                            console.log(`Referred creator ${creatorId} reached $1k net revenue in 90 days — crediting $100 bonus.`);
 
-                            // 3. Mark bonus as paid on the referral row
+                            // 3. Mark bonus as paid to prevent double-crediting
                             await supabase
                               .from('referrals')
-                              .update({ bonus_paid_to_referrer: true })
+                              .update({ bonus_paid_to_referred: true })
                               .eq('id', referral.id);
 
-                            // 4. Credit $100 (10000 cents) to the REFERRER's affiliate earnings
-                            const { data: referrerProfile } = await supabase
+                            // 4. Credit $100 (10,000 cents) to the REFERRED creator's affiliate_earnings_cents
+                            const { data: referredProfile } = await supabase
                               .from('profiles')
                               .select('affiliate_earnings_cents')
-                              .eq('id', referral.referrer_id)
+                              .eq('id', creatorId)
                               .single();
 
-                            if (referrerProfile) {
+                            if (referredProfile) {
                               await supabase
                                 .from('profiles')
                                 .update({
-                                  affiliate_earnings_cents: (referrerProfile.affiliate_earnings_cents || 0) + 10000,
+                                  affiliate_earnings_cents: (referredProfile.affiliate_earnings_cents || 0) + 10000,
                                 })
-                                .eq('id', referral.referrer_id);
+                                .eq('id', creatorId);
                             }
                           }
                         }
@@ -344,7 +344,7 @@ serve(async (req: Request) => {
                     }
                   }
                 } catch (err) {
-                  console.error('Error processing $100 referral bonus:', err);
+                  console.error('Error processing $100 referral bonus for referred creator:', err);
                 }
               }
             }

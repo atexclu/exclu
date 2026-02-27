@@ -24,13 +24,16 @@ const AppDashboard = () => {
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'metrics' | 'earnings' | 'referral'>('metrics');
-  // Referral state
+  // Referral state (recruteur)
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
   const [referrals, setReferrals] = useState<any[]>([]);
   const [referralLinkCopied, setReferralLinkCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isRequestingPayout, setIsRequestingPayout] = useState(false);
+  // Referral bonus state (recruté — this creator was referred by someone)
+  const [myReferralBonus, setMyReferralBonus] = useState<{ eligible: boolean; unlocked: boolean; daysLeft: number } | null>(null);
   const [activeMetric, setActiveMetric] = useState<'published' | 'sales' | 'revenue'>('published');
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
@@ -160,12 +163,29 @@ const AppDashboard = () => {
           }
           setReferralCode(code);
 
-          // Load referrals
+          // Load referrals (as referrer — people I recruited)
           const { data: referralsData } = await supabase
             .from('referrals')
-            .select('id, referred_id, status, commission_earned_cents, created_at, bonus_paid_to_referrer')
+            .select('id, referred_id, status, commission_earned_cents, created_at')
             .eq('referrer_id', user.id)
             .order('created_at', { ascending: false });
+
+          // Check if this creator was themselves referred → $100 bonus eligibility
+          const { data: myReferralRow } = await supabase
+            .from('referrals')
+            .select('created_at, bonus_paid_to_referred')
+            .eq('referred_id', user.id)
+            .maybeSingle();
+
+          if (myReferralRow && isMounted) {
+            const signupDate = new Date(myReferralRow.created_at);
+            const diffDays = (Date.now() - signupDate.getTime()) / (1000 * 3600 * 24);
+            setMyReferralBonus({
+              eligible: diffDays <= 90,
+              unlocked: myReferralRow.bonus_paid_to_referred === true,
+              daysLeft: Math.max(0, Math.ceil(90 - diffDays)),
+            });
+          }
 
           if (referralsData && referralsData.length > 0 && isMounted) {
             const referredIds = referralsData.map((r: any) => r.referred_id);
@@ -954,6 +974,49 @@ const AppDashboard = () => {
                 </div>
               )}
             </div>
+
+            {/* $100 Referral bonus — visible only if this creator was recruited by someone */}
+            {myReferralBonus && (
+              <div className={`rounded-2xl border p-5 sm:p-6 ${
+                myReferralBonus.unlocked
+                  ? 'border-emerald-500/40 bg-emerald-500/5'
+                  : myReferralBonus.eligible
+                    ? 'border-amber-500/40 bg-amber-500/5'
+                    : 'border-exclu-arsenic/60 bg-exclu-ink/80'
+              }`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">$100 welcome bonus</p>
+                    {myReferralBonus.unlocked ? (
+                      <>
+                        <p className="text-2xl font-bold text-emerald-400">+$100.00 unlocked</p>
+                        <p className="text-[11px] text-exclu-space/70 mt-1">You reached $1k in revenue within 90 days. Bonus credited to your affiliate earnings.</p>
+                      </>
+                    ) : myReferralBonus.eligible ? (
+                      <>
+                        <p className="text-sm font-semibold text-amber-300">Pending — {myReferralBonus.daysLeft} day{myReferralBonus.daysLeft !== 1 ? 's' : ''} left</p>
+                        <p className="text-[11px] text-exclu-space/70 mt-1">Reach $1,000 in net revenue before the deadline to unlock your $100 bonus.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-exclu-space/60">Expired</p>
+                        <p className="text-[11px] text-exclu-space/50 mt-1">The 90-day window has passed. Keep growing — more rewards coming soon.</p>
+                      </>
+                    )}
+                  </div>
+                  <div className={`text-right shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border ${
+                    myReferralBonus.unlocked
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40'
+                      : myReferralBonus.eligible
+                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
+                        : 'bg-exclu-arsenic/20 text-exclu-space/50 border-exclu-arsenic/40'
+                  }`}>
+                    {myReferralBonus.unlocked ? 'Credited' : myReferralBonus.eligible ? 'In progress' : 'Expired'}
+                  </div>
+                </div>
+              </div>
+            )}
+
           </section>
         )}
 
@@ -1215,63 +1278,35 @@ const AppDashboard = () => {
                   </div>
                 )}
 
-                {/* Payout request */}
+                {/* Payout request button with loading state */}
                 {canRequestPayout && (
                   <div className="px-5 py-4 border-t border-exclu-arsenic/40">
-                    <a
-                      href="mailto:hello@exclu.at?subject=Affiliate payout request"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-primary text-black hover:opacity-90 transition-opacity"
+                    <button
+                      type="button"
+                      disabled={isRequestingPayout}
+                      onClick={async () => {
+                        setIsRequestingPayout(true);
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const amount = fmtAmt(affiliateEarningsCents);
+                        const handle = profileHandle ? `@${profileHandle}` : '';
+                        const uid = session?.user?.id ?? '';
+                        const body = encodeURIComponent(
+                          `Hi,\n\nI would like to withdraw my affiliate earnings of ${amount}.\n\nHandle: ${handle}\nUser ID: ${uid}\n\nThanks!`
+                        );
+                        window.location.href = `mailto:hello@exclu.at?subject=Affiliate%20payout%20request&body=${body}`;
+                        toast.success('Email client opened — send the email to request your payout.');
+                        setTimeout(() => setIsRequestingPayout(false), 2000);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-primary text-black hover:opacity-90 transition-opacity disabled:opacity-60"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />Request payout
-                    </a>
+                      {isRequestingPayout
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Preparing…</>
+                        : <><ExternalLink className="w-3.5 h-3.5" />Request payout</>}
+                    </button>
+                    <p className="text-[10px] text-exclu-space/50 mt-2">This will open your email client pre-filled. We process payouts manually within 3 business days.</p>
                   </div>
                 )}
               </div>
-
-              {/* $100 bonus tracker */}
-              {referrals.length > 0 && (() => {
-                const bonusPending = referrals.filter((r: any) => r.status === 'converted' && !r.bonus_paid_to_referrer);
-                const bonusUnlocked = referrals.filter((r: any) => r.bonus_paid_to_referrer === true);
-                if (bonusPending.length === 0 && bonusUnlocked.length === 0) return null;
-                return (
-                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-exclu-arsenic/40">
-                      <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">$100 milestone bonus</p>
-                      <p className="text-[11px] text-exclu-space/60 mt-0.5">Unlocked when your recruit reaches $1k revenue within 90 days of signup.</p>
-                    </div>
-                    <div className="divide-y divide-exclu-arsenic/40">
-                      {bonusUnlocked.map((r: any) => (
-                        <div key={r.id} className="px-5 py-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-exclu-cloud font-medium">
-                              {r.referred_display_name || r.referred_handle || 'Anonymous'}
-                              {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
-                            </p>
-                            <p className="text-[11px] text-exclu-space/60">Milestone reached</p>
-                          </div>
-                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/40">
-                            +$100.00 unlocked
-                          </span>
-                        </div>
-                      ))}
-                      {bonusPending.map((r: any) => (
-                        <div key={r.id} className="px-5 py-3 flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-exclu-cloud font-medium">
-                              {r.referred_display_name || r.referred_handle || 'Anonymous'}
-                              {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
-                            </p>
-                            <p className="text-[11px] text-exclu-space/60">Waiting for $1k revenue within 90 days</p>
-                          </div>
-                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/40">
-                            $100 pending
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
 
             </section>
           );
