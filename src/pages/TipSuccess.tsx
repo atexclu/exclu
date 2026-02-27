@@ -232,12 +232,12 @@ const TipSuccess = () => {
 
       {/* Logo */}
       <motion.div
-        className="fixed top-6 left-1/2 -translate-x-1/2 z-20"
+        className="fixed top-6 inset-x-0 z-20 flex justify-center pointer-events-none"
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <img src={logo} alt="Exclu" className="h-5 w-auto" />
+        <img src={logo} alt="Exclu" className="h-5 w-auto pointer-events-auto" />
       </motion.div>
 
       {/* Content */}

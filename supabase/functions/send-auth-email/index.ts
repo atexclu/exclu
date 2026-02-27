@@ -32,11 +32,22 @@ interface HookPayload {
 }
 
 function buildConfirmationUrl(emailData: HookPayload['email_data']): string {
-  const baseUrl = supabaseUrl || emailData.site_url;
+  // Use project Supabase URL (not site_url) as the verify endpoint base
+  const baseUrl = (supabaseUrl || emailData.site_url).replace(/\/$/, '');
+
+  // redirect_to comes from the client's emailRedirectTo (e.g. https://exclu.at/auth/callback?next=%2Ffan)
+  // If it's the bare site URL (Supabase default fallback), rewrite to /auth/callback
+  let redirectTo = emailData.redirect_to || emailData.site_url || 'https://exclu.at';
+  const siteUrlClean = (emailData.site_url || 'https://exclu.at').replace(/\/$/, '');
+  if (redirectTo === siteUrlClean || redirectTo === siteUrlClean + '/') {
+    // Supabase fell back to Site URL — rewrite to our callback handler
+    redirectTo = `${siteUrlClean}/auth/callback`;
+  }
+
   const params = new URLSearchParams({
     token_hash: emailData.token_hash,
     type: emailData.email_action_type,
-    redirect_to: emailData.redirect_to,
+    redirect_to: redirectTo,
   });
   return `${baseUrl}/auth/v1/verify?${params.toString()}`;
 }
