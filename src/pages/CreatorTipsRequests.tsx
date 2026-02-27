@@ -8,6 +8,11 @@ import { motion } from 'framer-motion';
 import { DollarSign, MessageSquare, Check, X, Eye, Loader2, Package } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface FanProfile {
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
 interface TipRecord {
   id: string;
   fan_id: string;
@@ -22,6 +27,7 @@ interface TipRecord {
   creator_net_cents: number;
   platform_fee_cents: number;
   fan_email?: string | null;
+  fan?: FanProfile | null;
 }
 
 interface RequestRecord {
@@ -101,7 +107,7 @@ const CreatorTipsRequests = () => {
     const [tipsResult, requestsResult] = await Promise.all([
       supabase
         .from('tips')
-        .select('*')
+        .select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
         .eq('creator_id', uid)
         .eq('status', 'succeeded')
         .order('created_at', { ascending: false })
@@ -114,7 +120,7 @@ const CreatorTipsRequests = () => {
         .limit(100),
     ]);
 
-    if (tipsResult.data) setTips(tipsResult.data);
+    if (tipsResult.data) setTips(tipsResult.data as TipRecord[]);
     if (requestsResult.data) setRequests(requestsResult.data);
 
     setIsLoading(false);
@@ -303,27 +309,45 @@ const CreatorTipsRequests = () => {
                     !tip.read_at ? 'border-primary/30 bg-primary/5' : 'border-border'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-foreground">
-                          {tip.is_anonymous ? 'Anonymous' : `Fan`}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Fan avatar */}
+                      {!tip.is_anonymous && (
+                        <div className="w-10 h-10 rounded-full overflow-hidden border border-border flex-shrink-0 bg-muted">
+                          {tip.fan?.avatar_url ? (
+                            <img src={tip.fan.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="text-xs font-bold text-muted-foreground">
+                                {(tip.fan?.display_name || '?').charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {tip.is_anonymous
+                              ? 'Anonymous'
+                              : (tip.fan?.display_name || 'Fan')}
+                          </p>
+                          {!tip.read_at && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-medium flex-shrink-0">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {new Date(tip.created_at).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </p>
-                        {!tip.read_at && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                            New
-                          </span>
-                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(tip.created_at).toLocaleDateString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </p>
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-foreground">

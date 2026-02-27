@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Mail, Lock, Heart, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Heart, ArrowLeft, User } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
@@ -50,6 +50,7 @@ const FanSignup = () => {
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get('email') || '').trim();
     const password = String(formData.get('password') || '');
+    const displayName = String(formData.get('display_name') || '').trim();
 
     if (!email) {
       toast.error('Please enter your email');
@@ -66,6 +67,10 @@ const FanSignup = () => {
         if (error) throw error;
         toast.success('Check your inbox to reset your password');
       } else if (mode === 'signup') {
+        if (!displayName) {
+          toast.error('Please enter a username');
+          return;
+        }
         if (!password) {
           toast.error('Please enter a password');
           return;
@@ -83,6 +88,7 @@ const FanSignup = () => {
             emailRedirectTo: redirectUrl,
             data: {
               is_creator: false,
+              full_name: displayName,
               favorite_creator: creatorHandle || null,
             },
           },
@@ -325,6 +331,26 @@ const FanSignup = () => {
             </CardHeader>
             <CardContent className="px-5 pb-5">
               <form className="space-y-4" onSubmit={handleSubmit}>
+                {mode === 'signup' && (
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="fan-display-name"
+                      className="flex items-center gap-2 text-xs font-medium text-exclu-space"
+                    >
+                      <User className="h-3.5 w-3.5 text-exclu-space/80" />
+                      Username
+                    </label>
+                    <Input
+                      id="fan-display-name"
+                      name="display_name"
+                      type="text"
+                      autoComplete="nickname"
+                      placeholder="Your name or nickname"
+                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                      required
+                    />
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label
                     htmlFor="fan-email"
