@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink } from 'lucide-react';
+import { Heart, MessageSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -46,6 +46,8 @@ interface RequestRecord {
   status: string;
   creator_response: string | null;
   created_at: string;
+  delivery_link_id: string | null;
+  delivery_link_slug: string | null;
   creator: {
     display_name: string | null;
     handle: string | null;
@@ -160,16 +162,20 @@ const FanDashboard = () => {
       setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
     }
 
-    // Fetch custom requests
+    // Fetch custom requests with delivery link slug
     const { data: reqData } = await supabase
       .from('custom_requests')
-      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, creator:profiles!custom_requests_creator_id_fkey(display_name, handle, avatar_url)')
+      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, delivery_link:links!custom_requests_delivery_link_id_fkey(slug), creator:profiles!custom_requests_creator_id_fkey(display_name, handle, avatar_url)')
       .eq('fan_id', uid)
       .order('created_at', { ascending: false })
       .limit(50);
 
     if (reqData) {
-      setRequests(reqData.map((r: any) => ({ ...r, creator: r.creator })));
+      setRequests(reqData.map((r: any) => ({
+        ...r,
+        creator: r.creator,
+        delivery_link_slug: r.delivery_link?.slug ?? null,
+      })));
     }
 
     setIsLoading(false);
@@ -596,6 +602,21 @@ const FanDashboard = () => {
                           <div className="mt-3 pl-3 border-l-2 border-primary/30 bg-primary/5 rounded-r-lg py-2 pr-2">
                             <p className="text-[11px] text-muted-foreground font-medium mb-0.5">Creator's response</p>
                             <p className="text-xs text-foreground italic">{req.creator_response}</p>
+                          </div>
+                        )}
+
+                        {/* Unlock button: visible when accepted + delivery link exists */}
+                        {req.status === 'accepted' && req.delivery_link_id && req.delivery_link_slug && req.creator.handle && (
+                          <div className="mt-3">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="w-full rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs"
+                              onClick={() => navigate(`/${req.creator.handle}/links/${req.delivery_link_slug}`)}
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                              Unlock content
+                            </Button>
                           </div>
                         )}
                       </motion.div>
