@@ -37,6 +37,7 @@ import LinkInBioEditor from "./pages/LinkInBioEditor";
 import ReferralDashboard from "./pages/ReferralDashboard";
 import StripeValidation from "./pages/StripeValidation";
 import FanSignup from "./pages/FanSignup";
+import AuthCallback from "./pages/AuthCallback";
 import CreatorTipsRequests from "./pages/CreatorTipsRequests";
 import FanDashboard from './pages/FanDashboard';
 import FanProtectedRoute from '@/components/FanProtectedRoute';
@@ -204,6 +205,7 @@ const App = () => {
               />
               <Route path="/l/:slug" element={<PublicLink />} />
               <Route path="/fan/signup" element={<FanSignup />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/tip-success" element={<TipSuccess />} />
               <Route
                 path="/fan"

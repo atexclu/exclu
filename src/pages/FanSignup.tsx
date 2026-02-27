@@ -77,9 +77,10 @@ const FanSignup = () => {
         }
 
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
-        const redirectUrl = creatorHandle
-          ? `${siteUrl}/fan?creator=${creatorHandle}`
-          : `${siteUrl}/fan`;
+        const next = creatorHandle
+          ? `/fan?creator=${creatorHandle}`
+          : `/fan`;
+        const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent(next)}`;
 
         const { data: signUpData, error } = await supabase.auth.signUp({
           email,
