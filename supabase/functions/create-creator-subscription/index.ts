@@ -2,14 +2,16 @@ import Stripe from 'npm:stripe';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
+const stripeSecretKeyTest = Deno.env.get('STRIPE_SECRET_KEY_TEST');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
-// Price ID for the $39/month creator subscription
-const creatorPriceId = Deno.env.get('STRIPE_CREATOR_PRICE_ID');
+// Price ID for the $39/month creator subscription (live and test variants)
+const creatorPriceIdLive = Deno.env.get('STRIPE_CREATOR_PRICE_ID');
+const creatorPriceIdTest = Deno.env.get('STRIPE_CREATOR_PRICE_ID_TEST');
 
-if (!stripeSecretKey) {
+if (!stripeSecretKeyLive) {
   throw new Error('Missing STRIPE_SECRET_KEY environment variable');
 }
 
@@ -21,13 +23,9 @@ if (!siteUrl) {
   throw new Error('Missing PUBLIC_SITE_URL environment variable');
 }
 
-if (!creatorPriceId) {
+if (!creatorPriceIdLive) {
   throw new Error('Missing STRIPE_CREATOR_PRICE_ID environment variable');
 }
-
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16',
-});
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -42,6 +40,14 @@ serve(async (req) => {
   }
 
   try {
+    // Auto-detect test mode: use test keys when request comes from localhost
+    const origin = req.headers.get('origin') ?? '';
+    const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+    const stripeKey = isLocalhost && stripeSecretKeyTest ? stripeSecretKeyTest : stripeSecretKeyLive!;
+    const creatorPriceId = isLocalhost && creatorPriceIdTest ? creatorPriceIdTest : creatorPriceIdLive!;
+    const stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
+    if (isLocalhost) console.log('Test mode: using test Stripe key for localhost origin', origin);
+
     // Get the user from the Authorization header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -52,7 +58,7 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    
+
     // Validate the user's JWT token using the admin client
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
@@ -81,11 +87,10 @@ serve(async (req) => {
 
     // If already subscribed, redirect to billing portal
     if (profile.is_creator_subscribed) {
-      // Create a billing portal session for managing subscription
       if (profile.stripe_customer_id) {
         const portalSession = await stripe.billingPortal.sessions.create({
           customer: profile.stripe_customer_id,
-          return_url: `${siteUrl.replace(/\/$/, '')}/app`,
+          return_url: `${siteUrl!.replace(/\/$/, '')}/app`,
         });
         return new Response(JSON.stringify({ url: portalSession.url }), {
           status: 200,
@@ -100,19 +105,13 @@ serve(async (req) => {
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email ?? undefined,
-        metadata: {
-          supabase_user_id: user.id,
-        },
+        metadata: { supabase_user_id: user.id },
       });
-
       customerId = customer.id;
-
-      // Save the customer ID to the profile
       const { error: updateError } = await supabaseAdmin
         .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id);
-
       if (updateError) {
         console.error('Error saving Stripe customer ID to profile', updateError);
       }
@@ -122,22 +121,11 @@ serve(async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [
-        {
-          price: creatorPriceId,
-          quantity: 1,
-        },
-      ],
-      success_url: `${siteUrl.replace(/\/$/, '')}/app?subscription=success`,
-      cancel_url: `${siteUrl.replace(/\/$/, '')}/app?subscription=cancelled`,
-      metadata: {
-        supabase_user_id: user.id,
-      },
-      subscription_data: {
-        metadata: {
-          supabase_user_id: user.id,
-        },
-      },
+      line_items: [{ price: creatorPriceId, quantity: 1 }],
+      success_url: `${siteUrl!.replace(/\/$/, '')}/app?subscription=success`,
+      cancel_url: `${siteUrl!.replace(/\/$/, '')}/app?subscription=cancelled`,
+      metadata: { supabase_user_id: user.id },
+      subscription_data: { metadata: { supabase_user_id: user.id } },
     });
 
     return new Response(JSON.stringify({ url: session.url }), {

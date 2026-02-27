@@ -163,7 +163,7 @@ const AppDashboard = () => {
           // Load referrals
           const { data: referralsData } = await supabase
             .from('referrals')
-            .select('id, referred_id, status, commission_earned_cents, created_at')
+            .select('id, referred_id, status, commission_earned_cents, created_at, bonus_paid_to_referrer')
             .eq('referrer_id', user.id)
             .order('created_at', { ascending: false });
 
@@ -1227,6 +1227,51 @@ const AppDashboard = () => {
                   </div>
                 )}
               </div>
+
+              {/* $100 bonus tracker */}
+              {referrals.length > 0 && (() => {
+                const bonusPending = referrals.filter((r: any) => r.status === 'converted' && !r.bonus_paid_to_referrer);
+                const bonusUnlocked = referrals.filter((r: any) => r.bonus_paid_to_referrer === true);
+                if (bonusPending.length === 0 && bonusUnlocked.length === 0) return null;
+                return (
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-exclu-arsenic/40">
+                      <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">$100 milestone bonus</p>
+                      <p className="text-[11px] text-exclu-space/60 mt-0.5">Unlocked when your recruit reaches $1k revenue within 90 days of signup.</p>
+                    </div>
+                    <div className="divide-y divide-exclu-arsenic/40">
+                      {bonusUnlocked.map((r: any) => (
+                        <div key={r.id} className="px-5 py-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-exclu-cloud font-medium">
+                              {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                              {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
+                            </p>
+                            <p className="text-[11px] text-exclu-space/60">Milestone reached</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/40">
+                            +$100.00 unlocked
+                          </span>
+                        </div>
+                      ))}
+                      {bonusPending.map((r: any) => (
+                        <div key={r.id} className="px-5 py-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-exclu-cloud font-medium">
+                              {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                              {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
+                            </p>
+                            <p className="text-[11px] text-exclu-space/60">Waiting for $1k revenue within 90 days</p>
+                          </div>
+                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-amber-500/10 text-amber-300 border border-amber-500/40">
+                            $100 pending
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
             </section>
           );
