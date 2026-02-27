@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 
@@ -37,6 +37,7 @@ const CreateLink = () => {
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [showOnProfile, setShowOnProfile] = useState(true);
+  const [isSupportLink, setIsSupportLink] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const handleConnectStripe = async () => {
@@ -242,7 +243,7 @@ const CreateLink = () => {
       return;
     }
 
-    if (!file && selectedAssetIds.length === 0) {
+    if (!isSupportLink && !file && selectedAssetIds.length === 0) {
       toast.error('Please upload or attach at least one media file for this link.');
       return;
     }
@@ -273,6 +274,7 @@ const CreateLink = () => {
           slug,
           status: 'draft',
           show_on_profile: showOnProfile,
+          is_support_link: isSupportLink,
         })
         .select();
 
@@ -482,7 +484,7 @@ const CreateLink = () => {
                         </div>
 
                         <div className="space-y-3">
-                          <p className="text-xs font-medium text-exclu-space">Visibility</p>
+                          <p className="text-xs font-medium text-exclu-space">Options</p>
                           <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
                             <div className="flex-1">
                               <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
@@ -493,10 +495,24 @@ const CreateLink = () => {
                               onCheckedChange={setShowOnProfile}
                             />
                           </div>
+                          <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Heart className="w-4 h-4 text-pink-400" />
+                                <p className="text-sm font-medium text-exclu-space">Support link</p>
+                              </div>
+                              <p className="text-xs text-exclu-space/60 mt-0.5">No content attached — fans pay to support you directly</p>
+                            </div>
+                            <Switch
+                              checked={isSupportLink}
+                              onCheckedChange={setIsSupportLink}
+                            />
+                          </div>
                         </div>
                       </div>
 
-                      {/* Upload + preview */}
+                      {/* Upload + preview (hidden for support links) */}
+                      {!isSupportLink && (
                       <div className="space-y-3">
                         <p className="text-xs font-medium text-exclu-space">Content source</p>
                         <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-3 sm:p-4 flex flex-col items-center justify-center text-center gap-3">
@@ -652,6 +668,7 @@ const CreateLink = () => {
                           )}
                         </div>
                       </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between gap-4 pt-2">

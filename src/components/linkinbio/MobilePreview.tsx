@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, MapPin } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, MapPin, DollarSign, MessageSquare } from 'lucide-react';
 import Aurora from '@/components/ui/Aurora';
 import { getAuroraGradient, type AuroraGradient } from '@/lib/auroraGradients';
 import logo from '@/assets/logo-white.svg';
@@ -32,6 +32,8 @@ interface LinkInBioData {
   exclusive_content_link_id: string | null;
   exclusive_content_url: string | null;
   exclusive_content_image_url: string | null;
+  tips_enabled?: boolean;
+  custom_requests_enabled?: boolean;
 }
 
 interface CreatorLink {
@@ -310,6 +312,29 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                       {!(data.exclusive_content_text && (data.exclusive_content_url || data.exclusive_content_link_id)) && visibleLinks.length === 0 && (
                         <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
                           No content links yet
+                        </div>
+                      )}
+
+                      {/* Tips & Requests CTA */}
+                      {(data.tips_enabled || data.custom_requests_enabled) && (
+                        <div className="flex gap-2 mt-3">
+                          {data.tips_enabled && (
+                            <div
+                              className="flex-1 h-9 rounded-full flex items-center justify-center gap-1.5 text-[10px] font-semibold text-white shadow-lg"
+                              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                            >
+                              <DollarSign className="w-3 h-3" />
+                              Send a Tip
+                            </div>
+                          )}
+                          {data.custom_requests_enabled && (
+                            <div
+                              className="flex-1 h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center gap-1.5 text-[10px] font-medium text-white"
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              Custom Request
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

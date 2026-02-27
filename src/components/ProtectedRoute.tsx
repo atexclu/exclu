@@ -49,13 +49,20 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('handle, avatar_url, social_links')
+        .select('handle, avatar_url, social_links, role, is_creator')
         .eq('id', user.id)
         .maybeSingle();
 
       if (profileError) {
-        // On ne casse pas la navigation si le profil est manquant, mais on logue l'erreur
         console.error('Error loading profile in ProtectedRoute', profileError);
+      }
+
+      // Fan accounts skip creator onboarding entirely and go to /fan dashboard
+      // Check role only — is_creator may be stale for accounts created before migration 049
+      if (profile && profile.role === 'fan') {
+        navigate('/fan', { replace: true });
+        setIsLoading(false);
+        return;
       }
 
       // Onboarding is incomplete if handle, avatar, or at least one social link is missing

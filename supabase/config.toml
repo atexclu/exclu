@@ -36,3 +36,12 @@ verify_jwt = false
 
 [functions.send-referral-invite]
 verify_jwt = false
+
+[functions.create-tip-checkout]
+verify_jwt = false
+
+[functions.create-custom-request]
+verify_jwt = false
+
+[functions.send-auth-email]
+verify_jwt = false

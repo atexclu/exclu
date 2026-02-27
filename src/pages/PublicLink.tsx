@@ -65,6 +65,7 @@ interface PublicLinkData {
   description: string | null;
   price_cents: number;
   currency: string;
+  is_support_link?: boolean;
 }
 
 interface ContentItem {
@@ -256,7 +257,7 @@ const PublicLink = () => {
         // Now fetch full published link data
         const { data, error } = await supabase
           .from('links')
-          .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count')
+          .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count, is_support_link')
           .eq('slug', slug)
           .eq('status', 'published')
           .abortSignal(signal)
@@ -276,6 +277,7 @@ const PublicLink = () => {
         description: data.description,
         price_cents: data.price_cents,
         currency: data.currency,
+        is_support_link: data.is_support_link === true,
       });
 
       // Increment click count (best-effort) via Edge Function to bypass RLS safely
@@ -656,7 +658,7 @@ const PublicLink = () => {
                       {/* Circular Text Animation */}
                       <div className="absolute inset-0 flex items-center justify-center">
                         <CircularText
-                          text="EXCLUSIVE CONTENT • UNLOCK NOW • "
+                          text={link?.is_support_link ? "SUPPORT CREATOR • SEND LOVE • " : "EXCLUSIVE CONTENT • UNLOCK NOW • "}
                           spinDuration={15}
                           onHover="speedUp"
                           className="w-48 h-48"
@@ -782,24 +784,26 @@ const PublicLink = () => {
                         ) : (
                           <span className="flex items-center justify-center gap-3">
                             <Lock className="w-5 h-5" />
-                            <span>Unlock for {priceLabel}</span>
+                            <span>{link?.is_support_link ? `Support for ${priceLabel}` : `Unlock for ${priceLabel}`}</span>
                           </span>
                         )}
                       </Button>
 
-                      {/* Email Input */}
-                      <div className="space-y-3">
-                        <p className="text-xs text-white/60">
-                          Optional: enter your email to receive a copy of the content link
-                        </p>
-                        <Input
-                          type="email"
-                          value={buyerEmail}
-                          onChange={(e) => setBuyerEmail(e.target.value)}
-                          placeholder="you@example.com"
-                          className="h-11 bg-black/40 border-white/20 text-white placeholder:text-white/50 text-sm rounded-xl focus:ring-2 focus:ring-primary/50 transition-all"
-                        />
-                      </div>
+                      {/* Email Input (hidden for support links — no content to deliver) */}
+                      {!link?.is_support_link && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-white/60">
+                            Optional: enter your email to receive a copy of the content link
+                          </p>
+                          <Input
+                            type="email"
+                            value={buyerEmail}
+                            onChange={(e) => setBuyerEmail(e.target.value)}
+                            placeholder="you@example.com"
+                            className="h-11 bg-black/40 border-white/20 text-white placeholder:text-white/50 text-sm rounded-xl focus:ring-2 focus:ring-primary/50 transition-all"
+                          />
+                        </div>
+                      )}
 
                       {/* Info Text */}
                       <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[10px] sm:text-[11px] text-white/80">
@@ -809,12 +813,14 @@ const PublicLink = () => {
                         </span>
                         <span className="flex items-center gap-1.5">
                           <Check className="w-3 h-3 text-green-400" />
-                          Instant access
+                          {link?.is_support_link ? 'Direct support' : 'Instant access'}
                         </span>
-                        <span className="flex items-center gap-1.5">
-                          <Check className="w-3 h-3 text-green-400" />
-                          Email copy (optional)
-                        </span>
+                        {!link?.is_support_link && (
+                          <span className="flex items-center gap-1.5">
+                            <Check className="w-3 h-3 text-green-400" />
+                            Email copy (optional)
+                          </span>
+                        )}
                       </div>
 
                       {/* Exclu Branding */}
@@ -849,9 +855,39 @@ const PublicLink = () => {
             </div>
           )}
 
+          {/* UNLOCKED STATE — Support Link */}
+          {(() => {
+            return !isLoading && link && isUnlocked && link.is_support_link;
+          })() && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="max-w-lg mx-auto w-full text-center space-y-6 py-8"
+            >
+              <div className="w-20 h-20 mx-auto rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                <Check className="w-8 h-8 text-green-400" />
+              </div>
+              <div className="space-y-2">
+                <h1 className="text-2xl font-bold text-white">Thank you for your support!</h1>
+                <p className="text-sm text-white/60">
+                  Your payment has been received. {creator?.display_name || 'The creator'} appreciates your generosity.
+                </p>
+              </div>
+              {creator?.handle && (
+                <a
+                  href={`/${creator.handle}`}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black text-sm font-semibold hover:bg-white/90 transition-all active:scale-95"
+                >
+                  Visit {creator.display_name || creator.handle}'s profile
+                </a>
+              )}
+            </motion.div>
+          )}
+
           {/* UNLOCKED STATE - Modern Layout */}
           {(() => {
-            return !isLoading && link && isUnlocked;
+            return !isLoading && link && isUnlocked && !link.is_support_link;
           })() && (
             <div className="flex flex-col gap-6 max-w-3xl mx-auto w-full">
               {/* Success Header */}

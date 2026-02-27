@@ -36,6 +36,11 @@ import AdminUserOverview from "./pages/AdminUserOverview";
 import LinkInBioEditor from "./pages/LinkInBioEditor";
 import ReferralDashboard from "./pages/ReferralDashboard";
 import StripeValidation from "./pages/StripeValidation";
+import FanSignup from "./pages/FanSignup";
+import CreatorTipsRequests from "./pages/CreatorTipsRequests";
+import FanDashboard from './pages/FanDashboard';
+import FanProtectedRoute from '@/components/FanProtectedRoute';
+import TipSuccess from './pages/TipSuccess';
 
 const queryClient = new QueryClient();
 
@@ -189,7 +194,25 @@ const App = () => {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/app/tips-requests"
+                element={
+                  <ProtectedRoute>
+                    <CreatorTipsRequests />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/l/:slug" element={<PublicLink />} />
+              <Route path="/fan/signup" element={<FanSignup />} />
+              <Route path="/tip-success" element={<TipSuccess />} />
+              <Route
+                path="/fan"
+                element={
+                  <FanProtectedRoute>
+                    <FanDashboard />
+                  </FanProtectedRoute>
+                }
+              />
               <Route path="/contact" element={<Contact />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />

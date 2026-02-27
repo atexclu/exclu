@@ -200,12 +200,18 @@ const Auth = () => {
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('handle, avatar_url, social_links')
+          .select('handle, avatar_url, social_links, role')
           .eq('id', user.id)
           .maybeSingle();
 
         if (profileError) {
           console.error('Error loading profile after login', profileError);
+        }
+
+        // Fan accounts go directly to fan dashboard
+        if (profile?.role === 'fan') {
+          navigate('/fan');
+          return;
         }
 
         const socialLinks = (profile?.social_links as Record<string, string> | null) || {};

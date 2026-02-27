@@ -14,6 +14,42 @@
       "destination": "/api/og-proxy"
     },
     {
+      "source": "/tip-success",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/fan",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/fan/signup",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/auth",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/onboarding",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/contact",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/cookies",
+      "destination": "/index.html"
+    },
+    {
       "source": "/:handle",
       "destination": "/api/og-proxy"
     },

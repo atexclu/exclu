@@ -1,0 +1,734 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '@/lib/supabaseClient';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Heart, MessageSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import logoBlack from '@/assets/logo-black.svg';
+import logoWhite from '@/assets/logo-white.svg';
+import { useTheme } from '@/contexts/ThemeContext';
+
+interface FavoriteCreator {
+  id: string;
+  creator_id: string;
+  creator: {
+    id: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    handle: string | null;
+    tips_enabled: boolean;
+    custom_requests_enabled: boolean;
+  };
+}
+
+interface TipRecord {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  message: string | null;
+  is_anonymous: boolean;
+  created_at: string;
+  creator: {
+    display_name: string | null;
+    handle: string | null;
+    avatar_url: string | null;
+  };
+}
+
+interface RequestRecord {
+  id: string;
+  description: string;
+  proposed_amount_cents: number;
+  final_amount_cents: number | null;
+  currency: string;
+  status: string;
+  creator_response: string | null;
+  created_at: string;
+  creator: {
+    display_name: string | null;
+    handle: string | null;
+    avatar_url: string | null;
+  };
+}
+
+const statusColors: Record<string, string> = {
+  pending: 'bg-yellow-500/20 text-yellow-400',
+  succeeded: 'bg-green-500/20 text-green-400',
+  failed: 'bg-red-500/20 text-red-400',
+  refunded: 'bg-gray-500/20 text-gray-400',
+  accepted: 'bg-blue-500/20 text-blue-400',
+  paid: 'bg-emerald-500/20 text-emerald-400',
+  in_progress: 'bg-indigo-500/20 text-indigo-400',
+  delivered: 'bg-green-500/20 text-green-400',
+  completed: 'bg-green-500/20 text-green-400',
+  refused: 'bg-red-500/20 text-red-400',
+  expired: 'bg-gray-500/20 text-gray-400',
+  cancelled: 'bg-gray-500/20 text-gray-400',
+};
+
+const FanDashboard = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { resolvedTheme, setTheme } = useTheme();
+  const [activeTab, setActiveTab] = useState<'favorites' | 'tips' | 'requests' | 'settings'>('favorites');
+  const [favorites, setFavorites] = useState<FavoriteCreator[]>([]);
+  const [tips, setTips] = useState<TipRecord[]>([]);
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [fanDisplayName, setFanDisplayName] = useState<string | null>(null);
+  const [fanAvatarUrl, setFanAvatarUrl] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Auto-favorite creator from signup redirect
+  const creatorFromSignup = searchParams.get('creator');
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setUserId(user.id);
+      setUserEmail(user.email || null);
+
+      // Load fan profile
+      const { data: fanProfile } = await supabase
+        .from('profiles')
+        .select('display_name, avatar_url')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (fanProfile) {
+        setFanDisplayName(fanProfile.display_name || null);
+        setFanAvatarUrl(fanProfile.avatar_url || null);
+      }
+
+      // Auto-favorite if coming from signup
+      if (creatorFromSignup) {
+        const { data: creatorProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('handle', creatorFromSignup)
+          .eq('is_creator', true)
+          .maybeSingle();
+
+        if (creatorProfile) {
+          await supabase
+            .from('fan_favorites')
+            .upsert(
+              { fan_id: user.id, creator_id: creatorProfile.id },
+              { onConflict: 'fan_id,creator_id' }
+            );
+        }
+      }
+
+      await fetchData(user.id);
+    };
+
+    init();
+  }, [creatorFromSignup]);
+
+  const fetchData = async (uid: string) => {
+    setIsLoading(true);
+
+    // Fetch favorites with creator profile
+    const { data: favData } = await supabase
+      .from('fan_favorites')
+      .select('id, creator_id, creator:profiles!fan_favorites_creator_id_fkey(id, display_name, avatar_url, handle, tips_enabled, custom_requests_enabled)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false });
+
+    if (favData) {
+      setFavorites(favData.map((f: any) => ({
+        id: f.id,
+        creator_id: f.creator_id,
+        creator: f.creator,
+      })));
+    }
+
+    // Fetch tips
+    const { data: tipsData } = await supabase
+      .from('tips')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, creator:profiles!tips_creator_id_fkey(display_name, handle, avatar_url)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (tipsData) {
+      setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
+    }
+
+    // Fetch custom requests
+    const { data: reqData } = await supabase
+      .from('custom_requests')
+      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, creator:profiles!custom_requests_creator_id_fkey(display_name, handle, avatar_url)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (reqData) {
+      setRequests(reqData.map((r: any) => ({ ...r, creator: r.creator })));
+    }
+
+    setIsLoading(false);
+  };
+
+  const handleRemoveFavorite = async (favoriteId: string) => {
+    const { error } = await supabase
+      .from('fan_favorites')
+      .delete()
+      .eq('id', favoriteId);
+
+    if (error) {
+      toast.error('Failed to remove');
+      return;
+    }
+
+    setFavorites((prev) => prev.filter((f) => f.id !== favoriteId));
+    toast.success('Creator removed from favorites');
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate('/');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!userId) return;
+
+    try {
+      const { error } = await supabase.functions.invoke('delete-fan-account', {
+        body: { user_id: userId },
+      });
+
+      if (error) throw error;
+
+      await supabase.auth.signOut();
+      toast.success('Your account has been deleted');
+      navigate('/');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete account');
+    }
+  };
+
+  const tabs = [
+    { key: 'favorites' as const, label: 'My Creators', icon: Heart },
+    { key: 'tips' as const, label: 'Tips', icon: DollarSign },
+    { key: 'requests' as const, label: 'Requests', icon: MessageSquare },
+    { key: 'settings' as const, label: 'Settings', icon: Settings },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+
+      {/* ── Topbar (AppShell style) ── */}
+      <header className="fixed top-0 inset-x-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-4">
+
+          {/* Logo */}
+          <a href="/" className="inline-flex items-center flex-shrink-0">
+            <img
+              src={resolvedTheme === 'light' ? logoBlack : logoWhite}
+              alt="Exclu"
+              className="h-5 sm:h-6 w-auto object-contain"
+            />
+          </a>
+
+          {/* Nav pills */}
+          <nav className="flex-1 flex items-center justify-center">
+            <div className="relative flex items-center gap-0.5 sm:gap-1 rounded-2xl bg-muted/50 dark:bg-muted/30 p-1">
+              {tabs.map(({ key, label, icon: Icon }) => {
+                const active = activeTab === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveTab(key)}
+                    className="relative z-10"
+                  >
+                    <motion.div
+                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
+                        active ? 'text-black dark:text-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      whileHover={!active ? { scale: 1.04 } : {}}
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">{label}</span>
+                    </motion.div>
+                    {active && (
+                      <motion.div
+                        layoutId="fan-nav-pill"
+                        className="absolute inset-0 rounded-xl bg-background dark:bg-white/10 shadow-sm border border-border/60 dark:border-white/10"
+                        transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* Right: avatar + theme + logout */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Avatar */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className="group relative"
+              aria-label="Profile settings"
+            >
+              <motion.div
+                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
+                  activeTab === 'settings'
+                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                    : 'border-border/60 group-hover:border-primary/50'
+                }`}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              >
+                {fanAvatarUrl ? (
+                  <img src={fanAvatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
+              </motion.div>
+            </button>
+
+            {/* Theme toggle — desktop only */}
+            <motion.button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="hidden sm:flex items-center justify-center w-9 h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Toggle theme"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              {resolvedTheme === 'dark' ? (
+                <Sun className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <Moon className="w-4 h-4 text-muted-foreground" />
+              )}
+            </motion.button>
+
+            {/* Logout */}
+            <motion.div whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-full h-8 w-8 sm:h-9 sm:w-9 border-border/60"
+                onClick={handleSignOut}
+                aria-label="Log out"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main content ── */}
+      <div className="pt-16 sm:pt-20 flex-1 flex flex-col">
+        <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8">
+
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-32">
+              <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            </div>
+          )}
+
+          <AnimatePresence mode="wait">
+
+            {/* ── MY CREATORS TAB ── */}
+            {!isLoading && activeTab === 'favorites' && (
+              <motion.div
+                key="favorites"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
+                {/* Section header */}
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-foreground">My Creators</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {favorites.length > 0
+                      ? `${favorites.length} creator${favorites.length > 1 ? 's' : ''} you follow`
+                      : 'Discover and follow your favorite creators'}
+                  </p>
+                </div>
+
+                {favorites.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                      <Heart className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-medium text-foreground">No creators yet</p>
+                      <p className="text-xs text-muted-foreground max-w-xs">
+                        Visit a creator's profile and interact to add them to your list
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {favorites.map((fav, i) => (
+                      <motion.div
+                        key={fav.id}
+                        initial={{ opacity: 0, scale: 0.92 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3, delay: i * 0.05 }}
+                        className="group relative rounded-2xl overflow-hidden cursor-pointer bg-exclu-ink border border-exclu-arsenic/60 hover:border-primary/50 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]"
+                        onClick={() => navigate(`/${fav.creator.handle}`)}
+                      >
+                        {/* Photo cover */}
+                        <div className="relative aspect-[3/4] overflow-hidden">
+                          {fav.creator.avatar_url ? (
+                            <motion.img
+                              src={fav.creator.avatar_url}
+                              alt={fav.creator.display_name || ''}
+                              className="w-full h-full object-cover"
+                              whileHover={{ scale: 1.07 }}
+                              transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-exclu-phantom flex items-center justify-center">
+                              <span className="text-4xl font-bold text-white/20">
+                                {(fav.creator.display_name || '?').charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+
+                          {/* Remove button */}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveFavorite(fav.id); }}
+                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white/60 hover:text-red-400 hover:bg-red-500/20 transition-all"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Name overlay */}
+                          <div className="absolute bottom-0 inset-x-0 p-3">
+                            <p className="text-sm font-semibold text-white leading-tight truncate">
+                              {fav.creator.display_name || fav.creator.handle}
+                            </p>
+                            <p className="text-[11px] text-white/60 truncate">@{fav.creator.handle}</p>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="p-2.5 flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 rounded-xl text-xs h-8 border-exclu-arsenic/60 hover:bg-white/5"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/${fav.creator.handle}`); }}
+                          >
+                            <ExternalLink className="w-3 h-3 mr-1" />
+                            Visit
+                          </Button>
+                          {fav.creator.tips_enabled && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="hero"
+                              className="flex-1 rounded-xl text-xs h-8"
+                              onClick={(e) => { e.stopPropagation(); navigate(`/${fav.creator.handle}?tip=true`); }}
+                            >
+                              <DollarSign className="w-3 h-3 mr-1" />
+                              Tip
+                            </Button>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── TIPS TAB ── */}
+            {!isLoading && activeTab === 'tips' && (
+              <motion.div
+                key="tips"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-foreground">Tips sent</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Your tip history</p>
+                </div>
+
+                {tips.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                      <DollarSign className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">No tips sent yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-w-2xl">
+                    {tips.map((tip, i) => (
+                      <motion.div
+                        key={tip.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                              {tip.creator.avatar_url ? (
+                                <img src={tip.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                  {(tip.creator.display_name || '?').charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {tip.creator.display_name || tip.creator.handle}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-bold text-foreground">
+                              ${(tip.amount_cents / 100).toFixed(2)}
+                            </p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[tip.status] || 'bg-gray-500/20 text-gray-400'}`}>
+                              {tip.status}
+                            </span>
+                          </div>
+                        </div>
+                        {tip.message && (
+                          <p className="text-xs text-muted-foreground mt-3 pl-[52px] italic">"{tip.message}"</p>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── REQUESTS TAB ── */}
+            {!isLoading && activeTab === 'requests' && (
+              <motion.div
+                key="requests"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-foreground">Custom requests</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Track your requests to creators</p>
+                </div>
+
+                {requests.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                      <MessageSquare className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">No custom requests yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-w-2xl">
+                    {requests.map((req, i) => (
+                      <motion.div
+                        key={req.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                              {req.creator.avatar_url ? (
+                                <img src={req.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                  {(req.creator.display_name || '?').charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {req.creator.display_name || req.creator.handle}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-bold text-foreground">
+                              ${((req.final_amount_cents || req.proposed_amount_cents) / 100).toFixed(2)}
+                            </p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[req.status] || 'bg-gray-500/20 text-gray-400'}`}>
+                              {req.status}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-3 line-clamp-2">{req.description}</p>
+                        {req.creator_response && (
+                          <div className="mt-3 pl-3 border-l-2 border-primary/30 bg-primary/5 rounded-r-lg py-2 pr-2">
+                            <p className="text-[11px] text-muted-foreground font-medium mb-0.5">Creator's response</p>
+                            <p className="text-xs text-foreground italic">{req.creator_response}</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── SETTINGS TAB ── */}
+            {!isLoading && activeTab === 'settings' && (
+              <motion.div
+                key="settings"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="max-w-lg space-y-4"
+              >
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold text-foreground">Settings</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Manage your fan account</p>
+                </div>
+
+                {/* Profile card */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border/60 bg-muted flex-shrink-0">
+                    {fanAvatarUrl ? (
+                      <img src={fanAvatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <User className="w-7 h-7 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-semibold text-foreground truncate">
+                      {fanDisplayName || userEmail?.split('@')[0] || 'Fan'}
+                    </p>
+                    <p className="text-sm text-muted-foreground truncate">{userEmail}</p>
+                  </div>
+                </div>
+
+                {/* Theme toggle */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Appearance</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{resolvedTheme === 'dark' ? 'Dark mode' : 'Light mode'}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl border-border/60 gap-2"
+                    onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+                  >
+                    {resolvedTheme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                    {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
+                  </Button>
+                </div>
+
+                {/* Sign out */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Sign out</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Log out of your fan account</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl border-border/60 gap-2"
+                    onClick={handleSignOut}
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign out
+                  </Button>
+                </div>
+
+                {/* Danger zone */}
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-red-400">Danger zone</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Permanently delete your account and all associated data. This cannot be undone.
+                    </p>
+                  </div>
+                  {!showDeleteConfirm ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Delete my account
+                    </Button>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-red-400 font-medium">
+                        Are you sure? This action is irreversible.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="rounded-xl bg-red-600 hover:bg-red-700 text-white"
+                          onClick={handleDeleteAccount}
+                        >
+                          Yes, delete
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl border-border/60"
+                          onClick={() => setShowDeleteConfirm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+          </AnimatePresence>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default FanDashboard;

@@ -4,7 +4,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, DollarSign, MessageSquare, Heart, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import SplitText from '@/components/ui/SplitText';
@@ -39,6 +41,11 @@ interface CreatorProfileData {
   exclusive_content_link_id?: string | null;
   exclusive_content_url?: string | null;
   exclusive_content_image_url?: string | null;
+  stripe_connect_status?: string | null;
+  tips_enabled?: boolean | null;
+  custom_requests_enabled?: boolean | null;
+  min_tip_amount_cents?: number | null;
+  min_custom_request_cents?: number | null;
 }
 
 interface CreatorLinkCard {
@@ -76,6 +83,74 @@ const CreatorPublic = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Tip & Request modal state
+  const [showTipModal, setShowTipModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [tipAmount, setTipAmount] = useState<number | null>(null);
+  const [tipCustomAmount, setTipCustomAmount] = useState('');
+  const [tipMessage, setTipMessage] = useState('');
+  const [tipAnonymous, setTipAnonymous] = useState(false);
+  const [isTipSubmitting, setIsTipSubmitting] = useState(false);
+  const [requestDescription, setRequestDescription] = useState('');
+  const [requestAmount, setRequestAmount] = useState('');
+  const [isRequestSubmitting, setIsRequestSubmitting] = useState(false);
+  const [currentFanId, setCurrentFanId] = useState<string | null>(null);
+  const [isCreatorAccount, setIsCreatorAccount] = useState(false);
+
+  // Check if a fan (not a creator) is logged in
+  useEffect(() => {
+    const checkFan = async (userId: string | undefined) => {
+      if (!userId) {
+        setCurrentFanId(null);
+        setIsCreatorAccount(false);
+        return;
+      }
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('is_creator')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (prof?.is_creator) {
+        setCurrentFanId(null);
+        setIsCreatorAccount(true);
+      } else {
+        setCurrentFanId(userId);
+        setIsCreatorAccount(false);
+      }
+    };
+
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      await checkFan(user?.id);
+    };
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      checkFan(session?.user?.id);
+    });
+    return () => { subscription.unsubscribe(); };
+  }, []);
+
+  // Show tip success toast on redirect from Stripe (runs once on mount)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tip_success') === 'true') {
+      toast.success('Thank you! Your tip has been sent.');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tip_success');
+      window.history.replaceState({}, '', url.pathname);
+    }
+  }, []);
+
+  // Open tip modal from URL param (e.g. from fan dashboard)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tip') === 'true' && profile?.tips_enabled) {
+      setShowTipModal(true);
+    }
+  }, [profile]);
+
   useEffect(() => {
     let isMounted = true;
     
@@ -87,7 +162,7 @@ const CreatorPublic = () => {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
           .eq('handle', handle)
           .maybeSingle();
 
@@ -197,6 +272,108 @@ const CreatorPublic = () => {
     }
   };
 
+  const handleTipCta = () => {
+    if (!currentFanId) {
+      if (isCreatorAccount) {
+        toast.info('You need a fan account to send tips. Please sign up as a fan.');
+      }
+      navigate(`/fan/signup?creator=${handle}`);
+      return;
+    }
+    setShowTipModal(true);
+  };
+
+  const handleRequestCta = () => {
+    if (!currentFanId) {
+      if (isCreatorAccount) {
+        toast.info('You need a fan account to send requests. Please sign up as a fan.');
+      }
+      navigate(`/fan/signup?creator=${handle}`);
+      return;
+    }
+    setShowRequestModal(true);
+  };
+
+  const handleTipSubmit = async () => {
+    if (!profile?.id || !currentFanId) return;
+
+    const finalAmount = tipAmount || Math.round(parseFloat(tipCustomAmount || '0') * 100);
+    const minAmount = profile.min_tip_amount_cents || 500;
+
+    if (finalAmount < minAmount) {
+      toast.error(`Minimum tip is $${(minAmount / 100).toFixed(2)}`);
+      return;
+    }
+
+    if (finalAmount > 50000) {
+      toast.error('Maximum tip is $500.00');
+      return;
+    }
+
+    setIsTipSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-tip-checkout', {
+        body: {
+          creator_id: profile.id,
+          amount_cents: finalAmount,
+          message: tipMessage || null,
+          is_anonymous: tipAnonymous,
+        },
+      });
+
+      if (error || !data?.url) {
+        throw new Error(data?.error || 'Unable to start checkout');
+      }
+
+      window.location.href = data.url;
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to process tip');
+    } finally {
+      setIsTipSubmitting(false);
+    }
+  };
+
+  const handleRequestSubmit = async () => {
+    if (!profile?.id || !currentFanId) return;
+
+    const amountCents = Math.round(parseFloat(requestAmount || '0') * 100);
+    const minAmount = profile.min_custom_request_cents || 2000;
+
+    if (amountCents < minAmount) {
+      toast.error(`Minimum amount is $${(minAmount / 100).toFixed(2)}`);
+      return;
+    }
+
+    if (!requestDescription || requestDescription.length < 10) {
+      toast.error('Please describe your request (at least 10 characters)');
+      return;
+    }
+
+    setIsRequestSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-custom-request', {
+        body: {
+          creator_id: profile.id,
+          description: requestDescription,
+          proposed_amount_cents: amountCents,
+        },
+      });
+
+      if (error || !data?.success) {
+        throw new Error(data?.error || 'Unable to submit request');
+      }
+
+      toast.success('Your request has been sent!');
+      setShowRequestModal(false);
+      setRequestDescription('');
+      setRequestAmount('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to submit request');
+    } finally {
+      setIsRequestSubmitting(false);
+    }
+  };
+
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
   const aurora = getAuroraGradient(profile?.aurora_gradient || 'purple_dream');
   const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
@@ -204,6 +381,10 @@ const CreatorPublic = () => {
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
   const shouldShowJoinBanner = !isPremium || (isPremium && profile?.show_join_banner !== false);
+  const isStripeReady = profile?.stripe_connect_status === 'complete';
+  const showTipsCta = profile?.tips_enabled === true && isStripeReady;
+  const showRequestsCta = profile?.custom_requests_enabled === true;
+  const tipPresets = [500, 1000, 2500, 5000];
 
   const getSocialGradient = (platform: string) => {
     switch (platform) {
@@ -636,6 +817,38 @@ const CreatorPublic = () => {
             )}
           </div>
 
+          {/* Tip & Request CTA buttons */}
+          {!isLoading && (showTipsCta || showRequestsCta) && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.3 }}
+              className="mt-6 flex gap-3"
+            >
+              {showTipsCta && (
+                <button
+                  type="button"
+                  onClick={handleTipCta}
+                  className="flex-1 h-12 rounded-full flex items-center justify-center gap-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                >
+                  <DollarSign className="w-4 h-4" />
+                  Send a Tip
+                </button>
+              )}
+              {showRequestsCta && (
+                <button
+                  type="button"
+                  onClick={handleRequestCta}
+                  className="flex-1 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center gap-2 text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Custom Request
+                </button>
+              )}
+            </motion.div>
+          )}
+
           {/* Footer branding */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -716,6 +929,235 @@ const CreatorPublic = () => {
               />
             )}
           </div>
+        </motion.div>
+      )}
+
+      {/* Tip Modal */}
+      {showTipModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowTipModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-3xl border border-white/20 bg-black/95 backdrop-blur-xl p-6 space-y-5 overflow-y-auto max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {profile?.avatar_url && (
+                  <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/20">
+                    <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-white">Send a Tip</h3>
+                  <p className="text-xs text-white/50">to {displayName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTipModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            {/* Preset amounts */}
+            <div>
+              <p className="text-xs text-white/50 mb-3">Choose an amount</p>
+              <div className="grid grid-cols-4 gap-2">
+                {tipPresets.map((cents) => (
+                  <button
+                    key={cents}
+                    type="button"
+                    onClick={() => { setTipAmount(cents); setTipCustomAmount(''); }}
+                    className={`h-12 rounded-2xl text-sm font-bold transition-all ${
+                      tipAmount === cents
+                        ? 'text-white ring-2 ring-white/40'
+                        : 'bg-white/10 text-white/80 hover:bg-white/15'
+                    }`}
+                    style={tipAmount === cents ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}
+                  >
+                    ${cents / 100}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom amount */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/50">Or enter a custom amount</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm font-medium">$</span>
+                <Input
+                  type="number"
+                  min={(profile?.min_tip_amount_cents || 500) / 100}
+                  step="0.01"
+                  value={tipCustomAmount}
+                  onChange={(e) => { setTipCustomAmount(e.target.value); setTipAmount(null); }}
+                  placeholder={`${((profile?.min_tip_amount_cents || 500) / 100).toFixed(2)} min`}
+                  className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl pl-7"
+                />
+              </div>
+            </div>
+
+            {/* Message */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/50">Message (optional)</p>
+              <Textarea
+                value={tipMessage}
+                onChange={(e) => setTipMessage(e.target.value)}
+                placeholder="Say something nice..."
+                maxLength={500}
+                rows={2}
+                className="bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl resize-none"
+              />
+            </div>
+
+            {/* Anonymous toggle */}
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                  tipAnonymous ? 'bg-white/20 border-white/40' : 'border-white/20'
+                }`}
+                onClick={() => setTipAnonymous(!tipAnonymous)}
+              >
+                {tipAnonymous && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <span className="text-sm text-white/70">Stay anonymous</span>
+            </label>
+
+            {/* Submit */}
+            <button
+              type="button"
+              onClick={handleTipSubmit}
+              disabled={isTipSubmitting || (!tipAmount && !tipCustomAmount)}
+              className="w-full h-12 rounded-2xl text-sm font-bold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+            >
+              {isTipSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <DollarSign className="w-4 h-4" />
+                  Send Tip — ${tipAmount ? (tipAmount / 100).toFixed(2) : tipCustomAmount || '0.00'}
+                </>
+              )}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Custom Request Modal */}
+      {showRequestModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowRequestModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-3xl border border-white/20 bg-black/95 backdrop-blur-xl p-6 space-y-5 overflow-y-auto max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {profile?.avatar_url && (
+                  <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/20">
+                    <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-white">Custom Request</h3>
+                  <p className="text-xs text-white/50">to {displayName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRequestModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/50">Describe what you'd like</p>
+              <Textarea
+                value={requestDescription}
+                onChange={(e) => setRequestDescription(e.target.value)}
+                placeholder="I'd love a custom photo of..."
+                maxLength={2000}
+                rows={4}
+                className="bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl resize-none"
+              />
+              <p className="text-[10px] text-white/30 text-right">{requestDescription.length}/2000</p>
+            </div>
+
+            {/* Proposed amount */}
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/50">Your proposed price</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm font-medium">$</span>
+                <Input
+                  type="number"
+                  min={(profile?.min_custom_request_cents || 2000) / 100}
+                  step="1"
+                  value={requestAmount}
+                  onChange={(e) => setRequestAmount(e.target.value)}
+                  placeholder={`${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)} min`}
+                  className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl pl-7"
+                />
+              </div>
+              <p className="text-[10px] text-white/30">
+                Minimum: ${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)}
+              </p>
+            </div>
+
+            {/* Info */}
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1.5">
+              <p className="text-xs text-white/60 leading-relaxed">
+                The creator will review your request and can accept or decline it. You will only be charged if they accept.
+              </p>
+            </div>
+
+            {/* Submit */}
+            <button
+              type="button"
+              onClick={handleRequestSubmit}
+              disabled={isRequestSubmitting || !requestDescription || !requestAmount}
+              className="w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-sm font-bold text-white transition-all hover:bg-white/15 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+            >
+              {isRequestSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-4 h-4" />
+                  Send Request
+                </>
+              )}
+            </button>
+          </motion.div>
         </motion.div>
       )}
     </div>

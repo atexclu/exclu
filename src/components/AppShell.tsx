@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
   { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
+  { path: '/app/tips-requests', label: 'Tips', icon: DollarSign, mobileHidden: true },
   { path: '/app/profile', label: 'Profile', icon: Palette },
   { path: '/admin/users', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];

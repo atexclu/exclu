@@ -1,5 +1,6 @@
 import { Switch } from '@/components/ui/switch';
-import { Crown, Palette, BadgeCheck, Smartphone, CircleDot } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Crown, Palette, BadgeCheck, Smartphone, CircleDot, DollarSign, MessageSquare } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
@@ -9,10 +10,14 @@ interface OptionsSectionProps {
   showAvailableNow: boolean;
   isPremium: boolean;
   auroraGradient?: string;
-  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; aurora_gradient?: string }) => void;
+  tipsEnabled: boolean;
+  customRequestsEnabled: boolean;
+  minTipAmountCents: number;
+  minCustomRequestCents: number;
+  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; aurora_gradient?: string; tips_enabled?: boolean; custom_requests_enabled?: boolean; min_tip_amount_cents?: number; min_custom_request_cents?: number }) => void;
 }
 
-export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, isPremium, auroraGradient = 'purple_dream', onUpdate }: OptionsSectionProps) {
+export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, isPremium, auroraGradient = 'purple_dream', tipsEnabled, customRequestsEnabled, minTipAmountCents, minCustomRequestCents, onUpdate }: OptionsSectionProps) {
   return (
     <div className="space-y-6">
       {/* Profile Gradient Color */}
@@ -140,6 +145,85 @@ export function OptionsSection({ showJoinBanner, showCertification, showDeeplink
           </div>
         </div>
       )}
+
+      {/* Tips & Requests Section */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Tips & Custom Requests</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Allow fans to send you tips and request custom content directly from your profile
+        </p>
+
+        {/* Accept Tips toggle */}
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-foreground">Accept Tips</h3>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Fans can send you tips with an optional message from your public profile
+              </p>
+            </div>
+            <Switch
+              checked={tipsEnabled}
+              onCheckedChange={(checked) => onUpdate({ tips_enabled: checked })}
+            />
+          </div>
+          {tipsEnabled && (
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs text-muted-foreground">Minimum tip amount ($)</label>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={(minTipAmountCents / 100).toFixed(0)}
+                onChange={(e) => {
+                  const val = Math.max(100, Math.round(parseFloat(e.target.value || '1') * 100));
+                  onUpdate({ min_tip_amount_cents: val });
+                }}
+                className="h-9 w-32 text-sm"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Accept Custom Requests toggle */}
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-foreground">Accept Custom Requests</h3>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Fans can request custom content with a proposed price. You can accept or decline each request.
+              </p>
+            </div>
+            <Switch
+              checked={customRequestsEnabled}
+              onCheckedChange={(checked) => onUpdate({ custom_requests_enabled: checked })}
+            />
+          </div>
+          {customRequestsEnabled && (
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs text-muted-foreground">Minimum request amount ($)</label>
+              <Input
+                type="number"
+                min={5}
+                step={5}
+                value={(minCustomRequestCents / 100).toFixed(0)}
+                onChange={(e) => {
+                  const val = Math.max(500, Math.round(parseFloat(e.target.value || '5') * 100));
+                  onUpdate({ min_custom_request_cents: val });
+                }}
+                className="h-9 w-32 text-sm"
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

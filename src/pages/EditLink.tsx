@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState, FormEvent } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Film, Sparkles, X, Trash2 } from 'lucide-react';
+import { UploadCloud, Film, Sparkles, X, Trash2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AttachedContentManager, AttachedMedia } from '@/components/AttachedContentManager';
@@ -38,6 +38,7 @@ const EditLink = () => {
   const [attachedMedia, setAttachedMedia] = useState<AttachedMedia[]>([]);
   const [initialAttachedMedia, setInitialAttachedMedia] = useState<AttachedMedia[]>([]);
   const [showOnProfile, setShowOnProfile] = useState(false);
+  const [isSupportLink, setIsSupportLink] = useState(false);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -46,7 +47,7 @@ const EditLink = () => {
 
       const { data, error } = await supabase
         .from('links')
-        .select('title, description, price_cents, currency, storage_path, show_on_profile')
+        .select('title, description, price_cents, currency, storage_path, show_on_profile, is_support_link')
         .eq('id', id)
         .single();
 
@@ -61,6 +62,7 @@ const EditLink = () => {
       setDescription(data.description ?? '');
       setPrice(String((data.price_cents ?? 0) / 100 || 0));
       setShowOnProfile(data.show_on_profile ?? false);
+      setIsSupportLink(data.is_support_link === true);
 
       // Load existing media preview if storage_path exists
       if (data.storage_path) {
@@ -220,6 +222,7 @@ const EditLink = () => {
           description: description.trim() || null,
           price_cents: Math.round(priceNumber * 100),
           show_on_profile: showOnProfile,
+          is_support_link: isSupportLink,
         })
         .eq('id', id)
         .eq('creator_id', user.id);
@@ -444,7 +447,7 @@ const EditLink = () => {
                       </div>
 
                       {/* Attached Content Manager */}
-                      {id && (
+                      {!isSupportLink && id && (
                         <AttachedContentManager
                           linkId={id}
                           attachedMedia={attachedMedia}
@@ -454,9 +457,9 @@ const EditLink = () => {
                       )}
                     </div>
 
-                    {/* Visibility settings */}
+                    {/* Options */}
                     <div className="space-y-3">
-                      <p className="text-xs font-medium text-exclu-space">Visibility</p>
+                      <p className="text-xs font-medium text-exclu-space">Options</p>
                       <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
                         <div className="flex-1">
                           <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
@@ -467,9 +470,23 @@ const EditLink = () => {
                           onCheckedChange={setShowOnProfile}
                         />
                       </div>
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Heart className="w-4 h-4 text-pink-400" />
+                            <p className="text-sm font-medium text-exclu-space">Support link</p>
+                          </div>
+                          <p className="text-xs text-exclu-space/60 mt-0.5">No content attached — fans pay to support you directly</p>
+                        </div>
+                        <Switch
+                          checked={isSupportLink}
+                          onCheckedChange={setIsSupportLink}
+                        />
+                      </div>
                     </div>
 
-                    {/* Upload + preview + library info */}
+                    {/* Upload + preview + library info (hidden for support links) */}
+                    {!isSupportLink && (
                     <div className="space-y-3">
                       <p className="text-xs font-medium text-exclu-space">Content source</p>
                       <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-4 flex flex-col items-center justify-center text-center gap-3">
@@ -528,6 +545,7 @@ const EditLink = () => {
                         </label>
                       </div>
                     </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6 border-t border-exclu-arsenic/30">

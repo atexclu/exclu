@@ -231,6 +231,8 @@ const Onboarding = () => {
         return;
       }
 
+      if (isMounted) setCurrentUser(user);
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('display_name, handle, country')

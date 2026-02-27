@@ -186,6 +186,136 @@ async function sendStripeVerifiedEmail(toEmail: string, displayName: string | nu
   return false;
 }
 
+const normalizedSiteUrl = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function sendCreatorTipNotificationEmail(params: {
+  creatorEmail: string;
+  creatorName: string;
+  tipAmountFormatted: string;
+  tipNetFormatted: string;
+  tipMessage: string | null;
+  isAnonymous: boolean;
+  dashboardUrl: string;
+}): Promise<boolean> {
+  if (!brevoApiKey || !brevoSenderEmail) {
+    console.warn('Brevo not configured; skipping tip notification email');
+    return false;
+  }
+
+  const { creatorEmail, creatorName, tipAmountFormatted, tipNetFormatted, tipMessage, isAnonymous, dashboardUrl } = params;
+  const safeCreatorName = escapeHtml(creatorName);
+  const senderLabel = isAnonymous ? 'An anonymous fan' : 'A fan';
+  const messageBlock = tipMessage
+    ? `<div style="background-color:#020617;border-radius:10px;padding:18px;margin:20px 0;border:1px solid #1e293b;">
+        <p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px 0;">Message</p>
+        <p style="font-size:15px;color:#f1f5f9;margin:0;line-height:1.6;font-style:italic;">"${escapeHtml(tipMessage)}"</p>
+      </div>`
+    : '';
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You received a tip!</title>
+<style>
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; text-align:left; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .button { display:inline-block; background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%); color:#020617 !important; text-decoration:none; padding:14px 32px; border-radius:999px; font-weight:600; font-size:15px; margin:8px 0 20px 0; box-shadow:0 6px 18px rgba(190,242,100,0.4); }
+  .details { background-color:#020617; border-radius:10px; border:1px solid #1e293b; overflow:hidden; margin:4px 0 24px 0; }
+  .detail-row { padding:14px 18px; border-bottom:1px solid #1e293b; }
+  .detail-row:last-child { border-bottom:none; }
+  .detail-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; margin:0 0 4px 0; }
+  .detail-value { font-size:15px; color:#f1f5f9; font-weight:600; margin:0; }
+  .detail-value.amount { font-size:22px; font-weight:800; color:#a3e635; }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+  .footer a:hover { text-decoration:underline; }
+  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .button { padding:12px 24px; font-size:14px; } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>You received a tip! 💰</h1>
+    </div>
+    <div class="content">
+      <p>Hey <strong>${safeCreatorName}</strong>, great news! ${senderLabel} just sent you a tip on <strong>Exclu</strong>.</p>
+      <div class="details">
+        <div class="detail-row">
+          <p class="detail-label">Tip amount</p>
+          <p class="detail-value amount">${tipAmountFormatted}</p>
+        </div>
+        <div class="detail-row">
+          <p class="detail-label">Your earnings (after fees)</p>
+          <p class="detail-value">${tipNetFormatted}</p>
+        </div>
+        <div class="detail-row">
+          <p class="detail-label">From</p>
+          <p class="detail-value">${senderLabel}</p>
+        </div>
+      </div>
+      ${messageBlock}
+      <a href="${dashboardUrl}" class="button">View in dashboard</a>
+      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">You received this email because a fan tipped you on Exclu.</p>
+    </div>
+    <div class="footer">
+      © 2025 Exclu — All rights reserved<br>
+      <a href="${normalizedSiteUrl}">exclu</a> • <a href="${normalizedSiteUrl}/terms">Terms of Service</a> • <a href="${normalizedSiteUrl}/privacy">Privacy Policy</a>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const payload = JSON.stringify({
+    sender: { email: brevoSenderEmail, name: brevoSenderName },
+    to: [{ email: creatorEmail }],
+    subject: `💰 You received a tip of ${tipAmountFormatted} on Exclu`,
+    htmlContent,
+  });
+
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': brevoApiKey!, 'Content-Type': 'application/json' },
+        body: payload,
+      });
+
+      if (response.ok) {
+        console.log(`Tip notification email sent to ${creatorEmail} (attempt ${attempt})`);
+        return true;
+      }
+
+      const errorBody = await response.text();
+      console.error(`Tip notification email failed (attempt ${attempt}/${MAX_ATTEMPTS})`, response.status, errorBody);
+    } catch (err) {
+      console.error(`Tip notification email error (attempt ${attempt}/${MAX_ATTEMPTS})`, err);
+    }
+
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
+  return false;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200 });
@@ -224,6 +354,100 @@ serve(async (req: Request) => {
       // Fan purchased a link
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
+
+        // Handle tip payments
+        if (session.mode === 'payment' && session.metadata?.type === 'tip' && session.payment_status === 'paid') {
+          const tipId = session.metadata.tip_id;
+          const creatorId = session.metadata.creator_id;
+          const fanId = session.metadata.fan_id;
+
+          if (tipId) {
+            // Check idempotency
+            const { data: existingTip } = await supabase
+              .from('tips')
+              .select('id, status')
+              .eq('id', tipId)
+              .single();
+
+            if (existingTip && existingTip.status !== 'succeeded') {
+              const amountTotal = session.amount_total ?? 0;
+
+              // Reverse-engineer the creator's base amount from the total (which includes 5% fee)
+              const creatorBaseCents = Math.round(amountTotal / 1.05);
+              const fanProcessingFeeCents = amountTotal - creatorBaseCents;
+
+              // Determine platform commission (same logic as link checkout)
+              let platformCommissionCents = 0;
+              if (creatorId) {
+                const { data: creatorProfile } = await supabase
+                  .from('profiles')
+                  .select('is_creator_subscribed')
+                  .eq('id', creatorId)
+                  .single();
+
+                const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
+                platformCommissionCents = Math.round(creatorBaseCents * commissionRate);
+              }
+
+              const totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
+              const creatorNetCents = creatorBaseCents - platformCommissionCents;
+
+              const paymentIntentId = typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : (session.payment_intent as any)?.id ?? null;
+
+              const { error: tipUpdateError } = await supabase
+                .from('tips')
+                .update({
+                  status: 'succeeded',
+                  paid_at: new Date().toISOString(),
+                  stripe_payment_intent_id: paymentIntentId,
+                  platform_fee_cents: totalPlatformFee,
+                  creator_net_cents: creatorNetCents,
+                })
+                .eq('id', tipId);
+
+              if (tipUpdateError) {
+                console.error('Error updating tip status:', tipUpdateError);
+              } else {
+                console.log('Tip succeeded:', tipId, 'creator:', creatorId, 'fan:', fanId, 'net:', creatorNetCents);
+
+                // Send creator notification email (best-effort)
+                try {
+                  // Fetch tip details (message, anonymous flag)
+                  const { data: tipDetails } = await supabase
+                    .from('tips')
+                    .select('message, is_anonymous')
+                    .eq('id', tipId)
+                    .single();
+
+                  // Fetch creator email from auth.users + display_name from profiles
+                  const { data: { user: creatorUser } } = await supabase.auth.admin.getUserById(creatorId);
+                  const { data: creatorProfileForEmail } = await supabase
+                    .from('profiles')
+                    .select('display_name, handle')
+                    .eq('id', creatorId)
+                    .single();
+
+                  if (creatorUser?.email) {
+                    const creatorDisplayName = creatorProfileForEmail?.display_name || creatorProfileForEmail?.handle || 'Creator';
+                    await sendCreatorTipNotificationEmail({
+                      creatorEmail: creatorUser.email,
+                      creatorName: creatorDisplayName,
+                      tipAmountFormatted: `$${(creatorBaseCents / 100).toFixed(2)}`,
+                      tipNetFormatted: `$${(creatorNetCents / 100).toFixed(2)}`,
+                      tipMessage: tipDetails?.message || null,
+                      isAnonymous: tipDetails?.is_anonymous === true,
+                      dashboardUrl: `${normalizedSiteUrl}/app/tips`,
+                    });
+                  }
+                } catch (emailErr) {
+                  console.error('Error sending tip notification email (non-fatal):', emailErr);
+                }
+              }
+            }
+          }
+        }
 
         // Only process one-time payments for link purchases (not subscriptions)
         // Verify payment_status to avoid granting access for unpaid sessions (e.g. delayed payments)

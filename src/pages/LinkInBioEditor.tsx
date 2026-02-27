@@ -36,6 +36,10 @@ interface LinkInBioData {
     social_order: string[];
     content_order: string[];
   };
+  tips_enabled: boolean;
+  custom_requests_enabled: boolean;
+  min_tip_amount_cents: number;
+  min_custom_request_cents: number;
 }
 
 interface CreatorLink {
@@ -75,6 +79,10 @@ const LinkInBioEditor = () => {
       social_order: [],
       content_order: [],
     },
+    tips_enabled: false,
+    custom_requests_enabled: false,
+    min_tip_amount_cents: 500,
+    min_custom_request_cents: 2000,
   });
 
   const [links, setLinks] = useState<CreatorLink[]>([]);
@@ -108,7 +116,7 @@ const LinkInBioEditor = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url')
+        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -142,6 +150,10 @@ const LinkInBioEditor = () => {
           exclusive_content_url: profile.exclusive_content_url || null,
           exclusive_content_image_url: profile.exclusive_content_image_url || null,
           link_order: profile.link_order || { social_order: [], content_order: [] },
+          tips_enabled: profile.tips_enabled === true,
+          custom_requests_enabled: profile.custom_requests_enabled === true,
+          min_tip_amount_cents: profile.min_tip_amount_cents || 500,
+          min_custom_request_cents: profile.min_custom_request_cents || 2000,
         };
 
         setEditorData(dataToLoad);
@@ -213,6 +225,10 @@ const LinkInBioEditor = () => {
           exclusive_content_url: editorData.exclusive_content_url,
           exclusive_content_image_url: editorData.exclusive_content_image_url,
           link_order: editorData.link_order,
+          tips_enabled: editorData.tips_enabled,
+          custom_requests_enabled: editorData.custom_requests_enabled,
+          min_tip_amount_cents: editorData.min_tip_amount_cents,
+          min_custom_request_cents: editorData.min_custom_request_cents,
           profile_draft: null,
         })
         .eq('id', userId);
@@ -569,6 +585,10 @@ const LinkInBioEditor = () => {
                           showAvailableNow={editorData.show_available_now}
                           isPremium={isPremium}
                           auroraGradient={editorData.aurora_gradient}
+                          tipsEnabled={editorData.tips_enabled}
+                          customRequestsEnabled={editorData.custom_requests_enabled}
+                          minTipAmountCents={editorData.min_tip_amount_cents}
+                          minCustomRequestCents={editorData.min_custom_request_cents}
                           onUpdate={updateEditorData}
                         />
                       </div>
