@@ -19,6 +19,7 @@ const AppDashboard = () => {
   const [publishedLinksCount, setPublishedLinksCount] = useState(0);
   const [totalSalesCount, setTotalSalesCount] = useState(0);
   const [totalRevenueCents, setTotalRevenueCents] = useState(0);
+  const [tipsRevenueCents, setTipsRevenueCents] = useState(0);
   const [walletBalanceCents, setWalletBalanceCents] = useState(0);
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
@@ -121,6 +122,15 @@ const AppDashboard = () => {
           (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - rate)), 0
         );
 
+        // Tips revenue – net amount received by creator (amount_cents already = what creator gets, no fee adjustment needed)
+        const { data: tipsData } = await supabase
+          .from('tips')
+          .select('amount_cents')
+          .eq('creator_id', user.id)
+          .eq('status', 'succeeded');
+        const safeTips = tipsData ?? [];
+        const tipsSum = safeTips.reduce((sum: number, t: any) => sum + Math.round((t.amount_cents ?? 0) * (1 - rate)), 0);
+
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
           .from('payouts')
@@ -134,14 +144,15 @@ const AppDashboard = () => {
         const totalPayoutsCents = safePayouts
           .filter((p: any) => p.status !== 'failed')
           .reduce((sum: number, p: any) => sum + (p.amount_cents ?? 0), 0);
-        const walletBalance = revenueSum - totalPayoutsCents;
+        const walletBalance = revenueSum + tipsSum - totalPayoutsCents;
 
         if (!isMounted) return;
 
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
         setTotalSalesCount(salesCount);
-        setTotalRevenueCents(revenueSum);
+        setTotalRevenueCents(revenueSum + tipsSum);
+        setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
         setLinksRaw(safeLinks);
         setPurchasesRaw(safePurchases);
@@ -617,10 +628,12 @@ const AppDashboard = () => {
                   setHoveredPoint(null);
                 }}
               >
-                <p className="text-xs text-exclu-space mb-1">Published links</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : publishedLinksCount}</p>
+                <p className="text-xs text-exclu-space mb-1">Tips & Requests</p>
+                <p className="text-2xl font-bold text-exclu-cloud">
+                  {isLoading ? '—' : `$${(tipsRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
+                </p>
                 <p className="text-[11px] text-exclu-space/80 mt-1">
-                  Links currently live for fans ({isLoading ? '—' : totalLinks} created in total).
+                  Cumulative earnings from tips and requests.
                 </p>
               </div>
               <div
