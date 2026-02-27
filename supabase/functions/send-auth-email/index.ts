@@ -285,12 +285,15 @@ Deno.serve(async (req) => {
     );
   }
 
-  console.log(`Processing auth email: type=${parsed.email_data.email_action_type}, to=${parsed.user.email}, user_metadata=${JSON.stringify(parsed.user.user_metadata || {})}`);
-
   const { user, email_data } = parsed;
+
+  console.log(`[send-auth-email] FULL email_data: ${JSON.stringify(email_data)}`);
+  console.log(`Processing auth email: type=${email_data.email_action_type}, to=${user.email}, redirect_to=${email_data.redirect_to}, site_url=${email_data.site_url}`);
+
   const actionType = email_data.email_action_type;
   const siteUrl = (email_data.site_url || 'https://exclu.at').replace(/\/$/, '');
   const confirmUrl = buildConfirmationUrl(email_data);
+  console.log(`[send-auth-email] Built confirmUrl: ${confirmUrl}`);
 
   const isCreator = user.user_metadata?.is_creator !== false;
 
