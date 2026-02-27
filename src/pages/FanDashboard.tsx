@@ -489,7 +489,7 @@ const FanDashboard = () => {
                     <p className="text-sm text-muted-foreground">No tips sent yet</p>
                   </div>
                 ) : (
-                  <div className="space-y-3 max-w-2xl">
+                  <div className="space-y-3">
                     {tips.map((tip, i) => (
                       <motion.div
                         key={tip.id}
@@ -559,7 +559,7 @@ const FanDashboard = () => {
                     <p className="text-sm text-muted-foreground">No custom requests yet</p>
                   </div>
                 ) : (
-                  <div className="space-y-3 max-w-2xl">
+                  <div className="space-y-3">
                     {requests.map((req, i) => (
                       <motion.div
                         key={req.id}
@@ -634,7 +634,7 @@ const FanDashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
-                className="max-w-lg space-y-4"
+                className="space-y-4"
               >
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-foreground">Settings</h2>
