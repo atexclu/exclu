@@ -70,10 +70,10 @@ serve(async (req) => {
       });
     }
 
-    // Fetch the creator's profile
+    // Fetch the creator's profile (including test customer ID for local dev)
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id, stripe_customer_id, is_creator_subscribed')
+      .select('id, stripe_customer_id, stripe_customer_id_test, is_creator_subscribed')
       .eq('id', user.id)
       .single();
 
@@ -85,35 +85,49 @@ serve(async (req) => {
       });
     }
 
-    // If already subscribed, redirect to billing portal
+    // Base redirect URL: use request origin in localhost so Stripe redirects back to local dev
+    const baseUrl = (isLocalhost && origin) ? origin.replace(/\/$/, '') : siteUrl!.replace(/\/$/, '');
+
+    // If already subscribed, open the Stripe Customer Portal
     if (profile.is_creator_subscribed) {
-      if (profile.stripe_customer_id) {
+      // Pick the right customer ID for the current mode
+      const portalCustomerId = isLocalhost
+        ? profile.stripe_customer_id_test
+        : profile.stripe_customer_id;
+
+      if (portalCustomerId) {
         const portalSession = await stripe.billingPortal.sessions.create({
-          customer: profile.stripe_customer_id,
-          return_url: `${siteUrl!.replace(/\/$/, '')}/app`,
+          customer: portalCustomerId,
+          return_url: `${baseUrl}/app`,
         });
         return new Response(JSON.stringify({ url: portalSession.url }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      // No customer ID available for this mode — fall through to create a new checkout
     }
 
-    let customerId = profile.stripe_customer_id;
+    // In test mode, use the dedicated test customer ID column — never reuse the live ID
+    // since customer IDs are scoped to a single Stripe account (live vs test).
+    let customerId = isLocalhost
+      ? (profile.stripe_customer_id_test ?? null)
+      : (profile.stripe_customer_id ?? null);
 
-    // Create a Stripe customer if one doesn't exist
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email ?? undefined,
         metadata: { supabase_user_id: user.id },
       });
       customerId = customer.id;
+      // Persist to the appropriate column so the Customer Portal works on next visit
+      const customerField = isLocalhost ? 'stripe_customer_id_test' : 'stripe_customer_id';
       const { error: updateError } = await supabaseAdmin
         .from('profiles')
-        .update({ stripe_customer_id: customerId })
+        .update({ [customerField]: customerId })
         .eq('id', user.id);
       if (updateError) {
-        console.error('Error saving Stripe customer ID to profile', updateError);
+        console.error(`Error saving ${customerField} to profile`, updateError);
       }
     }
 
@@ -122,8 +136,8 @@ serve(async (req) => {
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: creatorPriceId, quantity: 1 }],
-      success_url: `${siteUrl!.replace(/\/$/, '')}/app?subscription=success`,
-      cancel_url: `${siteUrl!.replace(/\/$/, '')}/app?subscription=cancelled`,
+      success_url: `${baseUrl}/app?subscription=success`,
+      cancel_url: `${baseUrl}/app?subscription=cancelled`,
       metadata: { supabase_user_id: user.id },
       subscription_data: { metadata: { supabase_user_id: user.id } },
     });

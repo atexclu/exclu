@@ -821,13 +821,17 @@ Système permettant à tout utilisateur de recruter de nouveaux créateurs et de
 
 ### 8.2 Modèle de Commission
 
-| Type | Commission | Récurrence |
-|------|------------|------------|
-| Recrutement créateur | 35% de l'abonnement premium | Récurrente (tant que le créateur est premium) |
+| Type | Bénéficiaire | Montant | Récurrence |
+|------|-------------|---------|------------|
+| Commission abonnement premium | Parrain (referrer) | 35% de l'abonnement premium (~$13.65/mois) | Récurrente tant que le créateur reste premium |
+| Bonus de bienvenue | Créateur recruté (referred) | $100 crédité sur sa cagnotte | Une fois, si $1 000 de ventes dans les 90 jours suivant la création du compte |
 
-**Exemple** :
-- Affilié recrute un créateur qui souscrit Premium ($39/mois)
-- L'affilié touche $13.65/mois tant que le créateur reste premium
+**Exemple commission** :
+- Parrain recrute un créateur qui souscrit Premium ($39/mois)
+- Le parrain touche $13.65/mois tant que le créateur reste premium
+
+**Exemple bonus** :
+- Le créateur recruté génère $1 000 de ventes dans les 90 jours → $100 crédités sur sa cagnotte affilié
 
 ### 8.3 Dashboard Affilié (à faire en anglais biensûr, voir description détaillée ci-dessous pour plus de détails)
 
@@ -863,43 +867,45 @@ Système permettant à tout utilisateur de recruter de nouveaux créateurs et de
 
 ### 8.4 Accès au Programme
 
-- **Ouvert** : Créateurs seulement 
+- **Ouvert** : Créateurs seulement
 - **Activation** : Automatique à la création de compte
-- **Versement** : Versement mensuel dès que l'on perçoit l'abonnement d'un créateur étant été affilié, on vérifie si une part doit être reversée au créateur, si oui on le fait. L'argent n'est pas reversé via stripe directement sur le compte du créateur, mais plutôt sur une cagnotte "Revenus" dans le dashboard du créateur referral, et au délà de 100$ il pleut claim le montant total sur son compte stripe. (Paiement effectué manuellement par nous, pas de versement automatique).
+- **Cagnotte** : Les commissions s'accumulent dans `affiliate_earnings_cents` sur le profil du parrain. Le bonus $100 s'accumule dans la même cagnotte pour le créateur recruté.
+- **Seuil de retrait** : $100 minimum
+- **Demande de retrait** : Bouton "Request payout" dans le dashboard referral → envoie automatiquement un email de notification à l'équipe Exclu (atexclu@gmail.com) via Brevo, avec nom, handle, email du créateur et montant à virer. Le bouton passe en état "Pending" (persisté en DB via `affiliate_payout_requested_at`) et disparaît jusqu'au paiement manuel.
+- **Paiement** : Manuel par l'équipe Exclu. Une fois payé, remettre `affiliate_payout_requested_at = NULL` et `affiliate_earnings_cents = 0` dans la DB pour réinitialiser l'état.
+- **Pas de virement automatique Stripe** : Tout est traité manuellement.
 
-### 8.5 Implications Techniques (pas forcément à jour, juste une aide)
+### 8.5 Dashboard Affilié — État Implémenté
 
-```sql
-CREATE TABLE affiliates (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id),
-  referral_code TEXT UNIQUE NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+**Onglet Referral dans AppDashboard (tab inline) :**
+- **Cards stat** : 3 cards pour les non-recrutés (Affiliate earnings, Creators recruited, Conversion rate), 4 cards pour les recrutés (+ Welcome bonus $100 avec état unlocked/eligible/expired)
+- **Bouton Request payout** : Visible centré sous les cards quand `affiliate_earnings_cents >= 10 000` (=$100) ET `affiliate_payout_requested_at` est null. Style identique au bouton "New link" (hero/jaune #CFFF16).
+- **Badge Pending** : S'affiche à côté du montant sur la card "Affiliate earnings" quand une demande est en cours.
+- **Lien de parrainage** : Copie, envoi par email (Edge Function `send-referral-invite` via Brevo), partage sur X, Telegram, Instagram, Snapchat.
+- **Tableau historique** : Date, créateur, statut (Free/Premium/Inactive), commission.
 
-CREATE TABLE referrals (
-  id UUID PRIMARY KEY,
-  affiliate_id UUID REFERENCES affiliates(id),
-  referred_user_id UUID REFERENCES auth.users(id),
-  type TEXT CHECK (type IN ('creator', 'fan')),
-  status TEXT DEFAULT 'pending',
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+**Page dédiée `/app/referral` (ReferralDashboard.tsx) :** version standalone également disponible.
 
-CREATE TABLE affiliate_payouts (
-  id UUID PRIMARY KEY,
-  affiliate_id UUID REFERENCES affiliates(id),
-  amount_cents INTEGER NOT NULL,
-  period_start DATE,
-  period_end DATE,
-  status TEXT DEFAULT 'pending',
-  paid_at TIMESTAMPTZ
-);
+### 8.6 Flux Technique Implémenté
 
-(vérifie que c'est toujours d'actualité ce code, fait en sorte peut être de ne pas avoir de table séparée pour les paiements, mais plutôt de mutualiser les infos dans une table si c'est possible. Si tu penses que c'est mieux de séparer, explique pourquoi).
+```
+1. Créateur A partage son lien → exclu.at/auth?mode=signup&ref=CODE
+2. Créateur B s'inscrit → row insérée dans table `referrals` (referrer_id=A, referred_id=B, status=pending)
+3. Créateur B souscrit Premium → stripe-webhook crédite 35% dans affiliate_earnings_cents de A + status=converted
+4. Créateur B atteint $1 000 de ventes en 90j → stripe-webhook crédite $100 dans affiliate_earnings_cents de B + bonus_paid_to_referred=true
+5. Créateur A/B clique Request payout → Edge Function `request-affiliate-payout` → mail Brevo à atexclu@gmail.com + affiliate_payout_requested_at écrit en DB
+6. Équipe paie manuellement → remet affiliate_payout_requested_at=NULL + affiliate_earnings_cents=0
+```
 
+**Edge Functions concernées :** `stripe-webhook`, `request-affiliate-payout`, `send-referral-invite`
 
-Description détaillée de l'interface du programme d'affiliation et expérience utilisateur :
+**Colonnes DB `profiles` :** `referral_code`, `affiliate_earnings_cents`, `affiliate_payout_requested_at`
+
+**Table `referrals` :** `referrer_id`, `referred_id`, `status`, `commission_earned_cents`, `bonus_paid_to_referred`, `created_at`, `converted_at`
+
+### 8.7 Notes pour l'interface
+
+Description initiale de l'interface du programme d'affiliation et expérience utilisateur (implémenté, voir 8.5 pour l'état réel) :
 
 J'aimerais que côté créateur, on puisse facilement partager son lien de parrainage. Pour cela, dans le dashboard, en plus de "Metrics" & "Earnings" dans le menu sous le titre Welcome back, j'aimerais qu'on puisse avoir un bouton "Referral" qui mène à une page où on peut partager son lien de parrainage. Je précise, pour accéder à cette page il faut s'être connecté à stripe, pas forcément besoin d'avoir un abonnement premium.
 

@@ -32,6 +32,7 @@ const AppDashboard = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isRequestingPayout, setIsRequestingPayout] = useState(false);
+  const [payoutRequested, setPayoutRequested] = useState(false);
   // Referral bonus state (recruté — this creator was referred by someone)
   const [myReferralBonus, setMyReferralBonus] = useState<{ eligible: boolean; unlocked: boolean; daysLeft: number } | null>(null);
   const [activeMetric, setActiveMetric] = useState<'published' | 'sales' | 'revenue'>('published');
@@ -79,7 +80,7 @@ const AppDashboard = () => {
         // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents')
+          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at')
           .eq('id', user.id)
           .single();
 
@@ -153,6 +154,7 @@ const AppDashboard = () => {
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
+          if (profile.affiliate_payout_requested_at) setPayoutRequested(true);
 
           // Referral code (auto-generate client-side if missing)
           let code = profile.referral_code;
@@ -1063,6 +1065,27 @@ const AppDashboard = () => {
           };
 
 
+          const handleRequestPayout = async () => {
+            setIsRequestingPayout(true);
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const { error } = await supabase.functions.invoke('request-affiliate-payout', {
+                body: {},
+                headers: {
+                  Authorization: '',
+                  'x-supabase-auth': session?.access_token ?? '',
+                },
+              });
+              if (error) throw error;
+              setPayoutRequested(true);
+              toast.success('Payout request sent! Our team will process it within 3 business days.');
+            } catch {
+              toast.error('Failed to send payout request. Please try again.');
+            } finally {
+              setIsRequestingPayout(false);
+            }
+          };
+
           const handleSendEmail = async () => {
             if (!inviteEmail || !inviteEmail.includes('@')) return;
             setIsSendingEmail(true);
@@ -1093,12 +1116,17 @@ const AppDashboard = () => {
           return (
             <section className="mt-2 space-y-4">
 
-              {/* Stat cards — always 2x2 grid on all screen sizes */}
-              <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+              {/* Stat cards — 3 cols for non-referred, 4 cols for referred users */}
+              <div className={`grid gap-4 grid-cols-2 ${myReferralBonus !== null ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
                 <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
                   <p className="text-xs text-exclu-space mb-1">Affiliate earnings</p>
-                  <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fmtAmt(affiliateEarningsCents)}</p>
-                  <p className="text-[11px] text-exclu-space/80 mt-1">Credited to your referral pot.</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fmtAmt(affiliateEarningsCents)}</p>
+                    {payoutRequested && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">Pending</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-exclu-space/80 mt-1">Cashout when earnings &gt; $100.</p>
                 </div>
                 <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
                   <p className="text-xs text-exclu-space mb-1">Creators recruited</p>
@@ -1110,14 +1138,40 @@ const AppDashboard = () => {
                   <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `${conversionRate}%`}</p>
                   <p className="text-[11px] text-exclu-space/80 mt-1">{totalConverted} premium out of {totalReferred}.</p>
                 </div>
-                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
-                  <p className="text-xs text-exclu-space mb-1">Payout status</p>
-                  <p className={`text-2xl font-bold ${canRequestPayout ? 'text-green-400' : 'text-exclu-cloud'}`}>
-                    {isLoading ? '—' : (canRequestPayout ? 'Claimable' : fmtAmt(MIN_PAYOUT_CENTS - affiliateEarningsCents))}
-                  </p>
-                  <p className="text-[11px] text-exclu-space/80 mt-1">{canRequestPayout ? 'Ready — contact us to withdraw.' : `to reach the $${MIN_PAYOUT_CENTS / 100} min.`}</p>
-                </div>
+                {myReferralBonus !== null && (
+                  <div className={`rounded-2xl border p-5 transition-colors ${myReferralBonus.unlocked ? 'border-green-500/60 bg-green-950/40 hover:border-green-400/70 hover:ring-1 hover:ring-green-400/70' : 'border-exclu-arsenic/60 bg-exclu-ink/80 hover:border-primary/70 hover:ring-1 hover:ring-primary/70'}`}>
+                    <p className="text-xs text-exclu-space mb-1">Welcome bonus</p>
+                    <p className={`text-2xl font-bold ${myReferralBonus.unlocked ? 'text-green-400' : 'text-exclu-cloud'}`}>
+                      {isLoading ? '—' : '$100.00'}
+                    </p>
+                    <p className="text-[11px] text-exclu-space/80 mt-1">
+                      {myReferralBonus.unlocked
+                        ? 'Unlocked — credited to your earnings.'
+                        : myReferralBonus.eligible
+                          ? `Make $1,000 in sales within ${myReferralBonus.daysLeft}d to unlock.`
+                          : 'Expired — $1,000 target not reached in time.'}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Payout request button — centered below the cards */}
+              {canRequestPayout && !payoutRequested && (
+                <div className="flex flex-col items-center gap-2 py-1">
+                  <Button
+                    type="button"
+                    variant="hero"
+                    size="sm"
+                    disabled={isRequestingPayout}
+                    onClick={handleRequestPayout}
+                  >
+                    {isRequestingPayout
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Sending request…</>
+                      : <><ExternalLink className="w-4 h-4" />Request payout — {fmtAmt(affiliateEarningsCents)}</>}
+                  </Button>
+                  <p className="text-[10px] text-exclu-space/50">Payouts are processed manually within 3 business days.</p>
+                </div>
+              )}
 
               {/* Referral link + email + social */}
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 space-y-4">
@@ -1148,7 +1202,7 @@ const AppDashboard = () => {
                         </p>
                         <p>
                           <span className="font-medium text-slate-900 dark:text-exclu-cloud">For friends :</span>{' '}
-                          <span className="text-primary font-semibold">+$100</span> bonus if they reach $1k in revenue within 90 days.
+                          <span className="text-primary font-semibold">+$100</span> Bonus if they reach $1k in revenue within 90 days.
                         </p>
                         <p className="text-slate-400 dark:text-exclu-space/50 text-[10px] pt-1 border-t border-slate-200 dark:border-exclu-arsenic/40">
                           *Each referral doubles as an entry ticket to win our monthly Mystery Box: Birkins, Cash Prizes.
@@ -1278,34 +1332,6 @@ const AppDashboard = () => {
                   </div>
                 )}
 
-                {/* Payout request button with loading state */}
-                {canRequestPayout && (
-                  <div className="px-5 py-4 border-t border-exclu-arsenic/40">
-                    <button
-                      type="button"
-                      disabled={isRequestingPayout}
-                      onClick={async () => {
-                        setIsRequestingPayout(true);
-                        const { data: { session } } = await supabase.auth.getSession();
-                        const amount = fmtAmt(affiliateEarningsCents);
-                        const handle = profileHandle ? `@${profileHandle}` : '';
-                        const uid = session?.user?.id ?? '';
-                        const body = encodeURIComponent(
-                          `Hi,\n\nI would like to withdraw my affiliate earnings of ${amount}.\n\nHandle: ${handle}\nUser ID: ${uid}\n\nThanks!`
-                        );
-                        window.location.href = `mailto:hello@exclu.at?subject=Affiliate%20payout%20request&body=${body}`;
-                        toast.success('Email client opened — send the email to request your payout.');
-                        setTimeout(() => setIsRequestingPayout(false), 2000);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-primary text-black hover:opacity-90 transition-opacity disabled:opacity-60"
-                    >
-                      {isRequestingPayout
-                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Preparing…</>
-                        : <><ExternalLink className="w-3.5 h-3.5" />Request payout</>}
-                    </button>
-                    <p className="text-[10px] text-exclu-space/50 mt-2">This will open your email client pre-filled. We process payouts manually within 3 business days.</p>
-                  </div>
-                )}
               </div>
 
             </section>

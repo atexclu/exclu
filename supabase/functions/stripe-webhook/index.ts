@@ -41,30 +41,48 @@ async function sendContentAccessEmail(toEmail: string, linkTitle: string, access
   }
 
   const subject = `Your access to "${linkTitle}" on Exclu`;
-  const htmlContent = `
-    <html>
-      <body style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #050816; color: #f9fafb; padding: 24px;">
-        <div style="max-width: 480px; margin: 0 auto; background-color: #020617; border-radius: 16px; padding: 24px; border: 1px solid #1f2937;">
-          <h1 style="font-size: 20px; margin: 0 0 12px 0;">Your exclusive content is unlocked 🎉</h1>
-          <p style="font-size: 14px; line-height: 1.6; margin: 0 0 16px 0;">
-            Thank you for your purchase. You can access your content here:
-          </p>
-          <p style="margin: 0 0 20px 0;">
-            <a href="${accessUrl}" style="display: inline-block; padding: 10px 18px; background-color: #f97316; color: #0b1120; text-decoration: none; border-radius: 999px; font-size: 14px; font-weight: 600;">Open my content</a>
-          </p>
-          <p style="font-size: 12px; line-height: 1.6; color: #9ca3af; margin: 0 0 4px 0;">
-            Link: <a href="${accessUrl}" style="color: #f97316; text-decoration: underline;">${accessUrl}</a>
-          </p>
-          <p style="font-size: 12px; line-height: 1.6; color: #6b7280; margin: 12px 0 0 0;">
-            If you didn't request this content, you can safely ignore this email.
-          </p>
-        </div>
-        <p style="font-size: 11px; color: #4b5563; margin-top: 16px; text-align: center;">
-          Sent by Exclu · Please do not reply directly to this automated email.
-        </p>
-      </body>
-    </html>
-  `;
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your content is unlocked</title>
+<style>
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .button { display:inline-block; background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%); color:#020617 !important; text-decoration:none; padding:14px 32px; border-radius:999px; font-weight:600; font-size:15px; margin:8px 0 20px 0; box-shadow:0 6px 18px rgba(190,242,100,0.4); }
+  .link-box { background-color:#020617; border-radius:10px; padding:14px 18px; margin:4px 0 20px 0; border:1px solid #1e293b; word-break:break-all; }
+  .link-box a { font-size:13px; color:#a3e635; text-decoration:none; font-family:monospace; }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .button { padding:12px 24px; font-size:14px; } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Your exclusive content is unlocked 🎉</h1>
+    </div>
+    <div class="content">
+      <p>Thank you for your purchase on <strong>Exclu</strong>. Your premium content is now available.</p>
+      <p>Click the button below to access it instantly:</p>
+      <a href="${accessUrl}" class="button">Open my content</a>
+      <p style="font-size:13px; color:#94a3b8; margin-bottom:8px;">Or copy this link in your browser:</p>
+      <div class="link-box"><a href="${accessUrl}">${accessUrl}</a></div>
+      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">If you didn't make this purchase, you can safely ignore this email.</p>
+    </div>
+    <div class="footer">
+      © 2025 Exclu — All rights reserved<br>
+      <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+    </div>
+  </div>
+</body>
+</html>`;
 
   const payload = JSON.stringify({
     sender: { email: brevoSenderEmail, name: brevoSenderName },

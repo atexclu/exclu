@@ -67,127 +67,57 @@ function buildEmailHtml(params: {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>You're invited to Exclu 👀</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You're invited to Exclu 👀</title>
+<style>
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; text-align:left; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .button { display:inline-block; background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%); color:#020617 !important; text-decoration:none; padding:14px 32px; border-radius:999px; font-weight:600; font-size:15px; margin:8px 0 24px 0; box-shadow:0 6px 18px rgba(190,242,100,0.4); }
+  .features { background-color:#020617; border-radius:10px; padding:18px; margin:4px 0 24px 0; border:1px solid #1e293b; }
+  .features h3 { font-size:16px; color:#f9fafb; margin:0 0 10px 0; font-weight:600; }
+  .features ul { margin:0; padding:0; list-style:none; }
+  .features li { font-size:14px; color:#cbd5e1; margin-bottom:8px; position:relative; padding-left:20px; }
+  .features li:before { content:"✓"; position:absolute; left:0; color:#a3e635; font-weight:bold; }
+  .link-box { background-color:#020617; border-radius:10px; padding:14px 18px; border:1px solid #1e293b; word-break:break-all; text-align:center; }
+  .link-box a { font-size:12px; color:#a3e635; text-decoration:none; font-family:monospace; }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+  .footer a:hover { text-decoration:underline; }
+  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .button { padding:12px 24px; font-size:14px; } }
+</style>
 </head>
-<body style="margin:0;padding:0;background-color:#0a0a0f;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0a0a0f;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#111117;border-radius:20px;border:1px solid #2a2a3a;overflow:hidden;">
-
-          <!-- Header gradient banner -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#7c3aed 0%,#a855f7 50%,#c084fc 100%);padding:36px 40px 32px;text-align:center;">
-              <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 20px;">
-                <tr>
-                  <td style="background:rgba(0,0,0,0.25);border-radius:12px;padding:8px 18px;">
-                    <span style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:0.04em;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">exclu</span>
-                  </td>
-                </tr>
-              </table>
-              <h1 style="margin:0;font-size:26px;font-weight:800;color:#ffffff;line-height:1.2;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                You're invited 👀
-              </h1>
-              <p style="margin:10px 0 0;font-size:14px;color:rgba(255,255,255,0.85);font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                Mystery invite from a creator you know
-              </p>
-            </td>
-          </tr>
-
-          <!-- Main content -->
-          <tr>
-            <td style="padding:36px 40px;">
-              <p style="margin:0 0 18px;font-size:16px;color:#e2e2f0;line-height:1.6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                Hey there 👋
-              </p>
-              <p style="margin:0 0 24px;font-size:15px;color:#b0b0cc;line-height:1.7;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                <strong style="color:#e2e2f0;">${referrerName}</strong> just sent you a personal invite to join Exclu — the creator platform where you get <strong style="color:#c084fc;">0% commission</strong> on everything you sell.
-              </p>
-
-              <!-- Feature list -->
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-                <tr>
-                  <td style="padding:8px 0;">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="width:28px;vertical-align:top;padding-top:1px;">
-                          <span style="display:inline-block;width:20px;height:20px;background:#1e1e2e;border-radius:50%;text-align:center;line-height:20px;font-size:11px;">✓</span>
-                        </td>
-                        <td style="font-size:14px;color:#b0b0cc;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">Sell exclusive content via simple paid links</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 0;">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="width:28px;vertical-align:top;padding-top:1px;">
-                          <span style="display:inline-block;width:20px;height:20px;background:#1e1e2e;border-radius:50%;text-align:center;line-height:20px;font-size:11px;">✓</span>
-                        </td>
-                        <td style="font-size:14px;color:#b0b0cc;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">Keep 100% — no platform cut, no hidden fees</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:8px 0;">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="width:28px;vertical-align:top;padding-top:1px;">
-                          <span style="display:inline-block;width:20px;height:20px;background:#1e1e2e;border-radius:50%;text-align:center;line-height:20px;font-size:11px;">✓</span>
-                        </td>
-                        <td style="font-size:14px;color:#b0b0cc;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">Fans unlock content instantly — no account needed</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- CTA Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-                <tr>
-                  <td align="center">
-                    <a href="${referralLink}"
-                       style="display:inline-block;padding:15px 36px;background:linear-gradient(135deg,#7c3aed,#c084fc);color:#ffffff;text-decoration:none;border-radius:50px;font-weight:700;font-size:15px;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;letter-spacing:0.02em;">
-                      Claim your invite →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- or copy link -->
-              <p style="margin:0 0 8px;font-size:12px;color:#6b6b88;text-align:center;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                Or copy your personal invite link:
-              </p>
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td style="background:#1a1a28;border:1px solid #2a2a3a;border-radius:10px;padding:12px 16px;text-align:center;">
-                    <a href="${referralLink}" style="font-size:12px;color:#a78bfa;word-break:break-all;text-decoration:none;font-family:monospace;">
-                      ${referralLink}
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 40px;border-top:1px solid #1e1e2e;text-align:center;">
-              <p style="margin:0;font-size:11px;color:#44445a;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-                You received this email because a creator on Exclu shared their referral link with you.<br>
-                <a href="${siteUrl}" style="color:#6b6b88;text-decoration:none;">exclu.at</a> — Creator monetization, zero commission.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>You're invited to Exclu 👀</h1>
+    </div>
+    <div class="content">
+      <p>Hey there 👋</p>
+      <p><strong>${referrerName}</strong> just sent you a personal invite to join Exclu — the creator platform where you keep <strong>0% commission</strong> on everything you sell.</p>
+      <a href="${referralLink}" class="button">Claim your invite →</a>
+      <div class="features">
+        <h3>With Exclu, you can:</h3>
+        <ul>
+          <li>Sell exclusive content via simple paid links</li>
+          <li>Keep 100% — no platform cut, no hidden fees</li>
+          <li>Fans unlock content instantly — no account needed</li>
+        </ul>
+      </div>
+      <p style="font-size:13px; color:#94a3b8; margin-bottom:8px;">Or copy your personal invite link:</p>
+      <div class="link-box"><a href="${referralLink}">${referralLink}</a></div>
+      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">You received this email because a creator on Exclu shared their referral link with you.</p>
+    </div>
+    <div class="footer">
+      © 2025 Exclu — All rights reserved<br>
+      <a href="${siteUrl}">exclu</a> • <a href="${siteUrl}/terms">Terms of Service</a> • <a href="${siteUrl}/privacy">Privacy Policy</a>
+    </div>
+  </div>
 </body>
 </html>`;
 }

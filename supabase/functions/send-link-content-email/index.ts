@@ -210,146 +210,55 @@ serve(async (req) => {
       });
     }
 
-    // Build HTML email (based on the provided style)
     const linksListHtml = downloadLinks
-      .map((url, index) => `<li><a href="${url}" style="color:#a3e635;text-decoration:none;">Télécharger le contenu ${index + 1}</a></li>`)
+      .map((url, index) => `<li><a href="${url}">Download file ${index + 1}</a></li>`)
       .join('');
 
     const htmlContent = `<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Votre contenu Exclu est débloqué</title>
+<title>Your Exclu content is ready</title>
 <style>
-  body {
-    margin: 0;
-    padding: 0;
-    background-color: #020617;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #e2e8f0;
-    text-align: left;
-  }
-  .container {
-    max-width: 600px;
-    margin: 0 auto;
-    background: linear-gradient(135deg, #020617 0%, #020617 40%, #0b1120 100%);
-    border-radius: 16px;
-    border: 1px solid #1e293b;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
-    overflow: hidden;
-  }
-  .header {
-    padding: 28px 28px 18px 28px;
-    text-align: left;
-    border-bottom: 1px solid #1e293b;
-  }
-  .header h1 {
-    font-size: 26px;
-    color: #f9fafb;
-    margin: 0;
-    line-height: 1.3;
-    font-weight: 700;
-  }
-  .content {
-    padding: 26px 28px 30px 28px;
-    text-align: justify;
-  }
-  .content p {
-    font-size: 15px;
-    line-height: 1.7;
-    color: #cbd5e1;
-    margin: 0 0 16px 0;
-  }
-  .content strong {
-    color: #ffffff;
-    font-weight: 600;
-  }
-  .features {
-    background-color: #020617;
-    border-radius: 10px;
-    padding: 18px 18px 18px 18px;
-    margin: 20px 0;
-    border: 1px solid #1e293b;
-  }
-  .features h3 {
-    font-size: 16px;
-    color: #f9fafb;
-    margin: 0 0 10px 0;
-    font-weight: 600;
-  }
-  .features ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .features li {
-    font-size: 14px;
-    color: #cbd5e1;
-    margin-bottom: 8px;
-    position: relative;
-    padding-left: 20px;
-  }
-  .features li:before {
-    content: "✓";
-    position: absolute;
-    left: 0;
-    color: #a3e635;
-    font-weight: bold;
-  }
-  .footer {
-    font-size: 12px;
-    color: #64748b;
-    text-align: center;
-    padding: 18px;
-    border-top: 1px solid #1e293b;
-    background-color: #020617;
-  }
-  .footer a {
-    color: #a3e635;
-    text-decoration: none;
-  }
-  .footer a:hover {
-    text-decoration: underline;
-  }
-  @media (max-width:480px) {
-    .container {
-      margin: 0 10px;
-    }
-    .content {
-      padding: 20px;
-    }
-    .header {
-      padding: 20px 20px 16px 20px;
-    }
-    .header h1 {
-      font-size: 22px;
-    }
-    .content p {
-      font-size: 14px;
-    }
-  }
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; text-align:left; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .features { background-color:#020617; border-radius:10px; padding:18px; margin:20px 0; border:1px solid #1e293b; }
+  .features h3 { font-size:16px; color:#f9fafb; margin:0 0 10px 0; font-weight:600; }
+  .features ul { margin:0; padding:0; list-style:none; }
+  .features li { font-size:14px; color:#cbd5e1; margin-bottom:8px; position:relative; padding-left:20px; }
+  .features li:before { content:"↓"; position:absolute; left:0; color:#a3e635; font-weight:bold; }
+  .features li a { color:#a3e635; text-decoration:none; }
+  .features li a:hover { text-decoration:underline; }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+  .footer a:hover { text-decoration:underline; }
+  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .content p { font-size:14px; } }
 </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>Votre contenu Exclu est prêt</h1>
+      <h1>Your Exclu content is ready 🎉</h1>
     </div>
     <div class="content">
-      <p>Merci pour votre achat sur <strong>Exclu</strong>. Votre contenu premium est maintenant débloqué.</p>
-      <p>Vous pouvez le télécharger à tout moment en cliquant sur les liens ci‑dessous :</p>
+      <p>Thank you for your purchase on <strong>Exclu</strong>. Your premium content is now unlocked and ready to download.</p>
       <div class="features">
-        <h3>Vos liens de téléchargement :</h3>
+        <h3>Your download links:</h3>
         <ul>
           ${linksListHtml}
         </ul>
       </div>
-      <p style="margin-top: 20px; font-size: 13px; color: #94a3b8;">Si vous n'êtes pas à l'origine de cet achat, vous pouvez ignorer cet e‑mail en toute sécurité.</p>
+      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">If you did not make this purchase, you can safely ignore this email.</p>
     </div>
     <div class="footer">
-      © 2025 Exclu — Tous droits réservés<br>
-      <a href="${siteUrl}">exclu</a> • <a href="${siteUrl}/terms">Conditions d’utilisation</a> • <a href="${siteUrl}/privacy">Confidentialité</a>
+      © 2025 Exclu — All rights reserved<br>
+      <a href="${siteUrl}">exclu</a> • <a href="${siteUrl}/terms">Terms of Service</a> • <a href="${siteUrl}/privacy">Privacy Policy</a>
     </div>
   </div>
 </body>

@@ -70,7 +70,7 @@ const ReferralLandingSection = () => {
                                     <div className="w-24 sm:w-48 h-[2px] mx-auto bg-gradient-to-r from-transparent via-[#CFFF16]/50 to-transparent mt-8" />
                                 </div>
                                 <p className="text-exclu-space text-base sm:text-lg mx-auto max-w-[280px]">
-                                    bonus if they reach $1k in revenue within 90 days
+                                    Bonus if they reach $1k in revenue within 90 days
                                 </p>
                             </div>
                             <div className="mt-0 flex justify-center w-full">
