@@ -123,6 +123,15 @@ serve(async (req) => {
       });
     }
 
+    // Atomically increment daily profile views in profile_analytics for historical chart
+    const { error: analyticsError } = await supabaseAdmin
+      .rpc('increment_profile_daily_views', { p_profile_id: (profile as any).id });
+
+    if (analyticsError) {
+      // Non-blocking: log but don't fail the request
+      console.warn('[increment-profile-view] Failed to increment profile_analytics:', JSON.stringify(analyticsError));
+    }
+
     console.log('[increment-profile-view] Successfully incremented to:', currentViews + 1);
 
     return new Response(JSON.stringify({ success: true }), {

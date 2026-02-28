@@ -24,7 +24,8 @@ const AppDashboard = () => {
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'metrics' | 'earnings' | 'referral'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'referral' | 'tips'>('metrics');
+  const [tipsRaw, setTipsRaw] = useState<any[]>([]);
   // Referral state (recruteur)
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
@@ -36,7 +37,8 @@ const AppDashboard = () => {
   const [payoutRequested, setPayoutRequested] = useState(false);
   // Referral bonus state (recruté — this creator was referred by someone)
   const [myReferralBonus, setMyReferralBonus] = useState<{ eligible: boolean; unlocked: boolean; daysLeft: number } | null>(null);
-  const [activeMetric, setActiveMetric] = useState<'published' | 'sales' | 'revenue'>('published');
+  const [activeMetric, setActiveMetric] = useState<'profile_views' | 'sales' | 'revenue'>('revenue');
+  const [profileViewsRaw, setProfileViewsRaw] = useState<{ date: string; views: number }[]>([]);
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
   const [profileName, setProfileName] = useState<string>('');
@@ -122,14 +124,26 @@ const AppDashboard = () => {
           (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - rate)), 0
         );
 
-        // Tips revenue – net amount received by creator (amount_cents already = what creator gets, no fee adjustment needed)
+        // Tips revenue — fetch full details for the Tips tab display
         const { data: tipsData } = await supabase
           .from('tips')
-          .select('amount_cents')
+          .select('id, amount_cents, currency, status, message, is_anonymous, created_at, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
           .eq('creator_id', user.id)
-          .eq('status', 'succeeded');
+          .eq('status', 'succeeded')
+          .order('created_at', { ascending: false });
         const safeTips = tipsData ?? [];
         const tipsSum = safeTips.reduce((sum: number, t: any) => sum + Math.round((t.amount_cents ?? 0) * (1 - rate)), 0);
+        if (isMounted) setTipsRaw(safeTips);
+
+        // Profile views history from profile_analytics
+        const { data: analyticsData } = await supabase
+          .from('profile_analytics')
+          .select('date, profile_views')
+          .eq('profile_id', user.id)
+          .order('date', { ascending: true });
+        if (isMounted) setProfileViewsRaw(
+          (analyticsData ?? []).map((r: any) => ({ date: r.date, views: r.profile_views ?? 0 }))
+        );
 
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
@@ -328,43 +342,47 @@ const AppDashboard = () => {
   }, [isConnectingStripe]);
 
   const buildSeries = (
-    metric: 'published' | 'sales' | 'revenue',
+    metric: 'profile_views' | 'sales' | 'revenue',
     range: '7d' | '30d' | '365d'
   ): { label: string; value: number; dateKey: string }[] => {
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 365;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Collect events (date + value)
-    const events: { date: Date; value: number }[] = [];
-
-    if (metric === 'published') {
-      linksRaw.forEach((link: any) => {
-        if (link.status === 'published' && link.created_at) {
-          const d = new Date(link.created_at);
-          d.setHours(0, 0, 0, 0);
-          events.push({ date: d, value: 1 });
-        }
-      });
-    } else if (metric === 'sales' || metric === 'revenue') {
-      purchasesRaw.forEach((purchase: any) => {
-        if (purchase.created_at) {
-          const d = new Date(purchase.created_at);
-          d.setHours(0, 0, 0, 0);
-          const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
-          events.push({ date: d, value });
-        }
-      });
-    }
-
-    if (events.length === 0) {
-      return [];
-    }
-
-    // Sort events by date
-    events.sort((a, b) => a.date.getTime() - b.date.getTime());
-
     const points: { label: string; value: number; dateKey: string }[] = [];
+
+    if (metric === 'profile_views') {
+      // Daily (non-cumulative) profile views from profile_analytics
+      const viewsByDate: Record<string, number> = {};
+      profileViewsRaw.forEach(({ date, views }) => { viewsByDate[date] = views; });
+
+      for (let i = days - 1; i >= 0; i--) {
+        const day = new Date(today);
+        day.setDate(today.getDate() - i);
+        const dayKey = day.toISOString().slice(0, 10);
+        const label = day.toLocaleDateString(undefined, {
+          month: range === '365d' ? 'short' : 'numeric',
+          day: 'numeric',
+        });
+        points.push({ label, value: viewsByDate[dayKey] ?? 0, dateKey: dayKey });
+      }
+      return points;
+    }
+
+    // Collect events (date + value) for sales / revenue
+    const events: { date: Date; value: number }[] = [];
+    purchasesRaw.forEach((purchase: any) => {
+      if (purchase.created_at) {
+        const d = new Date(purchase.created_at);
+        d.setHours(0, 0, 0, 0);
+        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
+        events.push({ date: d, value });
+      }
+    });
+
+    if (events.length === 0) return [];
+
+    events.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     for (let i = days - 1; i >= 0; i--) {
       const day = new Date(today);
@@ -584,13 +602,13 @@ const AppDashboard = () => {
           <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
             {[
               { key: 'metrics', label: 'Metrics' },
-              { key: 'earnings', label: 'Earnings' },
               { key: 'referral', label: 'Referral' },
+              { key: 'tips', label: 'Tips' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as 'metrics' | 'earnings' | 'referral')}
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'referral' | 'tips')}
                 className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
                   ? 'bg-primary text-white dark:text-black shadow-sm'
                   : 'hover:text-exclu-cloud'
@@ -604,10 +622,11 @@ const AppDashboard = () => {
 
         {activeTab === 'metrics' && (
           <>
-            <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
               {/* Profile visits metric */}
               <div
-                className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70"
+                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'profile_views' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
+                onClick={() => { setActiveMetric('profile_views'); setHoveredPoint(null); }}
               >
                 <p className="text-xs text-exclu-space mb-1">Profile visits</p>
                 <p className="text-2xl font-bold text-exclu-cloud">
@@ -620,22 +639,6 @@ const AppDashboard = () => {
                 </p>
               </div>
 
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'published' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                  }`}
-                onClick={() => {
-                  setActiveMetric('published');
-                  setHoveredPoint(null);
-                }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Tips & Requests</p>
-                <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading ? '—' : `$${(tipsRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
-                </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">
-                  Cumulative earnings from tips and requests.
-                </p>
-              </div>
               <div
                 className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
                   }`}
@@ -669,8 +672,8 @@ const AppDashboard = () => {
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Growth over time</p>
                     <p className="text-sm text-exclu-space/80">
-                      {activeMetric === 'published'
-                        ? 'Published links'
+                      {activeMetric === 'profile_views'
+                        ? 'Profile views'
                         : activeMetric === 'sales'
                           ? 'Total sales'
                           : 'Revenue'}{' '}
@@ -708,20 +711,24 @@ const AppDashboard = () => {
                     const series = buildSeries(activeMetric, activeRange);
                     const maxValue = series.reduce((max, p) => (p.value > max ? p.value : max), 0);
 
-                    if (series.length === 0 || maxValue === 0) {
+                    if (series.length === 0) {
                       return (
                         <p className="text-sm text-exclu-space/80">
-                          Not enough data yet to display a chart. Start publishing links and generating sales.
+                          {activeMetric === 'profile_views'
+                            ? 'No profile view data yet for this period.'
+                            : 'Not enough data yet to display a chart. Start publishing links and generating sales.'}
                         </p>
                       );
                     }
 
                     const height = 160;
                     const width = 600; // viewBox width, SVG is responsive
-                    const paddingX = 10;
+                    const paddingX = 4;  // minimal horizontal padding inside SVG — Y labels are HTML
                     const paddingY = 10;
                     const innerWidth = width - paddingX * 2;
                     const innerHeight = height - paddingY * 2;
+
+                    const yLevels = [0, 0.25, 0.5, 0.75, 1];
 
                     const computedPoints = series.map((point, index) => {
                       const x =
@@ -738,115 +745,147 @@ const AppDashboard = () => {
                     const lastPoint = series[series.length - 1];
                     const tooltipPoint = hoveredPoint || lastPoint;
 
+                    const fmtYLabel = (dataVal: number) =>
+                      activeMetric === 'revenue'
+                        ? dataVal >= 100 ? `$${Math.round(dataVal / 100)}` : `$${(dataVal / 100).toFixed(1)}`
+                        : Math.round(dataVal).toString();
+
                     return (
                       <div className="relative">
-                        <svg
-                          viewBox={`0 0 ${width} ${height}`}
-                          className="w-full h-40 sm:h-48 text-primary/80 transition-all duration-500"
-                        >
-                          <defs>
-                            <linearGradient id="metric-gradient" x1="0" x2="0" y1="0" y2="1">
-                              <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
-                              <stop offset="100%" stopColor="rgba(15,23,42,0)" />
-                            </linearGradient>
-                          </defs>
+                        {/* Chart: Y-axis labels column + SVG column */}
+                        <div className="flex items-stretch gap-0">
+                          {/* Y-axis labels — fixed width, right-aligned */}
+                          <div className="relative flex-shrink-0 w-9 h-40 sm:h-48 select-none">
+                            {yLevels.map((ratio) => {
+                              const dataVal = maxValue * (1 - ratio);
+                              const topPct = (paddingY + innerHeight * ratio) / height * 100;
+                              return (
+                                <span
+                                  key={ratio}
+                                  className="absolute right-1 text-[9px] leading-none text-slate-400/60 -translate-y-1/2"
+                                  style={{ top: `${topPct}%` }}
+                                >
+                                  {fmtYLabel(dataVal)}
+                                </span>
+                              );
+                            })}
+                          </div>
 
-                          {/* Background grid */}
-                          <g className="stroke-exclu-arsenic/40">
-                            {[0.25, 0.5, 0.75].map((ratio) => (
-                              <line
-                                key={ratio}
-                                x1={paddingX}
-                                x2={width - paddingX}
-                                y1={paddingY + innerHeight * ratio}
-                                y2={paddingY + innerHeight * ratio}
-                                strokeWidth={0.5}
-                              />
-                            ))}
-                          </g>
+                          {/* SVG — full width of remaining space */}
+                          <div className="flex-1 min-w-0">
+                            <svg
+                              viewBox={`0 0 ${width} ${height}`}
+                              className="w-full h-40 sm:h-48 text-primary/80 transition-all duration-500"
+                              preserveAspectRatio="none"
+                            >
+                              <defs>
+                                <linearGradient id="metric-gradient" x1="0" x2="0" y1="0" y2="1">
+                                  <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
+                                  <stop offset="100%" stopColor="rgba(15,23,42,0)" />
+                                </linearGradient>
+                              </defs>
 
-                          {/* Area under curve */}
-                          <polyline
-                            fill="url(#metric-gradient)"
-                            stroke="none"
-                            points={`${paddingX + innerWidth},${height - paddingY} ${pointsAttr} ${paddingX},${height - paddingY}`}
-                            className="opacity-80 transition-all duration-500"
-                          />
-
-                          {/* Line */}
-                          <polyline
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            points={pointsAttr}
-                            className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
-                          />
-
-                          {/* Hover points */}
-                          <g>
-                            {computedPoints.map((pt, index) => (
-                              <circle
-                                key={index}
-                                cx={pt.x}
-                                cy={pt.y}
-                                r={3}
-                                className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
-                                onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
-                                onMouseLeave={() => setHoveredPoint(null)}
-                                onClick={() => {
-                                  // On sales / revenue, try to navigate to the link if the day maps to a single link
-                                  if (activeMetric === 'published') return;
-
-                                  const purchasesForDay = purchasesRaw.filter((purchase: any) => {
-                                    if (!purchase.created_at) return false;
-                                    const d = new Date(purchase.created_at);
-                                    d.setHours(0, 0, 0, 0);
-                                    const key = d.toISOString().slice(0, 10);
-                                    return key === pt.dateKey;
-                                  });
-
-                                  const distinctLinkIds = Array.from(
-                                    new Set(
-                                      purchasesForDay
-                                        .map((p: any) => p.link_id)
-                                        .filter((id: string | null | undefined) => !!id),
-                                    ),
+                              {/* Grid lines only (no Y text — handled in HTML) */}
+                              <g>
+                                {yLevels.map((ratio) => {
+                                  const yVal = paddingY + innerHeight * ratio;
+                                  return (
+                                    <line
+                                      key={ratio}
+                                      x1={paddingX}
+                                      x2={paddingX + innerWidth}
+                                      y1={yVal}
+                                      y2={yVal}
+                                      stroke="rgba(148,163,184,0.15)"
+                                      strokeWidth={0.5}
+                                    />
                                   );
+                                })}
+                              </g>
 
-                                  if (distinctLinkIds.length === 1) {
-                                    navigate(`/app/links/${distinctLinkIds[0]}`);
-                                  } else if (distinctLinkIds.length > 1) {
-                                    toast.info('Multiple links were purchased on this day. Open your Links page for details.');
-                                  }
-                                }}
+                              {/* Area under curve */}
+                              <polyline
+                                fill="url(#metric-gradient)"
+                                stroke="none"
+                                points={`${paddingX + innerWidth},${height - paddingY} ${pointsAttr} ${paddingX},${height - paddingY}`}
+                                className="opacity-80 transition-all duration-500"
                               />
-                            ))}
-                          </g>
-                        </svg>
 
-                        {/* X-axis labels */}
-                        <div className="mt-2 flex justify-between text-[10px] text-exclu-space/70">
-                          {series.map((point, index) => (
-                            <span key={index} className="min-w-0 truncate">
-                              {index === 0 || index === series.length - 1 || series.length <= 7
-                                ? point.label
-                                : ''}
-                            </span>
-                          ))}
+                              {/* Line */}
+                              <polyline
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                points={pointsAttr}
+                                className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
+                              />
+
+                              {/* Hover points */}
+                              <g>
+                                {computedPoints.map((pt, index) => (
+                                  <circle
+                                    key={index}
+                                    cx={pt.x}
+                                    cy={pt.y}
+                                    r={3}
+                                    className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
+                                    onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
+                                    onMouseLeave={() => setHoveredPoint(null)}
+                                    onClick={() => {
+                                      if (activeMetric === 'profile_views') return;
+
+                                      const purchasesForDay = purchasesRaw.filter((purchase: any) => {
+                                        if (!purchase.created_at) return false;
+                                        const d = new Date(purchase.created_at);
+                                        d.setHours(0, 0, 0, 0);
+                                        const key = d.toISOString().slice(0, 10);
+                                        return key === pt.dateKey;
+                                      });
+
+                                      const distinctLinkIds = Array.from(
+                                        new Set(
+                                          purchasesForDay
+                                            .map((p: any) => p.link_id)
+                                            .filter((id: string | null | undefined) => !!id),
+                                        ),
+                                      );
+
+                                      if (distinctLinkIds.length === 1) {
+                                        navigate(`/app/links/${distinctLinkIds[0]}`);
+                                      } else if (distinctLinkIds.length > 1) {
+                                        toast.info('Multiple links were purchased on this day. Open your Links page for details.');
+                                      }
+                                    }}
+                                  />
+                                ))}
+                              </g>
+                            </svg>
+
+                            {/* X-axis labels — full width of SVG column */}
+                            <div className="mt-2 flex justify-between text-[10px] text-exclu-space/70">
+                              {series.map((point, index) => (
+                                <span key={index} className="min-w-0 truncate">
+                                  {index === 0 || index === series.length - 1 || series.length <= 7
+                                    ? point.label
+                                    : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
                         </div>
 
                         {/* Subtitle with latest total + tooltip info */}
                         {tooltipPoint && (
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-exclu-space/80">
                             <span>
-                              Total{' '}
+                              {activeMetric === 'profile_views' ? 'Views on' : 'Total'}{' '}
                               {activeMetric === 'revenue'
                                 ? `$${(lastPoint.value / 100).toLocaleString('en-US', {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
                                 })} USD`
                                 : lastPoint.value}{' '}
-                              au {lastPoint.label}
+                              on {lastPoint.label}
                             </span>
                             {hoveredPoint && (
                               <span className="inline-flex items-center gap-1 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 px-2.5 py-1 text-[10px] text-exclu-cloud">
@@ -870,170 +909,6 @@ const AppDashboard = () => {
           </>
         )}
 
-        {activeTab === 'earnings' && (
-          <section className="mt-2 space-y-4">
-            {/* Stripe Connect CTA if not connected */}
-            {stripeConnectStatus !== 'complete' && (
-              <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-yellow-400 mb-1">
-                      {stripeConnectStatus === 'restricted'
-                        ? 'Your Stripe account is restricted'
-                        : 'Connect Stripe to receive payouts'}
-                    </p>
-                    <p className="text-xs text-yellow-400/70">
-                      {stripeConnectStatus === 'restricted'
-                        ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
-                        : 'You need to connect your Stripe account to withdraw your earnings. It only takes a few minutes.'}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleStripeConnect}
-                    disabled={isConnectingStripe}
-                    className="rounded-full border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10 whitespace-nowrap"
-                  >
-                    {isConnectingStripe ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin" />
-                        Connecting…
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <ExternalLink className="w-4 h-4" />
-                        {stripeConnectStatus === 'restricted' ? 'Review Stripe setup' : 'Connect Stripe'}
-                      </span>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Wallet</p>
-                <p className="text-sm text-exclu-space/80 mb-2">Amount earned and not yet paid out.</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-exclu-space/80">Current balance</p>
-                <p className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud">
-                  {isLoading
-                    ? '—'
-                    : `$${(walletBalanceCents / 100).toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} USD`}
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Payouts</p>
-                {payouts.length > 0 && (
-                  <p className="text-[11px] text-exclu-space/70">{payouts.length} payout{payouts.length > 1 ? 's' : ''}</p>
-                )}
-              </div>
-
-              {isLoading && <p className="text-sm text-exclu-space/80">Loading earnings…</p>}
-
-              {!isLoading && payouts.length === 0 && (
-                <p className="text-sm text-exclu-space/80">
-                  No payouts have been recorded yet. Once payouts are processed, they will appear here with their
-                  status.
-                </p>
-              )}
-
-              {!isLoading && payouts.length > 0 && (
-                <div className="overflow-x-auto -mx-2 sm:mx-0">
-                  <table className="min-w-full text-sm">
-                    <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
-                      <tr>
-                        <th className="px-2 sm:px-3 py-2 text-left">Date</th>
-                        <th className="px-2 sm:px-3 py-2 text-left">Amount</th>
-                        <th className="px-2 sm:px-3 py-2 text-left">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {payouts.map((payout: any) => (
-                        <tr key={payout.id} className="border-t border-exclu-arsenic/40">
-                          <td className="px-2 sm:px-3 py-2 text-exclu-space/80">
-                            {new Date(payout.paid_at || payout.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="px-2 sm:px-3 py-2 text-right text-exclu-space">
-                            ${(payout.amount_cents / 100).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}{' '}
-                            USD
-                          </td>
-                          <td className="px-2 sm:px-3 py-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${payout.status === 'paid'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
-                                : payout.status === 'pending' || payout.status === 'processing'
-                                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/40'
-                                  : payout.status === 'failed'
-                                    ? 'bg-red-500/10 text-red-400 border border-red-500/40'
-                                    : 'bg-exclu-arsenic/40 text-exclu-cloud border border-exclu-arsenic/60'
-                                }`}
-                            >
-                              {payout.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* $100 Referral bonus — visible only if this creator was recruited by someone */}
-            {myReferralBonus && (
-              <div className={`rounded-2xl border p-5 sm:p-6 ${
-                myReferralBonus.unlocked
-                  ? 'border-emerald-500/40 bg-emerald-500/5'
-                  : myReferralBonus.eligible
-                    ? 'border-amber-500/40 bg-amber-500/5'
-                    : 'border-exclu-arsenic/60 bg-exclu-ink/80'
-              }`}>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">$100 welcome bonus</p>
-                    {myReferralBonus.unlocked ? (
-                      <>
-                        <p className="text-2xl font-bold text-emerald-400">+$100.00 unlocked</p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">You reached $1k in revenue within 90 days. Bonus credited to your affiliate earnings.</p>
-                      </>
-                    ) : myReferralBonus.eligible ? (
-                      <>
-                        <p className="text-sm font-semibold text-amber-300">Pending — {myReferralBonus.daysLeft} day{myReferralBonus.daysLeft !== 1 ? 's' : ''} left</p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">Reach $1,000 in net revenue before the deadline to unlock your $100 bonus.</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm font-semibold text-exclu-space/60">Expired</p>
-                        <p className="text-[11px] text-exclu-space/50 mt-1">The 90-day window has passed. Keep growing — more rewards coming soon.</p>
-                      </>
-                    )}
-                  </div>
-                  <div className={`text-right shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border ${
-                    myReferralBonus.unlocked
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40'
-                      : myReferralBonus.eligible
-                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
-                        : 'bg-exclu-arsenic/20 text-exclu-space/50 border-exclu-arsenic/40'
-                  }`}>
-                    {myReferralBonus.unlocked ? 'Credited' : myReferralBonus.eligible ? 'In progress' : 'Expired'}
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </section>
-        )}
 
         {activeTab === 'referral' && (() => {
           const COMMISSION_RATE = 0.35;
@@ -1350,6 +1225,87 @@ const AppDashboard = () => {
             </section>
           );
         })()}
+
+        {activeTab === 'tips' && (
+          <section className="mt-2 space-y-4">
+            {/* Stats cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Total tips earned</p>
+                <p className="text-2xl font-bold text-exclu-cloud">
+                  {isLoading ? '—' : `$${(tipsRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
+                </p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Net after platform commission.</p>
+              </div>
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Tips received</p>
+                <p className="text-2xl font-bold text-exclu-cloud">
+                  {isLoading ? '—' : tipsRaw.length}
+                </p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Successful tips from fans.</p>
+              </div>
+            </div>
+
+            {/* Tips list */}
+            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+              <div className="px-5 py-4 border-b border-exclu-arsenic/40">
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Tips history</p>
+              </div>
+
+              {isLoading && (
+                <p className="px-5 py-4 text-sm text-exclu-space/80">Loading tips…</p>
+              )}
+
+              {!isLoading && tipsRaw.length === 0 && (
+                <p className="px-5 py-6 text-sm text-exclu-space/80">
+                  No tips received yet. Enable tips in your profile settings so fans can support you directly.
+                </p>
+              )}
+
+              {!isLoading && tipsRaw.length > 0 && (
+                <div className="divide-y divide-exclu-arsenic/40">
+                  {tipsRaw.map((tip: any) => {
+                    const net = Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
+                    return (
+                      <div key={tip.id} className="px-5 py-4 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-exclu-arsenic/40 flex-shrink-0 flex items-center justify-center overflow-hidden border border-exclu-arsenic/60">
+                            {!tip.is_anonymous && tip.fan?.avatar_url ? (
+                              <img src={tip.fan.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-xs font-bold text-exclu-space/70">
+                                {tip.is_anonymous ? '?' : (tip.fan?.display_name || '?').charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-exclu-cloud truncate">
+                              {tip.is_anonymous ? 'Anonymous' : (tip.fan?.display_name || 'Fan')}
+                            </p>
+                            <p className="text-[11px] text-exclu-space/60">
+                              {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </p>
+                            {tip.message && (
+                              <p className="text-xs text-exclu-space/80 mt-1 line-clamp-2">{tip.message}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-bold text-exclu-cloud">
+                            ${(net / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-[10px] text-exclu-space/50">
+                            ${(tip.amount_cents / 100).toFixed(2)} total
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
       </main>
     </AppShell>

@@ -42,6 +42,8 @@ import CreatorTipsRequests from "./pages/CreatorTipsRequests";
 import FanDashboard from './pages/FanDashboard';
 import FanProtectedRoute from '@/components/FanProtectedRoute';
 import TipSuccess from './pages/TipSuccess';
+import CreatorWishlist from './pages/CreatorWishlist';
+import GiftSuccess from './pages/GiftSuccess';
 
 const queryClient = new QueryClient();
 
@@ -196,6 +198,14 @@ const App = () => {
                 }
               />
               <Route
+                path="/app/chat"
+                element={
+                  <ProtectedRoute>
+                    <CreatorTipsRequests />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/app/tips-requests"
                 element={
                   <ProtectedRoute>
@@ -207,6 +217,15 @@ const App = () => {
               <Route path="/fan/signup" element={<FanSignup />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/tip-success" element={<TipSuccess />} />
+              <Route path="/gift-success" element={<GiftSuccess />} />
+              <Route
+                path="/app/wishlist"
+                element={
+                  <ProtectedRoute>
+                    <CreatorWishlist />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/fan"
                 element={

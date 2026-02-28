@@ -71,7 +71,7 @@ const Auth = () => {
       } else if (mode === 'reset') {
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${siteUrl}/auth?mode=update-password`,
+          redirectTo: `${siteUrl}/auth/callback`,
         });
         if (error) throw error;
         toast.success('Check your inbox to reset your password');
@@ -107,9 +107,10 @@ const Auth = () => {
           email,
           password,
           options: {
-            emailRedirectTo: `${siteUrl}/onboarding`,
+            emailRedirectTo: `${siteUrl}/auth/callback`,
             data: {
               handle: username,
+              is_creator: true,
               referral_code: refCode,
             },
           },

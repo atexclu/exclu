@@ -6,9 +6,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  DollarSign, MessageSquare, Check, X, Loader2,
+  MessageSquare, MessagesSquare, Check, X, Loader2,
   UploadCloud, Image as ImageIcon, Film, ArrowLeft,
-  Link as LinkIcon,
+  Link as LinkIcon, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
@@ -494,7 +494,7 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
 ───────────────────────────────────────────────────────────────────────────── */
 
 const CreatorTipsRequests = () => {
-  const [activeTab, setActiveTab] = useState<'tips' | 'requests'>('tips');
+  const [activeTab, setActiveTab] = useState<'conversations' | 'requests'>('conversations');
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -510,13 +510,6 @@ const CreatorTipsRequests = () => {
   const [isDeclining, setIsDeclining] = useState(false);
 
   // Stats
-  const totalTipsCents = tips
-    .filter((t) => t.status === 'succeeded')
-    .reduce((acc, t) => acc + (t.creator_net_cents || 0), 0);
-  const totalRequestsCents = requests
-    .filter((r) => ['paid', 'in_progress', 'delivered', 'completed'].includes(r.status))
-    .reduce((acc, r) => acc + (r.final_amount_cents || r.proposed_amount_cents || 0), 0);
-  const unreadTips = tips.filter((t) => !t.read_at && t.status === 'succeeded').length;
   const pendingRequests = requests.filter((r) => r.status === 'pending').length;
 
   useEffect(() => {
@@ -538,12 +531,6 @@ const CreatorTipsRequests = () => {
     init();
   }, []);
 
-  // Auto-mark tips as read on initial load (tips tab is default)
-  useEffect(() => {
-    if (!isLoading && tips.length > 0 && activeTab === 'tips') {
-      markTipsAsRead();
-    }
-  }, [isLoading]);
 
   const fetchData = async (uid: string) => {
     setIsLoading(true);
@@ -632,58 +619,36 @@ const CreatorTipsRequests = () => {
   };
 
   const tabs = [
-    { key: 'tips' as const, label: 'Tips', icon: DollarSign, badge: unreadTips },
+    { key: 'conversations' as const, label: 'Conversations', icon: MessagesSquare, badge: 0 },
     { key: 'requests' as const, label: 'Requests', icon: MessageSquare, badge: pendingRequests },
   ];
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Tips & Requests</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage tips and custom content requests from your fans</p>
-        </div>
+      <main className="px-4 pb-16 max-w-6xl mx-auto">
+        <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Chat</h1>
+            <p className="text-exclu-space text-xs sm:text-sm max-w-xl">Manage conversations and custom content requests from your fans</p>
+          </div>
+        </section>
 
-        {/* Stats cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">Total Tips Earned</p>
-            <p className="text-xl font-bold text-foreground mt-1">${(totalTipsCents / 100).toFixed(2)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">Unread Tips</p>
-            <p className="text-xl font-bold text-foreground mt-1">{unreadTips}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">Request Revenue</p>
-            <p className="text-xl font-bold text-foreground mt-1">${(totalRequestsCents / 100).toFixed(2)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">Pending Requests</p>
-            <p className="text-xl font-bold text-foreground mt-1">{pendingRequests}</p>
-          </div>
-        </div>
-
-        {/* Tab navigation */}
-        <div className="flex gap-1 mb-6">
-          {tabs.map(({ key, label, icon: Icon, badge }) => (
+        {/* Tab toggle */}
+        <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 mb-6">
+          {tabs.map(({ key, label, badge }) => (
             <button
               key={key}
               type="button"
-              onClick={() => {
-                setActiveTab(key);
-                if (key === 'tips') markTipsAsRead();
-              }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-medium transition-all ${
                 activeTab === key
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  ? 'bg-primary text-white dark:text-black shadow-sm'
+                  : 'hover:text-exclu-cloud text-exclu-space/80'
               }`}
             >
-              <Icon className="w-4 h-4" />
               {label}
               {badge > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold min-w-[18px] text-center">
+                <span className="px-1.5 py-0.5 rounded-full bg-primary-foreground/20 text-[10px] font-bold min-w-[18px] text-center">
                   {badge}
                 </span>
               )}
@@ -698,86 +663,22 @@ const CreatorTipsRequests = () => {
           </div>
         )}
 
-        {/* Tips Tab */}
-        {!isLoading && activeTab === 'tips' && (
+        {/* Conversations Tab — coming soon */}
+        {!isLoading && activeTab === 'conversations' && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-3"
+            className="flex flex-col items-center justify-center py-24 gap-4 text-center"
           >
-            {tips.length === 0 ? (
-              <div className="text-center py-16 space-y-3">
-                <DollarSign className="w-10 h-10 text-muted-foreground/30 mx-auto" />
-                <p className="text-sm text-muted-foreground">No tips received yet</p>
-                <p className="text-xs text-muted-foreground/60">
-                  Enable tips in your profile settings and fans will be able to tip you directly
-                </p>
-              </div>
-            ) : (
-              tips.map((tip) => (
-                <div
-                  key={tip.id}
-                  className={`rounded-xl border bg-card p-4 transition-all ${
-                    !tip.read_at ? 'border-primary/30 bg-primary/5' : 'border-border'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Fan avatar */}
-                      {!tip.is_anonymous && (
-                        <div className="w-10 h-10 rounded-full overflow-hidden border border-border flex-shrink-0 bg-muted">
-                          {tip.fan?.avatar_url ? (
-                            <img src={tip.fan.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <span className="text-xs font-bold text-muted-foreground">
-                                {(tip.fan?.display_name || '?').charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {tip.is_anonymous
-                              ? 'Anonymous'
-                              : (tip.fan?.display_name || 'Fan')}
-                          </p>
-                          {!tip.read_at && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-medium flex-shrink-0">
-                              New
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {new Date(tip.created_at).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-foreground">
-                        ${(tip.creator_net_cents / 100).toFixed(2)}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        net (${(tip.amount_cents / 100).toFixed(2)} total)
-                      </p>
-                    </div>
-                  </div>
-                  {tip.message && (
-                    <div className="mt-3 rounded-lg bg-muted/50 p-3">
-                      <p className="text-xs text-foreground/80">{tip.message}</p>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
+            <div className="w-16 h-16 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 flex items-center justify-center">
+              <Clock className="w-7 h-7 text-exclu-space/50" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-base font-semibold text-exclu-cloud">Conversations — Coming soon</p>
+              <p className="text-sm text-exclu-space/60 max-w-xs">
+                Direct messaging with your fans is on the way. Stay tuned.
+              </p>
+            </div>
           </motion.div>
         )}
 
@@ -945,7 +846,7 @@ const CreatorTipsRequests = () => {
             )}
           </motion.div>
         )}
-      </div>
+      </main>
 
       {/* Accept-with-link modal */}
       <AnimatePresence>

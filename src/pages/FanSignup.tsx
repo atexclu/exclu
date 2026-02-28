@@ -62,7 +62,7 @@ const FanSignup = () => {
       if (mode === 'reset') {
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${siteUrl}/auth?mode=update-password`,
+          redirectTo: `${siteUrl}/auth/callback`,
         });
         if (error) throw error;
         toast.success('Check your inbox to reset your password');

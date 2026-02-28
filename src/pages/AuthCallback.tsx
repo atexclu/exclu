@@ -27,18 +27,25 @@ const AuthCallback = () => {
     handled.current = true;
 
     const tokenHash = searchParams.get('token_hash');
-    const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | null;
-    const next = searchParams.get('next') || '/fan';
+    const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | 'magiclink' | null;
+    const next = searchParams.get('next') || null;
 
-    const redirect = (isCreator: boolean, fallback: string) => {
-      if (isCreator) {
-        navigate('/app', { replace: true });
-      } else {
-        navigate(fallback, { replace: true });
+    const redirectAfterAuth = (isCreator: boolean) => {
+      // recovery = password reset — always go to /auth?mode=update-password
+      if (type === 'recovery') {
+        navigate('/auth?mode=update-password', { replace: true });
+        return;
       }
+      // next param takes priority (set by fan flow)
+      if (next) {
+        navigate(next, { replace: true });
+        return;
+      }
+      // Default: creator → /app, fan → /fan
+      navigate(isCreator ? '/app' : '/fan', { replace: true });
     };
 
-    const resolveDestination = async () => {
+    const resolveIsCreator = async (): Promise<boolean | null> => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return null;
 
@@ -51,52 +58,78 @@ const AuthCallback = () => {
       return profile?.is_creator ?? false;
     };
 
+    const autoFavoriteCreator = async (userId: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const favoriteHandle = user?.user_metadata?.favorite_creator as string | undefined;
+      if (!favoriteHandle) return;
+
+      const { data: creatorProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('handle', favoriteHandle)
+        .eq('is_creator', true)
+        .maybeSingle();
+
+      if (creatorProfile) {
+        await supabase
+          .from('fan_favorites')
+          .upsert(
+            { fan_id: userId, creator_id: creatorProfile.id },
+            { onConflict: 'fan_id,creator_id' }
+          );
+      }
+    };
+
     const run = async () => {
       // Case 1: token_hash present — verify manually then redirect
       if (tokenHash && type) {
         const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
         if (error) {
           console.error('[AuthCallback] verifyOtp error:', error.message);
-          // Token may already be consumed (e.g. double-click) — try to get existing session
-          const isCreator = await resolveDestination();
+          // Token may already be consumed (double-click) — check for existing session
+          const isCreator = await resolveIsCreator();
           if (isCreator !== null) {
-            redirect(isCreator, next);
+            redirectAfterAuth(isCreator);
           } else {
-            navigate('/fan/signup?error=link_expired', { replace: true });
+            navigate('/auth?error=link_expired', { replace: true });
           }
           return;
         }
-        const isCreator = await resolveDestination();
-        redirect(isCreator ?? false, next);
+        // Auto-favorite creator for new fan signups
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && type === 'signup') {
+          await autoFavoriteCreator(session.user.id);
+        }
+        const isCreator = await resolveIsCreator();
+        redirectAfterAuth(isCreator ?? false);
         return;
       }
 
-      // Case 2: Supabase already verified server-side and redirected here with a live session
-      // onAuthStateChange will have fired — just read the current session
-      const isCreator = await resolveDestination();
+      // Case 2: Supabase verified server-side and redirected here — session should be live
+      const isCreator = await resolveIsCreator();
       if (isCreator !== null) {
-        redirect(isCreator, next);
+        redirectAfterAuth(isCreator);
         return;
       }
 
-      // Fallback: wait briefly for the session to settle (onAuthStateChange delay)
+      // Case 3: Fallback — wait for onAuthStateChange to fire (session settling)
       const unsub = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
+        if ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && session) {
           unsub.data.subscription.unsubscribe();
           const { data: profile } = await supabase
             .from('profiles')
             .select('is_creator')
             .eq('id', session.user.id)
             .maybeSingle();
-          redirect(profile?.is_creator ?? false, next);
+          redirectAfterAuth(profile?.is_creator ?? false);
         }
       });
 
-      // Safety timeout — if no session after 5s, send to signup
+      // Safety timeout — if no session after 6s, send to auth
       setTimeout(() => {
         unsub.data.subscription.unsubscribe();
-        navigate('/fan/signup?error=link_expired', { replace: true });
-      }, 5000);
+        navigate('/auth?error=link_expired', { replace: true });
+      }, 6000);
     };
 
     run();

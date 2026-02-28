@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard, Menu, ExternalLink } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard, Menu, ExternalLink, Gift } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -12,6 +12,7 @@ import { SocialSection } from '@/components/linkinbio/sections/SocialSection';
 import { ContentSection } from '@/components/linkinbio/sections/ContentSection';
 import { PublicContentSection } from '@/components/linkinbio/sections/PublicContentSection';
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
+import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import AppShell from '@/components/AppShell';
 
@@ -87,11 +88,12 @@ const LinkInBioEditor = () => {
 
   const [links, setLinks] = useState<CreatorLink[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
+  const [wishlistItems, setWishlistItems] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'colors'>('photo');
+  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
@@ -193,6 +195,14 @@ const LinkInBioEditor = () => {
         setPublicContent(withUrls);
       }
 
+      // Load wishlist items
+      const { data: wlData } = await supabase
+        .from('wishlist_items')
+        .select('id, name, description, emoji, image_url, gift_url, price_cents, max_quantity, gifted_count, is_visible, sort_order')
+        .eq('creator_id', user.id)
+        .order('sort_order', { ascending: true });
+      if (wlData) setWishlistItems(wlData);
+
       setIsLoading(false);
     };
 
@@ -208,27 +218,27 @@ const LinkInBioEditor = () => {
       const { error } = await supabase
         .from('profiles')
         .update({
-          display_name: editorData.display_name,
-          handle: editorData.handle,
-          bio: editorData.bio,
-          avatar_url: editorData.avatar_url,
-          theme_color: editorData.theme_color,
-          aurora_gradient: editorData.aurora_gradient,
-          social_links: editorData.social_links,
-          show_join_banner: editorData.show_join_banner,
-          show_certification: editorData.show_certification,
-          show_deeplinks: editorData.show_deeplinks,
-          show_available_now: editorData.show_available_now,
-          location: editorData.location,
-          exclusive_content_text: editorData.exclusive_content_text,
-          exclusive_content_link_id: editorData.exclusive_content_link_id,
-          exclusive_content_url: editorData.exclusive_content_url,
-          exclusive_content_image_url: editorData.exclusive_content_image_url,
-          link_order: editorData.link_order,
-          tips_enabled: editorData.tips_enabled,
-          custom_requests_enabled: editorData.custom_requests_enabled,
-          min_tip_amount_cents: editorData.min_tip_amount_cents,
-          min_custom_request_cents: editorData.min_custom_request_cents,
+          display_name: debouncedData.display_name,
+          handle: debouncedData.handle,
+          bio: debouncedData.bio,
+          avatar_url: debouncedData.avatar_url,
+          theme_color: debouncedData.theme_color,
+          aurora_gradient: debouncedData.aurora_gradient,
+          social_links: debouncedData.social_links,
+          show_join_banner: debouncedData.show_join_banner,
+          show_certification: debouncedData.show_certification,
+          show_deeplinks: debouncedData.show_deeplinks,
+          show_available_now: debouncedData.show_available_now,
+          location: debouncedData.location,
+          exclusive_content_text: debouncedData.exclusive_content_text,
+          exclusive_content_link_id: debouncedData.exclusive_content_link_id,
+          exclusive_content_url: debouncedData.exclusive_content_url,
+          exclusive_content_image_url: debouncedData.exclusive_content_image_url,
+          link_order: debouncedData.link_order,
+          tips_enabled: debouncedData.tips_enabled,
+          custom_requests_enabled: debouncedData.custom_requests_enabled,
+          min_tip_amount_cents: debouncedData.min_tip_amount_cents,
+          min_custom_request_cents: debouncedData.min_custom_request_cents,
           profile_draft: null,
         })
         .eq('id', userId);
@@ -266,6 +276,16 @@ const LinkInBioEditor = () => {
     setLinks(data || []);
   };
 
+  const fetchWishlistItems = async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('wishlist_items')
+      .select('id, name, description, emoji, image_url, gift_url, price_cents, max_quantity, gifted_count, is_visible, sort_order')
+      .eq('creator_id', userId)
+      .order('sort_order', { ascending: true });
+    if (data) setWishlistItems(data);
+  };
+
   const fetchPublicContent = async () => {
     if (!userId) return;
 
@@ -297,6 +317,7 @@ const LinkInBioEditor = () => {
     { id: 'social' as const, label: 'Social', icon: Share2 },
     { id: 'links' as const, label: 'Links', icon: LinkIcon },
     { id: 'content' as const, label: 'Content', icon: ImageIcon },
+    { id: 'wishlist' as const, label: 'Wishlist', icon: Gift },
     { id: 'colors' as const, label: 'Design', icon: Palette },
   ];
 
@@ -447,7 +468,7 @@ const LinkInBioEditor = () => {
                             <SheetTitle className="text-base">Live preview</SheetTitle>
                           </div>
                           <div className="p-4 flex items-center justify-center">
-                            <MobilePreview data={editorData} links={links} isPremium={isPremium} />
+                            <MobilePreview data={editorData} links={links} isPremium={isPremium} wishlistItems={wishlistItems} />
                           </div>
                         </SheetContent>
                       </Sheet>
@@ -576,6 +597,15 @@ const LinkInBioEditor = () => {
                       </div>
                     )}
 
+                    {activeSection === 'wishlist' && (
+                      <div className="space-y-4">
+                        <WishlistSection
+                          items={wishlistItems}
+                          onUpdate={fetchWishlistItems}
+                        />
+                      </div>
+                    )}
+
                     {activeSection === 'colors' && (
                       <div className="space-y-4">
                         <OptionsSection
@@ -605,6 +635,7 @@ const LinkInBioEditor = () => {
                   links={links} 
                   isPremium={isPremium}
                   publicContent={publicContent}
+                  wishlistItems={wishlistItems}
                 />
               </div>
             </div>

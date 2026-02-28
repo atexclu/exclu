@@ -1,5 +1,6 @@
 import AppShell from '@/components/AppShell';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,10 +21,12 @@ import {
   ChevronRight,
   Palette,
   AlertTriangle,
+  LogOut,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 
 const Profile = () => {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string>('');
@@ -957,6 +960,28 @@ const Profile = () => {
               )}
             </div>
           </div>
+        {/* Logout card — mobile only */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="sm:hidden mt-6 rounded-2xl border border-red-500/20 bg-red-500/5 p-4"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-red-400">Sign out</p>
+              <p className="text-xs text-muted-foreground mt-0.5">You will be redirected to the home page</p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => { await supabase.auth.signOut(); navigate('/', { replace: true }); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
+          </div>
+        </motion.div>
         </motion.div>
       </main>
 

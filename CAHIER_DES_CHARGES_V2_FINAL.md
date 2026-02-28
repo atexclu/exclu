@@ -1213,7 +1213,7 @@ Les créateurs affichent une liste de souhaits. Les fans peuvent "offrir" un art
 
 ### 11.2 Items Prédéfinis (Onboarding)
 
-Durant l'onboarding, le créateur peut cocher des items par défaut :
+Durant l'onboarding, le créateur peut cocher des items par défaut en cliquant sur les images des lots prédéfinis pour les sélectionner, il faut que l'on ai un affichage en galerie très visuels avec les prix et les descriptions ex :
 
 | Item | Montant affiché |
 |------|-----------------|
@@ -1223,7 +1223,10 @@ Durant l'onboarding, le créateur peut cocher des items par défaut :
 | 🛒 Amazon Gift Card | $50 |
 | 🍽️ Dinner | $200 |
 
-**Note affichée** : "Vous pourrez ajouter des items personnalisés plus tard"
+**Note affichée** : "Vous pourrez ajouter des items personnalisés ou modifier les prix des lots prédéfinis plus tard"
+
+-> Il faut faire en sorte d'avoir créé une base de lots prédéfinis pour les créateurs qu'ils peuvent facilement sélectionner et modifier, sans que cela modifie les prix des lots prédéfinis pour les autres créateurs, juste pour eux. J'aimerais également que les prix des lots prédéfinis soient modifiables par les créateurs. Il doivent pouvoir créer leurs lots personnalisés et les modifier, en ajoutant une image et une description. Pour les lots prédéfinis, il faudra me guider pour m'indiauer où je doit te passer les images des lots.
+
 
 ### 11.3 Interface Créateur
 
@@ -1256,11 +1259,8 @@ Durant l'onboarding, le créateur peut cocher des items par défaut :
 └─────────────────────────────────────────┘
 ```
 
-### 11.4 Interface Fan (Page Publique)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  🎁 Wishlist de @emma                                       │
+### 11.4 Interface Fan (Page Publique du créateur, dans un nouveau menu à côté de "Links" "Content" "Wishlist" )
+                                │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐     │
 │  │    [IMG]      │ │    [IMG]      │ │    [IMG]      │     │
@@ -1268,15 +1268,29 @@ Durant l'onboarding, le créateur peut cocher des items par défaut :
 │  │   $1,299      │ │    $695       │ │    $200       │     │
 │  │  [Offrir 🎁]  │ │  [Offert ✓]   │ │  [Offrir 🎁]  │     │
 │  └───────────────┘ └───────────────┘ └───────────────┘     │
+│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐     │
+│  │    [IMG]      │ │    [IMG]      │ │    [IMG]      │     │
+│  │   MacBook     │ │  Louboutin    │ │   Dinner      │     │
+│  │   $1,299      │ │    $695       │ │    $200       │     │
+│  │  [Offrir 🎁]  │ │  [Offert ✓]   │ │  [Offrir 🎁]  │     │
+│  └───────────────┘ └───────────────┘ └───────────────┘     │
+│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐     │
+│  │    [IMG]      │ │    [IMG]      │ │    [IMG]      │     │
+│  │   MacBook     │ │  Louboutin    │ │   Dinner      │     │
+│  │   $1,299      │ │    $695       │ │    $200       │     │
+│  │  [Offrir 🎁]  │ │  [Offert ✓]   │ │  [Offrir 🎁]  │     │
+│  └───────────────┘ └───────────────┘ └───────────────┘     │
 └─────────────────────────────────────────────────────────────┘
+
+Les cards doivent en 2 colonnes comme celles de "content".
 ```
 
 ### 11.5 Flux de Paiement
 
 1. Fan clique "Offrir"
-2. Redirection vers Stripe Checkout (montant de l'item)
+2. Redirection vers Stripe Checkout (montant de l'ite + 5% exclu processing fee)
 3. Paiement validé → **Transfert d'argent** au créateur
-4. Notification au créateur ("🎁 @fan vous a offert un MacBook!")
+4. Notification par mail au créateur ("🎁 @fan vous a offert un MacBook!")
 5. Item marqué comme "Offert" si quantité max atteinte
 
 **Aucune logistique** : Pas d'adresse de livraison, c'est un transfert pur.
@@ -1285,6 +1299,9 @@ Durant l'onboarding, le créateur peut cocher des items par défaut :
 
 - Commission EXCLU identique aux autres ventes
 - Le créateur reçoit le montant moins les frais habituels
+
+
+l'ui générale doit être simple et facile d'utilisation, très visuelle et imagée, un peut gamifiée. Cela doit correspondre à l'identité de la marque, comme sur le reste que la plateforme.
 
 ---
 

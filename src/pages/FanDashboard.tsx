@@ -223,7 +223,6 @@ const FanDashboard = () => {
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
     { key: 'tips' as const, label: 'Tips', icon: DollarSign },
     { key: 'requests' as const, label: 'Requests', icon: MessageSquare },
-    { key: 'settings' as const, label: 'Settings', icon: Settings },
   ];
 
   return (

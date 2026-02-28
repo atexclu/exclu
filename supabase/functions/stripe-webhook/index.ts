@@ -316,6 +316,127 @@ async function sendCreatorTipNotificationEmail(params: {
   return false;
 }
 
+async function sendCreatorGiftNotificationEmail(params: {
+  creatorEmail: string;
+  creatorName: string;
+  itemName: string;
+  itemEmoji: string;
+  giftAmountFormatted: string;
+  giftNetFormatted: string;
+  giftMessage: string | null;
+  isAnonymous: boolean;
+  dashboardUrl: string;
+}): Promise<boolean> {
+  if (!brevoApiKey || !brevoSenderEmail) {
+    console.warn('Brevo not configured; skipping gift notification email');
+    return false;
+  }
+
+  const { creatorEmail, creatorName, itemName, itemEmoji, giftAmountFormatted, giftNetFormatted, giftMessage, isAnonymous, dashboardUrl } = params;
+  const safeCreatorName = escapeHtml(creatorName);
+  const safeItemName = escapeHtml(itemName);
+  const senderLabel = isAnonymous ? 'An anonymous fan' : 'A fan';
+  const messageBlock = giftMessage
+    ? `<div style="background-color:#020617;border-radius:10px;padding:18px;margin:20px 0;border:1px solid #1e293b;">
+        <p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px 0;">Message</p>
+        <p style="font-size:15px;color:#f1f5f9;margin:0;line-height:1.6;font-style:italic;">"${escapeHtml(giftMessage)}"</p>
+      </div>`
+    : '';
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You received a gift!</title>
+<style>
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; text-align:left; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .button { display:inline-block; background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%); color:#020617 !important; text-decoration:none; padding:14px 32px; border-radius:999px; font-weight:600; font-size:15px; margin:8px 0 20px 0; box-shadow:0 6px 18px rgba(190,242,100,0.4); }
+  .details { background-color:#020617; border-radius:10px; border:1px solid #1e293b; overflow:hidden; margin:4px 0 24px 0; }
+  .detail-row { padding:14px 18px; border-bottom:1px solid #1e293b; }
+  .detail-row:last-child { border-bottom:none; }
+  .detail-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.08em; margin:0 0 4px 0; }
+  .detail-value { font-size:15px; color:#f1f5f9; font-weight:600; margin:0; }
+  .detail-value.amount { font-size:22px; font-weight:800; color:#a3e635; }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .button { padding:12px 24px; font-size:14px; } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>You received a gift! ${itemEmoji}</h1>
+    </div>
+    <div class="content">
+      <p>Hey <strong>${safeCreatorName}</strong>! ${senderLabel} just gifted you <strong>${safeItemName}</strong> on <strong>Exclu</strong>.</p>
+      <div class="details">
+        <div class="detail-row">
+          <p class="detail-label">Gift</p>
+          <p class="detail-value">${itemEmoji} ${safeItemName}</p>
+        </div>
+        <div class="detail-row">
+          <p class="detail-label">Amount received</p>
+          <p class="detail-value amount">${giftAmountFormatted}</p>
+        </div>
+        <div class="detail-row">
+          <p class="detail-label">Your earnings (after fees)</p>
+          <p class="detail-value">${giftNetFormatted}</p>
+        </div>
+        <div class="detail-row">
+          <p class="detail-label">From</p>
+          <p class="detail-value">${senderLabel}</p>
+        </div>
+      </div>
+      ${messageBlock}
+      <a href="${dashboardUrl}" class="button">View my wishlist</a>
+      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">You received this email because a fan gifted an item on your wishlist on Exclu.</p>
+    </div>
+    <div class="footer">
+      © 2025 Exclu — All rights reserved<br>
+      <a href="${normalizedSiteUrl}">exclu</a> • <a href="${normalizedSiteUrl}/terms">Terms of Service</a> • <a href="${normalizedSiteUrl}/privacy">Privacy Policy</a>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const payload = JSON.stringify({
+    sender: { email: brevoSenderEmail, name: brevoSenderName },
+    to: [{ email: creatorEmail }],
+    subject: `${itemEmoji} ${senderLabel} gifted you ${safeItemName} on Exclu!`,
+    htmlContent,
+  });
+
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'api-key': brevoApiKey!, 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      if (response.ok) {
+        console.log(`Gift notification email sent to ${creatorEmail} (attempt ${attempt})`);
+        return true;
+      }
+      const errorBody = await response.text();
+      console.error(`Gift notification email failed (attempt ${attempt}/${MAX_ATTEMPTS})`, response.status, errorBody);
+    } catch (err) {
+      console.error(`Gift notification email error (attempt ${attempt}/${MAX_ATTEMPTS})`, err);
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  return false;
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200 });
@@ -443,6 +564,121 @@ serve(async (req: Request) => {
                   }
                 } catch (emailErr) {
                   console.error('Error sending tip notification email (non-fatal):', emailErr);
+                }
+              }
+            }
+          }
+        }
+
+        // Handle gift purchases (wishlist gifting)
+        if (session.mode === 'payment' && session.metadata?.type === 'gift' && session.payment_status === 'paid') {
+          const giftPurchaseId = session.metadata.gift_purchase_id;
+          const wishlistItemId = session.metadata.wishlist_item_id;
+          const creatorId = session.metadata.creator_id;
+          const fanId = session.metadata.fan_id;
+
+          if (giftPurchaseId) {
+            const { data: existingGift } = await supabase
+              .from('gift_purchases')
+              .select('id, status')
+              .eq('id', giftPurchaseId)
+              .single();
+
+            if (existingGift && existingGift.status !== 'succeeded') {
+              const amountTotal = session.amount_total ?? 0;
+              const creatorBaseCents = Math.round(amountTotal / 1.05);
+              const fanProcessingFeeCents = amountTotal - creatorBaseCents;
+
+              let platformCommissionCents = 0;
+              if (creatorId) {
+                const { data: creatorProfile } = await supabase
+                  .from('profiles')
+                  .select('is_creator_subscribed')
+                  .eq('id', creatorId)
+                  .single();
+                const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
+                platformCommissionCents = Math.round(creatorBaseCents * commissionRate);
+              }
+
+              const totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
+              const creatorNetCents = creatorBaseCents - platformCommissionCents;
+
+              const paymentIntentId = typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : (session.payment_intent as any)?.id ?? null;
+
+              const { error: giftUpdateError } = await supabase
+                .from('gift_purchases')
+                .update({
+                  status: 'succeeded',
+                  paid_at: new Date().toISOString(),
+                  stripe_payment_intent_id: paymentIntentId,
+                  platform_fee_cents: totalPlatformFee,
+                  creator_net_cents: creatorNetCents,
+                })
+                .eq('id', giftPurchaseId);
+
+              if (giftUpdateError) {
+                console.error('Error updating gift_purchase status:', giftUpdateError);
+              } else {
+                console.log('Gift succeeded:', giftPurchaseId, 'creator:', creatorId, 'fan:', fanId, 'net:', creatorNetCents);
+
+                // Increment gifted_count on the wishlist item
+                if (wishlistItemId) {
+                  try {
+                    const { data: wishlistItem } = await supabase
+                      .from('wishlist_items')
+                      .select('gifted_count')
+                      .eq('id', wishlistItemId)
+                      .single();
+                    if (wishlistItem) {
+                      await supabase
+                        .from('wishlist_items')
+                        .update({ gifted_count: (wishlistItem.gifted_count || 0) + 1 })
+                        .eq('id', wishlistItemId);
+                    }
+                  } catch (countErr) {
+                    console.error('Error incrementing gifted_count (non-fatal):', countErr);
+                  }
+                }
+
+                // Send creator notification email (best-effort)
+                try {
+                  const { data: giftDetails } = await supabase
+                    .from('gift_purchases')
+                    .select('message, is_anonymous, wishlist_item_id')
+                    .eq('id', giftPurchaseId)
+                    .single();
+
+                  const { data: itemDetails } = await supabase
+                    .from('wishlist_items')
+                    .select('name, emoji')
+                    .eq('id', wishlistItemId)
+                    .single();
+
+                  const { data: { user: creatorUser } } = await supabase.auth.admin.getUserById(creatorId);
+                  const { data: creatorProfileForEmail } = await supabase
+                    .from('profiles')
+                    .select('display_name, handle')
+                    .eq('id', creatorId)
+                    .single();
+
+                  if (creatorUser?.email) {
+                    const creatorDisplayName = creatorProfileForEmail?.display_name || creatorProfileForEmail?.handle || 'Creator';
+                    await sendCreatorGiftNotificationEmail({
+                      creatorEmail: creatorUser.email,
+                      creatorName: creatorDisplayName,
+                      itemName: itemDetails?.name ?? 'a gift',
+                      itemEmoji: itemDetails?.emoji ?? '🎁',
+                      giftAmountFormatted: `$${(creatorBaseCents / 100).toFixed(2)}`,
+                      giftNetFormatted: `$${(creatorNetCents / 100).toFixed(2)}`,
+                      giftMessage: giftDetails?.message || null,
+                      isAnonymous: giftDetails?.is_anonymous === true,
+                      dashboardUrl: `${normalizedSiteUrl}/app/wishlist`,
+                    });
+                  }
+                } catch (emailErr) {
+                  console.error('Error sending gift notification email (non-fatal):', emailErr);
                 }
               }
             }
@@ -773,7 +1009,10 @@ serve(async (req: Request) => {
 
           if (account.charges_enabled && account.payouts_enabled) {
             connectStatus = 'complete';
-          } else if (account.requirements?.disabled_reason) {
+          } else if (
+            account.requirements?.disabled_reason ||
+            !account.charges_enabled
+          ) {
             connectStatus = 'restricted';
           }
 

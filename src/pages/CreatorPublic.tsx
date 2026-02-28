@@ -3,13 +3,13 @@ import { supabase } from '@/lib/supabaseClient';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, DollarSign, MessageSquare, Heart, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, DollarSign, MessageSquare, Loader2, ArrowLeft, ExternalLink } from 'lucide-react';
+import StarBorder from '@/components/ui/StarBorder';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
-import SplitText from '@/components/ui/SplitText';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import {
   SiX,
@@ -78,7 +78,7 @@ const CreatorPublic = () => {
   const [profile, setProfile] = useState<CreatorProfileData | null>(null);
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'links' | 'content'>('links');
+  const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>('links');
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +96,27 @@ const CreatorPublic = () => {
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false);
   const [currentFanId, setCurrentFanId] = useState<string | null>(null);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
+
+  // Wishlist state
+  const [wishlistItems, setWishlistItems] = useState<any[]>([]);
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [selectedGiftItem, setSelectedGiftItem] = useState<any | null>(null);
+  const [giftMessage, setGiftMessage] = useState('');
+  const [giftAnonymous, setGiftAnonymous] = useState(false);
+  const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
+
+  // Desktop photo collapse on scroll (only when >5 links)
+  const [photoVisible, setPhotoVisible] = useState(true);
+  useEffect(() => {
+    const threshold = window.innerHeight * 0.4;
+    const handleScroll = () => {
+      if (links.length <= 5) return;
+      const shouldShow = window.scrollY < threshold;
+      setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [links.length]);
 
   // Check if a fan (not a creator) is logged in
   useEffect(() => {
@@ -213,14 +234,17 @@ const CreatorPublic = () => {
 
         if (!isMounted) return;
 
-        if (!publicError && publicData) {
-          // Generate signed URLs
+        if (publicError) {
+          console.error('Error loading public content:', publicError.message);
+        }
+        if (!publicError && publicData && publicData.length > 0) {
           const withUrls = await Promise.all(
             publicData.map(async (item) => {
               if (!item.storage_path) return { ...item, previewUrl: null };
-              const { data: signed } = await supabase.storage
+              const { data: signed, error: signError } = await supabase.storage
                 .from('paid-content')
                 .createSignedUrl(item.storage_path, 60 * 60);
+              if (signError) console.warn('Signed URL failed for', item.storage_path, signError.message);
               return { ...item, previewUrl: signed?.signedUrl || null };
             })
           );
@@ -228,6 +252,17 @@ const CreatorPublic = () => {
           if (!isMounted) return;
           setPublicContent(withUrls);
         }
+
+        // Load visible wishlist items
+        const { data: wishlistData } = await supabase
+          .from('wishlist_items')
+          .select('id, name, description, emoji, image_url, gift_url, price_cents, currency, max_quantity, gifted_count, is_visible')
+          .eq('creator_id', profileData.id)
+          .eq('is_visible', true)
+          .order('sort_order');
+
+        if (!isMounted) return;
+        setWishlistItems(wishlistData ?? []);
 
         setProfile(profileData as unknown as CreatorProfileData);
 
@@ -281,6 +316,42 @@ const CreatorPublic = () => {
       return;
     }
     setShowTipModal(true);
+  };
+
+  const handleGiftCta = (item: any) => {
+    if (!currentFanId) {
+      if (isCreatorAccount) {
+        toast.info('You need a fan account to send gifts.');
+      }
+      navigate(`/fan/signup?creator=${handle}`);
+      return;
+    }
+    setSelectedGiftItem(item);
+    setGiftMessage('');
+    setGiftAnonymous(false);
+    setShowGiftModal(true);
+  };
+
+  const handleGiftSubmit = async () => {
+    if (!selectedGiftItem || !currentFanId) return;
+    setIsGiftSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-gift-checkout', {
+        body: {
+          wishlist_item_id: selectedGiftItem.id,
+          message: giftMessage || null,
+          is_anonymous: giftAnonymous,
+        },
+      });
+      if (error || !data?.url) {
+        throw new Error(data?.error || 'Unable to start checkout');
+      }
+      window.location.href = data.url;
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to process gift');
+    } finally {
+      setIsGiftSubmitting(false);
+    }
   };
 
   const handleRequestCta = () => {
@@ -433,7 +504,29 @@ const CreatorPublic = () => {
         />
       </div>
 
-      {/* Mobile: Hero image header */}
+      {/* Fan topbar — shown when a fan is logged in */}
+      {currentFanId && (
+        <div className="relative z-20 bg-black/80 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-lg mx-auto px-4 h-12 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => navigate('/fan')}
+              className="flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-xs font-medium">Back</span>
+            </button>
+            <a href="/" className="inline-flex">
+              <img src={logo} alt="Exclu" className="h-4" />
+            </a>
+            <div className="w-16" />
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────
+          MOBILE: Hero image header (unchanged)
+      ───────────────────────────────────────────────── */}
       <motion.div
         className="sm:hidden relative -mx-4 overflow-hidden z-10"
         initial={{ opacity: 0, y: -10 }}
@@ -442,21 +535,12 @@ const CreatorPublic = () => {
       >
         {profile?.avatar_url && (
           <>
-            <img
-              src={profile.avatar_url}
-              alt={displayName}
-              className="w-full aspect-square object-cover"
-            />
-            {/* Soft dark overlay */}
+            <img src={profile.avatar_url} alt={displayName} className="w-full aspect-square object-cover" />
             <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/80" />
-            {/* Bottom shadow overlay (100% black -> 0% over 150px) */}
             <div className="absolute inset-x-0 bottom-0 h-[150px] bg-gradient-to-t from-black to-transparent pointer-events-none z-10" />
-            {/* Name overlay */}
             <div className="absolute inset-x-5 bottom-6 flex flex-col items-center text-center z-20 translate-y-[20px]">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">
-                  {displayName}
-                </h1>
+                <h1 className="text-2xl font-extrabold text-white drop-shadow-[0_6px_18px_rgba(0,0,0,0.9)]">{displayName}</h1>
                 {profile?.show_certification !== false && (
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0 drop-shadow-lg">
                     <defs><linearGradient id="badge-grad-m" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
@@ -465,22 +549,15 @@ const CreatorPublic = () => {
                   </svg>
                 )}
               </div>
-
-              {/* Social Links (mobile only): placed under creator name */}
               {activeSocials.length > 0 && (
                 <div className="mt-4 flex justify-center gap-3">
                   {activeSocials.map(([platform, url]) => {
                     const platformConfig = socialPlatforms[platform];
                     if (!platformConfig) return null;
                     return (
-                      <motion.button
-                        key={platform}
-                        type="button"
-                        onClick={() => handleSocialClick(url)}
-                        whileTap={{ scale: 0.95 }}
-                        className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 active:ring-white/60 transition-all"
-                        title={platformConfig.label}
-                      >
+                      <motion.button key={platform} type="button" onClick={() => handleSocialClick(url)} whileTap={{ scale: 0.95 }}
+                        className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/30 active:ring-white/60 transition-all"
+                        title={platformConfig.label}>
                         <span className="text-white">{platformConfig.icon}</span>
                       </motion.button>
                     );
@@ -492,377 +569,595 @@ const CreatorPublic = () => {
         )}
       </motion.div>
 
-      <main className="relative z-10 flex-1 flex flex-col px-4 pt-10 pb-24 sm:pt-12 sm:pb-10">
-        {/* Inner shadow at top - mobile: black to transparent over 150px */}
-        <div className="sm:hidden absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
-        {/* Inner shadow at top - desktop */}
-        <div className="hidden sm:block absolute inset-x-0 top-0 h-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-0" />
+      {/* ─────────────────────────────────────────────────
+          MOBILE: Vertical single-column layout
+      ───────────────────────────────────────────────── */}
+      <main className="sm:hidden relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24">
+        <div className="absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
         <div className="max-w-md mx-auto w-full flex flex-col flex-1 relative z-10">
-          {/* Profile Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="text-center mb-6"
-          >
-            {/* Avatar - smaller on mobile since it's in background */}
-            <div className="relative inline-block mb-6 hidden sm:inline-block">
-              <motion.div
-                className="absolute inset-0 rounded-3xl bg-black/40 blur-xl opacity-40 scale-110"
-                initial={{ opacity: 0.2, scale: 1 }}
-                animate={{ opacity: [0.2, 0.45, 0.25], scale: [1, 1.03, 0.98] }}
-                transition={{ duration: 20, repeat: Infinity, repeatType: 'mirror', ease: 'easeInOut' }}
-              />
-              <div
-                className="relative max-w-[220px] md:max-w-[260px] rounded-3xl overflow-hidden border-2 border-white/30 ring-4 ring-black/20"
-              >
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={displayName}
-                    className="w-full h-auto block"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-exclu-ink flex items-center justify-center">
-                    <span className="text-3xl font-bold text-white/80">
-                      {displayName.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
+          {/* Bio */}
+          {(profile?.location || profile?.show_available_now) && (
+            <p className="text-xs text-white mb-2 drop-shadow flex items-center justify-center gap-1">
+              {profile?.location && <><MapPin className="w-3 h-3" />{profile.location}</>}
+              {profile?.location && profile?.show_available_now && <span className="mx-1">·</span>}
+              {profile?.show_available_now && (
+                <span className="inline-flex items-center gap-1 text-white">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: gradientStops[0] }} />
+                    <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: gradientStops[0] }} />
+                  </span>
+                  Available now
+                </span>
+              )}
+            </p>
+          )}
+          {profile?.bio && <p className="text-sm text-white max-w-xs mx-auto mb-4 drop-shadow text-center">{profile.bio}</p>}
+
+          {/* Tabs */}
+          {(links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
+            <div className="relative mb-6">
+              <div className="flex justify-center gap-8 relative">
+                {(links.length > 0 || publicContent.length > 0) && (
+                  <button onClick={() => setActiveTab('links')} className={`relative py-3 text-sm font-medium transition-colors ${activeTab === 'links' ? 'text-white' : 'text-white/50 hover:text-white/70'}`}>
+                    Links
+                    {activeTab === 'links' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                  </button>
+                )}
+                {publicContent.length > 0 && (
+                  <button onClick={() => setActiveTab('content')} className={`relative py-3 text-sm font-medium transition-colors ${activeTab === 'content' ? 'text-white' : 'text-white/50 hover:text-white/70'}`}>
+                    Content
+                    {activeTab === 'content' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                  </button>
+                )}
+                {wishlistItems.length > 0 && (
+                  <button onClick={() => setActiveTab('wishlist')} className={`relative py-3 text-sm font-medium transition-colors ${activeTab === 'wishlist' ? 'text-white' : 'text-white/50 hover:text-white/70'}`}>
+                    Wishlist
+                    {activeTab === 'wishlist' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                  </button>
                 )}
               </div>
+              <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/20" />
             </div>
+          )}
 
-            {/* Name & Handle */}
-            <div className="hidden sm:flex items-center justify-center gap-2 mb-1">
-              <SplitText
-                text={displayName}
-                className="text-2xl sm:text-3xl font-extrabold text-white drop-shadow-lg"
-                delay={50}
-                duration={1.25}
-                ease="power3.out"
-                splitType="chars"
-                from={{ opacity: 0, y: 40 }}
-                to={{ opacity: 1, y: 0 }}
-                threshold={0.1}
-                rootMargin="-100px"
-                textAlign="center"
-                tag="h1"
-              />
-              {profile?.show_certification !== false && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 flex-shrink-0 drop-shadow-lg">
-                  <defs><linearGradient id="badge-grad-d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
-                  <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-d)" stroke="url(#badge-grad-d)" />
-                  <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
-                </svg>
-              )}
-            </div>
-            {(profile?.location || profile?.show_available_now) && (
-              <p className="text-xs text-white mt-4 mb-2 drop-shadow flex items-center justify-center gap-1">
-                {profile?.location && (
-                  <>
-                    <MapPin className="w-3 h-3" />
-                    {profile.location}
-                  </>
-                )}
-                {profile?.location && profile?.show_available_now && (
-                  <span className="mx-1">·</span>
-                )}
-                {profile?.show_available_now && (
-                  <span className="inline-flex items-center gap-1 text-white">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: gradientStops[0] }} />
-                      <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: gradientStops[0] }} />
-                    </span>
-                    Available now
-                  </span>
-                )}
-              </p>
-            )}
-            {profile?.bio && (
-              <p className="text-sm text-white max-w-xs mx-auto mb-4 drop-shadow">{profile.bio}</p>
-            )}
+          {/* Tab content */}
+          <div className="flex-1 space-y-3">
+            {isLoading && <p className="text-sm text-white/60 text-center py-4">Loading content…</p>}
 
-            {/* Social Links - Story bubbles style (desktop only) */}
-            {activeSocials.length > 0 && (
-              <div className="hidden sm:flex justify-center gap-3 mb-4">
-                {activeSocials.map(([platform, url]) => {
-                  const platformConfig = socialPlatforms[platform];
-                  if (!platformConfig) return null;
+            {!isLoading && activeTab === 'links' && (
+              <div className="space-y-3">
+                {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
+                  <StarBorder
+                    as="div"
+                    color1={gradientStops[0]}
+                    color2={gradientStops[1]}
+                    speed="4s"
+                    thickness={1}
+                    className="w-full cursor-pointer"
+                    style={{ borderRadius: profile.exclusive_content_image_url ? '16px' : '9999px' }}
+                    onClick={() => {
+                      if (profile.exclusive_content_url) { window.location.href = profile.exclusive_content_url; return; }
+                      const targetLink = profile.exclusive_content_link_id ? links.find((l) => l.id === profile.exclusive_content_link_id) : links[0];
+                      if (targetLink) handleLinkClick(targetLink);
+                    }}
+                  >
+                    {profile.exclusive_content_image_url ? (
+                      <div className="relative w-full rounded-2xl overflow-hidden shadow-lg select-none">
+                        <img src={profile.exclusive_content_image_url} alt={profile.exclusive_content_text} className="w-full h-44 object-cover" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                        <div className="absolute bottom-4 inset-x-4 flex items-center justify-between">
+                          <div className="flex items-center gap-2"><Lock className="w-4 h-4 text-white" /><span className="text-sm font-bold text-white truncate max-w-[200px]">{profile.exclusive_content_text}</span></div>
+                          <ArrowUpRight className="w-4 h-4 text-white/70" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-14 rounded-full flex items-center justify-center gap-2 shadow-lg" style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
+                        <Lock className="w-4 h-4 text-white" /><span className="text-sm font-bold text-white truncate max-w-[220px]">{profile.exclusive_content_text}</span><ArrowUpRight className="w-4 h-4 text-white/70" />
+                      </div>
+                    )}
+                  </StarBorder>
+                )}
+                {links.length > 0 ? links.map((link, index) => {
+                  const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
                   return (
-                    <motion.button
-                      key={platform}
-                      type="button"
-                      onClick={() => handleSocialClick(url)}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center text-xl shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all"
-                      title={platformConfig.label}
-                    >
-                      <span className="text-white">{platformConfig.icon}</span>
+                    <motion.button key={link.id} type="button" onClick={() => handleLinkClick(link)}
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
+                      className="w-full h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all flex items-center justify-between px-5 group">
+                      <div className="flex items-center gap-3"><Lock className="w-4 h-4 text-white/60" /><span className="text-white font-medium truncate max-w-[180px]">{link.title}</span></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>{priceLabel}</span>
+                        <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
+                      </div>
                     </motion.button>
+                  );
+                }) : (
+                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
+                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No exclusive content available yet.</div>
+                  )
+                )}
+              </div>
+            )}
+
+            {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
+              <div className="grid grid-cols-2 gap-3">
+                {publicContent.map((content, index) => {
+                  const isVideo = content.mime_type?.startsWith('video/');
+                  return (
+                    <motion.div key={content.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.3, delay: 0.05 * index }}
+                      className="relative aspect-square rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 group cursor-pointer"
+                      onClick={() => setSelectedContent(content)}>
+                      {content.previewUrl ? (isVideo ? (
+                        <video src={content.previewUrl} className="w-full h-full object-cover" muted loop playsInline />
+                      ) : (
+                        <img src={content.previewUrl} alt={content.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      )) : (
+                        <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-white/40" /></div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {isVideo && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
+                            <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+            {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
+              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No public content available yet.</div>
+            )}
+
+            {!isLoading && activeTab === 'wishlist' && (
+              <div className="grid grid-cols-2 gap-3">
+                {wishlistItems.map((item, index) => {
+                  const isFullyGifted = item.max_quantity !== null && item.gifted_count >= item.max_quantity;
+                  return (
+                    <motion.div key={item.id} initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.3, delay: 0.05 * index }}
+                      className={`relative rounded-2xl overflow-hidden border flex flex-col ${isFullyGifted ? 'border-white/10 opacity-60' : 'border-white/20'}`}>
+                      <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden relative">
+                        {item.image_url ? <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" /> : <span className="text-5xl">{item.emoji || '🎁'}</span>}
+                        {item.gift_url && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); window.open(item.gift_url, '_blank', 'noopener'); }}
+                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center transition-colors" title="Open gift link">
+                            <ExternalLink className="w-4 h-4 text-white/80" />
+                          </button>
+                        )}
+                        {isFullyGifted && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><span className="text-white text-sm font-semibold">Gifted ✓</span></div>}
+                      </div>
+                      <div className="p-3 flex flex-col gap-2 bg-black/40 backdrop-blur-sm">
+                        <div>
+                          <p className="text-sm font-semibold text-white truncate">{item.name}</p>
+                          {item.description && <p className="text-[10px] text-white/50 truncate">{item.description}</p>}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>${(item.price_cents / 100).toLocaleString()}</span>
+                          {item.max_quantity !== null && <span className="text-[10px] text-white/40">{item.gifted_count}/{item.max_quantity}</span>}
+                        </div>
+                        <motion.button type="button" whileHover={!isFullyGifted ? { scale: 1.03 } : {}} whileTap={!isFullyGifted ? { scale: 0.97 } : {}}
+                          onClick={() => !isFullyGifted && handleGiftCta(item)} disabled={isFullyGifted}
+                          className={`w-full h-9 rounded-xl text-xs font-bold transition-all ${isFullyGifted ? 'bg-white/10 text-white/40 cursor-default' : 'text-black shadow-lg hover:shadow-xl'}`}
+                          style={!isFullyGifted ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}>
+                          {isFullyGifted ? 'Gifted ✓' : '🎁 Gift this'}
+                        </motion.button>
+                      </div>
+                    </motion.div>
                   );
                 })}
               </div>
             )}
 
-            {/* Tabs Links/Content */}
-            {(links.length > 0 || publicContent.length > 0) && (
-              <div className="relative mb-6">
-                <div className="flex justify-center gap-12 relative">
-                  <button
-                    onClick={() => setActiveTab('links')}
-                    className={`relative py-3 text-sm font-medium transition-colors ${
-                      activeTab === 'links'
-                        ? 'text-white'
-                        : 'text-white/50 hover:text-white/70'
-                    }`}
-                  >
-                    Links
-                    {activeTab === 'links' && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white rounded-full z-10"
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('content')}
-                    className={`relative py-3 text-sm font-medium transition-colors ${
-                      activeTab === 'content'
-                        ? 'text-white'
-                        : 'text-white/50 hover:text-white/70'
-                    }`}
-                  >
-                    Content
-                    {activeTab === 'content' && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white rounded-full z-10"
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
-                    )}
-                  </button>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/20" />
-              </div>
-            )}
-          </motion.div>
-
-          {/* Content Area */}
-          <div className="flex-1 space-y-3">
-            {isLoading && (
-              <p className="text-sm text-white/60 text-center py-4">Loading content…</p>
-            )}
-
-            {/* Links Tab */}
-            {!isLoading && activeTab === 'links' && (
-              <>
-                {/* Exclusive content button */}
-                {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      if (profile.exclusive_content_url) {
-                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                        if (isMobile) {
-                          window.location.href = profile.exclusive_content_url;
-                        } else {
-                          window.open(profile.exclusive_content_url, '_blank', 'noopener,noreferrer');
-                        }
-                        return;
-                      }
-                      const targetLink = profile.exclusive_content_link_id
-                        ? links.find((l) => l.id === profile.exclusive_content_link_id)
-                        : links[0];
-                      if (targetLink) handleLinkClick(targetLink);
-                    }}
-                    className={profile.exclusive_content_image_url
-                      ? 'w-full rounded-2xl overflow-hidden shadow-lg transition-shadow relative select-none'
-                      : 'w-full h-14 rounded-full flex items-center justify-center gap-2 shadow-lg transition-shadow'
-                    }
-                    style={!profile.exclusive_content_image_url ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}
-                  >
-                    {profile.exclusive_content_image_url ? (
-                      <>
-                        <img
-                          src={profile.exclusive_content_image_url}
-                          alt={profile.exclusive_content_text}
-                          className="w-full h-44 object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                        <div className="absolute bottom-4 inset-x-4 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Lock className="w-4 h-4 text-white" />
-                            <span className="text-sm font-bold text-white truncate max-w-[200px]">
-                              {profile.exclusive_content_text}
-                            </span>
-                          </div>
-                          <ArrowUpRight className="w-4 h-4 text-white/70" />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4 text-white" />
-                        <span className="text-sm font-bold text-white truncate max-w-[220px]">
-                          {profile.exclusive_content_text}
-                        </span>
-                        <ArrowUpRight className="w-4 h-4 text-white/70" />
-                      </>
-                    )}
-                  </motion.button>
-                )}
-
-                {/* Individual links */}
-                {links.length > 0 ? (
-                  links.map((link, index) => {
-                    const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
-                    return (
-                      <motion.button
-                        key={link.id}
-                        type="button"
-                        onClick={() => handleLinkClick(link)}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.1 * (index + 1) }}
-                        className={`w-full h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all flex items-center justify-between px-5 group`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Lock className="w-4 h-4 text-white/60" />
-                          <span className="text-white font-medium truncate max-w-[180px]">{link.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>
-                            {priceLabel}
-                          </span>
-                          <ArrowUpRight className="w-4 h-4 text-white/60 group-hover:text-white transition-colors" />
-                        </div>
-                      </motion.button>
-                    );
-                  })
-                ) : (
-                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
-                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                      No exclusive content available yet.
-                    </div>
-                  )
-                )}
-              </>
-            )}
-
-            {/* Content Tab */}
-            {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  {publicContent.map((content, index) => {
-                    const isVideo = content.mime_type?.startsWith('video/');
-                    return (
-                      <motion.div
-                        key={content.id}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3, delay: 0.05 * index }}
-                        className="relative aspect-square rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 group cursor-pointer"
-                        onClick={() => setSelectedContent(content)}
-                      >
-                        {content.previewUrl ? (
-                          isVideo ? (
-                            <video
-                              src={content.previewUrl}
-                              className="w-full h-full object-cover"
-                              muted
-                              loop
-                              playsInline
-                            />
-                          ) : (
-                            <img
-                              src={content.previewUrl}
-                              alt={content.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                          )
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon className="w-8 h-8 text-white/40" />
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        {isVideo && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
-                              <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-
-            {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
-              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                No public content available yet.
-              </div>
-            )}
-
-            {error && !isLoading && (
-              <p className="text-sm text-red-400 text-center py-4">{error}</p>
-            )}
+            {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
           </div>
 
-          {/* Tip & Request CTA buttons */}
+          {/* Tip & Request CTAs */}
           {!isLoading && (showTipsCta || showRequestsCta) && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.3 }}
-              className="mt-6 flex gap-3"
-            >
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="mt-6 flex gap-3">
               {showTipsCta && (
-                <button
+                <StarBorder
+                  as="button"
                   type="button"
                   onClick={handleTipCta}
-                  className="flex-1 h-12 rounded-full flex items-center justify-center gap-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                  color1={gradientStops[0]}
+                  color2={gradientStops[1]}
+                  speed="4s"
+                  thickness={1}
+                  className="flex-1"
+                  style={{ width: '100%' }}
                 >
-                  <DollarSign className="w-4 h-4" />
-                  Send a Tip
-                </button>
+                  <div className="h-12 w-full rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-lg"
+                    style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
+                    Send a Tip
+                  </div>
+                </StarBorder>
               )}
               {showRequestsCta && (
-                <button
-                  type="button"
-                  onClick={handleRequestCta}
-                  className="flex-1 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center gap-2 text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <MessageSquare className="w-4 h-4" />
+                <button type="button" onClick={handleRequestCta}
+                  className="flex-1 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
                   Custom Request
                 </button>
               )}
             </motion.div>
           )}
-
-          {/* Footer branding */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-            className="mt-6 text-center"
-          >
-            <a
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors"
-            >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="mt-6 text-center">
+            <a href="/" className="inline-flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors">
               Powered by <span className="font-semibold">Exclu</span>
             </a>
           </motion.div>
+        </div>
+      </main>
+
+      {/* ─────────────────────────────────────────────────
+          DESKTOP: Two-column layout (PublicLink-inspired)
+      ───────────────────────────────────────────────── */}
+      <main className="hidden sm:flex relative z-10 flex-1 flex-col">
+        <div className="px-6 lg:px-10 xl:px-16 pt-10 pb-16 max-w-7xl mx-auto w-full">
+          <div
+            className="grid gap-8 items-start transition-[grid-template-columns] duration-500 ease-in-out"
+            style={{ gridTemplateColumns: photoVisible ? '400px 1fr' : '0px 1fr' }}
+          >
+
+            {/* ── LEFT: Sticky photo card ── */}
+            <div className="overflow-hidden">
+            <AnimatePresence initial={false}>
+            {photoVisible && (
+            <motion.div
+              key="photo-col"
+              initial={{ opacity: 0, x: -60 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -60 }}
+              transition={{ duration: 0.45, ease: [0.32, 0, 0.67, 0] }}
+              className="sticky top-6 self-start"
+            >
+              {/* Glow ring behind the photo card */}
+              <div className="absolute -inset-3 rounded-[2rem] opacity-40 blur-2xl pointer-events-none"
+                style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }} />
+              <div className="relative w-full rounded-3xl overflow-hidden border-2 shadow-2xl shadow-black/60" style={{ aspectRatio: '3/4', borderColor: `${gradientStops[0]}60` }}>
+                {/* Photo */}
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt={displayName} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-exclu-ink">
+                    <span className="text-7xl font-extrabold text-white/20">{displayName.charAt(0).toUpperCase()}</span>
+                  </div>
+                )}
+
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+
+                {/* Glow at bottom matching aurora */}
+                <div className="absolute inset-x-0 bottom-0 h-1/2 opacity-30 pointer-events-none"
+                  style={{ background: `linear-gradient(to top, ${gradientStops[0]}40, transparent)` }} />
+
+                {/* Name + badge + handle */}
+                <div className="absolute inset-x-6 bottom-6 z-10">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h1 className="text-3xl font-extrabold text-white drop-shadow-lg leading-tight">{displayName}</h1>
+                    {profile?.show_certification !== false && (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 flex-shrink-0 drop-shadow-lg">
+                        <defs><linearGradient id="badge-grad-d" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
+                        <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-d)" stroke="url(#badge-grad-d)" />
+                        <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                      </svg>
+                    )}
+                  </div>
+                  {profile?.handle && (
+                    <p className="text-sm text-white/50 font-medium">@{profile.handle}</p>
+                  )}
+                  {(profile?.location || profile?.show_available_now) && (
+                    <p className="text-xs text-white/60 mt-1.5 flex items-center gap-1.5">
+                      {profile?.location && <><MapPin className="w-3 h-3" />{profile.location}</>}
+                      {profile?.location && profile?.show_available_now && <span className="mx-0.5">·</span>}
+                      {profile?.show_available_now && (
+                        <span className="inline-flex items-center gap-1 text-white/80">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: gradientStops[0] }} />
+                            <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: gradientStops[0] }} />
+                          </span>
+                          Available now
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+            )}
+            </AnimatePresence>
+            </div>
+
+            {/* ── RIGHT: Info card + content card ── */}
+            <div className="flex flex-col gap-6">
+
+              {/* TOP RIGHT: Creator info card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: 'easeOut', delay: 0.15 }}
+                className="relative overflow-hidden rounded-3xl border border-white/15 bg-black/60 backdrop-blur-xl p-6 shadow-xl"
+              >
+                {/* Subtle color glow top-right */}
+                <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full opacity-20 blur-3xl pointer-events-none"
+                  style={{ background: `radial-gradient(circle, ${gradientStops[0]}, transparent)` }} />
+
+                <div className="relative z-10 space-y-5">
+                  {/* Social + Bio row */}
+                  {(activeSocials.length > 0 || profile?.bio) && (
+                    <div className="flex gap-5">
+                      {/* Left: social bubbles */}
+                      {activeSocials.length > 0 && (
+                        <div className="flex flex-wrap gap-2.5 shrink-0" style={{ maxWidth: `${6 * 44 + 5 * 10}px` }}>
+                          {activeSocials.map(([platform, url]) => {
+                            const platformConfig = socialPlatforms[platform];
+                            if (!platformConfig) return null;
+                            return (
+                              <motion.button
+                                key={platform}
+                                type="button"
+                                onClick={() => handleSocialClick(url)}
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.95 }}
+                                className="w-11 h-11 rounded-full bg-white/10 flex items-center justify-center shadow-lg ring-2 ring-white/30 hover:ring-white/60 transition-all"
+                                title={platformConfig.label}
+                              >
+                                <span className="text-white">{platformConfig.icon}</span>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Right: Bio */}
+                      {profile?.bio && (
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-white/40 uppercase tracking-widest mb-1.5">Bio</p>
+                          <p className="text-sm text-white/80 leading-relaxed">{profile.bio}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tip & Request CTAs */}
+                  {!isLoading && (showTipsCta || showRequestsCta) && (
+                    <div className="flex gap-3 pt-1">
+                      {showTipsCta && (
+                        <StarBorder
+                          as="button"
+                          type="button"
+                          onClick={handleTipCta}
+                          color1={gradientStops[0]}
+                          color2={gradientStops[1]}
+                          speed="4s"
+                          thickness={1}
+                          className="flex-1"
+                          style={{ width: '100%' }}
+                        >
+                          <div className="h-11 w-full rounded-2xl flex items-center justify-center text-sm font-bold text-white shadow-lg"
+                            style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
+                            Send a Tip
+                          </div>
+                        </StarBorder>
+                      )}
+                      {showRequestsCta && (
+                        <button type="button" onClick={handleRequestCta}
+                          className="flex-1 h-11 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
+                          Custom Request
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              {/* BOTTOM RIGHT: Tabs + content card */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: 'easeOut', delay: 0.3 }}
+                className="relative overflow-hidden rounded-3xl border border-white/15 bg-black/60 backdrop-blur-xl shadow-xl"
+              >
+                {/* Subtle color glow bottom-left */}
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full opacity-15 blur-3xl pointer-events-none"
+                  style={{ background: `radial-gradient(circle, ${gradientStops[1]}, transparent)` }} />
+
+                <div className="relative z-10">
+                  {/* Tabs */}
+                  {(links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
+                    <div className="relative px-6 pt-5">
+                      <div className="flex gap-6 relative">
+                        {(links.length > 0 || publicContent.length > 0) && (
+                          <button onClick={() => setActiveTab('links')}
+                            className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === 'links' ? 'text-white' : 'text-white/40 hover:text-white/70'}`}>
+                            Links
+                            {activeTab === 'links' && <motion.div layoutId="activeTabDesktop" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                          </button>
+                        )}
+                        {publicContent.length > 0 && (
+                          <button onClick={() => setActiveTab('content')}
+                            className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === 'content' ? 'text-white' : 'text-white/40 hover:text-white/70'}`}>
+                            Content
+                            {activeTab === 'content' && <motion.div layoutId="activeTabDesktop" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                          </button>
+                        )}
+                        {wishlistItems.length > 0 && (
+                          <button onClick={() => setActiveTab('wishlist')}
+                            className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === 'wishlist' ? 'text-white' : 'text-white/40 hover:text-white/70'}`}>
+                            Wishlist
+                            {activeTab === 'wishlist' && <motion.div layoutId="activeTabDesktop" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
+                          </button>
+                        )}
+                      </div>
+                      <div className="absolute bottom-0 left-6 right-6 h-[1px] bg-white/10" />
+                    </div>
+                  )}
+
+                  {/* Content area */}
+                  <div className="p-6 space-y-3">
+                    {isLoading && <p className="text-sm text-white/60 text-center py-8">Loading content…</p>}
+
+                    {/* Links Tab */}
+                    {!isLoading && activeTab === 'links' && (
+                      <div className="space-y-3">
+                        {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
+                          <StarBorder
+                            as="div"
+                            color1={gradientStops[0]}
+                            color2={gradientStops[1]}
+                            speed="4s"
+                            thickness={1}
+                            className="w-full cursor-pointer"
+                            style={{ borderRadius: profile.exclusive_content_image_url ? '16px' : '12px' }}
+                            onClick={() => {
+                              if (profile.exclusive_content_url) { window.open(profile.exclusive_content_url, '_blank', 'noopener,noreferrer'); return; }
+                              const targetLink = profile.exclusive_content_link_id ? links.find((l) => l.id === profile.exclusive_content_link_id) : links[0];
+                              if (targetLink) handleLinkClick(targetLink);
+                            }}
+                          >
+                            {profile.exclusive_content_image_url ? (
+                              <div className="relative w-full rounded-2xl overflow-hidden shadow-lg select-none">
+                                <img src={profile.exclusive_content_image_url} alt={profile.exclusive_content_text} className="w-full h-44 object-cover" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                                <div className="absolute bottom-4 inset-x-4 flex items-center justify-between">
+                                  <div className="flex items-center gap-2"><Lock className="w-4 h-4 text-white" /><span className="text-sm font-bold text-white truncate max-w-[260px]">{profile.exclusive_content_text}</span></div>
+                                  <ArrowUpRight className="w-4 h-4 text-white/70" />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="w-full h-14 rounded-2xl flex items-center justify-center gap-2 shadow-lg" style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
+                                <Lock className="w-4 h-4 text-white" /><span className="text-sm font-bold text-white truncate max-w-[300px]">{profile.exclusive_content_text}</span><ArrowUpRight className="w-4 h-4 text-white/70" />
+                              </div>
+                            )}
+                          </StarBorder>
+                        )}
+
+                        {links.length > 0 ? (
+                          links.map((link, index) => {
+                            const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
+                            return (
+                              <motion.button key={link.id} type="button" onClick={() => handleLinkClick(link)}
+                                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.07 * (index + 1) }}
+                                className="w-full h-14 rounded-2xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-white/25 transition-all flex items-center justify-between px-5 group">
+                                <div className="flex items-center gap-3">
+                                  <Lock className="w-4 h-4 text-white/50" />
+                                  <span className="text-white font-medium truncate max-w-[260px]">{link.title}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>{priceLabel}</span>
+                                  <ArrowUpRight className="w-4 h-4 text-white/40 group-hover:text-white transition-colors" />
+                                </div>
+                              </motion.button>
+                            );
+                          })
+                        ) : (
+                          !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50 text-center">No exclusive content available yet.</div>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {/* Content Tab */}
+                    {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {publicContent.map((content, index) => {
+                          const isVideo = content.mime_type?.startsWith('video/');
+                          return (
+                            <motion.div key={content.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.3, delay: 0.05 * index }}
+                              className="relative aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10 group cursor-pointer"
+                              onClick={() => setSelectedContent(content)}>
+                              {content.previewUrl ? (isVideo ? (
+                                <video src={content.previewUrl} className="w-full h-full object-cover" muted loop playsInline />
+                              ) : (
+                                <img src={content.previewUrl} alt={content.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                              )) : (
+                                <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-white/30" /></div>
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                              {isVideo && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
+                                    <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
+                                  </div>
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50 text-center">No public content available yet.</div>
+                    )}
+
+                    {/* Wishlist Tab */}
+                    {!isLoading && activeTab === 'wishlist' && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {wishlistItems.map((item, index) => {
+                          const isFullyGifted = item.max_quantity !== null && item.gifted_count >= item.max_quantity;
+                          return (
+                            <motion.div key={item.id} initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.3, delay: 0.05 * index }}
+                              className={`relative rounded-2xl overflow-hidden border flex flex-col ${isFullyGifted ? 'border-white/10 opacity-60' : 'border-white/15'}`}>
+                              <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                {item.image_url ? (
+                                  <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-4xl">{item.emoji || '🎁'}</span>
+                                )}
+                                {item.gift_url && (
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); window.open(item.gift_url, '_blank', 'noopener'); }}
+                                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 border border-white/10 flex items-center justify-center transition-colors"
+                                    title="Open gift link">
+                                    <ExternalLink className="w-3.5 h-3.5 text-white/80" />
+                                  </button>
+                                )}
+                                {isFullyGifted && (
+                                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                    <span className="text-white text-xs font-semibold">Gifted ✓</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="p-3 flex flex-col gap-2 bg-black/40 backdrop-blur-sm">
+                                <div>
+                                  <p className="text-xs font-semibold text-white truncate">{item.name}</p>
+                                  {item.description && <p className="text-[10px] text-white/50 truncate">{item.description}</p>}
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>
+                                    ${(item.price_cents / 100).toLocaleString()}
+                                  </span>
+                                  {item.max_quantity !== null && <span className="text-[9px] text-white/40">{item.gifted_count}/{item.max_quantity}</span>}
+                                </div>
+                                <motion.button type="button" whileHover={!isFullyGifted ? { scale: 1.03 } : {}} whileTap={!isFullyGifted ? { scale: 0.97 } : {}}
+                                  onClick={() => !isFullyGifted && handleGiftCta(item)} disabled={isFullyGifted}
+                                  className={`w-full h-8 rounded-xl text-[11px] font-bold transition-all ${isFullyGifted ? 'bg-white/10 text-white/40 cursor-default' : 'text-black shadow-lg hover:shadow-xl'}`}
+                                  style={!isFullyGifted ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}>
+                                  {isFullyGifted ? 'Gifted ✓' : '🎁 Gift this'}
+                                </motion.button>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Footer */}
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="text-center pb-2">
+                <a href="/" className="inline-flex items-center gap-1.5 text-xs text-white/30 hover:text-white/50 transition-colors">
+                  Powered by <span className="font-semibold">Exclu</span>
+                </a>
+              </motion.div>
+            </div>
+          </div>
         </div>
       </main>
       {/* Exclu join banner */}
@@ -1053,6 +1348,90 @@ const CreatorPublic = () => {
                   <DollarSign className="w-4 h-4" />
                   Send Tip — ${tipAmount ? (tipAmount / 100).toFixed(2) : tipCustomAmount || '0.00'}
                 </>
+              )}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Gift Modal */}
+      {showGiftModal && selectedGiftItem && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowGiftModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-3xl border border-white/20 bg-black/95 backdrop-blur-xl p-6 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden bg-white/10 flex items-center justify-center flex-shrink-0">
+                  {selectedGiftItem.image_url ? (
+                    <img src={selectedGiftItem.image_url} alt={selectedGiftItem.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-2xl">{selectedGiftItem.emoji || '🎁'}</span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Gift {selectedGiftItem.name}</h3>
+                  <p className="text-sm font-semibold" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    ${(selectedGiftItem.price_cents / 100).toLocaleString()} + 5% fee
+                  </p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowGiftModal(false)} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="text-xs text-white/50">Message (optional)</p>
+              <Textarea
+                value={giftMessage}
+                onChange={(e) => setGiftMessage(e.target.value)}
+                placeholder={`Leave a message for ${displayName}...`}
+                maxLength={500}
+                rows={2}
+                className="bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl resize-none"
+              />
+            </div>
+
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                  giftAnonymous ? 'bg-white/20 border-white/40' : 'border-white/20'
+                }`}
+                onClick={() => setGiftAnonymous(!giftAnonymous)}
+              >
+                {giftAnonymous && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <span className="text-sm text-white/70">Stay anonymous</span>
+            </label>
+
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+              <p className="text-xs text-white/50 leading-relaxed">
+                The money goes directly to {displayName}'s account. A 5% processing fee is added at checkout.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGiftSubmit}
+              disabled={isGiftSubmitting}
+              className="w-full h-12 rounded-2xl text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+            >
+              {isGiftSubmitting ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />Processing...</>
+              ) : (
+                <>🎁 Gift for ${(selectedGiftItem.price_cents / 100).toLocaleString()}</>
               )}
             </button>
           </motion.div>

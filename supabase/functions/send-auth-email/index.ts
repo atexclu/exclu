@@ -1,10 +1,9 @@
-import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
-
-const hookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET')?.replace('v1,whsec_', '') ?? '';
 const brevoApiKey = Deno.env.get('BREVO_API_KEY');
 const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL');
 const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu';
-const supabaseUrl = Deno.env.get('PROJECT_URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
+// PUBLIC_SITE_URL is always https://exclu.at — never trust site_url from payload
+// which Supabase sets to its internal GoTrue URL (qexnwezetjlbwltyccks.supabase.co/auth/v1)
+const SITE_URL = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
 
 function escapeHtml(str: string): string {
   return str
@@ -32,32 +31,20 @@ interface HookPayload {
 }
 
 function buildConfirmationUrl(emailData: HookPayload['email_data']): string {
-  // Use project Supabase URL (not site_url) as the verify endpoint base
-  const baseUrl = (supabaseUrl || emailData.site_url).replace(/\/$/, '');
-
-  // redirect_to comes from the client's emailRedirectTo (e.g. https://exclu.at/auth/callback?next=%2Ffan)
-  // If it's the bare site URL (Supabase default fallback), rewrite to /auth/callback
-  let redirectTo = emailData.redirect_to || emailData.site_url || 'https://exclu.at';
-  const siteUrlClean = (emailData.site_url || 'https://exclu.at').replace(/\/$/, '');
-  if (redirectTo === siteUrlClean || redirectTo === siteUrlClean + '/') {
-    // Supabase fell back to Site URL — rewrite to our callback handler
-    redirectTo = `${siteUrlClean}/auth/callback`;
-  }
-
+  // Always use SITE_URL (https://exclu.at) — never site_url from payload
+  // which Supabase sets to its internal GoTrue URL.
   const params = new URLSearchParams({
     token_hash: emailData.token_hash,
     type: emailData.email_action_type,
-    redirect_to: redirectTo,
   });
-  return `${baseUrl}/auth/v1/verify?${params.toString()}`;
+  return `${SITE_URL}/auth/callback?${params.toString()}`;
 }
 
-function getSubject(actionType: string, isCreator: boolean): string {
+function getSubject(actionType: string): string {
   switch (actionType) {
     case 'signup':
-      return isCreator
-        ? 'Confirm your Exclu creator account'
-        : 'Confirm your Exclu account';
+    case 'invite':
+      return 'Confirm your Exclu account';
     case 'recovery':
     case 'reset':
       return 'Reset your Exclu password';
@@ -65,8 +52,6 @@ function getSubject(actionType: string, isCreator: boolean): string {
       return 'Your Exclu login link';
     case 'email_change':
       return 'Confirm your new email address';
-    case 'invite':
-      return 'You have been invited to Exclu';
     default:
       return 'Action required — Exclu';
   }
@@ -102,47 +87,14 @@ function footerHtml(siteUrl: string): string {
 
 // ─── Templates ───────────────────────────────────────────────────────
 
-function creatorSignupHtml(confirmUrl: string, siteUrl: string): string {
+function signupHtml(confirmUrl: string, siteUrl: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Confirm Your Exclu Account</title><style>${STYLES}</style></head><body>
   <div class="container">
     <div class="header"><h1>Welcome to Exclu</h1></div>
     <div class="content">
-      <p>Thank you for joining <strong>Exclu</strong>, the space where you can sell your premium content (photos, videos, files, exclusive access…) through paid links unlocked in just a few seconds.</p>
-      <p>To complete your registration and start sharing your first paid links, please confirm your email address by clicking the button below:</p>
+      <p>Thank you for joining <strong>Exclu</strong>! Your account is almost ready.</p>
+      <p>Please confirm your email address by clicking the button below to complete your registration:</p>
       <a href="${confirmUrl}" class="button">Confirm my Exclu account</a>
-      <div class="features">
-        <h3>With Exclu, you can:</h3>
-        <ul>
-          <li>Create paid links to sell your premium content directly to your audience</li>
-          <li>Benefit from 0% commission on eligible creator accounts</li>
-          <li>Offer an ultra-simple purchase experience, with no account creation required for fans</li>
-          <li>Centralize your revenue and track your performance in one place</li>
-        </ul>
-      </div>
-      <p style="margin-top:20px;font-size:13px;color:#94a3b8;">If you did not initiate this registration, you can safely ignore this email.</p>
-    </div>
-    ${footerHtml(siteUrl)}
-  </div>
-</body></html>`;
-}
-
-function fanSignupHtml(confirmUrl: string, siteUrl: string): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Confirm Your Exclu Account</title><style>${STYLES}</style></head><body>
-  <div class="container">
-    <div class="header"><h1>Welcome to Exclu</h1></div>
-    <div class="content">
-      <p>Thank you for joining <strong>Exclu</strong>! Your fan account is almost ready.</p>
-      <p>Please confirm your email address by clicking the button below to start supporting your favorite creators with tips and custom content requests.</p>
-      <a href="${confirmUrl}" class="button">Confirm my account</a>
-      <div class="features">
-        <h3>As a fan on Exclu, you can:</h3>
-        <ul>
-          <li>Send tips to your favorite creators to show your support</li>
-          <li>Submit custom content requests with your own budget</li>
-          <li>Follow creators and track your activity in your dashboard</li>
-          <li>Get exclusive access to premium content</li>
-        </ul>
-      </div>
       <p style="margin-top:20px;font-size:13px;color:#94a3b8;">If you did not initiate this registration, you can safely ignore this email.</p>
     </div>
     ${footerHtml(siteUrl)}
@@ -244,36 +196,14 @@ Deno.serve(async (req) => {
   const headers = Object.fromEntries(req.headers);
 
   let parsed: HookPayload;
-
-  // Try webhook signature verification first, fallback to direct parse
-  if (hookSecret) {
-    try {
-      const wh = new Webhook(hookSecret);
-      parsed = wh.verify(payload, headers) as HookPayload;
-      console.log('Webhook signature verified successfully');
-    } catch (verifyErr) {
-      console.warn('Webhook signature verification failed, falling back to direct parse:', (verifyErr as Error).message);
-      try {
-        parsed = JSON.parse(payload) as HookPayload;
-      } catch (parseErr) {
-        console.error('Failed to parse payload:', parseErr);
-        return new Response(
-          JSON.stringify({ error: { http_code: 400, message: 'Invalid payload' } }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } },
-        );
-      }
-    }
-  } else {
-    console.warn('SEND_EMAIL_HOOK_SECRET not set, skipping signature verification');
-    try {
-      parsed = JSON.parse(payload) as HookPayload;
-    } catch (parseErr) {
-      console.error('Failed to parse payload:', parseErr);
-      return new Response(
-        JSON.stringify({ error: { http_code: 400, message: 'Invalid payload' } }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
-      );
-    }
+  try {
+    parsed = JSON.parse(payload) as HookPayload;
+  } catch (parseErr) {
+    console.error('Failed to parse payload:', parseErr);
+    return new Response(
+      JSON.stringify({ error: { http_code: 400, message: 'Invalid payload' } }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } },
+    );
   }
 
   // Validate required fields
@@ -291,38 +221,35 @@ Deno.serve(async (req) => {
   console.log(`Processing auth email: type=${email_data.email_action_type}, to=${user.email}, redirect_to=${email_data.redirect_to}, site_url=${email_data.site_url}`);
 
   const actionType = email_data.email_action_type;
-  const siteUrl = (email_data.site_url || 'https://exclu.at').replace(/\/$/, '');
   const confirmUrl = buildConfirmationUrl(email_data);
-  console.log(`[send-auth-email] Built confirmUrl: ${confirmUrl}`);
+  console.log(`[send-auth-email] actionType=${actionType} to=${user.email} confirmUrl=${confirmUrl}`);
 
-  const isCreator = user.user_metadata?.is_creator !== false;
-
-  const subject = getSubject(actionType, isCreator);
+  const subject = getSubject(actionType);
 
   let html: string;
   switch (actionType) {
     case 'signup':
     case 'invite':
-      html = isCreator ? creatorSignupHtml(confirmUrl, siteUrl) : fanSignupHtml(confirmUrl, siteUrl);
+      html = signupHtml(confirmUrl, SITE_URL);
       break;
     case 'recovery':
     case 'reset':
-      html = recoveryHtml(confirmUrl, siteUrl);
+      html = recoveryHtml(confirmUrl, SITE_URL);
       break;
     case 'magiclink':
-      html = magiclinkHtml(confirmUrl, siteUrl);
+      html = magiclinkHtml(confirmUrl, SITE_URL);
       break;
     case 'email_change':
-      html = emailChangeHtml(confirmUrl, siteUrl);
+      html = emailChangeHtml(confirmUrl, SITE_URL);
       break;
     default:
-      html = genericHtml(confirmUrl, siteUrl);
+      html = genericHtml(confirmUrl, SITE_URL);
       break;
   }
 
   try {
     await sendViaBravo(user.email, subject, html);
-    console.log(`Auth email sent: type=${actionType}, to=${user.email}, isCreator=${isCreator}`);
+    console.log(`Auth email sent: type=${actionType}, to=${user.email}`);
   } catch (err) {
     console.error(`Failed to send auth email: type=${actionType}, to=${user.email}`, err);
     return new Response(

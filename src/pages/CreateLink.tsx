@@ -448,7 +448,7 @@ const CreateLink = () => {
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder="Example: Full HD teaser video"
-                            className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                            className="h-10 bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
                             required
                           />
                         </div>
@@ -477,7 +477,7 @@ const CreateLink = () => {
                               step={0.5}
                               value={price}
                               onChange={(e) => setPrice(e.target.value)}
-                              className="h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
+                              className="h-10 bg-black/60 border-exclu-arsenic/70 text-exclu-cloud text-sm"
                             />
                             <span className="text-xs text-exclu-space">USD</span>
                           </div>

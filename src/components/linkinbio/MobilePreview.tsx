@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Lock, ArrowUpRight, Image as ImageIcon, MapPin, DollarSign, MessageSquare } from 'lucide-react';
+import { Lock, ArrowUpRight, Image as ImageIcon, MapPin, DollarSign, MessageSquare, Gift, ExternalLink } from 'lucide-react';
 import Aurora from '@/components/ui/Aurora';
 import { getAuroraGradient, type AuroraGradient } from '@/lib/auroraGradients';
 import logo from '@/assets/logo-white.svg';
@@ -44,11 +44,25 @@ interface CreatorLink {
   show_on_profile: boolean;
 }
 
+interface WishlistItem {
+  id: string;
+  name: string;
+  description: string | null;
+  emoji: string;
+  image_url: string | null;
+  gift_url?: string | null;
+  price_cents: number;
+  max_quantity: number | null;
+  gifted_count: number;
+  is_visible: boolean;
+}
+
 interface MobilePreviewProps {
   data: LinkInBioData;
   links: CreatorLink[];
   isPremium?: boolean;
   publicContent?: any[];
+  wishlistItems?: WishlistItem[];
 }
 
 
@@ -64,8 +78,8 @@ const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
   snapchat: { label: 'Snapchat', icon: <SiSnapchat className="w-4 h-4" /> },
 };
 
-export function MobilePreview({ data, links, isPremium = false, publicContent = [] }: MobilePreviewProps) {
-  const [activeTab, setActiveTab] = React.useState<'links' | 'content'>('links');
+export function MobilePreview({ data, links, isPremium = false, publicContent = [], wishlistItems = [] }: MobilePreviewProps) {
+  const [activeTab, setActiveTab] = React.useState<'links' | 'content' | 'wishlist'>('links');
   const displayName = data.display_name || 'Your Name';
   const aurora = getAuroraGradient(data.aurora_gradient || 'purple_dream');
   const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
@@ -157,7 +171,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
 
                     {/* Social Links: placed under creator name (like public profile) */}
                     {activeSocials.length > 0 && (
-                      <div className="mt-3 flex justify-center gap-2.5">
+                      <div className="mt-4 flex justify-center gap-2.5">
                         {activeSocials.map(([platform, url]) => {
                           const platformConfig = socialPlatforms[platform];
                           if (!platformConfig) return null;
@@ -191,7 +205,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   <div className="absolute inset-x-0 top-0 h-[150px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
 
                   {/* Location & Bio */}
-                  <div className="relative z-10 text-center mb-4 pt-14">
+                  <div className="relative z-10 text-center mb-4 pt-11">
                     {(data.location || data.show_available_now) && (
                       <p className="text-xs text-white mb-2 flex items-center justify-center gap-1">
                         {data.location && (
@@ -217,10 +231,10 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                     {data.bio && <p className="text-sm text-white max-w-xs mx-auto mb-4">{data.bio}</p>}
                   </div>
 
-                  {/* Tabs Links/Content */}
+                  {/* Tabs Links/Content/Wishlist */}
                   {(visibleLinks.length > 0 || publicContent.length > 0) && (
                     <div className="relative mb-4">
-                      <div className="flex justify-center gap-6">
+                      <div className="flex justify-center gap-4">
                         <button
                           onClick={() => setActiveTab('links')}
                           className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${activeTab === 'links'
@@ -229,6 +243,9 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             }`}
                         >
                           Links
+                          {activeTab === 'links' && (
+                            <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
+                          )}
                         </button>
                         <button
                           onClick={() => setActiveTab('content')}
@@ -238,18 +255,24 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             }`}
                         >
                           Content
+                          {activeTab === 'content' && (
+                            <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('wishlist')}
+                          className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${activeTab === 'wishlist'
+                            ? 'text-white'
+                            : 'text-white/50 hover:text-white/70'
+                            }`}
+                        >
+                          Wishlist
+                          {activeTab === 'wishlist' && (
+                            <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
+                          )}
                         </button>
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/10" />
-                      <motion.div
-                        className="absolute bottom-0 h-[1.5px] bg-white rounded-full"
-                        initial={false}
-                        animate={{
-                          left: activeTab === 'links' ? 'calc(50% - 3rem - 7px)' : 'calc(50% + 0.5rem + 6px)',
-                          width: activeTab === 'links' ? '26px' : '44px'
-                        }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                      />
                     </div>
                   )}
 
@@ -343,9 +366,6 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {/* Content Tab */}
                   {activeTab === 'content' && publicContent.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[10px] uppercase tracking-wider text-white/50 text-center mb-2">
-                        Public Gallery
-                      </p>
                       <div className="grid grid-cols-2 gap-2">
                         {publicContent.map((content: any) => {
                           const isVideo = content.mime_type?.startsWith('video/');
@@ -385,6 +405,88 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                   {activeTab === 'content' && publicContent.length === 0 && (
                     <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
                       No public content yet
+                    </div>
+                  )}
+
+                  {/* Wishlist Tab */}
+                  {activeTab === 'wishlist' && (
+                    <div className="space-y-2">
+                      {wishlistItems.filter(i => i.is_visible).length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {wishlistItems.filter(i => i.is_visible).map((item) => {
+                            const isFullyGifted = item.max_quantity !== null && item.gifted_count >= item.max_quantity;
+                            return (
+                              <div
+                                key={item.id}
+                                className={`rounded-xl overflow-hidden border flex flex-col ${
+                                  isFullyGifted ? 'border-white/10 opacity-60' : 'border-white/20'
+                                }`}
+                              >
+                                <div className="aspect-square bg-white/5 flex items-center justify-center overflow-hidden relative">
+                                  {item.image_url ? (
+                                    <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-3xl">{item.emoji || '🎁'}</span>
+                                  )}
+
+                                  {item.gift_url && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open(item.gift_url!, '_blank', 'noopener');
+                                      }}
+                                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 border border-white/10 flex items-center justify-center"
+                                      title="Open gift link"
+                                    >
+                                      <ExternalLink className="w-3 h-3 text-white/80" />
+                                    </button>
+                                  )}
+
+                                  {isFullyGifted && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                      <span className="text-white text-[9px] font-semibold">Gifted ✓</span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-2 flex flex-col gap-1 bg-black/40 backdrop-blur-sm">
+                                  <p className="text-[10px] font-semibold text-white truncate">{item.name}</p>
+                                  {item.description && (
+                                    <p className="text-[8px] text-white/50 truncate">{item.description}</p>
+                                  )}
+                                  <div className="flex items-center justify-between">
+                                    <span
+                                      className="text-[10px] font-bold bg-clip-text text-transparent"
+                                      style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                                    >
+                                      ${(item.price_cents / 100).toLocaleString()}
+                                    </span>
+                                    {item.max_quantity !== null && (
+                                      <span className="text-[8px] text-white/40">
+                                        {item.gifted_count}/{item.max_quantity}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div
+                                    className={`w-full h-6 rounded-lg text-[8px] font-bold flex items-center justify-center ${
+                                      isFullyGifted
+                                        ? 'bg-white/10 text-white/40'
+                                        : 'text-black'
+                                    }`}
+                                    style={!isFullyGifted ? { background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` } : undefined}
+                                  >
+                                    {isFullyGifted ? 'Gifted ✓' : '🎁 Gift this'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-white/20 bg-white/10 backdrop-blur-sm p-3 text-[10px] text-white/70 text-center">
+                          No wishlist items yet
+                        </div>
+                      )}
                     </div>
                   )}
 

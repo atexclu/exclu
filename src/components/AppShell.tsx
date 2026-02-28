@@ -2,8 +2,8 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, DollarSign } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
@@ -23,10 +23,11 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/app/profile', label: 'Profile', icon: Palette },
   { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
   { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
-  { path: '/app/tips-requests', label: 'Tips', icon: DollarSign, mobileHidden: true },
-  { path: '/app/profile', label: 'Profile', icon: Palette },
+  { path: '/app/chat', label: 'Chat', icon: MessageSquare },
+  { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
   { path: '/admin/users', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];
 
@@ -66,6 +67,12 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     if (path === '/app/content') {
       return location.pathname === '/app/content';
     }
+    if (path === '/app/chat') {
+      return location.pathname === '/app/chat';
+    }
+    if (path === '/app/wishlist') {
+      return location.pathname === '/app/wishlist';
+    }
     if (path === '/admin/users') {
       return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
     }
@@ -81,8 +88,6 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     () => navItems.filter((item) => !item.adminOnly || isAdmin),
     [isAdmin]
   );
-
-  const activeItem = visibleNavItems.find((item) => isActive(item.path));
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -110,7 +115,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                     className={`relative z-10 ${item.mobileHidden ? 'hidden sm:inline-block' : ''}`}
                   >
                     <motion.div
-                      className={`relative z-10 flex items-center gap-2 px-8 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${active
+                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${active
                         ? 'text-black dark:text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                         }`}
@@ -189,6 +194,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
               transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              className="hidden sm:block"
             >
               <Button
                 variant="outline"
@@ -211,46 +217,47 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
       {/* Mobile Floating Dock */}
       <div className="fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none">
-        <div className="flex items-center gap-8 px-6 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
+        <div className="flex items-center gap-1 px-3 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
           {/* Links Button */}
           <Link to="/app/links">
             <motion.div
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-full transition-colors ${location.pathname.startsWith('/app/links')
+              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname.startsWith('/app/links')
                 ? 'text-white bg-white/10'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
                 }`}
               whileTap={{ scale: 0.9 }}
             >
-              <Link2 className="w-6 h-6" />
-              <span className="text-[10px] font-medium mt-0.5">Links</span>
+              <Link2 className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Links</span>
             </motion.div>
           </Link>
 
           {/* Add Content Button (Center) */}
-          <Link to="/app/content?action=new">
+          <Link to="/app/links/new">
             <motion.div
-              className="flex items-center justify-center w-16 h-16 rounded-full bg-[#E5FF7D] text-black shadow-lg shadow-[#E5FF7D]/20 transform -translate-y-4 border-4 border-black"
+              className="flex items-center justify-center w-14 h-14 rounded-full bg-[#E5FF7D] text-black shadow-lg shadow-[#E5FF7D]/20 border-4 border-black"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              style={{ y: -16 }} // Ensure it stays lifted
+              style={{ y: -16 }}
             >
-              <Plus className="w-8 h-8 stroke-[2.5]" />
+              <Plus className="w-7 h-7 stroke-[2.5]" />
             </motion.div>
           </Link>
 
           {/* Content Button */}
           <Link to="/app/content">
             <motion.div
-              className={`flex flex-col items-center justify-center w-14 h-14 rounded-full transition-colors ${location.pathname === '/app/content' && !location.search.includes('action=new')
+              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname === '/app/content' && !location.search.includes('action=new')
                 ? 'text-white bg-white/10'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
                 }`}
               whileTap={{ scale: 0.9 }}
             >
-              <Image className="w-6 h-6" />
-              <span className="text-[10px] font-medium mt-0.5">Content</span>
+              <Image className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Content</span>
             </motion.div>
           </Link>
+
         </div>
       </div>
     </div>
