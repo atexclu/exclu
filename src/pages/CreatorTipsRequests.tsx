@@ -102,9 +102,6 @@ function generateSlug(base: string): string {
 function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: AcceptModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [finalAmount, setFinalAmount] = useState(
-    (request.proposed_amount_cents / 100).toFixed(0)
-  );
   const [creatorMessage, setCreatorMessage] = useState('');
 
   // File upload
@@ -181,14 +178,8 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
     const safeTitle = title.trim();
     if (!safeTitle) { toast.error('Please enter a title for the content link.'); return; }
 
-    const amount = Math.round(parseFloat(finalAmount) * 100);
-    if (!Number.isFinite(amount) || amount < 500) {
-      toast.error('Minimum amount is $5.00.');
-      return;
-    }
-
     if (!file && selectedAssetIds.length === 0) {
-      toast.error('Please upload a file or select content from your library.');
+      toast.error('You must upload a photo or video to accept this request.');
       return;
     }
 
@@ -198,8 +189,9 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
       if (!user) throw new Error('Not authenticated');
 
       const slug = generateSlug(safeTitle);
+      const amount = request.proposed_amount_cents;
 
-      // 1. Create the link as draft
+      // 1. Create the link as draft (price = fan's proposed amount)
       const { data: linkRows, error: linkErr } = await supabase
         .from('links')
         .insert({
@@ -257,21 +249,21 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
         .eq('id', linkId);
       if (publishErr) throw new Error('Link created but could not be published.');
 
-      // 5. Update the custom_request: accepted + delivery_link_id
-      const { error: reqErr } = await supabase
-        .from('custom_requests')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
+      // 5. Capture the payment via manage-request edge function
+      const { data: captureData, error: captureErr } = await supabase.functions.invoke('manage-request', {
+        body: {
+          action: 'capture',
+          request_id: request.id,
           delivery_link_id: linkId,
           creator_response: creatorMessage.trim() || null,
-          read_at: new Date().toISOString(),
-        })
-        .eq('id', request.id);
+        },
+      });
 
-      if (reqErr) throw new Error('Link created but request update failed: ' + reqErr.message);
+      if (captureErr || !captureData?.success) {
+        throw new Error(captureData?.error || 'Payment capture failed. The authorization may have expired.');
+      }
 
-      toast.success('Request accepted — the fan can now unlock the content.');
+      toast.success('Request accepted — payment captured and content delivered!');
       onAccepted(request.id, linkId, linkSlug);
     } catch (err: any) {
       toast.error(err?.message || 'Something went wrong.');
@@ -339,23 +331,10 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
             />
           </div>
 
-          {/* Final amount */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">Price</label>
-            <div className="flex items-center gap-2">
-              <div className="relative w-36">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input
-                  type="number"
-                  min={5}
-                  step={1}
-                  value={finalAmount}
-                  onChange={e => setFinalAmount(e.target.value)}
-                  className="h-10 pl-7 bg-background text-sm"
-                />
-              </div>
-              <span className="text-xs text-muted-foreground">USD (min $5.00)</span>
-            </div>
+          {/* Amount (read-only — fan already paid) */}
+          <div className="rounded-xl bg-muted/40 border border-border p-3 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Fan's proposed amount</span>
+            <span className="text-lg font-bold text-foreground">${(request.proposed_amount_cents / 100).toFixed(2)}</span>
           </div>
 
           {/* Message to fan */}
@@ -547,6 +526,7 @@ const CreatorTipsRequests = () => {
         .from('custom_requests')
         .select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)')
         .eq('creator_id', uid)
+        .neq('status', 'pending_payment')
         .order('created_at', { ascending: false })
         .limit(100),
     ]);
@@ -583,7 +563,7 @@ const CreatorTipsRequests = () => {
   const handleRequestAccepted = (requestId: string, linkId: string, linkSlug: string) => {
     setRequests(prev => prev.map(r =>
       r.id === requestId
-        ? { ...r, status: 'accepted', delivery_link_id: linkId, delivery_link_slug: linkSlug }
+        ? { ...r, status: 'delivered', delivery_link_id: linkId, delivery_link_slug: linkSlug }
         : r
     ));
     setAcceptingRequest(null);
@@ -592,23 +572,24 @@ const CreatorTipsRequests = () => {
   const handleDeclineRequest = async (requestId: string) => {
     setIsDeclining(true);
     try {
-      const { error } = await supabase
-        .from('custom_requests')
-        .update({
-          status: 'refused',
+      const { data, error } = await supabase.functions.invoke('manage-request', {
+        body: {
+          action: 'cancel',
+          request_id: requestId,
           creator_response: declineMessage.trim() || null,
-          read_at: new Date().toISOString(),
-        })
-        .eq('id', requestId);
+        },
+      });
 
-      if (error) throw error;
+      if (error || !data?.success) {
+        throw new Error(data?.error || 'Failed to decline request');
+      }
 
       setRequests(prev => prev.map(r =>
         r.id === requestId
           ? { ...r, status: 'refused', creator_response: declineMessage.trim() || null, read_at: new Date().toISOString() }
           : r
       ));
-      toast.success('Request declined');
+      toast.success('Request declined — payment hold released');
       setDecliningRequestId(null);
       setDeclineMessage('');
     } catch (err: any) {
@@ -766,8 +747,8 @@ const CreatorTipsRequests = () => {
                     </div>
                   )}
 
-                  {/* Accepted: show link info */}
-                  {req.status === 'accepted' && req.delivery_link_id && req.delivery_link_slug && (
+                  {/* Delivered/Accepted: show link info */}
+                  {(req.status === 'delivered' || req.status === 'accepted') && req.delivery_link_id && req.delivery_link_slug && (
                     <div className="mt-3 flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2">
                       <LinkIcon className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                       <p className="text-xs text-green-400 flex-1">

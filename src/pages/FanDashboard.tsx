@@ -162,11 +162,12 @@ const FanDashboard = () => {
       setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
     }
 
-    // Fetch custom requests with delivery link slug
+    // Fetch custom requests with delivery link slug (exclude incomplete checkouts)
     const { data: reqData } = await supabase
       .from('custom_requests')
       .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, delivery_link:links!custom_requests_delivery_link_id_fkey(slug), creator:profiles!custom_requests_creator_id_fkey(display_name, handle, avatar_url)')
       .eq('fan_id', uid)
+      .neq('status', 'pending_payment')
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -604,8 +605,8 @@ const FanDashboard = () => {
                           </div>
                         )}
 
-                        {/* Unlock button: visible when accepted + delivery link exists */}
-                        {req.status === 'accepted' && req.delivery_link_id && req.delivery_link_slug && req.creator.handle && (
+                        {/* Unlock button: visible when delivered/accepted + delivery link exists */}
+                        {(req.status === 'delivered' || req.status === 'accepted') && req.delivery_link_id && req.delivery_link_slug && req.creator.handle && (
                           <div className="mt-3">
                             <Button
                               type="button"

@@ -685,6 +685,132 @@ serve(async (req: Request) => {
           }
         }
 
+        // Handle custom request checkout (manual capture — payment_status is 'paid' even though intent is requires_capture)
+        if (session.mode === 'payment' && session.metadata?.type === 'request' && session.payment_status === 'paid') {
+          const requestId = session.metadata.request_id;
+          const creatorId = session.metadata.creator_id;
+          const fanEmail = session.metadata.fan_email || null;
+          const isNewAccount = session.metadata.is_new_account === '1';
+
+          if (requestId) {
+            const { data: existingReq } = await supabase
+              .from('custom_requests')
+              .select('id, status, proposed_amount_cents, description')
+              .eq('id', requestId)
+              .single();
+
+            if (existingReq && existingReq.status === 'pending_payment') {
+              const paymentIntentId = typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : (session.payment_intent as any)?.id ?? null;
+
+              const { error: reqUpdateErr } = await supabase
+                .from('custom_requests')
+                .update({
+                  status: 'pending',
+                  stripe_payment_intent_id: paymentIntentId,
+                })
+                .eq('id', requestId);
+
+              if (reqUpdateErr) {
+                console.error('Error updating request status to pending:', reqUpdateErr);
+              } else {
+                console.log('Request activated:', requestId, 'PI:', paymentIntentId);
+
+                // Send creator notification email (best-effort)
+                try {
+                  const { data: { user: creatorUser } } = await supabase.auth.admin.getUserById(creatorId);
+                  const { data: creatorProfileForEmail } = await supabase
+                    .from('profiles')
+                    .select('display_name, handle')
+                    .eq('id', creatorId)
+                    .single();
+
+                  if (creatorUser?.email) {
+                    const creatorDisplayName = creatorProfileForEmail?.display_name || creatorProfileForEmail?.handle || 'Creator';
+                    const proposedFormatted = `$${((existingReq.proposed_amount_cents || 0) / 100).toFixed(2)}`;
+                    const expiresDate = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
+                    const trimmedDesc = (existingReq.description || '').length > 300
+                      ? existingReq.description.slice(0, 300) + '…'
+                      : existingReq.description;
+
+                    const safeCreatorName = escapeHtml(creatorDisplayName);
+                    const safeDescription = escapeHtml(trimmedDesc);
+                    const dashboardUrl = `${normalizedSiteUrl}/app/chat`;
+
+                    const requestEmailHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>New custom request</title>
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0;text-align:left}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;box-shadow:0 12px 30px rgba(0,0,0,0.55);overflow:hidden}.header{padding:28px 28px 18px 28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;line-height:1.3;font-weight:700}.content{padding:26px 28px 30px 28px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px 0}.content strong{color:#fff;font-weight:600}.button{display:inline-block;background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%);color:#020617 !important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px 0;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.details{background-color:#020617;border-radius:10px;border:1px solid #1e293b;overflow:hidden;margin:4px 0 24px 0}.detail-row{padding:14px 18px;border-bottom:1px solid #1e293b}.detail-row:last-child{border-bottom:none}.detail-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px 0}.detail-value{font-size:15px;color:#f1f5f9;font-weight:600;margin:0}.detail-value.amount{font-size:22px;font-weight:800;color:#a3e635}.description-box{background-color:#020617;border-radius:10px;padding:18px;margin:20px 0;border:1px solid #1e293b}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b;background-color:#020617}.footer a{color:#a3e635;text-decoration:none}</style></head>
+<body><div class="container"><div class="header"><h1>New paid request 📩</h1></div><div class="content">
+<p>Hey <strong>${safeCreatorName}</strong>, a fan just sent you a paid custom content request on <strong>Exclu</strong>.</p>
+<p>The payment is <strong>on hold</strong> — you have 6 days to accept or decline.</p>
+<div class="details"><div class="detail-row"><p class="detail-label">Amount (yours if accepted)</p><p class="detail-value amount">${proposedFormatted}</p></div><div class="detail-row"><p class="detail-label">Expires</p><p class="detail-value">${expiresDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p></div></div>
+<div class="description-box"><p style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 8px 0;">Request description</p><p style="font-size:15px;color:#f1f5f9;margin:0;line-height:1.6;">${safeDescription}</p></div>
+<p>Upload your content and accept the request to get paid, or decline to release the hold.</p>
+<a href="${dashboardUrl}" class="button">Review request</a>
+<p style="margin-top:20px;font-size:13px;color:#94a3b8;">You received this email because a fan sent you a paid custom request on Exclu.</p>
+</div><div class="footer">© 2025 Exclu — All rights reserved<br><a href="${normalizedSiteUrl}">exclu</a> • <a href="${normalizedSiteUrl}/terms">Terms</a> • <a href="${normalizedSiteUrl}/privacy">Privacy</a></div></div></body></html>`;
+
+                    if (brevoApiKey && brevoSenderEmail) {
+                      const emailPayload = JSON.stringify({
+                        sender: { email: brevoSenderEmail, name: brevoSenderName },
+                        to: [{ email: creatorUser.email }],
+                        subject: `📩 New paid request — ${proposedFormatted} on hold`,
+                        htmlContent: requestEmailHtml,
+                      });
+                      try {
+                        await fetch('https://api.brevo.com/v3/smtp/email', {
+                          method: 'POST',
+                          headers: { 'api-key': brevoApiKey, 'Content-Type': 'application/json' },
+                          body: emailPayload,
+                        });
+                      } catch (e) { console.error('Request notification email failed:', e); }
+                    }
+                  }
+                } catch (emailErr) {
+                  console.error('Error sending request notification email (non-fatal):', emailErr);
+                }
+
+                // If new account was created, generate confirmation link and send via Brevo
+                if (isNewAccount && fanEmail && brevoApiKey && brevoSenderEmail) {
+                  try {
+                    const { data: linkData } = await supabase.auth.admin.generateLink({
+                      type: 'signup',
+                      email: fanEmail,
+                    });
+
+                    const confirmUrl = linkData?.properties?.action_link || `${normalizedSiteUrl}/auth?mode=confirm`;
+
+                    const confirmHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Confirm your account</title>
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;box-shadow:0 12px 30px rgba(0,0,0,0.55);overflow:hidden}.header{padding:28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff;font-weight:600}.button{display:inline-block;background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%);color:#020617 !important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b;background-color:#020617}.footer a{color:#a3e635;text-decoration:none}</style></head>
+<body><div class="container"><div class="header"><h1>Welcome to Exclu 🎉</h1></div><div class="content">
+<p>Your account has been created and your custom request has been submitted!</p>
+<p>Please confirm your email to access your account and track your request:</p>
+<a href="${confirmUrl}" class="button">Confirm my email</a>
+<p style="font-size:13px;color:#94a3b8;">If you didn't create this account, you can ignore this email.</p>
+</div><div class="footer">© 2025 Exclu — All rights reserved<br><a href="${normalizedSiteUrl}">exclu</a></div></div></body></html>`;
+
+                    await fetch('https://api.brevo.com/v3/smtp/email', {
+                      method: 'POST',
+                      headers: { 'api-key': brevoApiKey, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        sender: { email: brevoSenderEmail, name: brevoSenderName },
+                        to: [{ email: fanEmail }],
+                        subject: '🎉 Welcome to Exclu — confirm your account',
+                        htmlContent: confirmHtml,
+                      }),
+                    });
+                    console.log('Confirmation email sent to new fan:', fanEmail);
+                  } catch (confirmErr) {
+                    console.error('Error sending confirmation email (non-fatal):', confirmErr);
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Only process one-time payments for link purchases (not subscriptions)
         // Verify payment_status to avoid granting access for unpaid sessions (e.g. delayed payments)
         if (session.mode === 'payment' && session.metadata?.link_id && session.payment_status === 'paid') {

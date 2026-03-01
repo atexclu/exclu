@@ -44,6 +44,7 @@ import FanProtectedRoute from '@/components/FanProtectedRoute';
 import TipSuccess from './pages/TipSuccess';
 import CreatorWishlist from './pages/CreatorWishlist';
 import GiftSuccess from './pages/GiftSuccess';
+import RequestSuccess from './pages/RequestSuccess';
 
 const queryClient = new QueryClient();
 
@@ -218,6 +219,7 @@ const App = () => {
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/tip-success" element={<TipSuccess />} />
               <Route path="/gift-success" element={<GiftSuccess />} />
+              <Route path="/request-success" element={<RequestSuccess />} />
               <Route
                 path="/app/wishlist"
                 element={

@@ -94,6 +94,10 @@ const CreatorPublic = () => {
   const [requestDescription, setRequestDescription] = useState('');
   const [requestAmount, setRequestAmount] = useState('');
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false);
+  const [requestEmail, setRequestEmail] = useState('');
+  const [requestPassword, setRequestPassword] = useState('');
+  const [requestEmailExists, setRequestEmailExists] = useState<boolean | null>(null);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [currentFanId, setCurrentFanId] = useState<string | null>(null);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
 
@@ -348,14 +352,25 @@ const CreatorPublic = () => {
   };
 
   const handleRequestCta = () => {
-    if (!currentFanId) {
-      if (isCreatorAccount) {
-        toast.info('You need a fan account to send requests. Please sign up as a fan.');
-      }
-      navigate(`/fan/signup?creator=${handle}`);
+    setShowRequestModal(true);
+  };
+
+  const checkEmailExists = async (email: string) => {
+    if (!email || !email.includes('@')) {
+      setRequestEmailExists(null);
       return;
     }
-    setShowRequestModal(true);
+    setIsCheckingEmail(true);
+    try {
+      const { data } = await supabase.functions.invoke('check-fan-email', {
+        body: { email },
+      });
+      setRequestEmailExists(data?.exists === true);
+    } catch {
+      setRequestEmailExists(null);
+    } finally {
+      setIsCheckingEmail(false);
+    }
   };
 
   const handleTipSubmit = async () => {
@@ -406,7 +421,7 @@ const CreatorPublic = () => {
   };
 
   const handleRequestSubmit = async () => {
-    if (!profile?.id || !currentFanId) return;
+    if (!profile?.id) return;
 
     const amountCents = Math.round(parseFloat(requestAmount || '0') * 100);
     const minAmount = profile.min_custom_request_cents || 2000;
@@ -421,26 +436,51 @@ const CreatorPublic = () => {
       return;
     }
 
+    // Guest validation
+    if (!currentFanId) {
+      if (!requestEmail || !requestEmail.includes('@')) {
+        toast.error('Please enter your email address');
+        return;
+      }
+      if (requestEmailExists === false && (!requestPassword || requestPassword.length < 6)) {
+        toast.error('Please enter a password (min 6 characters) to create your account');
+        return;
+      }
+    }
+
     setIsRequestSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-custom-request', {
-        body: {
-          creator_id: profile.id,
-          description: requestDescription,
-          proposed_amount_cents: amountCents,
-        },
-      });
-
-      if (error || !data?.success) {
-        throw new Error(data?.error || 'Unable to submit request');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
-      toast.success('Your request has been sent!');
-      setShowRequestModal(false);
-      setRequestDescription('');
-      setRequestAmount('');
+      const requestBody: Record<string, unknown> = {
+        creator_id: profile.id,
+        description: requestDescription,
+        proposed_amount_cents: amountCents,
+      };
+
+      if (!currentFanId) {
+        requestBody.fan_email = requestEmail;
+        if (requestEmailExists === false && requestPassword) {
+          requestBody.fan_password = requestPassword;
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke('create-request-checkout', {
+        body: requestBody,
+        headers,
+      });
+
+      if (error || !data?.url) {
+        throw new Error(data?.error || 'Unable to start checkout');
+      }
+
+      window.location.href = data.url;
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to submit request');
+      toast.error(err?.message || 'Failed to process request');
     } finally {
       setIsRequestSubmitting(false);
     }
@@ -1507,14 +1547,64 @@ const CreatorPublic = () => {
                 />
               </div>
               <p className="text-[10px] text-white/30">
-                Minimum: ${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)}
+                Minimum: ${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)} · A 5% processing fee is added at checkout
               </p>
             </div>
 
+            {/* Email (only for guests) */}
+            {!currentFanId && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-white/50">Your email</p>
+                <div className="relative">
+                  <Input
+                    type="email"
+                    value={requestEmail}
+                    onChange={(e) => {
+                      setRequestEmail(e.target.value);
+                      setRequestEmailExists(null);
+                      setRequestPassword('');
+                    }}
+                    onBlur={() => checkEmailExists(requestEmail)}
+                    placeholder="your@email.com"
+                    className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
+                  />
+                  {isCheckingEmail && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 animate-spin" />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Password (only for guests with new email) */}
+            <AnimatePresence>
+              {!currentFanId && requestEmailExists === false && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-white/50">Create a password for your account</p>
+                    <Input
+                      type="password"
+                      value={requestPassword}
+                      onChange={(e) => setRequestPassword(e.target.value)}
+                      placeholder="Min 6 characters"
+                      className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
+                    />
+                    <p className="text-[10px] text-white/40">An account will be created so you can track your request</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Info */}
-            <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1.5">
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
               <p className="text-xs text-white/60 leading-relaxed">
-                The creator will review your request and can accept or decline it. You will only be charged if they accept.
+                Your card will be <strong className="text-white/80">authorized but not charged</strong> until the creator accepts.
+                If they decline or don't respond within 6 days, the hold is automatically released.
               </p>
             </div>
 
@@ -1523,17 +1613,18 @@ const CreatorPublic = () => {
               type="button"
               onClick={handleRequestSubmit}
               disabled={isRequestSubmitting || !requestDescription || !requestAmount}
-              className="w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-sm font-bold text-white transition-all hover:bg-white/15 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+              className="w-full h-12 rounded-2xl text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
             >
               {isRequestSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Sending...
+                  Processing...
                 </>
               ) : (
                 <>
-                  <MessageSquare className="w-4 h-4" />
-                  Send Request
+                  <DollarSign className="w-4 h-4" />
+                  Pay & send request{requestAmount ? ` — $${parseFloat(requestAmount).toFixed(2)}` : ''}
                 </>
               )}
             </button>
