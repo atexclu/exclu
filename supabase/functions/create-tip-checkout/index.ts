@@ -81,16 +81,13 @@ serve(async (req) => {
   }
 
   try {
-    // Extract fan JWT to identify the sender
+    // Auth is optional — authenticated fans are tracked, guests tip anonymously
     const authHeader = req.headers.get('authorization') ?? '';
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user: fanUser }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !fanUser) {
-      return new Response(JSON.stringify({ error: 'Authentication required' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const token = authHeader.replace('Bearer ', '').trim();
+    let fanUserId: string | null = null;
+    if (token) {
+      const { data: { user: fanUser } } = await supabase.auth.getUser(token);
+      if (fanUser) fanUserId = fanUser.id;
     }
 
     const body = await req.json();
@@ -106,7 +103,8 @@ serve(async (req) => {
       });
     }
 
-    if (creatorId === fanUser.id) {
+    // Prevent a logged-in creator from tipping themselves
+    if (fanUserId && fanUserId === creatorId) {
       return new Response(JSON.stringify({ error: 'You cannot tip yourself' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -167,11 +165,11 @@ serve(async (req) => {
     // Test mode Connect accounts are separate and not stored on profiles.
     const stripe = new Stripe(stripeSecretKeyLive!, { apiVersion: '2023-10-16' });
 
-    // Create tip record in DB (pending)
+    // Create tip record in DB (pending) — fan_id is null for guest tippers
     const { data: tipRecord, error: tipInsertError } = await supabase
       .from('tips')
       .insert({
-        fan_id: fanUser.id,
+        fan_id: fanUserId ?? null,
         creator_id: creatorId,
         amount_cents: amountCents,
         currency: 'USD',
@@ -231,7 +229,7 @@ serve(async (req) => {
       metadata: {
         type: 'tip',
         tip_id: tipRecord.id,
-        fan_id: fanUser.id,
+        fan_id: fanUserId ?? '',
         creator_id: creatorId,
       },
       payment_intent_data: {

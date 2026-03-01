@@ -308,13 +308,6 @@ const CreatorPublic = () => {
   };
 
   const handleTipCta = () => {
-    if (!currentFanId) {
-      if (isCreatorAccount) {
-        toast.info('You need a fan account to send tips. Please sign up as a fan.');
-      }
-      navigate(`/fan/signup?creator=${handle}`);
-      return;
-    }
     setShowTipModal(true);
   };
 
@@ -366,7 +359,7 @@ const CreatorPublic = () => {
   };
 
   const handleTipSubmit = async () => {
-    if (!profile?.id || !currentFanId) return;
+    if (!profile?.id) return;
 
     const finalAmount = tipAmount || Math.round(parseFloat(tipCustomAmount || '0') * 100);
     const minAmount = profile.min_tip_amount_cents || 500;
@@ -383,6 +376,13 @@ const CreatorPublic = () => {
 
     setIsTipSubmitting(true);
     try {
+      // Pass the auth token only if the user is logged in — guests tip without a token
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const { data, error } = await supabase.functions.invoke('create-tip-checkout', {
         body: {
           creator_id: profile.id,
@@ -390,6 +390,7 @@ const CreatorPublic = () => {
           message: tipMessage || null,
           is_anonymous: tipAnonymous,
         },
+        headers,
       });
 
       if (error || !data?.url) {
