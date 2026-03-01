@@ -95,6 +95,7 @@ serve(async (req) => {
     const amountCents = body?.amount_cents as number | undefined;
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
     const isAnonymous = body?.is_anonymous === true;
+    const fanName = typeof body?.fan_name === 'string' ? body.fan_name.trim().slice(0, 100) : null;
 
     if (!creatorId || typeof creatorId !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing creator_id' }), {
@@ -175,6 +176,7 @@ serve(async (req) => {
         currency: 'USD',
         message,
         is_anonymous: isAnonymous,
+        fan_name: fanName,
         status: 'pending',
       })
       .select('id')
@@ -203,8 +205,10 @@ serve(async (req) => {
     const successParams = new URLSearchParams({
       creator: creatorHandle,
       amount: String(amountCents),
+      tip_id: tipRecord.id,
     });
     if (message) successParams.set('message', message);
+    if (!fanUserId) successParams.set('guest', '1');
     const successUrl = `${normalizedSiteOrigin}/tip-success?${successParams.toString()}`;
     const cancelUrl = `${normalizedSiteOrigin}/${encodeURIComponent(creatorHandle)}`;
 
@@ -231,6 +235,7 @@ serve(async (req) => {
         tip_id: tipRecord.id,
         fan_id: fanUserId ?? '',
         creator_id: creatorId,
+        fan_name: fanName ?? '',
       },
       payment_intent_data: {
         application_fee_amount: applicationFeeAmount,

@@ -187,7 +187,18 @@ const TipSuccess = () => {
   const handle = searchParams.get('creator');
   const amountCents = parseInt(searchParams.get('amount') || '0', 10);
   const message = searchParams.get('message');
+  const tipId = searchParams.get('tip_id');
+  const isGuest = searchParams.get('guest') === '1';
   const amountDollars = amountCents > 0 ? (amountCents / 100).toFixed(2) : null;
+
+  // Auth state for guest claim flow
+  const [authMode, setAuthMode] = useState<'idle' | 'signup' | 'login'>('idle');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [claimed, setClaimed] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -199,11 +210,92 @@ const TipSuccess = () => {
           .maybeSingle();
         if (data) setCreator(data);
       }
+
+      // Check if already logged in — auto-claim if so
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setIsLoggedIn(true);
+        if (isGuest && tipId) {
+          await claimTip(session.access_token);
+        }
+      }
+
       setIsLoading(false);
       setTimeout(() => setShowContent(true), 100);
     };
     load();
   }, [handle]);
+
+  const claimTip = async (accessToken: string) => {
+    if (!tipId || claimed) return;
+    try {
+      await supabase.functions.invoke('claim-tip', {
+        body: { tip_id: tipId },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setClaimed(true);
+    } catch (err) {
+      console.error('Failed to claim tip:', err);
+    }
+  };
+
+  const handleAuthSubmit = async () => {
+    if (!authEmail || !authPassword) return;
+    setIsAuthSubmitting(true);
+    setAuthError('');
+
+    try {
+      let session;
+
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail,
+          password: authPassword,
+          options: {
+            data: { is_creator: false, favorite_creator: creator?.handle || handle },
+          },
+        });
+        if (error) throw error;
+        session = data.session;
+
+        // Create fan profile
+        if (data.user) {
+          await supabase.from('profiles').upsert({
+            id: data.user.id,
+            is_creator: false,
+          }, { onConflict: 'id' });
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: authPassword,
+        });
+        if (error) throw error;
+        session = data.session;
+      }
+
+      if (session?.access_token) {
+        setIsLoggedIn(true);
+        await claimTip(session.access_token);
+        setAuthMode('idle');
+      } else if (authMode === 'signup') {
+        setAuthError('Account created! Check your email to confirm, then log in.');
+        setAuthMode('idle');
+        setClaimed(true);
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Authentication failed';
+      if (msg.includes('already registered') || msg.includes('already exists')) {
+        setAuthError('This email is already registered. Try logging in instead.');
+      } else if (msg.includes('Invalid login')) {
+        setAuthError('Invalid email or password.');
+      } else {
+        setAuthError(msg);
+      }
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -400,6 +492,105 @@ const TipSuccess = () => {
               </span>
               . Thank you for being part of their journey ✨
             </motion.p>
+
+            {/* Guest account creation / login section */}
+            {isGuest && !isLoggedIn && !claimed && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.75 }}
+                className="w-full rounded-2xl border border-lime-400/20 bg-black/40 backdrop-blur-md p-5 space-y-4"
+              >
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-white mb-1">
+                    Want to stay connected with {creator?.display_name || 'this creator'}?
+                  </p>
+                  <p className="text-xs text-white/50">
+                    Create an account or log in to track your tips and follow your favorite creators.
+                  </p>
+                </div>
+
+                {authMode === 'idle' ? (
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('signup')}
+                      className="flex-1 h-11 rounded-xl bg-lime-400 hover:bg-lime-300 text-black text-sm font-semibold transition-all"
+                    >
+                      Create account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('login')}
+                      className="flex-1 h-11 rounded-xl border border-white/20 hover:bg-white/10 text-white text-sm font-medium transition-all"
+                    >
+                      Log in
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="Email"
+                      className="w-full h-11 rounded-xl bg-white/5 border border-white/20 text-white placeholder:text-white/30 text-sm px-4 outline-none focus:border-lime-400/50 transition-colors"
+                    />
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder={authMode === 'signup' ? 'Create a password (min 6 chars)' : 'Password'}
+                      className="w-full h-11 rounded-xl bg-white/5 border border-white/20 text-white placeholder:text-white/30 text-sm px-4 outline-none focus:border-lime-400/50 transition-colors"
+                    />
+                    {authError && (
+                      <p className="text-xs text-red-400">{authError}</p>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleAuthSubmit}
+                        disabled={isAuthSubmitting || !authEmail || !authPassword}
+                        className="flex-1 h-11 rounded-xl bg-lime-400 hover:bg-lime-300 text-black text-sm font-semibold transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+                      >
+                        {isAuthSubmitting ? (
+                          <span className="w-4 h-4 rounded-full border-2 border-black/40 border-t-black animate-spin" />
+                        ) : (
+                          authMode === 'signup' ? 'Sign up' : 'Log in'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode('idle'); setAuthError(''); }}
+                        className="h-11 px-4 rounded-xl border border-white/20 hover:bg-white/10 text-white/60 text-sm transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="text-center text-[11px] text-white/40">
+                      {authMode === 'signup' ? (
+                        <>Already have an account? <button type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }} className="text-lime-400 underline underline-offset-2">Log in</button></>
+                      ) : (
+                        <>Don't have an account? <button type="button" onClick={() => { setAuthMode('signup'); setAuthError(''); }} className="text-lime-400 underline underline-offset-2">Sign up</button></>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Claimed success message */}
+            {claimed && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full rounded-2xl border border-lime-400/20 bg-lime-400/5 backdrop-blur-sm px-5 py-4"
+              >
+                <p className="text-sm font-semibold text-lime-400 text-center">
+                  ✓ Tip linked to your account — {creator?.display_name || 'creator'} added to your favorites!
+                </p>
+              </motion.div>
+            )}
 
             {/* CTA buttons */}
             <motion.div

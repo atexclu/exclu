@@ -90,6 +90,7 @@ const CreatorPublic = () => {
   const [tipCustomAmount, setTipCustomAmount] = useState('');
   const [tipMessage, setTipMessage] = useState('');
   const [tipAnonymous, setTipAnonymous] = useState(false);
+  const [tipFanName, setTipFanName] = useState('');
   const [isTipSubmitting, setIsTipSubmitting] = useState(false);
   const [requestDescription, setRequestDescription] = useState('');
   const [requestAmount, setRequestAmount] = useState('');
@@ -398,13 +399,18 @@ const CreatorPublic = () => {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
+      const tipBody: Record<string, unknown> = {
+        creator_id: profile.id,
+        amount_cents: finalAmount,
+        message: tipMessage || null,
+        is_anonymous: tipAnonymous,
+      };
+      if (!currentFanId && tipFanName.trim()) {
+        tipBody.fan_name = tipFanName.trim();
+      }
+
       const { data, error } = await supabase.functions.invoke('create-tip-checkout', {
-        body: {
-          creator_id: profile.id,
-          amount_cents: finalAmount,
-          message: tipMessage || null,
-          is_anonymous: tipAnonymous,
-        },
+        body: tipBody,
         headers,
       });
 
@@ -1370,6 +1376,31 @@ const CreatorPublic = () => {
               </div>
               <span className="text-sm text-white/70">Stay anonymous</span>
             </label>
+
+            {/* Guest name (only for non-logged-in, non-anonymous users) */}
+            <AnimatePresence>
+              {!currentFanId && !tipAnonymous && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-white/50">Your name (optional)</p>
+                    <Input
+                      type="text"
+                      value={tipFanName}
+                      onChange={(e) => setTipFanName(e.target.value)}
+                      placeholder="How should the creator know you?"
+                      maxLength={100}
+                      className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Submit */}
             <button

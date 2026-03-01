@@ -127,7 +127,7 @@ const AppDashboard = () => {
         // Tips revenue — fetch full details for the Tips tab display
         const { data: tipsData } = await supabase
           .from('tips')
-          .select('id, amount_cents, currency, status, message, is_anonymous, created_at, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
+          .select('id, amount_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
           .eq('creator_id', user.id)
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
@@ -1274,13 +1274,13 @@ const AppDashboard = () => {
                               <img src={tip.fan.avatar_url} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <span className="text-xs font-bold text-exclu-space/70">
-                                {tip.is_anonymous ? '?' : (tip.fan?.display_name || '?').charAt(0).toUpperCase()}
+                                {tip.is_anonymous ? '?' : (tip.fan?.display_name || tip.fan_name || '?').charAt(0).toUpperCase()}
                               </span>
                             )}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-exclu-cloud truncate">
-                              {tip.is_anonymous ? 'Anonymous' : (tip.fan?.display_name || 'Fan')}
+                              {tip.is_anonymous ? 'Anonymous' : (tip.fan?.display_name || tip.fan_name || 'Fan')}
                             </p>
                             <p className="text-[11px] text-exclu-space/60">
                               {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

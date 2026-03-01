@@ -517,6 +517,9 @@ serve(async (req: Request) => {
                 ? session.payment_intent
                 : (session.payment_intent as any)?.id ?? null;
 
+              // Capture fan email from Stripe for potential account linking
+              const tipFanEmail = session.customer_details?.email ?? null;
+
               const { error: tipUpdateError } = await supabase
                 .from('tips')
                 .update({
@@ -525,6 +528,7 @@ serve(async (req: Request) => {
                   stripe_payment_intent_id: paymentIntentId,
                   platform_fee_cents: totalPlatformFee,
                   creator_net_cents: creatorNetCents,
+                  ...(tipFanEmail ? { fan_email: tipFanEmail } : {}),
                 })
                 .eq('id', tipId);
 
