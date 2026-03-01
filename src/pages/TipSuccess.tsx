@@ -198,6 +198,7 @@ const TipSuccess = () => {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState('');
   const [claimed, setClaimed] = useState(false);
+  const [signupPending, setSignupPending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -279,9 +280,11 @@ const TipSuccess = () => {
         await claimTip(session.access_token);
         setAuthMode('idle');
       } else if (authMode === 'signup') {
-        setAuthError('Account created! Check your email to confirm, then log in.');
-        setAuthMode('idle');
-        setClaimed(true);
+        // Email confirmation required — no session yet
+        setSignupPending(true);
+        setAuthMode('login');
+        setAuthPassword('');
+        setAuthError('Account created! Check your email to confirm, then log in below.');
       }
     } catch (err: any) {
       const msg = err?.message || 'Authentication failed';
@@ -494,7 +497,7 @@ const TipSuccess = () => {
             </motion.p>
 
             {/* Guest account creation / login section */}
-            {isGuest && !isLoggedIn && !claimed && (
+            {isGuest && !isLoggedIn && !claimed && !signupPending && (
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -576,6 +579,53 @@ const TipSuccess = () => {
                     </p>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* Signup pending confirmation — show login form */}
+            {isGuest && !isLoggedIn && signupPending && !claimed && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full rounded-2xl border border-lime-400/20 bg-black/40 backdrop-blur-md p-5 space-y-4"
+              >
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-white mb-1">Almost there!</p>
+                  <p className="text-xs text-white/50">
+                    Confirm your email, then log in below to link your tip.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="Email"
+                    className="w-full h-11 rounded-xl bg-white/5 border border-white/20 text-white placeholder:text-white/30 text-sm px-4 outline-none focus:border-lime-400/50 transition-colors"
+                  />
+                  <input
+                    type="password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Password"
+                    className="w-full h-11 rounded-xl bg-white/5 border border-white/20 text-white placeholder:text-white/30 text-sm px-4 outline-none focus:border-lime-400/50 transition-colors"
+                  />
+                  {authError && (
+                    <p className="text-xs text-lime-400">{authError}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAuthSubmit}
+                    disabled={isAuthSubmitting || !authEmail || !authPassword}
+                    className="w-full h-11 rounded-xl bg-lime-400 hover:bg-lime-300 text-black text-sm font-semibold transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
+                  >
+                    {isAuthSubmitting ? (
+                      <span className="w-4 h-4 rounded-full border-2 border-black/40 border-t-black animate-spin" />
+                    ) : (
+                      'Log in'
+                    )}
+                  </button>
+                </div>
               </motion.div>
             )}
 

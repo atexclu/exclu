@@ -1281,7 +1281,7 @@ const CreatorPublic = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setShowTipModal(false)}
+          onClick={() => { setShowTipModal(false); setTipAmount(null); setTipCustomAmount(''); setTipMessage(''); setTipAnonymous(false); setTipFanName(''); }}
         >
           <motion.div
             initial={{ opacity: 0, y: 40 }}
@@ -1305,7 +1305,7 @@ const CreatorPublic = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setShowTipModal(false)}
+                onClick={() => { setShowTipModal(false); setTipAmount(null); setTipCustomAmount(''); setTipMessage(''); setTipAnonymous(false); setTipFanName(''); }}
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
               >
                 <X className="w-4 h-4 text-white" />
@@ -1517,7 +1517,7 @@ const CreatorPublic = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setShowRequestModal(false)}
+          onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestEmail(''); setRequestPassword(''); setRequestEmailExists(null); }}
         >
           <motion.div
             initial={{ opacity: 0, y: 40 }}
@@ -1541,7 +1541,7 @@ const CreatorPublic = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setShowRequestModal(false)}
+                onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestEmail(''); setRequestPassword(''); setRequestEmailExists(null); }}
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
               >
                 <X className="w-4 h-4 text-white" />
@@ -1603,6 +1603,9 @@ const CreatorPublic = () => {
                     <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 animate-spin" />
                   )}
                 </div>
+                {requestEmailExists === true && (
+                  <p className="text-[10px] text-lime-400/70">This email is linked to an existing account. Your request will be associated with it.</p>
+                )}
               </div>
             )}
 
@@ -1643,7 +1646,7 @@ const CreatorPublic = () => {
             <button
               type="button"
               onClick={handleRequestSubmit}
-              disabled={isRequestSubmitting || !requestDescription || !requestAmount}
+              disabled={isRequestSubmitting || !requestDescription || !requestAmount || (!currentFanId && (!requestEmail || !requestEmail.includes('@') || isCheckingEmail || (requestEmailExists === false && (!requestPassword || requestPassword.length < 6))))}
               className="w-full h-12 rounded-2xl text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
               style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
             >
@@ -1655,7 +1658,7 @@ const CreatorPublic = () => {
               ) : (
                 <>
                   <DollarSign className="w-4 h-4" />
-                  Pay & send request{requestAmount ? ` — $${parseFloat(requestAmount).toFixed(2)}` : ''}
+                  Pay & send request{requestAmount ? ` — $${(parseFloat(requestAmount) * 1.05).toFixed(2)}` : ''}
                 </>
               )}
             </button>

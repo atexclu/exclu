@@ -696,7 +696,7 @@ const CreatorTipsRequests = () => {
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <span className="text-xs font-bold text-muted-foreground">
-                              {(req.fan?.display_name || '?').charAt(0).toUpperCase()}
+                              {(req.fan?.display_name || req.fan_email || '?').charAt(0).toUpperCase()}
                             </span>
                           </div>
                         )}
@@ -704,7 +704,7 @@ const CreatorTipsRequests = () => {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-foreground truncate">
-                            {req.fan?.display_name || 'Fan'}
+                            {req.fan?.display_name || req.fan_email || 'Fan'}
                           </p>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[req.status] || 'bg-gray-500/20 text-gray-400'}`}>
                             {req.status}

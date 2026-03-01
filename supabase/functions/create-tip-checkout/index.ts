@@ -3,7 +3,6 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
-const stripeSecretKeyTest = Deno.env.get('STRIPE_SECRET_KEY_TEST');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
