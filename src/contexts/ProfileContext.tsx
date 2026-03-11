@@ -20,6 +20,7 @@ interface ProfileContextValue {
   profiles: CreatorProfile[];
   activeProfile: CreatorProfile | null;
   setActiveProfileId: (profileId: string) => void;
+  updateProfileAvatar: (profileId: string, avatarUrl: string | null) => void;
   isAgency: boolean;
   isLoading: boolean;
   refreshProfiles: () => Promise<void>;
@@ -111,6 +112,14 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     setActiveProfileIdState(profileId);
   }, []);
 
+  const updateProfileAvatar = useCallback((profileId: string, avatarUrl: string | null) => {
+    setProfiles((prev) =>
+      prev.map((profile) =>
+        profile.id === profileId ? { ...profile, avatar_url: avatarUrl } : profile
+      )
+    );
+  }, []);
+
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   const isAgency = profiles.length > 1;
 
@@ -120,6 +129,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         profiles,
         activeProfile,
         setActiveProfileId,
+        updateProfileAvatar,
         isAgency,
         isLoading,
         refreshProfiles: fetchProfiles,

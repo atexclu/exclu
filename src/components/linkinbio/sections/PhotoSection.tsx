@@ -9,6 +9,7 @@ import Cropper, { Area } from 'react-easy-crop';
 interface PhotoSectionProps {
   avatarUrl: string | null;
   userId: string | null;
+  profileTag?: string | null;
   onUpdate: (updates: { avatar_url: string | null }) => void;
 }
 
@@ -39,7 +40,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   });
 }
 
-export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps) {
+export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoSectionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,7 +82,15 @@ export function PhotoSection({ avatarUrl, userId, onUpdate }: PhotoSectionProps)
 
     try {
       const croppedBlob = await getCroppedImg(rawImageUrl, croppedAreaPixels);
-      const filePath = `avatars/${userId}/avatar.jpg`;
+
+      // Instant UI feedback across the app (topbar/switcher/manage cards)
+      // before network upload finishes.
+      const optimisticPreviewUrl = URL.createObjectURL(croppedBlob);
+      onUpdate({ avatar_url: optimisticPreviewUrl });
+      setPreviewUrl(optimisticPreviewUrl);
+
+      const tag = profileTag || 'avatar';
+      const filePath = `avatars/${userId}/${tag}.jpg`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')

@@ -56,7 +56,7 @@ interface CreatorLink {
 }
 
 const LinkInBioEditor = () => {
-  const { activeProfile, profiles } = useProfiles();
+  const { activeProfile, profiles, refreshProfiles, updateProfileAvatar } = useProfiles();
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navRef = useRef<HTMLElement>(null);
@@ -367,6 +367,54 @@ const LinkInBioEditor = () => {
     setSaveStatus('unsaved');
   };
 
+  const handleAvatarUpdate = async (updates: { avatar_url: string | null }) => {
+    updateEditorData(updates);
+
+    if (activeProfile?.id) {
+      updateProfileAvatar(activeProfile.id, updates.avatar_url);
+    }
+
+    // Optimistic local preview (blob URL): update UI immediately,
+    // defer persistence until we receive the final public URL.
+    if (updates.avatar_url?.startsWith('blob:')) {
+      return;
+    }
+
+    if (!userId) return;
+
+    let saveError = false;
+
+    if (activeProfile?.id) {
+      const { error: cpError } = await supabase
+        .from('creator_profiles')
+        .update({ avatar_url: updates.avatar_url })
+        .eq('id', activeProfile.id);
+
+      if (cpError) {
+        console.error('Error saving avatar to creator_profiles', cpError);
+        saveError = true;
+      }
+    }
+
+    const isPrimary = !activeProfile || profiles.length <= 1 || profiles[0]?.id === activeProfile?.id;
+    if (isPrimary) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: updates.avatar_url })
+        .eq('id', userId);
+
+      if (profileError) {
+        console.error('Error saving avatar to profiles', profileError);
+        saveError = true;
+      }
+    }
+
+    if (!saveError) {
+      await refreshProfiles();
+      setSaveStatus('saved');
+    }
+  };
+
   const fetchLinks = async () => {
     if (!userId) return;
 
@@ -639,7 +687,8 @@ const LinkInBioEditor = () => {
                         <PhotoSection
                           avatarUrl={editorData.avatar_url}
                           userId={userId}
-                          onUpdate={updateEditorData}
+                          profileTag={activeProfile?.id || activeProfile?.username || null}
+                          onUpdate={handleAvatarUpdate}
                         />
                       </div>
                     )}
