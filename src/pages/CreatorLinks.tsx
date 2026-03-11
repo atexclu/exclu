@@ -9,6 +9,7 @@ import { Copy, Check, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 interface LinkRow {
   id: string;
@@ -27,6 +28,7 @@ interface LinkRow {
 }
 
 const CreatorLinks = () => {
+  const { activeProfile } = useProfiles();
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -103,11 +105,14 @@ const CreatorLinks = () => {
       const isConnectComplete = connectStatus === 'complete';
       setCanCreateLinks(isConnectComplete);
 
-      const { data, error } = await supabase
+      const linksQuery = supabase
         .from('links')
         .select('id, title, slug, price_cents, currency, status, show_on_profile, created_at, click_count, storage_path, is_public')
-        .eq('creator_id', user.id)
         .order('created_at', { ascending: false });
+
+      const { data, error } = activeProfile?.id
+        ? await linksQuery.eq('profile_id', activeProfile.id)
+        : await linksQuery.eq('creator_id', user.id);
 
       if (!isMounted) return;
 
@@ -212,6 +217,7 @@ const CreatorLinks = () => {
       .from('links')
       .insert({
         creator_id: userId,
+        profile_id: activeProfile?.id || null,
         title: uploadTitle,
         price: parseFloat(uploadPrice),
         description: uploadDescription || null,

@@ -210,6 +210,7 @@ serve(async (req) => {
 
     const body = await req.json();
     const creatorId = body?.creator_id as string | undefined;
+    const profileId = body?.profile_id as string | undefined;
     const description = typeof body?.description === 'string' ? body.description.trim() : '';
     const proposedAmountCents = body?.proposed_amount_cents as number | undefined;
 
@@ -299,6 +300,7 @@ serve(async (req) => {
       .insert({
         fan_id: fanUser.id,
         creator_id: creatorId,
+        profile_id: profileId || null,
         description,
         proposed_amount_cents: proposedAmountCents,
         currency: 'USD',

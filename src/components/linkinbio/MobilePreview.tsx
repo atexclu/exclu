@@ -34,6 +34,7 @@ interface LinkInBioData {
   exclusive_content_image_url: string | null;
   tips_enabled?: boolean;
   custom_requests_enabled?: boolean;
+  show_agency_branding?: boolean;
 }
 
 interface CreatorLink {
@@ -63,6 +64,8 @@ interface MobilePreviewProps {
   isPremium?: boolean;
   publicContent?: any[];
   wishlistItems?: WishlistItem[];
+  agencyName?: string | null;
+  agencyLogoUrl?: string | null;
 }
 
 
@@ -78,7 +81,7 @@ const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
   snapchat: { label: 'Snapchat', icon: <SiSnapchat className="w-4 h-4" /> },
 };
 
-export function MobilePreview({ data, links, isPremium = false, publicContent = [], wishlistItems = [] }: MobilePreviewProps) {
+export function MobilePreview({ data, links, isPremium = false, publicContent = [], wishlistItems = [], agencyName, agencyLogoUrl }: MobilePreviewProps) {
   const [activeTab, setActiveTab] = React.useState<'links' | 'content' | 'wishlist'>('links');
   const displayName = data.display_name || 'Your Name';
   const aurora = getAuroraGradient(data.aurora_gradient || 'purple_dream');
@@ -487,6 +490,18 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                           No wishlist items yet
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Agency Branding Footer */}
+                  {data.show_agency_branding && (agencyName || agencyLogoUrl) && (
+                    <div className="flex items-center justify-center gap-1.5 py-3 opacity-60">
+                      {agencyLogoUrl && (
+                        <img src={agencyLogoUrl} alt="" className="w-4 h-4 rounded object-contain" />
+                      )}
+                      <span className="text-[8px] text-white/70">
+                        Managed by {agencyName || 'Agency'}
+                      </span>
                     </div>
                   )}
 

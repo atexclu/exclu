@@ -46,6 +46,7 @@ interface CreatorProfileData {
   custom_requests_enabled?: boolean | null;
   min_tip_amount_cents?: number | null;
   min_custom_request_cents?: number | null;
+  show_agency_branding?: boolean | null;
 }
 
 interface CreatorLinkCard {
@@ -82,6 +83,11 @@ const CreatorPublic = () => {
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeactivated, setIsDeactivated] = useState(false);
+  const [creatorUserId, setCreatorUserId] = useState<string | null>(null);
+  const [creatorProfileId, setCreatorProfileId] = useState<string | null>(null);
+  const [agencyName, setAgencyName] = useState<string | null>(null);
+  const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
 
   // Tip & Request modal state
   const [showTipModal, setShowTipModal] = useState(false);
@@ -186,57 +192,169 @@ const CreatorPublic = () => {
       setError(null);
 
       try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
-          .eq('handle', handle)
+        // ── Step 1: Try creator_profiles first (supports additional profiles) ──
+        let profileData: any = null;
+        let userId: string | null = null;
+        let profileId: string | null = null;
+        let loadedFromCreatorProfiles = false;
+
+        const { data: cpData } = await supabase
+          .from('creator_profiles')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, stripe_account_id, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .eq('username', handle)
           .maybeSingle();
 
         if (!isMounted) return;
 
-        if (profileError || !profileData) {
-          console.error('Error loading creator profile', profileError);
-          setError('This creator profile is not available.');
-          setProfile(null);
-          setLinks([]);
-          setIsLoading(false);
-          return;
+        if (cpData) {
+          // Check if profile is deactivated (premium lapse)
+          if (!cpData.is_active) {
+            setIsDeactivated(true);
+            setProfile({ id: cpData.id, display_name: cpData.display_name, avatar_url: cpData.avatar_url, handle: cpData.username, bio: null, location: null, theme_color: null, social_links: null });
+            setIsLoading(false);
+            return;
+          }
+
+          loadedFromCreatorProfiles = true;
+          userId = cpData.user_id;
+          profileId = cpData.id;
+
+          // Load account-level data (premium status, Stripe) from parent profiles row
+          const { data: parentProfile } = await supabase
+            .from('profiles')
+            .select('is_creator_subscribed, stripe_connect_status, stripe_account_id')
+            .eq('id', cpData.user_id)
+            .maybeSingle();
+
+          if (!isMounted) return;
+
+          // Load agency branding separately (migration 070)
+          try {
+            const { data: agencyData } = await supabase
+              .from('profiles')
+              .select('agency_name, agency_logo_url')
+              .eq('id', cpData.user_id)
+              .maybeSingle();
+            setAgencyName(agencyData?.agency_name || null);
+            setAgencyLogoUrl(agencyData?.agency_logo_url || null);
+          } catch { /* migration 070 not applied */ }
+
+          // Load show_agency_branding toggle separately (migration 070)
+          let showBranding = true;
+          try {
+            const { data: brandingToggle } = await supabase
+              .from('creator_profiles')
+              .select('show_agency_branding')
+              .eq('id', cpData.id)
+              .maybeSingle();
+            if (brandingToggle) showBranding = brandingToggle.show_agency_branding !== false;
+          } catch { /* migration 070 not applied */ }
+
+          profileData = {
+            id: cpData.id,
+            display_name: cpData.display_name,
+            avatar_url: cpData.avatar_url,
+            bio: cpData.bio,
+            handle: cpData.username,
+            location: cpData.location,
+            theme_color: cpData.theme_color,
+            aurora_gradient: cpData.aurora_gradient,
+            social_links: cpData.social_links,
+            is_creator_subscribed: parentProfile?.is_creator_subscribed ?? false,
+            show_join_banner: cpData.show_join_banner,
+            show_certification: cpData.show_certification,
+            show_deeplinks: cpData.show_deeplinks,
+            show_available_now: cpData.show_available_now,
+            stripe_connect_status: parentProfile?.stripe_connect_status ?? cpData.stripe_connect_status,
+            exclusive_content_text: cpData.exclusive_content_text,
+            exclusive_content_link_id: cpData.exclusive_content_link_id,
+            exclusive_content_url: cpData.exclusive_content_url,
+            exclusive_content_image_url: cpData.exclusive_content_image_url,
+            tips_enabled: cpData.tips_enabled,
+            custom_requests_enabled: cpData.custom_requests_enabled,
+            min_tip_amount_cents: cpData.min_tip_amount_cents,
+            min_custom_request_cents: cpData.min_custom_request_cents,
+            show_agency_branding: showBranding,
+          };
         }
 
-      // Load paid links - only show if creator has Stripe fully connected
-      const isStripeComplete = profileData.stripe_connect_status === 'complete';
-      
+        // ── Step 2: Fallback to profiles table (backward compat) ──
+        if (!profileData) {
+          const { data: fallbackData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+            .eq('handle', handle)
+            .maybeSingle();
+
+          if (!isMounted) return;
+
+          if (profileError || !fallbackData) {
+            setError('This creator profile is not available.');
+            setProfile(null);
+            setLinks([]);
+            setIsLoading(false);
+            return;
+          }
+
+          userId = fallbackData.id;
+          profileData = fallbackData;
+
+          // Load agency branding separately (migration 070)
+          try {
+            const { data: agencyFb } = await supabase
+              .from('profiles')
+              .select('agency_name, agency_logo_url')
+              .eq('id', fallbackData.id)
+              .maybeSingle();
+            setAgencyName(agencyFb?.agency_name || null);
+            setAgencyLogoUrl(agencyFb?.agency_logo_url || null);
+          } catch { /* migration 070 not applied */ }
+        }
+
+        // ── Step 3: Load links (use profile_id when available, else creator_id) ──
+        const isStripeComplete = profileData.stripe_connect_status === 'complete';
+
         if (isStripeComplete) {
-          const { data: linksData, error: linksError } = await supabase
+          let linksQuery = supabase
             .from('links')
             .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
-            .eq('creator_id', profileData.id)
             .eq('status', 'published')
             .eq('show_on_profile', true)
             .order('created_at', { ascending: false });
 
+          if (profileId) {
+            linksQuery = linksQuery.eq('profile_id', profileId);
+          } else {
+            linksQuery = linksQuery.eq('creator_id', userId!);
+          }
+
+          const { data: linksData, error: linksError } = await linksQuery;
           if (!isMounted) return;
 
           if (linksError) {
             console.error('Error loading creator links', linksError);
-            setError('Unable to load this creator content right now.');
             setLinks([]);
           } else {
             setLinks((linksData ?? []) as CreatorLinkCard[]);
           }
         } else {
-        // Creator hasn't completed Stripe setup - don't show paid links
-        setLinks([]);
-      }
+          setLinks([]);
+        }
 
-        // Load public content from assets table
-        const { data: publicData, error: publicError } = await supabase
+        // ── Step 4: Load public content ──
+        let assetsQuery = supabase
           .from('assets')
           .select('id, title, storage_path, mime_type')
-          .eq('creator_id', profileData.id)
           .eq('is_public', true)
           .order('created_at', { ascending: false });
 
+        if (profileId) {
+          assetsQuery = assetsQuery.eq('profile_id', profileId);
+        } else {
+          assetsQuery = assetsQuery.eq('creator_id', userId!);
+        }
+
+        const { data: publicData, error: publicError } = await assetsQuery;
         if (!isMounted) return;
 
         if (publicError) {
@@ -253,31 +371,39 @@ const CreatorPublic = () => {
               return { ...item, previewUrl: signed?.signedUrl || null };
             })
           );
-          
           if (!isMounted) return;
           setPublicContent(withUrls);
         }
 
-        // Load visible wishlist items
-        const { data: wishlistData } = await supabase
+        // ── Step 5: Load wishlist items ──
+        let wlQuery = supabase
           .from('wishlist_items')
           .select('id, name, description, emoji, image_url, gift_url, price_cents, currency, max_quantity, gifted_count, is_visible')
-          .eq('creator_id', profileData.id)
           .eq('is_visible', true)
           .order('sort_order');
+
+        if (profileId) {
+          wlQuery = wlQuery.eq('profile_id', profileId);
+        } else {
+          wlQuery = wlQuery.eq('creator_id', userId!);
+        }
+
+        const { data: wishlistData } = await wlQuery;
 
         if (!isMounted) return;
         setWishlistItems(wishlistData ?? []);
 
-        setProfile(profileData as unknown as CreatorProfileData);
+        setProfile(profileData as CreatorProfileData);
+        setCreatorUserId(userId);
+        setCreatorProfileId(profileId);
 
-        // Increment profile view count (best-effort) via Edge Function
+        // Increment profile view count (best-effort)
         if (profileData.handle) {
           supabase.functions
-            .invoke('increment-profile-view', { body: { handle: profileData.handle } })
-            .catch(() => {
-              // Silently fail - this is a best-effort metric
-            });
+            .invoke('increment-profile-view', {
+              body: { handle: profileData.handle, profile_id: profileId || undefined },
+            })
+            .catch(() => {});
         }
 
         setIsLoading(false);
@@ -337,6 +463,7 @@ const CreatorPublic = () => {
       const { data, error } = await supabase.functions.invoke('create-gift-checkout', {
         body: {
           wishlist_item_id: selectedGiftItem.id,
+          profile_id: creatorProfileId || null,
           message: giftMessage || null,
           is_anonymous: giftAnonymous,
         },
@@ -400,7 +527,8 @@ const CreatorPublic = () => {
       }
 
       const tipBody: Record<string, unknown> = {
-        creator_id: profile.id,
+        creator_id: creatorUserId || profile.id,
+        profile_id: creatorProfileId || null,
         amount_cents: finalAmount,
         message: tipMessage || null,
         is_anonymous: tipAnonymous,
@@ -463,7 +591,8 @@ const CreatorPublic = () => {
       }
 
       const requestBody: Record<string, unknown> = {
-        creator_id: profile.id,
+        creator_id: creatorUserId || profile.id,
+        profile_id: creatorProfileId || null,
         description: requestDescription,
         proposed_amount_cents: amountCents,
       };
@@ -503,6 +632,36 @@ const CreatorPublic = () => {
   const showTipsCta = profile?.tips_enabled === true && isStripeReady;
   const showRequestsCta = profile?.custom_requests_enabled === true;
   const tipPresets = [500, 1000, 2500, 5000];
+  const showAgencyFooter = profile?.show_agency_branding !== false && (agencyName || agencyLogoUrl);
+
+  // ── Deactivated profile page (premium lapse) ──
+  if (isDeactivated && profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-white flex flex-col items-center justify-center px-6">
+        <div className="max-w-sm w-full text-center space-y-6">
+          {profile.avatar_url ? (
+            <img src={profile.avatar_url} alt={displayName} className="w-24 h-24 rounded-full mx-auto object-cover opacity-50 grayscale" />
+          ) : (
+            <div className="w-24 h-24 rounded-full mx-auto bg-white/10 flex items-center justify-center">
+              <span className="text-3xl font-bold text-white/30">{displayName.charAt(0).toUpperCase()}</span>
+            </div>
+          )}
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-white/80">{displayName}</h1>
+            <p className="text-sm text-white/50">This profile is currently unavailable.</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-5 space-y-2">
+            <p className="text-xs text-white/40 leading-relaxed">
+              This creator's profile has been temporarily deactivated. It may become available again in the future.
+            </p>
+          </div>
+          <a href="/" className="inline-flex items-center gap-1.5 text-xs text-white/30 hover:text-white/50 transition-colors mt-4">
+            <img src={logo} alt="Exclu" className="h-3.5" />
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   const getSocialGradient = (platform: string) => {
     switch (platform) {
@@ -830,8 +989,17 @@ const CreatorPublic = () => {
               )}
             </motion.div>
           )}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="mt-6 text-center">
-            <a href="/" className="inline-flex items-center gap-1.5 text-xs text-white/40 hover:text-white/60 transition-colors">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="mt-6 flex items-center justify-center gap-2 text-[11px] text-white/40">
+            {showAgencyFooter && (
+              <>
+                {agencyLogoUrl && (
+                  <img src={agencyLogoUrl} alt="" className="w-4 h-4 rounded object-contain" />
+                )}
+                <span>Managed by {agencyName || 'Agency'}</span>
+                <span style={{ color: aurora.colors[0] }}>·</span>
+              </>
+            )}
+            <a href="/" className="inline-flex items-center gap-1 hover:text-white/60 transition-colors">
               Powered by <span className="font-semibold">Exclu</span>
             </a>
           </motion.div>
@@ -1198,8 +1366,17 @@ const CreatorPublic = () => {
               </motion.div>
 
               {/* Footer */}
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="text-center pb-2">
-                <a href="/" className="inline-flex items-center gap-1.5 text-xs text-white/30 hover:text-white/50 transition-colors">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="flex items-center justify-center gap-2 text-[11px] text-white/30 pb-2">
+                {showAgencyFooter && (
+                  <>
+                    {agencyLogoUrl && (
+                      <img src={agencyLogoUrl} alt="" className="w-4 h-4 rounded object-contain" />
+                    )}
+                    <span>Managed by {agencyName || 'Agency'}</span>
+                    <span style={{ color: aurora.colors[0] }}>·</span>
+                  </>
+                )}
+                <a href="/" className="inline-flex items-center gap-1 hover:text-white/50 transition-colors">
                   Powered by <span className="font-semibold">Exclu</span>
                 </a>
               </motion.div>

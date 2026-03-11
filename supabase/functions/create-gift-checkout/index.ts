@@ -83,6 +83,7 @@ serve(async (req) => {
 
     const body = await req.json();
     const wishlistItemId = body?.wishlist_item_id as string | undefined;
+    const profileId = body?.profile_id as string | undefined;
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
     const isAnonymous = body?.is_anonymous === true;
 
@@ -174,6 +175,7 @@ serve(async (req) => {
       .insert({
         fan_id: fanUser.id,
         creator_id: wishlistItem.creator_id,
+        profile_id: profileId || null,
         wishlist_item_id: wishlistItemId,
         amount_cents: amountCents,
         currency: wishlistItem.currency || 'USD',
@@ -230,6 +232,7 @@ serve(async (req) => {
         wishlist_item_id: wishlistItemId,
         fan_id: fanUser.id,
         creator_id: wishlistItem.creator_id,
+        profile_id: profileId ?? '',
       },
       payment_intent_data: {
         application_fee_amount: applicationFeeAmount,

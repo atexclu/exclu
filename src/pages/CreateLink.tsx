@@ -11,6 +11,7 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
   id: string;
@@ -22,6 +23,7 @@ type LibraryAsset = {
 };
 
 const CreateLink = () => {
+  const { activeProfile } = useProfiles();
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -160,20 +162,24 @@ const CreateLink = () => {
       setCanCreateLinks(hasStripeAccount && isConnectComplete);
 
       // Check if user has existing links (for copywriting in the header)
-      const { count: linksCount } = await supabase
+      const linksCountQuery = supabase
         .from('links')
-        .select('id', { count: 'exact', head: true })
-        .eq('creator_id', user.id);
+        .select('id', { count: 'exact', head: true });
+      const { count: linksCount } = activeProfile?.id
+        ? await linksCountQuery.eq('profile_id', activeProfile.id)
+        : await linksCountQuery.eq('creator_id', user.id);
 
       if (!isMounted) return;
       setHasExistingLinks((linksCount ?? 0) > 0);
 
-      const { data, error } = await supabase
+      const assetsQuery = supabase
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type')
-        .eq('creator_id', user.id)
         .order('created_at', { ascending: false })
         .limit(12);
+      const { data, error } = activeProfile?.id
+        ? await assetsQuery.eq('profile_id', activeProfile.id)
+        : await assetsQuery.eq('creator_id', user.id);
 
       if (!isMounted) return;
 
@@ -267,6 +273,7 @@ const CreateLink = () => {
         .from('links')
         .insert({
           creator_id: user.id,
+          profile_id: activeProfile?.id ?? null,
           title: safeTitle,
           description: description.trim() || null,
           price_cents: Math.round(priceNumber * 100),
@@ -359,7 +366,7 @@ const CreateLink = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-5xl mx-auto">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pb-16">
         {canCreateLinks === false ? (
           <motion.section
             initial={{ opacity: 0, y: 20 }}

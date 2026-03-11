@@ -31,4 +31,4 @@ WHERE p.handle = 'test1';
 
 -- 4. Verify the fix
 -- SELECT slug, title, status, show_on_profile FROM links WHERE slug = 'pour-toi-s56wfn';
-esjfzhbbjsfebjfdhs
+jgh

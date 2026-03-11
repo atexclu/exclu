@@ -4,15 +4,17 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2 } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2 } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 // --- SELF-HEALING & CACHE-BUSTING ---
 // Increment this version when making critical changes to force data re-fetch
 const APP_DASHBOARD_VERSION = '1.0.4';
 
 const AppDashboard = () => {
+  const { activeProfile, isAgency } = useProfiles();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalLinks, setTotalLinks] = useState(0);
@@ -91,11 +93,14 @@ const AppDashboard = () => {
           console.error('Error loading creator profile', profileError);
         }
 
-        // Links metrics
-        const { data: links, error: linksError } = await supabase
+        // Links metrics — filter by profile_id when active profile available, else by creator_id
+        const linksQuery = supabase
           .from('links')
-          .select('id, click_count, status, created_at')
-          .eq('creator_id', user.id);
+          .select('id, click_count, status, created_at');
+
+        const { data: links, error: linksError } = activeProfile?.id
+          ? await linksQuery.eq('profile_id', activeProfile.id)
+          : await linksQuery.eq('creator_id', user.id);
 
         if (linksError) throw linksError;
 
@@ -125,22 +130,24 @@ const AppDashboard = () => {
         );
 
         // Tips revenue — fetch full details for the Tips tab display
-        const { data: tipsData } = await supabase
+        const tipsQuery = supabase
           .from('tips')
           .select('id, amount_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
-          .eq('creator_id', user.id)
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
+        const { data: tipsData } = activeProfile?.id
+          ? await tipsQuery.eq('profile_id', activeProfile.id)
+          : await tipsQuery.eq('creator_id', user.id);
         const safeTips = tipsData ?? [];
         const tipsSum = safeTips.reduce((sum: number, t: any) => sum + Math.round((t.amount_cents ?? 0) * (1 - rate)), 0);
         if (isMounted) setTipsRaw(safeTips);
 
         // Profile views history from profile_analytics
-        const { data: analyticsData } = await supabase
+        const analyticsQuery = supabase
           .from('profile_analytics')
           .select('date, profile_views')
-          .eq('profile_id', user.id)
           .order('date', { ascending: true });
+        const { data: analyticsData } = await analyticsQuery.eq('profile_id', user.id);
         if (isMounted) setProfileViewsRaw(
           (analyticsData ?? []).map((r: any) => ({ date: r.date, views: r.profile_views ?? 0 }))
         );
@@ -172,9 +179,9 @@ const AppDashboard = () => {
         setPurchasesRaw(safePurchases);
         setPayouts(safePayouts);
         if (profile) {
-          setProfileName(profile.display_name || 'Creator');
-          setProfileHandle(profile.handle || null);
-          setProfileViewCount(profile.profile_view_count ?? 0);
+          setProfileName(activeProfile?.display_name || profile.display_name || 'Creator');
+          setProfileHandle(activeProfile?.username || profile.handle || null);
+          setProfileViewCount(activeProfile?.profile_view_count ?? profile.profile_view_count ?? 0);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
@@ -269,7 +276,7 @@ const AppDashboard = () => {
       isMounted = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [activeProfile?.id]);
 
   // We removed the stripe_onboarding=return effect here
   // because the user is now redirected to /app/stripe-validation.
@@ -545,13 +552,22 @@ const AppDashboard = () => {
                   </a>
                 </>
               )}
-              <RouterLink
-                to="/app/profile"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-xs text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors whitespace-nowrap"
-              >
-                <span>Profile</span>
-              </RouterLink>
-
+              {isAgency ? (
+                <RouterLink
+                  to="/app/agency"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/40 bg-primary/10 text-xs text-primary hover:bg-primary/20 hover:border-primary/60 transition-colors whitespace-nowrap font-medium"
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Agency Panel</span>
+                </RouterLink>
+              ) : (
+                <RouterLink
+                  to="/app/profile"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 text-xs text-exclu-space hover:text-exclu-cloud hover:border-primary/50 transition-colors whitespace-nowrap"
+                >
+                  <span>Profile</span>
+                </RouterLink>
+              )}
             </div>
           </div>
         </section>

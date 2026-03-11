@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ProfileProvider } from "@/contexts/ProfileContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import HelpCenter from "./pages/HelpCenter";
@@ -45,6 +46,8 @@ import TipSuccess from './pages/TipSuccess';
 import CreatorWishlist from './pages/CreatorWishlist';
 import GiftSuccess from './pages/GiftSuccess';
 import RequestSuccess from './pages/RequestSuccess';
+import CreateProfile from './pages/CreateProfile';
+import AgencyDashboard from './pages/AgencyDashboard';
 
 const queryClient = new QueryClient();
 
@@ -82,171 +85,189 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/help-center" element={<HelpCenter />} />
-              <Route path="/help-center/getting-started" element={<HelpGettingStarted />} />
-              <Route path="/help-center/payouts-pricing" element={<HelpPayoutsPricing />} />
-              <Route path="/help-center/links-content" element={<HelpLinksContent />} />
-              <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route
-                path="/onboarding"
-                element={
-                  <ProtectedRoute>
-                    <Onboarding />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/users"
-                element={
-                  <AdminRoute>
-                    <AdminUsers />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/admin/users/:id/overview"
-                element={
-                  <AdminRoute>
-                    <AdminUserOverview />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/app"
-                element={
-                  <ProtectedRoute>
-                    <AppDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/links"
-                element={
-                  <ProtectedRoute>
-                    <CreatorLinks />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/links/new"
-                element={
-                  <ProtectedRoute>
-                    <CreateLink />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/content"
-                element={
-                  <ProtectedRoute>
-                    <ContentLibrary />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/links/:id"
-                element={
-                  <ProtectedRoute>
-                    <LinkDetail />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/links/:id/edit"
-                element={
-                  <ProtectedRoute>
-                    <EditLink />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/settings"
-                element={
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/profile"
-                element={
-                  <ProtectedRoute>
-                    <LinkInBioEditor />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/referral"
-                element={
-                  <ProtectedRoute>
-                    <ReferralDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/stripe-validation"
-                element={
-                  <ProtectedRoute>
-                    <StripeValidation />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/chat"
-                element={
-                  <ProtectedRoute>
-                    <CreatorTipsRequests />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/app/tips-requests"
-                element={
-                  <ProtectedRoute>
-                    <CreatorTipsRequests />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/l/:slug" element={<PublicLink />} />
-              <Route path="/fan/signup" element={<FanSignup />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/tip-success" element={<TipSuccess />} />
-              <Route path="/gift-success" element={<GiftSuccess />} />
-              <Route path="/request-success" element={<RequestSuccess />} />
-              <Route
-                path="/app/wishlist"
-                element={
-                  <ProtectedRoute>
-                    <CreatorWishlist />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/fan"
-                element={
-                  <FanProtectedRoute>
-                    <FanDashboard />
-                  </FanProtectedRoute>
-                }
-              />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/cookies" element={<Cookies />} />
-              {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
-              <Route path="/:handle" element={<CreatorPublic />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
+        <ProfileProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/help-center" element={<HelpCenter />} />
+                <Route path="/help-center/getting-started" element={<HelpGettingStarted />} />
+                <Route path="/help-center/payouts-pricing" element={<HelpPayoutsPricing />} />
+                <Route path="/help-center/links-content" element={<HelpLinksContent />} />
+                <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route
+                  path="/onboarding"
+                  element={
+                    <ProtectedRoute>
+                      <Onboarding />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/users"
+                  element={
+                    <AdminRoute>
+                      <AdminUsers />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/users/:id/overview"
+                  element={
+                    <AdminRoute>
+                      <AdminUserOverview />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/app"
+                  element={
+                    <ProtectedRoute>
+                      <AppDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/links"
+                  element={
+                    <ProtectedRoute>
+                      <CreatorLinks />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/links/new"
+                  element={
+                    <ProtectedRoute>
+                      <CreateLink />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/content"
+                  element={
+                    <ProtectedRoute>
+                      <ContentLibrary />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/links/:id"
+                  element={
+                    <ProtectedRoute>
+                      <LinkDetail />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/links/:id/edit"
+                  element={
+                    <ProtectedRoute>
+                      <EditLink />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/settings"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/profile"
+                  element={
+                    <ProtectedRoute>
+                      <LinkInBioEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/referral"
+                  element={
+                    <ProtectedRoute>
+                      <ReferralDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/stripe-validation"
+                  element={
+                    <ProtectedRoute>
+                      <StripeValidation />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/chat"
+                  element={
+                    <ProtectedRoute>
+                      <CreatorTipsRequests />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/tips-requests"
+                  element={
+                    <ProtectedRoute>
+                      <CreatorTipsRequests />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/profiles/new"
+                  element={
+                    <ProtectedRoute>
+                      <CreateProfile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/agency"
+                  element={
+                    <ProtectedRoute>
+                      <AgencyDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/l/:slug" element={<PublicLink />} />
+                <Route path="/fan/signup" element={<FanSignup />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/tip-success" element={<TipSuccess />} />
+                <Route path="/gift-success" element={<GiftSuccess />} />
+                <Route path="/request-success" element={<RequestSuccess />} />
+                <Route
+                  path="/app/wishlist"
+                  element={
+                    <ProtectedRoute>
+                      <CreatorWishlist />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/fan"
+                  element={
+                    <FanProtectedRoute>
+                      <FanDashboard />
+                    </FanProtectedRoute>
+                  }
+                />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="/cookies" element={<Cookies />} />
+                {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
+                <Route path="/:handle" element={<CreatorPublic />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </ProfileProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

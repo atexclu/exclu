@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -61,6 +62,7 @@ const EMOJI_OPTIONS = ['🎁', '💻', '👠', '🛍️', '🛒', '🍽️', '�
 type Tab = 'manage' | 'received';
 
 const CreatorWishlist = () => {
+  const { activeProfile } = useProfiles();
   const [isLoading, setIsLoading] = useState(true);
   const [creatorId, setCreatorId] = useState<string | null>(null);
 
@@ -95,7 +97,7 @@ const CreatorWishlist = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeProfile?.id]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -108,18 +110,12 @@ const CreatorWishlist = () => {
         .from('wishlist_preset_items')
         .select('id, name, description, emoji, image_url, default_price_cents, currency')
         .order('sort_order'),
-      supabase
-        .from('wishlist_items')
-        .select('*')
-        .eq('creator_id', user.id)
-        .order('sort_order'),
-      supabase
-        .from('gift_purchases')
-        .select('id, amount_cents, creator_net_cents, is_anonymous, message, created_at, paid_at, read_at, status, wishlist_item_id')
-        .eq('creator_id', user.id)
-        .eq('status', 'succeeded')
-        .order('created_at', { ascending: false })
-        .limit(50),
+      activeProfile?.id
+        ? supabase.from('wishlist_items').select('*').eq('profile_id', activeProfile.id).order('sort_order')
+        : supabase.from('wishlist_items').select('*').eq('creator_id', user.id).order('sort_order'),
+      activeProfile?.id
+        ? supabase.from('gift_purchases').select('id, amount_cents, creator_net_cents, is_anonymous, message, created_at, paid_at, read_at, status, wishlist_item_id').eq('profile_id', activeProfile.id).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(50)
+        : supabase.from('gift_purchases').select('id, amount_cents, creator_net_cents, is_anonymous, message, created_at, paid_at, read_at, status, wishlist_item_id').eq('creator_id', user.id).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(50),
     ]);
 
     if (presetsRes.data) setPresets(presetsRes.data);
@@ -230,6 +226,7 @@ const CreatorWishlist = () => {
         const nextOrder = items.length;
         const { error } = await supabase.from('wishlist_items').insert({
           creator_id: creatorId,
+          profile_id: activeProfile?.id || null,
           name,
           description: formDescription.trim() || null,
           emoji: formEmoji,

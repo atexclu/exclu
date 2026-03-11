@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -491,6 +492,8 @@ const CreatorTipsRequests = () => {
   // Stats
   const pendingRequests = requests.filter((r) => r.status === 'pending').length;
 
+  const { activeProfile } = useProfiles();
+
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -498,38 +501,38 @@ const CreatorTipsRequests = () => {
       setUserId(user.id);
 
       // Fetch creator handle for link navigation
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('handle')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (profile?.handle) setCreatorHandle(profile.handle);
+      const handleValue = activeProfile?.username;
+      if (handleValue) {
+        setCreatorHandle(handleValue);
+      } else {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('handle')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (profile?.handle) setCreatorHandle(profile.handle);
+      }
 
       await fetchData(user.id);
     };
     init();
-  }, []);
+  }, [activeProfile?.id]);
 
 
   const fetchData = async (uid: string) => {
     setIsLoading(true);
 
-    const [tipsResult, requestsResult] = await Promise.all([
-      supabase
-        .from('tips')
-        .select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
-        .eq('creator_id', uid)
-        .eq('status', 'succeeded')
-        .order('created_at', { ascending: false })
-        .limit(100),
-      supabase
-        .from('custom_requests')
-        .select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)')
-        .eq('creator_id', uid)
-        .neq('status', 'pending_payment')
-        .order('created_at', { ascending: false })
-        .limit(100),
-    ]);
+    const profileFilter = activeProfile?.id;
+
+    const tipsQuery = profileFilter
+      ? supabase.from('tips').select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)').eq('profile_id', profileFilter).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100)
+      : supabase.from('tips').select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)').eq('creator_id', uid).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100);
+
+    const requestsQuery = profileFilter
+      ? supabase.from('custom_requests').select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('profile_id', profileFilter).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100)
+      : supabase.from('custom_requests').select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('creator_id', uid).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100);
+
+    const [tipsResult, requestsResult] = await Promise.all([tipsQuery, requestsQuery]);
 
     if (tipsResult.data) setTips(tipsResult.data as TipRecord[]);
     if (requestsResult.data) {

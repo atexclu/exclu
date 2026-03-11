@@ -15,6 +15,7 @@ import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import AppShell from '@/components/AppShell';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 interface LinkInBioData {
   display_name: string;
@@ -41,6 +42,7 @@ interface LinkInBioData {
   custom_requests_enabled: boolean;
   min_tip_amount_cents: number;
   min_custom_request_cents: number;
+  show_agency_branding: boolean;
 }
 
 interface CreatorLink {
@@ -54,9 +56,11 @@ interface CreatorLink {
 }
 
 const LinkInBioEditor = () => {
+  const { activeProfile, profiles } = useProfiles();
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navRef = useRef<HTMLElement>(null);
+  const skipNextAutoSaveRef = useRef(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   
   const [editorData, setEditorData] = useState<LinkInBioData>({
@@ -84,15 +88,19 @@ const LinkInBioEditor = () => {
     custom_requests_enabled: false,
     min_tip_amount_cents: 500,
     min_custom_request_cents: 2000,
+    show_agency_branding: true,
   });
 
   const [links, setLinks] = useState<CreatorLink[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
   const [wishlistItems, setWishlistItems] = useState<any[]>([]);
   const [isPremium, setIsPremium] = useState(false);
+  const [agencyName, setAgencyName] = useState<string | null>(null);
+  const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [stripeConnected, setStripeConnected] = useState(false);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
@@ -116,57 +124,122 @@ const LinkInBioEditor = () => {
 
       setUserId(user.id);
 
-      const { data: profile, error: profileError } = await supabase
+      // Load account-level data from profiles (premium + Stripe status)
+      const { data: mainProfile } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, is_creator_subscribed, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+        .select('is_creator_subscribed, stripe_connect_status, stripe_account_id')
         .eq('id', user.id)
         .maybeSingle();
 
-      if (profileError || !profile) {
-        console.error('Error loading profile', profileError);
-        return;
-      } else {
-        setIsPremium(profile.is_creator_subscribed === true);
-        
-        // Check Stripe connection status - both account ID and complete status required
-        const hasStripeAccount = Boolean(profile.stripe_account_id);
-        const isStripeComplete = profile.stripe_connect_status === 'complete';
-        setStripeConnectStatus(profile.stripe_connect_status ?? null);
+      setIsPremium(mainProfile?.is_creator_subscribed === true);
+
+      // Load agency branding (separate query — columns may not exist if migration 070 not applied)
+      try {
+        const { data: agencyData } = await supabase
+          .from('profiles')
+          .select('agency_name, agency_logo_url')
+          .eq('id', user.id)
+          .maybeSingle();
+        setAgencyName(agencyData?.agency_name || null);
+        setAgencyLogoUrl(agencyData?.agency_logo_url || null);
+      } catch {
+        // Migration 070 not yet applied — agency columns don't exist
+      }
+
+      // Load profile data from creator_profiles when activeProfile is set
+      let profileData: any = null;
+
+      if (activeProfile?.id) {
+        const { data: cpData, error: cpError } = await supabase
+          .from('creator_profiles')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .eq('id', activeProfile.id)
+          .maybeSingle();
+
+        if (cpError || !cpData) {
+          console.error('Error loading creator profile', cpError);
+        } else {
+          profileData = {
+            ...cpData,
+            handle: cpData.username,
+            // Override with account-level Stripe status (always up to date)
+            stripe_connect_status: mainProfile?.stripe_connect_status ?? cpData.stripe_connect_status,
+            stripe_account_id: mainProfile?.stripe_account_id ?? cpData.stripe_account_id,
+          };
+          // Load show_agency_branding separately (migration 070)
+          try {
+            const { data: brandingData } = await supabase
+              .from('creator_profiles')
+              .select('show_agency_branding')
+              .eq('id', activeProfile.id)
+              .maybeSingle();
+            if (brandingData) profileData.show_agency_branding = brandingData.show_agency_branding;
+          } catch {
+            // Column not yet available
+          }
+        }
+      }
+
+      // Fallback to profiles table
+      if (!profileData) {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError || !profile) {
+          console.error('Error loading profile', profileError);
+          setIsLoading(false);
+          return;
+        }
+        profileData = profile;
+      }
+
+      if (profileData) {
+        const hasStripeAccount = Boolean(profileData.stripe_account_id);
+        const isStripeComplete = profileData.stripe_connect_status === 'complete';
+        setStripeConnectStatus(profileData.stripe_connect_status ?? null);
         setStripeConnected(hasStripeAccount && isStripeComplete);
-        
+
+        skipNextAutoSaveRef.current = true;
         const dataToLoad: LinkInBioData = {
-          display_name: profile.display_name || '',
-          handle: profile.handle || '',
-          bio: profile.bio || '',
-          avatar_url: profile.avatar_url || null,
-          theme_color: profile.theme_color || 'pink',
-          aurora_gradient: profile.aurora_gradient || 'purple_dream',
-          social_links: profile.social_links || {},
-          show_join_banner: profile.show_join_banner !== false,
-          show_certification: profile.show_certification !== false,
-          show_deeplinks: profile.show_deeplinks !== false,
-          show_available_now: profile.show_available_now === true,
-          location: profile.location || null,
-          exclusive_content_text: profile.exclusive_content_text || null,
-          exclusive_content_link_id: profile.exclusive_content_link_id || null,
-          exclusive_content_url: profile.exclusive_content_url || null,
-          exclusive_content_image_url: profile.exclusive_content_image_url || null,
-          link_order: profile.link_order || { social_order: [], content_order: [] },
-          tips_enabled: profile.tips_enabled === true,
-          custom_requests_enabled: profile.custom_requests_enabled === true,
-          min_tip_amount_cents: profile.min_tip_amount_cents || 500,
-          min_custom_request_cents: profile.min_custom_request_cents || 2000,
+          display_name: profileData.display_name || '',
+          handle: profileData.handle || '',
+          bio: profileData.bio || '',
+          avatar_url: profileData.avatar_url || null,
+          theme_color: profileData.theme_color || 'pink',
+          aurora_gradient: profileData.aurora_gradient || 'purple_dream',
+          social_links: profileData.social_links || {},
+          show_join_banner: profileData.show_join_banner !== false,
+          show_certification: profileData.show_certification !== false,
+          show_deeplinks: profileData.show_deeplinks !== false,
+          show_available_now: profileData.show_available_now === true,
+          location: profileData.location || null,
+          exclusive_content_text: profileData.exclusive_content_text || null,
+          exclusive_content_link_id: profileData.exclusive_content_link_id || null,
+          exclusive_content_url: profileData.exclusive_content_url || null,
+          exclusive_content_image_url: profileData.exclusive_content_image_url || null,
+          link_order: profileData.link_order || { social_order: [], content_order: [] },
+          tips_enabled: profileData.tips_enabled === true,
+          custom_requests_enabled: profileData.custom_requests_enabled === true,
+          min_tip_amount_cents: profileData.min_tip_amount_cents || 500,
+          min_custom_request_cents: profileData.min_custom_request_cents || 2000,
+          show_agency_branding: profileData.show_agency_branding !== false,
         };
 
         setEditorData(dataToLoad);
       }
 
-      const { data: linksData, error: linksError } = await supabase
+      const linksQuery = supabase
         .from('links')
         .select('id, title, description, price_cents, currency, slug, show_on_profile')
-        .eq('creator_id', user.id)
         .eq('status', 'published')
         .order('created_at', { ascending: false });
+
+      const { data: linksData, error: linksError } = activeProfile?.id
+        ? await linksQuery.eq('profile_id', activeProfile.id)
+        : await linksQuery.eq('creator_id', user.id);
 
       if (linksError) {
         console.error('Error loading links', linksError);
@@ -175,12 +248,15 @@ const LinkInBioEditor = () => {
       }
 
       // Load public content from assets table
-      const { data: publicData, error: publicError } = await supabase
+      const publicAssetsQuery = supabase
         .from('assets')
         .select('id, title, storage_path, mime_type')
-        .eq('creator_id', user.id)
         .eq('is_public', true)
         .order('created_at', { ascending: false });
+
+      const { data: publicData, error: publicError } = activeProfile?.id
+        ? await publicAssetsQuery.eq('profile_id', activeProfile.id)
+        : await publicAssetsQuery.eq('creator_id', user.id);
 
       if (!publicError && publicData) {
         const withUrls = await Promise.all(
@@ -196,63 +272,95 @@ const LinkInBioEditor = () => {
       }
 
       // Load wishlist items
-      const { data: wlData } = await supabase
+      const wlQuery = supabase
         .from('wishlist_items')
         .select('id, name, description, emoji, image_url, gift_url, price_cents, max_quantity, gifted_count, is_visible, sort_order')
-        .eq('creator_id', user.id)
         .order('sort_order', { ascending: true });
+      const { data: wlData } = activeProfile?.id
+        ? await wlQuery.eq('profile_id', activeProfile.id)
+        : await wlQuery.eq('creator_id', user.id);
       if (wlData) setWishlistItems(wlData);
 
       setIsLoading(false);
     };
 
     fetchProfile();
-  }, []);
+  }, [activeProfile?.id]);
 
   useEffect(() => {
     if (!userId || isLoading) return;
 
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return;
+    }
+
     const autoSave = async () => {
       setSaveStatus('saving');
-      
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          display_name: debouncedData.display_name,
-          handle: debouncedData.handle,
-          bio: debouncedData.bio,
-          avatar_url: debouncedData.avatar_url,
-          theme_color: debouncedData.theme_color,
-          aurora_gradient: debouncedData.aurora_gradient,
-          social_links: debouncedData.social_links,
-          show_join_banner: debouncedData.show_join_banner,
-          show_certification: debouncedData.show_certification,
-          show_deeplinks: debouncedData.show_deeplinks,
-          show_available_now: debouncedData.show_available_now,
-          location: debouncedData.location,
-          exclusive_content_text: debouncedData.exclusive_content_text,
-          exclusive_content_link_id: debouncedData.exclusive_content_link_id,
-          exclusive_content_url: debouncedData.exclusive_content_url,
-          exclusive_content_image_url: debouncedData.exclusive_content_image_url,
-          link_order: debouncedData.link_order,
-          tips_enabled: debouncedData.tips_enabled,
-          custom_requests_enabled: debouncedData.custom_requests_enabled,
-          min_tip_amount_cents: debouncedData.min_tip_amount_cents,
-          min_custom_request_cents: debouncedData.min_custom_request_cents,
-          profile_draft: null,
-        })
-        .eq('id', userId);
 
-      if (error) {
-        console.error('Error auto-saving', error);
-        setSaveStatus('unsaved');
-      } else {
-        setSaveStatus('saved');
+      const profilePayload = {
+        display_name: debouncedData.display_name,
+        handle: debouncedData.handle,
+        bio: debouncedData.bio,
+        avatar_url: debouncedData.avatar_url,
+        theme_color: debouncedData.theme_color,
+        aurora_gradient: debouncedData.aurora_gradient,
+        social_links: debouncedData.social_links,
+        show_join_banner: debouncedData.show_join_banner,
+        show_certification: debouncedData.show_certification,
+        show_deeplinks: debouncedData.show_deeplinks,
+        show_available_now: debouncedData.show_available_now,
+        location: debouncedData.location,
+        exclusive_content_text: debouncedData.exclusive_content_text,
+        exclusive_content_link_id: debouncedData.exclusive_content_link_id,
+        exclusive_content_url: debouncedData.exclusive_content_url,
+        exclusive_content_image_url: debouncedData.exclusive_content_image_url,
+        link_order: debouncedData.link_order,
+        tips_enabled: debouncedData.tips_enabled,
+        custom_requests_enabled: debouncedData.custom_requests_enabled,
+        min_tip_amount_cents: debouncedData.min_tip_amount_cents,
+        min_custom_request_cents: debouncedData.min_custom_request_cents,
+      };
+
+      let saveError = false;
+
+      // Write to creator_profiles (source of truth for per-profile data)
+      if (activeProfile?.id) {
+        const cpPayload = { ...profilePayload, handle: undefined, username: debouncedData.handle };
+        const { error: cpError } = await supabase
+          .from('creator_profiles')
+          .update(cpPayload)
+          .eq('id', activeProfile.id);
+        if (cpError) {
+          console.error('Error saving to creator_profiles', cpError);
+          saveError = true;
+        }
+        // Save agency branding toggle separately (migration 070)
+        await supabase
+          .from('creator_profiles')
+          .update({ show_agency_branding: debouncedData.show_agency_branding })
+          .eq('id', activeProfile.id)
+          .then(({ error }) => { if (error) console.warn('show_agency_branding column not available yet'); });
       }
+
+      // Only sync to profiles table for the primary profile (backward compat)
+      const isPrimary = !activeProfile || profiles.length <= 1 || profiles[0]?.id === activeProfile?.id;
+      if (isPrimary) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ ...profilePayload, profile_draft: null })
+          .eq('id', userId);
+        if (error) {
+          console.error('Error saving to profiles', error);
+          saveError = true;
+        }
+      }
+
+      setSaveStatus(saveError ? 'unsaved' : 'saved');
     };
 
     autoSave();
-  }, [debouncedData, userId, isLoading]);
+  }, [debouncedData, userId, isLoading, activeProfile?.id, profiles]);
 
   const updateEditorData = (updates: Partial<LinkInBioData>) => {
     setEditorData((prev) => ({ ...prev, ...updates }));
@@ -261,12 +369,14 @@ const LinkInBioEditor = () => {
 
   const fetchLinks = async () => {
     if (!userId) return;
-    
-    const { data, error } = await supabase
+
+    const linksQuery = supabase
       .from('links')
       .select('*')
-      .eq('creator_id', userId)
       .order('created_at', { ascending: false });
+    const { data, error } = activeProfile?.id
+      ? await linksQuery.eq('profile_id', activeProfile.id)
+      : await linksQuery.eq('creator_id', userId);
 
     if (error) {
       console.error('Error fetching links', error);
@@ -278,23 +388,27 @@ const LinkInBioEditor = () => {
 
   const fetchWishlistItems = async () => {
     if (!userId) return;
-    const { data } = await supabase
+    const wlQuery = supabase
       .from('wishlist_items')
       .select('id, name, description, emoji, image_url, gift_url, price_cents, max_quantity, gifted_count, is_visible, sort_order')
-      .eq('creator_id', userId)
       .order('sort_order', { ascending: true });
+    const { data } = activeProfile?.id
+      ? await wlQuery.eq('profile_id', activeProfile.id)
+      : await wlQuery.eq('creator_id', userId);
     if (data) setWishlistItems(data);
   };
 
   const fetchPublicContent = async () => {
     if (!userId) return;
 
-    const { data: publicData, error: publicError } = await supabase
+    const assetsQuery = supabase
       .from('assets')
       .select('id, title, storage_path, mime_type')
-      .eq('creator_id', userId)
       .eq('is_public', true)
       .order('created_at', { ascending: false });
+    const { data: publicData, error: publicError } = activeProfile?.id
+      ? await assetsQuery.eq('profile_id', activeProfile.id)
+      : await assetsQuery.eq('creator_id', userId);
 
     if (!publicError && publicData) {
       // Generate signed URLs
@@ -309,6 +423,42 @@ const LinkInBioEditor = () => {
       );
       setPublicContent(withUrls);
     }
+  };
+
+  const handleAgencyNameChange = async (name: string) => {
+    setAgencyName(name);
+    if (!userId) return;
+    await supabase.from('profiles').update({ agency_name: name }).eq('id', userId);
+  };
+
+  const handleAgencyLogoUpload = async (file: File) => {
+    if (!userId) return;
+    setIsUploadingLogo(true);
+    const ext = file.name.split('.').pop() || 'png';
+    const path = `agency-logos/${userId}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (uploadError) {
+      toast.error('Failed to upload logo');
+      setIsUploadingLogo(false);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+    const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : null;
+    if (publicUrl) {
+      setAgencyLogoUrl(publicUrl);
+      await supabase.from('profiles').update({ agency_logo_url: publicUrl }).eq('id', userId);
+      toast.success('Agency logo updated');
+    }
+    setIsUploadingLogo(false);
+  };
+
+  const handleAgencyLogoRemove = async () => {
+    if (!userId) return;
+    setAgencyLogoUrl(null);
+    await supabase.from('profiles').update({ agency_logo_url: null }).eq('id', userId);
+    toast.success('Agency logo removed');
   };
 
   const sections = [
@@ -468,7 +618,7 @@ const LinkInBioEditor = () => {
                             <SheetTitle className="text-base">Live preview</SheetTitle>
                           </div>
                           <div className="p-4 flex items-center justify-center">
-                            <MobilePreview data={editorData} links={links} isPremium={isPremium} wishlistItems={wishlistItems} />
+                            <MobilePreview data={editorData} links={links} isPremium={isPremium} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} />
                           </div>
                         </SheetContent>
                       </Sheet>
@@ -591,6 +741,7 @@ const LinkInBioEditor = () => {
                       <div className="space-y-4">
                         <PublicContentSection
                           userId={userId}
+                          profileId={activeProfile?.id || null}
                           onUpdate={fetchLinks}
                           onContentUpdate={fetchPublicContent}
                         />
@@ -619,7 +770,14 @@ const LinkInBioEditor = () => {
                           customRequestsEnabled={editorData.custom_requests_enabled}
                           minTipAmountCents={editorData.min_tip_amount_cents}
                           minCustomRequestCents={editorData.min_custom_request_cents}
+                          showAgencyBranding={editorData.show_agency_branding}
+                          agencyName={agencyName}
+                          agencyLogoUrl={agencyLogoUrl}
                           onUpdate={updateEditorData}
+                          onAgencyNameChange={handleAgencyNameChange}
+                          onAgencyLogoUpload={handleAgencyLogoUpload}
+                          onAgencyLogoRemove={handleAgencyLogoRemove}
+                          isUploadingLogo={isUploadingLogo}
                         />
                       </div>
                     )}
@@ -636,6 +794,8 @@ const LinkInBioEditor = () => {
                   isPremium={isPremium}
                   publicContent={publicContent}
                   wishlistItems={wishlistItems}
+                  agencyName={agencyName}
+                  agencyLogoUrl={agencyLogoUrl}
                 />
               </div>
             </div>

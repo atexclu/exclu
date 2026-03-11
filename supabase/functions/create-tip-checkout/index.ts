@@ -91,6 +91,7 @@ serve(async (req) => {
 
     const body = await req.json();
     const creatorId = body?.creator_id as string | undefined;
+    const profileId = body?.profile_id as string | undefined;
     const amountCents = body?.amount_cents as number | undefined;
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
     const isAnonymous = body?.is_anonymous === true;
@@ -171,6 +172,7 @@ serve(async (req) => {
       .insert({
         fan_id: fanUserId ?? null,
         creator_id: creatorId,
+        profile_id: profileId || null,
         amount_cents: amountCents,
         currency: 'USD',
         message,
@@ -234,6 +236,7 @@ serve(async (req) => {
         tip_id: tipRecord.id,
         fan_id: fanUserId ?? '',
         creator_id: creatorId,
+        profile_id: profileId ?? '',
         fan_name: fanName ?? '',
       },
       payment_intent_data: {

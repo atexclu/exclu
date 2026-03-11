@@ -1,6 +1,7 @@
+import { useRef } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Crown, Palette, BadgeCheck, Smartphone, CircleDot, DollarSign, MessageSquare } from 'lucide-react';
+import { Crown, Palette, BadgeCheck, Smartphone, CircleDot, DollarSign, MessageSquare, Building2, Upload, X } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
@@ -14,10 +15,19 @@ interface OptionsSectionProps {
   customRequestsEnabled: boolean;
   minTipAmountCents: number;
   minCustomRequestCents: number;
-  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; aurora_gradient?: string; tips_enabled?: boolean; custom_requests_enabled?: boolean; min_tip_amount_cents?: number; min_custom_request_cents?: number }) => void;
+  showAgencyBranding?: boolean;
+  agencyName?: string | null;
+  agencyLogoUrl?: string | null;
+  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; aurora_gradient?: string; tips_enabled?: boolean; custom_requests_enabled?: boolean; min_tip_amount_cents?: number; min_custom_request_cents?: number; show_agency_branding?: boolean }) => void;
+  onAgencyNameChange?: (name: string) => void;
+  onAgencyLogoUpload?: (file: File) => void;
+  onAgencyLogoRemove?: () => void;
+  isUploadingLogo?: boolean;
 }
 
-export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, isPremium, auroraGradient = 'purple_dream', tipsEnabled, customRequestsEnabled, minTipAmountCents, minCustomRequestCents, onUpdate }: OptionsSectionProps) {
+export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, isPremium, auroraGradient = 'purple_dream', tipsEnabled, customRequestsEnabled, minTipAmountCents, minCustomRequestCents, showAgencyBranding, agencyName, agencyLogoUrl, onUpdate, onAgencyNameChange, onAgencyLogoUpload, onAgencyLogoRemove, isUploadingLogo }: OptionsSectionProps) {
+  const hasAgency = Boolean(agencyName || agencyLogoUrl);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-6">
       {/* Profile Gradient Color */}
@@ -224,6 +234,94 @@ export function OptionsSection({ showJoinBanner, showCertification, showDeeplink
           )}
         </div>
       </div>
+
+      {/* Agency Branding Toggle — only visible for agency-managed profiles */}
+      {hasAgency && (
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Agency Branding</h3>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-sm font-semibold text-foreground">Show Agency Branding</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Display "Managed by {agencyName || 'your agency'}" with the agency logo at the bottom of your public profile
+                </p>
+              </div>
+              <Switch
+                checked={showAgencyBranding ?? true}
+                onCheckedChange={(checked) => onUpdate({ show_agency_branding: checked })}
+              />
+            </div>
+          </div>
+
+          {/* Agency Identity Card */}
+          <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <h4 className="text-sm font-semibold text-foreground">Agency Identity</h4>
+
+            {/* Logo upload */}
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground">Agency Logo</label>
+              <div className="flex items-center gap-3">
+                {agencyLogoUrl ? (
+                  <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-border bg-muted flex-shrink-0">
+                    <img src={agencyLogoUrl} alt="" className="w-full h-full object-contain" />
+                    {onAgencyLogoRemove && (
+                      <button
+                        type="button"
+                        onClick={onAgencyLogoRemove}
+                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 rounded-lg border-2 border-dashed border-border bg-muted/30 flex items-center justify-center flex-shrink-0">
+                    <Building2 className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && onAgencyLogoUpload) onAgencyLogoUpload(file);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={isUploadingLogo}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-xs font-medium text-foreground transition-colors disabled:opacity-50"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  {isUploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                </button>
+              </div>
+            </div>
+
+            {/* Agency name */}
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground">Agency Name</label>
+              <Input
+                value={agencyName || ''}
+                onChange={(e) => onAgencyNameChange?.(e.target.value)}
+                placeholder="e.g. TopModels Agency"
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -121,8 +121,8 @@ const AdminUsers = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pt-6 pb-8 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto space-y-4">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8">
+        <div className="space-y-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin – Users</h1>

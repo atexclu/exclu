@@ -2,9 +2,11 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useProfiles } from '@/contexts/ProfileContext';
+import { ProfileSwitcherDropdown, ProfileSwitcherOverlay } from '@/components/ProfileSwitcher';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 
@@ -18,10 +20,11 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   adminOnly?: boolean;
+  agencyOnly?: boolean;
   mobileHidden?: boolean;
 }
 
-const navItems: NavItem[] = [
+const baseNavItems: NavItem[] = [
   { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/app/profile', label: 'Profile', icon: Palette },
   { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
@@ -33,31 +36,30 @@ const navItems: NavItem[] = [
 
 const AppShell = ({ children, rightActions }: AppShellProps) => {
   const { resolvedTheme, setTheme } = useTheme();
+  const { activeProfile, profiles, isAgency, showProfileSwitcher } = useProfiles();
   const location = useLocation();
   const navigate = useNavigate();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const avatarUrl = activeProfile?.avatar_url ?? null;
+
   useEffect(() => {
-    const fetchAvatar = async () => {
+    const fetchAdminStatus = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('avatar_url, is_admin')
+        .select('is_admin')
         .eq('id', user.id)
         .single();
 
       if (profile) {
-        if (profile.avatar_url) {
-          setAvatarUrl(profile.avatar_url);
-        }
         setIsAdmin(profile.is_admin === true);
       }
     };
 
-    fetchAvatar();
+    fetchAdminStatus();
   }, []);
 
   const isActive = (path: string) => {
@@ -85,8 +87,12 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
   };
 
   const visibleNavItems = useMemo(
-    () => navItems.filter((item) => !item.adminOnly || isAdmin),
-    [isAdmin]
+    () => baseNavItems.filter((item) => {
+      if (item.adminOnly && !isAdmin) return false;
+      if (item.agencyOnly && !isAgency) return false;
+      return true;
+    }),
+    [isAdmin, isAgency]
   );
 
   return (
@@ -151,6 +157,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
           )}
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            {isAgency && <ProfileSwitcherDropdown />}
             <Link
               to="/app/settings"
               className="group relative"
@@ -260,6 +267,9 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
         </div>
       </div>
+      <AnimatePresence>
+        {showProfileSwitcher && location.pathname.startsWith('/app') && <ProfileSwitcherOverlay />}
+      </AnimatePresence>
     </div>
   );
 };

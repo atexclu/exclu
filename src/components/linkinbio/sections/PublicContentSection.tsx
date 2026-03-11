@@ -32,6 +32,7 @@ interface PublicContent {
 
 interface PublicContentSectionProps {
   userId: string | null;
+  profileId?: string | null;
   onUpdate: () => void;
   onContentUpdate?: () => void;
 }
@@ -145,7 +146,7 @@ function SortableItem({ content, onToggle, isSelected, onSelect }: SortableItemP
   );
 }
 
-export function PublicContentSection({ userId, onUpdate, onContentUpdate }: PublicContentSectionProps) {
+export function PublicContentSection({ userId, profileId, onUpdate, onContentUpdate }: PublicContentSectionProps) {
   const [contents, setContents] = useState<PublicContent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -162,7 +163,7 @@ export function PublicContentSection({ userId, onUpdate, onContentUpdate }: Publ
 
   useEffect(() => {
     fetchContents();
-  }, [userId]);
+  }, [userId, profileId]);
 
   const fetchContents = async () => {
     if (!userId) return;
@@ -170,11 +171,13 @@ export function PublicContentSection({ userId, onUpdate, onContentUpdate }: Publ
     setIsLoading(true);
 
     // Fetch assets (content from ContentLibrary)
-    const { data: assetsData, error: assetsError } = await supabase
+    const assetsQuery = supabase
       .from('assets')
       .select('id, title, storage_path, mime_type, is_public')
-      .eq('creator_id', userId)
       .order('created_at', { ascending: false });
+    const { data: assetsData, error: assetsError } = profileId
+      ? await assetsQuery.eq('profile_id', profileId)
+      : await assetsQuery.eq('creator_id', userId);
 
     if (assetsError) {
       console.error('Error loading public content', assetsError);

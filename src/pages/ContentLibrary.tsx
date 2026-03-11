@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
   id: string;
@@ -20,6 +21,7 @@ type LibraryAsset = {
 };
 
 const ContentLibrary = () => {
+  const { activeProfile } = useProfiles();
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
   const [assetTitle, setAssetTitle] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -64,11 +66,14 @@ const ContentLibrary = () => {
         return;
       }
 
-      const { data, error } = await supabase
+      const assetsQuery = supabase
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type, is_public')
-        .eq('creator_id', user.id)
         .order('created_at', { ascending: false });
+
+      const { data, error } = activeProfile?.id
+        ? await assetsQuery.eq('profile_id', activeProfile.id)
+        : await assetsQuery.eq('creator_id', user.id);
 
       if (!isMounted) return;
 
@@ -219,6 +224,7 @@ const ContentLibrary = () => {
           .insert({
             id: assetId,
             creator_id: user.id,
+            profile_id: activeProfile?.id || null,
             title: assetTitle.trim() || null,
             storage_path: objectName,
             mime_type: file.type || rawFile.type || null,

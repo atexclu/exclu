@@ -41,8 +41,8 @@ const AuthCallback = () => {
         navigate(next, { replace: true });
         return;
       }
-      // Default: creator → /app, fan → /fan
-      navigate(isCreator ? '/app' : '/fan', { replace: true });
+      // Default: creator → /onboarding, fan → /fan
+      navigate(isCreator ? '/onboarding' : '/fan', { replace: true });
     };
 
     const resolveIsCreator = async (): Promise<boolean | null> => {

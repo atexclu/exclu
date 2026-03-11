@@ -316,11 +316,10 @@ const Onboarding = () => {
         });
       }
 
-      // Only redirect to dashboard if onboarding is fully completed
-      // (handle + avatar_url + at least 1 social link + stripe connect started)
-      const stripeStatus = fullProfile?.stripe_connect_status;
+      // Only redirect to dashboard if profile onboarding is fully completed
+      // (handle + avatar_url + at least 1 social link)
       const hasSocialLinks = Object.values(existingSocialLinks).some((url) => url && url.length > 0);
-      if (profile?.handle && fullProfile?.avatar_url && hasSocialLinks && stripeStatus && stripeStatus !== 'not_started') {
+      if (profile?.handle && fullProfile?.avatar_url && hasSocialLinks) {
         navigate('/app');
         return;
       }
@@ -586,8 +585,6 @@ const Onboarding = () => {
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'design' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'stripe' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'plan' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
         </div>
 
         {/* STEP 1: Profile Setup */}
@@ -1576,8 +1573,8 @@ const Onboarding = () => {
                     // ACTUALLY, usually we just let them pass if we are simulating.
                     // But if we want to capture it:
 
-                    toast.success('Details verified!');
-                    setStep('stripe');
+                    toast.success('Onboarding completed!');
+                    navigate('/app');
 
                   } catch (err: any) {
                     console.error('Verification error', err);
@@ -1601,7 +1598,7 @@ const Onboarding = () => {
                 type="button"
                 onClick={() => {
                   toast.success('You can add your link later.');
-                  setStep('stripe');
+                  navigate('/app');
                 }}
                 className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
               >

@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   User,
+  Users,
   Camera,
   Copy,
   ExternalLink,
@@ -19,13 +20,19 @@ import {
   Check,
   AlertCircle,
   ChevronRight,
+  Plus,
   Palette,
   AlertTriangle,
   LogOut,
+  Upload,
+  Building2,
+  Trash2,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 const Profile = () => {
+  const { activeProfile, refreshProfiles, isAgency, profiles: creatorProfiles, setActiveProfileId } = useProfiles();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -42,11 +49,15 @@ const Profile = () => {
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'security'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'profiles' | 'security'>('profile');
   const [themeColor, setThemeColor] = useState<string>('pink');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const agencyLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const [agencyName, setAgencyName] = useState('');
+  const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
+  const [isSavingAgency, setIsSavingAgency] = useState(false);
 
   // Handle hash navigation to open specific section
   useEffect(() => {
@@ -83,37 +94,91 @@ const Profile = () => {
       setUserId(user.id);
       setEmail(user.email || '');
 
-      const { data: profile, error: profileError } = await supabase
+      // Always load account-level data from profiles
+      const { data: mainProfile } = await supabase
         .from('profiles')
-        .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, is_creator_subscribed, theme_color, social_links, show_join_banner, country')
+        .select('is_creator_subscribed, stripe_account_id, stripe_connect_status, country')
         .eq('id', user.id)
         .maybeSingle();
 
-      if (profileError) {
-        console.error('Error loading profile', profileError);
-      } else if (profile) {
-        setDisplayName(profile.display_name || '');
-        setHandle(profile.handle || '');
-        setBio(profile.bio || '');
-        setAvatarUrl(profile.avatar_url || null);
-        setStripeAccountId(profile.stripe_account_id || null);
-        setStripeConnectStatus(profile.stripe_connect_status || null);
-        setCountry(profile.country || null);
-        setIsCreatorSubscribed(profile.is_creator_subscribed === true);
-        setThemeColor(profile.theme_color || 'pink');
-        setSocialLinks(profile.social_links || {});
-        setShowJoinBanner(
-          profile.show_join_banner === null || profile.show_join_banner === undefined
-            ? true
-            : Boolean(profile.show_join_banner)
-        );
+      if (mainProfile) {
+        setIsCreatorSubscribed(mainProfile.is_creator_subscribed === true);
+        setStripeAccountId(mainProfile.stripe_account_id || null);
+        setStripeConnectStatus(mainProfile.stripe_connect_status || null);
+        setCountry(mainProfile.country || null);
+      }
+
+      // Load agency branding separately (migration 070 columns)
+      try {
+        const { data: agencyData } = await supabase
+          .from('profiles')
+          .select('agency_name, agency_logo_url')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (agencyData) {
+          setAgencyName(agencyData.agency_name || '');
+          setAgencyLogoUrl(agencyData.agency_logo_url || null);
+        }
+      } catch {
+        // Migration 070 not yet applied
+      }
+
+      // Load profile-specific data from creator_profiles when an active profile is set
+      if (activeProfile) {
+        setDisplayName(activeProfile.display_name || '');
+        setHandle(activeProfile.username || '');
+        setBio(activeProfile.bio || '');
+        setAvatarUrl(activeProfile.avatar_url || null);
+
+        // Load extended fields from creator_profiles
+        const { data: cpData } = await supabase
+          .from('creator_profiles')
+          .select('theme_color, social_links, show_join_banner')
+          .eq('id', activeProfile.id)
+          .maybeSingle();
+
+        if (cpData) {
+          setThemeColor(cpData.theme_color || 'pink');
+          setSocialLinks(cpData.social_links || {});
+          setShowJoinBanner(
+            cpData.show_join_banner === null || cpData.show_join_banner === undefined
+              ? true
+              : Boolean(cpData.show_join_banner)
+          );
+        }
+      } else {
+        // Fallback: load from profiles table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, theme_color, social_links, show_join_banner, country')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.error('Error loading profile', profileError);
+        } else if (profile) {
+          setDisplayName(profile.display_name || '');
+          setHandle(profile.handle || '');
+          setBio(profile.bio || '');
+          setAvatarUrl(profile.avatar_url || null);
+          setStripeAccountId(profile.stripe_account_id || null);
+          setStripeConnectStatus(profile.stripe_connect_status || null);
+          setCountry(profile.country || null);
+          setThemeColor(profile.theme_color || 'pink');
+          setSocialLinks(profile.social_links || {});
+          setShowJoinBanner(
+            profile.show_join_banner === null || profile.show_join_banner === undefined
+              ? true
+              : Boolean(profile.show_join_banner)
+          );
+        }
       }
 
       setIsLoading(false);
     };
 
     fetchProfile();
-  }, []);
+  }, [activeProfile?.id]);
 
   // Load more detailed Stripe Connect requirements (what is missing) when there is a Stripe
   // account but the status is not complete, so we can guide the creator.
@@ -169,8 +234,9 @@ const Profile = () => {
     const file = event.target.files?.[0];
     if (!file || !userId) return;
 
+    const profileTag = activeProfile?.username || activeProfile?.id || 'avatar';
     const fileExt = file.name.split('.').pop() ?? 'jpg';
-    const filePath = `avatars/${userId}/avatar.${fileExt}`;
+    const filePath = `avatars/${userId}/${profileTag}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
@@ -185,15 +251,36 @@ const Profile = () => {
     const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
     const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ avatar_url: newAvatarUrl })
-      .eq('id', userId);
+    // Write to creator_profiles (source of truth per profile)
+    if (activeProfile?.id) {
+      const { error: cpError } = await supabase
+        .from('creator_profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', activeProfile.id);
 
-    if (updateError) {
-      console.error('Error updating avatar_url', updateError);
-      toast.error('Failed to save avatar. Please try again.');
-      return;
+      if (cpError) {
+        console.error('Error updating avatar_url on creator_profiles', cpError);
+        toast.error('Failed to save avatar. Please try again.');
+        return;
+      }
+
+      // Also sync to profiles table for backward compat (only if this is the first/primary profile)
+      if (creatorProfiles.length <= 1 || creatorProfiles[0]?.id === activeProfile.id) {
+        await supabase.from('profiles').update({ avatar_url: newAvatarUrl }).eq('id', userId);
+      }
+
+      await refreshProfiles();
+    } else {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('Error updating avatar_url', updateError);
+        toast.error('Failed to save avatar. Please try again.');
+        return;
+      }
     }
 
     setAvatarUrl(newAvatarUrl);
@@ -204,23 +291,65 @@ const Profile = () => {
     if (!userId) return;
     setIsSaving(true);
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        display_name: displayName.trim() || null,
-        handle: handle.trim().toLowerCase() || null,
-        bio: bio.trim() || null,
-        country: country || 'US',
-      })
-      .eq('id', userId);
+    // Write to creator_profiles as source of truth
+    if (activeProfile?.id) {
+      const { error: cpError } = await supabase
+        .from('creator_profiles')
+        .update({
+          display_name: displayName.trim() || null,
+          username: handle.trim().toLowerCase() || null,
+          bio: bio.trim() || null,
+          country: country || 'US',
+        })
+        .eq('id', activeProfile.id);
 
-    if (error) {
-      console.error('Error saving profile', error);
-      toast.error('Failed to save profile. Please try again.');
+      if (cpError) {
+        console.error('Error saving profile', cpError);
+        toast.error('Failed to save profile. Please try again.');
+        setIsSaving(false);
+        return;
+      }
+
+      // Backward compat: sync to profiles if primary profile
+      if (creatorProfiles.length <= 1 || creatorProfiles[0]?.id === activeProfile.id) {
+        await supabase
+          .from('profiles')
+          .update({
+            display_name: displayName.trim() || null,
+            handle: handle.trim().toLowerCase() || null,
+            bio: bio.trim() || null,
+            country: country || 'US',
+          })
+          .eq('id', userId);
+      } else {
+        // Country is account-level (shared payout setup across all profiles)
+        await supabase
+          .from('profiles')
+          .update({ country: country || 'US' })
+          .eq('id', userId);
+      }
+
+      refreshProfiles();
     } else {
-      toast.success('Profile saved successfully!');
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: displayName.trim() || null,
+          handle: handle.trim().toLowerCase() || null,
+          bio: bio.trim() || null,
+          country: country || 'US',
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Error saving profile', error);
+        toast.error('Failed to save profile. Please try again.');
+        setIsSaving(false);
+        return;
+      }
     }
 
+    toast.success('Profile saved successfully!');
     setIsSaving(false);
   };
 
@@ -350,29 +479,121 @@ const Profile = () => {
     const finalShowJoinBanner =
       options?.showJoinBannerOverride !== undefined ? options.showJoinBannerOverride : showJoinBanner;
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        theme_color: finalThemeColor,
-        social_links: finalSocialLinks,
-        show_join_banner: finalShowJoinBanner,
-      })
-      .eq('id', userId);
+    const payload = {
+      theme_color: finalThemeColor,
+      social_links: finalSocialLinks,
+      show_join_banner: finalShowJoinBanner,
+    };
 
-    if (error) {
-      console.error('Error saving appearance', error);
-      if (!options?.silent) {
-        toast.error('Failed to save appearance settings.');
+    // Write to creator_profiles
+    if (activeProfile?.id) {
+      const { error } = await supabase
+        .from('creator_profiles')
+        .update(payload)
+        .eq('id', activeProfile.id);
+
+      if (error) {
+        console.error('Error saving appearance', error);
+        if (!options?.silent) toast.error('Failed to save appearance settings.');
+        setIsSaving(false);
+        return;
       }
-    } else if (!options?.silent) {
-      toast.success('Appearance settings saved!');
+
+      // Backward compat: sync to profiles if primary profile
+      if (creatorProfiles.length <= 1 || creatorProfiles[0]?.id === activeProfile.id) {
+        await supabase.from('profiles').update(payload).eq('id', userId);
+      }
+    } else {
+      const { error } = await supabase.from('profiles').update(payload).eq('id', userId);
+      if (error) {
+        console.error('Error saving appearance', error);
+        if (!options?.silent) toast.error('Failed to save appearance settings.');
+        setIsSaving(false);
+        return;
+      }
     }
 
+    if (!options?.silent) toast.success('Appearance settings saved!');
     setIsSaving(false);
   };
 
   const handleSaveAppearance = async () => {
     await saveAppearance();
+  };
+
+  const handleAgencyLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !userId) return;
+
+    const fileExt = file.name.split('.').pop() ?? 'png';
+    const filePath = `agency/${userId}/logo.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+    if (uploadError) {
+      console.error('Agency logo upload error', uploadError);
+      toast.error('Failed to upload logo.');
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    const newLogoUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ agency_logo_url: newLogoUrl })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Failed to save agency_logo_url', error);
+      toast.error('Agency logo column not available. Please apply migration 070.');
+      return;
+    }
+
+    setAgencyLogoUrl(newLogoUrl);
+    toast.success('Logo updated!');
+  };
+
+  const handleSaveAgencyBranding = async () => {
+    if (!userId) return;
+    setIsSavingAgency(true);
+
+    const updates: Record<string, unknown> = {};
+    if (agencyName.trim()) updates.agency_name = agencyName.trim();
+    else updates.agency_name = null;
+
+    if (agencyLogoUrl) updates.agency_logo_url = agencyLogoUrl;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Failed to save agency branding', error);
+      toast.error('Agency columns not available. Please apply migration 070.');
+    } else {
+      toast.success('Branding saved!');
+    }
+
+    setIsSavingAgency(false);
+  };
+
+  const handleRemoveAgencyLogo = async () => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ agency_logo_url: null })
+      .eq('id', userId);
+
+    if (error) {
+      toast.error('Failed to remove logo.');
+    } else {
+      setAgencyLogoUrl(null);
+      toast.success('Logo removed.');
+    }
   };
 
   const handleSocialLinkChange = (platform: string, value: string) => {
@@ -412,14 +633,15 @@ const Profile = () => {
 
   const menuItems = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'subscription', label: 'Subscription & Payments', icon: CreditCard },
+    { id: 'subscription', label: 'Subscriptions', icon: CreditCard },
+    { id: 'profiles', label: 'Profiles & Agency', icon: Users },
     { id: 'security', label: 'Security', icon: Lock },
   ] as const;
 
   if (isLoading) {
     return (
       <AppShell>
-        <main className="px-4 pb-16 max-w-5xl mx-auto">
+        <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pb-16">
           <div className="mt-8 text-center text-exclu-space">Loading profile...</div>
         </main>
       </AppShell>
@@ -428,7 +650,7 @@ const Profile = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-5xl mx-auto">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pb-16">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -721,7 +943,18 @@ const Profile = () => {
                             : '10% commission on sales. Upgrade to Premium to keep 100% of your revenue.'}
                         </p>
                         {isCreatorSubscribed && (
-                          <p className="text-xs text-exclu-space/60 mt-2">$39/month • Billed monthly</p>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-xs text-exclu-space/60">
+                              ${creatorProfiles.length > 2
+                                ? `${39 + (creatorProfiles.length - 2) * 10}/month`
+                                : '39/month'} • Billed monthly
+                            </p>
+                            {creatorProfiles.length > 2 && (
+                              <div className="text-[11px] text-exclu-space/50 space-y-0.5">
+                                <p>$39 base + {creatorProfiles.length - 2} additional profile{creatorProfiles.length - 2 > 1 ? 's' : ''} × $10/mo</p>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -892,6 +1125,227 @@ const Profile = () => {
                         </Button>
                       )}
                     </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Profiles & Agency Section */}
+              {activeSection === 'profiles' && (
+                <motion.div
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  {/* Visual profile gallery */}
+                  <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                    <div className="px-6 py-5 border-b border-border/40 bg-gradient-to-r from-primary/5 to-transparent">
+                      <h2 className="text-lg font-semibold text-exclu-cloud">Your Profiles</h2>
+                      <p className="text-xs text-exclu-space/70 mt-0.5">
+                        Manage multiple creator identities from one account, like a talent agency.
+                      </p>
+                    </div>
+
+                    <div className="p-6">
+                      {/* Profile avatars row */}
+                      <div className="flex items-center justify-center gap-4 sm:gap-6 mb-6">
+                        {creatorProfiles.map((profile, i) => (
+                          <motion.button
+                            key={profile.id}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: i * 0.08, type: 'spring', stiffness: 300, damping: 25 }}
+                            className="flex flex-col items-center gap-2 outline-none"
+                            onClick={() => {
+                              if (activeProfile?.id !== profile.id) {
+                                setActiveProfileId(profile.id);
+                                toast.success(`Switched to ${profile.display_name || profile.username}`);
+                              }
+                            }}
+                          >
+                            <div className={`relative rounded-full p-0.5 transition-all cursor-pointer hover:scale-105 ${
+                              activeProfile?.id === profile.id
+                                ? 'ring-2 ring-primary ring-offset-2 ring-offset-card'
+                                : 'hover:ring-2 hover:ring-primary/30 hover:ring-offset-2 hover:ring-offset-card'
+                            }`}>
+                              {profile.avatar_url ? (
+                                <img
+                                  src={profile.avatar_url}
+                                  alt={profile.display_name || ''}
+                                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 border border-border/40 flex items-center justify-center text-xl font-semibold text-foreground/70">
+                                  {(profile.display_name || profile.username || '?')[0]?.toUpperCase()}
+                                </div>
+                              )}
+                              {activeProfile?.id === profile.id && (
+                                <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md">
+                                  <Check className="w-3 h-3 text-primary-foreground" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-center max-w-[80px]">
+                              <p className="text-xs font-medium text-exclu-cloud truncate">
+                                {profile.display_name || profile.username || 'Unnamed'}
+                              </p>
+                              {profile.username && (
+                                <p className="text-[10px] text-exclu-space/60 truncate">@{profile.username}</p>
+                              )}
+                            </div>
+                          </motion.button>
+                        ))}
+
+                        {/* Add profile placeholder */}
+                        <motion.button
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: creatorProfiles.length * 0.08, type: 'spring', stiffness: 300, damping: 25 }}
+                          onClick={() => navigate('/app/profiles/new')}
+                          className="flex flex-col items-center gap-2 group"
+                        >
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-dashed border-border/60 group-hover:border-primary/50 flex items-center justify-center transition-colors">
+                            <Plus className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <p className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">Add new</p>
+                        </motion.button>
+                      </div>
+
+                      {/* Status badge */}
+                      <div className={`flex items-center gap-3 p-4 rounded-xl border ${
+                        isAgency
+                          ? 'bg-emerald-500/5 border-emerald-500/30'
+                          : 'bg-primary/5 border-border'
+                      }`}>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                          isAgency ? 'bg-emerald-500/15' : 'bg-primary/10'
+                        }`}>
+                          <Users className={`w-4.5 h-4.5 ${isAgency ? 'text-emerald-500' : 'text-primary'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-exclu-cloud">
+                            {isAgency ? 'Agency mode active' : 'Single profile'}
+                          </p>
+                          <p className="text-xs text-exclu-space/70 mt-0.5">
+                            {isAgency
+                              ? `You're managing ${creatorProfiles.length} profiles. Use the dropdown in the top bar to switch between them.`
+                              : 'Add a second profile to unlock Agency mode with consolidated stats and profile switching.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Agency Branding — only for agency users */}
+                  {isAgency && (
+                    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                      <div className="px-6 py-5 border-b border-border/40 bg-gradient-to-r from-primary/5 to-transparent">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <Building2 className="w-4 h-4 text-primary" />
+                          </div>
+                          <div>
+                            <h2 className="text-lg font-semibold text-exclu-cloud">Agency Branding</h2>
+                            <p className="text-xs text-exclu-space/70">Shown on your profiles' public pages</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-6 space-y-6">
+                        {/* Logo + Name in a single row */}
+                        <div className="flex items-start gap-5">
+                          {/* Logo */}
+                          <div className="flex-shrink-0">
+                            <div className="relative group">
+                              {agencyLogoUrl ? (
+                                <>
+                                  <img
+                                    src={agencyLogoUrl}
+                                    alt="Agency logo"
+                                    className="w-20 h-20 rounded-2xl object-contain border border-border bg-black/20 p-2"
+                                  />
+                                  <button
+                                    onClick={handleRemoveAgencyLogo}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5 text-white" />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => agencyLogoInputRef.current?.click()}
+                                  className="w-20 h-20 rounded-2xl border-2 border-dashed border-border/50 hover:border-primary/40 flex flex-col items-center justify-center bg-muted/5 hover:bg-primary/5 transition-all cursor-pointer gap-1.5"
+                                >
+                                  <Upload className="w-4 h-4 text-muted-foreground/50" />
+                                  <span className="text-[10px] text-muted-foreground/50 font-medium">Logo</span>
+                                </button>
+                              )}
+                              <input
+                                ref={agencyLogoInputRef}
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                className="hidden"
+                                onChange={handleAgencyLogoUpload}
+                              />
+                            </div>
+                            {agencyLogoUrl && (
+                              <button
+                                onClick={() => agencyLogoInputRef.current?.click()}
+                                className="mt-1.5 w-full text-center text-[10px] text-exclu-space/50 hover:text-primary transition-colors"
+                              >
+                                Change
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Name */}
+                          <div className="flex-1 space-y-2 pt-1">
+                            <label className="text-sm font-medium text-exclu-cloud">Agency Name</label>
+                            <Input
+                              value={agencyName}
+                              onChange={(e) => setAgencyName(e.target.value)}
+                              placeholder="e.g. TopModels Agency"
+                              className="h-11 bg-muted/10 border-border text-foreground placeholder:text-muted-foreground/40"
+                            />
+                          </div>
+                        </div>
+
+                      </div>
+
+                      <div className="px-6 py-3.5 border-t border-border/40 bg-muted/5 flex justify-end">
+                        <Button
+                          onClick={handleSaveAgencyBranding}
+                          variant="hero"
+                          disabled={isSavingAgency}
+                          className="rounded-full px-6 h-9 text-sm"
+                        >
+                          {isSavingAgency ? 'Saving...' : 'Save branding'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => navigate('/app/profiles/new')}
+                      variant="hero"
+                      className="rounded-full"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create new profile
+                    </Button>
+
+                    {isAgency && (
+                      <Button
+                        onClick={() => navigate('/app/agency')}
+                        variant="outline"
+                        className="rounded-full border-exclu-arsenic/60"
+                      >
+                        <Users className="w-4 h-4 mr-2" />
+                        Open Agency Panel
+                      </Button>
+                    )}
                   </div>
                 </motion.div>
               )}
