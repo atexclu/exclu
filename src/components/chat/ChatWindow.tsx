@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, User, Paperclip, Link2 } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -15,6 +15,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { MessageBubble } from './MessageBubble';
 import { RichMessageComposer } from './RichMessageComposer';
 import { ChatContentPicker } from './ChatContentPicker';
+import { ChatCustomRequest } from './ChatCustomRequest';
 import { FanTagsRow } from './FanTagsRow';
 import type { Conversation } from '@/types/chat';
 
@@ -33,6 +34,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversation.id, senderType);
   const [draft, setDraft] = useState('');
   const [showContentPicker, setShowContentPicker] = useState(false);
+  const [showCustomRequest, setShowCustomRequest] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
@@ -189,6 +191,19 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
 
       {/* Composer + action buttons */}
       <div className="flex-shrink-0">
+        {senderType === 'fan' && (
+          <div className="flex items-center gap-1 px-3 pt-2 border-t border-border">
+            <button
+              type="button"
+              onClick={() => setShowCustomRequest(true)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              title="Send a custom request"
+            >
+              <DollarSign className="w-3.5 h-3.5" />
+              Custom Request
+            </button>
+          </div>
+        )}
         {senderType !== 'fan' && (
           <div className="flex items-center gap-1 px-3 pt-2 border-t border-border">
             <button
@@ -228,6 +243,16 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             profileId={conversation.profile_id}
             onSelect={handleAttachContent}
             onClose={() => setShowContentPicker(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Custom request modal (fan only) */}
+      <AnimatePresence>
+        {showCustomRequest && (
+          <ChatCustomRequest
+            profileId={conversation.profile_id}
+            onClose={() => setShowCustomRequest(false)}
           />
         )}
       </AnimatePresence>
