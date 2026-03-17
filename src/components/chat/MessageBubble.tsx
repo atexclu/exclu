@@ -72,7 +72,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
               className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
                 rightAligned
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-white dark:bg-black text-black dark:text-white border border-border/20 rounded-bl-sm'
+                  : 'bg-black text-white border border-white/10 rounded-bl-sm'
               }`}
             >
               {/* Contenu texte */}
