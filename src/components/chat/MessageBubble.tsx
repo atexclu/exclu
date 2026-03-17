@@ -83,14 +83,24 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
               {/* Contenu payant attaché */}
               {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
                 <div className={`mt-2 rounded-xl border p-3 flex items-center gap-3 ${
-                  rightAligned ? 'border-white/20 bg-white/10' : 'border-white/20 bg-white/10'
+                  rightAligned 
+                    ? 'border-white/20 bg-white/10' 
+                    : 'border-border/30 bg-muted/20 dark:border-white/20 dark:bg-white/10'
                 }`}>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-semibold truncate ${rightAligned ? 'text-primary-foreground' : 'text-white'}`}>
+                    <p className={`text-xs font-semibold truncate ${
+                      rightAligned 
+                        ? 'text-primary-foreground' 
+                        : 'text-foreground dark:text-white'
+                    }`}>
                       {message.link.title || 'Exclusive content'}
                     </p>
                     {message.link.price_cents > 0 && (
-                      <p className={`text-[11px] mt-0.5 ${rightAligned ? 'text-primary-foreground/70' : 'text-white/70'}`}>
+                      <p className={`text-[11px] mt-0.5 ${
+                        rightAligned 
+                          ? 'text-primary-foreground/70' 
+                          : 'text-muted-foreground dark:text-white/70'
+                      }`}>
                         ${(message.link.price_cents / 100).toFixed(2)}
                       </p>
                     )}
@@ -102,7 +112,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
                     className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
                       rightAligned
                         ? 'bg-white/20 hover:bg-white/30 text-primary-foreground'
-                        : 'bg-white/20 hover:bg-white/30 text-white'
+                        : 'bg-muted hover:bg-muted/80 text-muted-foreground dark:bg-white/20 dark:hover:bg-white/30 dark:text-white'
                     }`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />

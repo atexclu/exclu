@@ -176,9 +176,9 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           )}
         </div>
 
-        {/* Action buttons — desktop only, for creator/chatter */}
+        {/* Action buttons — for creator/chatter */}
         {senderType !== 'fan' && (
-          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={openLinkPicker}
@@ -256,33 +256,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             >
               <DollarSign className="w-3.5 h-3.5" />
               Custom Request
-            </button>
-          </div>
-        )}
-        {/* Mobile-only action buttons for creator/chatter (desktop ones are in header) */}
-        {senderType !== 'fan' && (
-          <div className="flex md:hidden items-center gap-1 px-3 pt-2 border-t border-border">
-            <button
-              type="button"
-              onClick={openLinkPicker}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                showLinkPicker ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-              }`}
-              title="Add a link"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              Add link
-            </button>
-            <button
-              type="button"
-              onClick={openContentPicker}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                showContentPicker ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-              }`}
-              title="Attach existing content"
-            >
-              <Paperclip className="w-3.5 h-3.5" />
-              Attach content
             </button>
           </div>
         )}
