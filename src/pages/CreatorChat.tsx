@@ -146,7 +146,7 @@ export default function CreatorChat() {
                   transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
                   className="flex-1 flex flex-col overflow-hidden"
                 >
-                  <div className="px-4 pb-3 border-b border-border">
+                  <div className="px-4 pt-3 pb-3">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                       <Input
