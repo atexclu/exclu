@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, User, Paperclip, Link2, DollarSign, Plus } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -15,6 +15,7 @@ import { useMessages } from '@/hooks/useMessages';
 import { MessageBubble } from './MessageBubble';
 import { RichMessageComposer } from './RichMessageComposer';
 import { ChatContentPicker } from './ChatContentPicker';
+import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCustomRequest } from './ChatCustomRequest';
 import { FanTagsRow } from './FanTagsRow';
 import type { Conversation } from '@/types/chat';
@@ -34,6 +35,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversation.id, senderType);
   const [draft, setDraft] = useState('');
   const [showContentPicker, setShowContentPicker] = useState(false);
+  const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
@@ -120,6 +122,27 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     });
   };
 
+  const handleAttachLink = async (link: { id: string; title: string | null; price_cents: number }) => {
+    setShowLinkPicker(false);
+    await sendMessage({
+      content: link.title || 'Exclusive content',
+      senderType,
+      contentType: 'paid_content',
+      paidContentId: link.id,
+      paidAmountCents: link.price_cents,
+    });
+  };
+
+  const openLinkPicker = () => {
+    setShowContentPicker(false);
+    setShowLinkPicker(true);
+  };
+
+  const openContentPicker = () => {
+    setShowLinkPicker(false);
+    setShowContentPicker(true);
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Conversation header */}
@@ -156,16 +179,24 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           <div className="hidden md:flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
-              onClick={() => window.open('/app/links/new', '_blank')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] transition-all"
+              onClick={openLinkPicker}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                showLinkPicker
+                  ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
+                  : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
+              }`}
             >
-              <Plus className="w-3 h-3" />
-              Create link
+              <Link2 className="w-3 h-3" />
+              Add link
             </button>
             <button
               type="button"
-              onClick={() => setShowContentPicker(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] transition-all"
+              onClick={openContentPicker}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                showContentPicker
+                  ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
+                  : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
+              }`}
             >
               <Paperclip className="w-3 h-3" />
               Attach content
@@ -231,17 +262,21 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           <div className="flex md:hidden items-center gap-1 px-3 pt-2 border-t border-border">
             <button
               type="button"
-              onClick={() => window.open('/app/links/new', '_blank')}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-              title="Create a new link"
+              onClick={openLinkPicker}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                showLinkPicker ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+              }`}
+              title="Add a link"
             >
               <Link2 className="w-3.5 h-3.5" />
-              Create link
+              Add link
             </button>
             <button
               type="button"
-              onClick={() => setShowContentPicker(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              onClick={openContentPicker}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                showContentPicker ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+              }`}
               title="Attach existing content"
             >
               <Paperclip className="w-3.5 h-3.5" />
@@ -249,6 +284,28 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             </button>
           </div>
         )}
+        {/* Inline link picker panel — above composer */}
+        <AnimatePresence>
+          {showLinkPicker && (
+            <ChatLinkPicker
+              profileId={conversation.profile_id}
+              onSelect={handleAttachLink}
+              onClose={() => setShowLinkPicker(false)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Inline content picker panel — above composer */}
+        <AnimatePresence>
+          {showContentPicker && (
+            <ChatContentPicker
+              profileId={conversation.profile_id}
+              onSelect={handleAttachContent}
+              onClose={() => setShowContentPicker(false)}
+            />
+          )}
+        </AnimatePresence>
+
         <RichMessageComposer
           value={draft}
           onChange={setDraft}
@@ -258,17 +315,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           onMediaSelect={handleMediaSelect}
         />
       </div>
-
-      {/* Content picker modal */}
-      <AnimatePresence>
-        {showContentPicker && (
-          <ChatContentPicker
-            profileId={conversation.profile_id}
-            onSelect={handleAttachContent}
-            onClose={() => setShowContentPicker(false)}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Custom request modal (fan only) */}
       <AnimatePresence>

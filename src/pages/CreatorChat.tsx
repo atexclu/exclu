@@ -88,7 +88,7 @@ export default function CreatorChat() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]">
+      <div className="flex flex-col h-full overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
 
           {/* ── Panneau gauche : liste des conversations ─────────────────── */}

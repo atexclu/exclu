@@ -38,6 +38,14 @@ interface ChatterProfile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
+  user_id: string;
+}
+
+interface ChatterClient {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  profiles: ChatterProfile[];
 }
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
@@ -60,10 +68,16 @@ export default function ChatterDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
-  // Creator profiles this chatter is authorized for
+  // Creator clients (grouped by user_id) and profiles
+  const [clients, setClients] = useState<ChatterClient[]>([]);
+  const [activeClientUserId, setActiveClientUserId] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ChatterProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
+
+  // Derived: profiles for the active client
+  const activeClient = clients.find((c) => c.user_id === activeClientUserId) ?? null;
+  const clientProfiles = activeClient?.profiles ?? profiles;
 
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +99,7 @@ export default function ChatterDashboard() {
     }
   }, [statusFilter]);
 
-  const allProfileIds = useMemo(() => profiles.map((p) => p.id), [profiles]);
+  const allProfileIds = useMemo(() => clientProfiles.map((p) => p.id), [clientProfiles]);
 
   const { conversations, isLoading: convsLoading, refetch } = useConversations({
     profileId: activeProfileId,
@@ -115,6 +129,7 @@ export default function ChatterDashboard() {
         setChatterDisplayName(ownProfile.display_name);
       }
 
+      // 1. Get invited profile IDs
       const { data: invitations } = await supabase
         .from('chatter_invitations')
         .select('profile_id')
@@ -127,19 +142,60 @@ export default function ChatterDashboard() {
         return;
       }
 
-      const profileIds = invitations.map((i: any) => i.profile_id);
+      const invitedProfileIds = invitations.map((i: any) => i.profile_id);
 
-      const { data: profilesData } = await supabase
+      // 2. Get the user_id (creator account) for each invited profile
+      const { data: invitedProfiles } = await supabase
         .from('creator_profiles')
-        .select('id, username, display_name, avatar_url')
-        .in('id', profileIds);
+        .select('user_id')
+        .in('id', invitedProfileIds);
 
-      const loadedProfiles = (profilesData ?? []) as ChatterProfile[];
-      setProfiles(loadedProfiles);
+      const creatorUserIds = [...new Set((invitedProfiles ?? []).map((p: any) => p.user_id))];
 
-      if (loadedProfiles.length === 1) {
-        setActiveProfileId(loadedProfiles[0].id);
-      } else if (loadedProfiles.length > 1) {
+      // 3. Load ALL profiles for each creator account (agency expansion)
+      const { data: allProfilesData } = await supabase
+        .from('creator_profiles')
+        .select('id, username, display_name, avatar_url, user_id')
+        .in('user_id', creatorUserIds)
+        .order('created_at', { ascending: true });
+
+      const allProfiles = (allProfilesData ?? []) as ChatterProfile[];
+
+      // 4. Fetch creator account display names for the client switcher
+      const { data: creatorAccounts } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', creatorUserIds);
+
+      const creatorAccountMap = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+      (creatorAccounts ?? []).forEach((a: any) => creatorAccountMap.set(a.id, { display_name: a.display_name, avatar_url: a.avatar_url }));
+
+      // 5. Group profiles by creator account (client)
+      const clientMap = new Map<string, ChatterClient>();
+      for (const uid of creatorUserIds) {
+        const account = creatorAccountMap.get(uid);
+        clientMap.set(uid, {
+          user_id: uid,
+          display_name: account?.display_name ?? null,
+          avatar_url: account?.avatar_url ?? null,
+          profiles: allProfiles.filter((p) => p.user_id === uid),
+        });
+      }
+      const loadedClients = [...clientMap.values()];
+      setClients(loadedClients);
+      setProfiles(allProfiles);
+
+      // 6. Auto-select client and profile
+      if (loadedClients.length === 1) {
+        setActiveClientUserId(loadedClients[0].user_id);
+        const clientProfilesList = loadedClients[0].profiles;
+        if (clientProfilesList.length === 1) {
+          setActiveProfileId(clientProfilesList[0].id);
+        } else {
+          setActiveProfileId(null);
+        }
+      } else {
+        setActiveClientUserId(creatorUserIds[0]);
         setActiveProfileId(null);
       }
 
@@ -307,7 +363,7 @@ export default function ChatterDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
 
       {/* ── Topbar (matching creator AppShell) ─────────────────────── */}
       <header className="fixed top-0 inset-x-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl">
@@ -370,22 +426,22 @@ export default function ChatterDashboard() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Profile avatar + switcher */}
+            {/* Client avatar + switcher (multiple creator clients) */}
             <div className="relative">
               <motion.button
                 type="button"
-                onClick={() => setShowProfilePicker((v) => !v)}
+                onClick={() => clients.length > 1 ? setShowProfilePicker((v) => !v) : undefined}
                 className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
                   showProfilePicker
                     ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
                     : 'border-border/60 hover:border-primary/50'
-                }`}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
+                } ${clients.length <= 1 ? 'cursor-default' : 'cursor-pointer'}`}
+                whileHover={clients.length > 1 ? { scale: 1.08 } : {}}
+                whileTap={clients.length > 1 ? { scale: 0.95 } : {}}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               >
-                {activeProfile?.avatar_url ? (
-                  <img src={activeProfile.avatar_url} alt="" className="w-full h-full object-cover" />
+                {activeClient?.avatar_url ? (
+                  <img src={activeClient.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-muted flex items-center justify-center">
                     <User className="w-4 h-4 text-muted-foreground" />
@@ -393,8 +449,9 @@ export default function ChatterDashboard() {
                 )}
               </motion.button>
 
+              {/* Client switcher dropdown — only when working for multiple creators */}
               <AnimatePresence>
-                {showProfilePicker && (
+                {showProfilePicker && clients.length > 1 && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -402,53 +459,36 @@ export default function ChatterDashboard() {
                     transition={{ duration: 0.15 }}
                     className="absolute top-full mt-1 right-0 w-56 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden"
                   >
-                    {/* "All profiles" option — only when multiple profiles */}
-                    {profiles.length > 1 && (
+                    <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Your clients
+                    </div>
+                    {clients.map((client) => (
                       <button
+                        key={client.user_id}
                         type="button"
                         onClick={() => {
-                          setActiveProfileId(null);
+                          setActiveClientUserId(client.user_id);
+                          setActiveProfileId(client.profiles.length === 1 ? client.profiles[0].id : null);
                           setSelectedConversation(null);
                           setShowMobileList(true);
                           setShowProfilePicker(false);
                         }}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
-                          activeProfileId === null ? 'bg-muted/40' : ''
+                          client.user_id === activeClientUserId ? 'bg-muted/40' : ''
                         }`}
                       >
-                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <Users className="w-3 h-3 text-primary" />
-                        </div>
-                        <span className="truncate flex-1 text-left font-medium">All profiles</span>
-                        {activeProfileId === null && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
-                      </button>
-                    )}
-                    {profiles.length > 1 && (
-                      <div className="border-t border-border/50 my-1" />
-                    )}
-                    {profiles.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveProfileId(p.id);
-                          setSelectedConversation(null);
-                          setShowMobileList(true);
-                          setShowProfilePicker(false);
-                        }}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
-                          p.id === activeProfileId ? 'bg-muted/40' : ''
-                        }`}
-                      >
-                        {p.avatar_url ? (
-                          <img src={p.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                        {client.avatar_url ? (
+                          <img src={client.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border/40" />
                         ) : (
-                          <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                            {(p.display_name ?? p.username ?? '?').charAt(0).toUpperCase()}
+                          <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                            {(client.display_name ?? '?').charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="truncate flex-1 text-left">{p.display_name || p.username}</span>
-                        {p.id === activeProfileId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-xs font-medium truncate">{client.display_name || 'Creator'}</p>
+                          <p className="text-[10px] text-muted-foreground">{client.profiles.length} profile{client.profiles.length > 1 ? 's' : ''}</p>
+                        </div>
+                        {client.user_id === activeClientUserId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
                       </button>
                     ))}
                   </motion.div>
@@ -689,7 +729,7 @@ export default function ChatterDashboard() {
 
       {/* ── Chat view: split-pane (identical layout to CreatorChat) ────── */}
       {mainView === 'chat' && (
-      <div className="pt-16 sm:pt-20 flex-1 flex overflow-hidden h-[calc(100vh-4rem)] sm:h-[calc(100vh-5rem)]">
+      <div className="pt-16 sm:pt-20 flex-1 flex overflow-hidden">
 
         {/* ── Left panel: conversation list ──────────────────────────── */}
         <div className={`
@@ -698,9 +738,58 @@ export default function ChatterDashboard() {
           ${showMobileList ? 'flex' : 'hidden md:flex'}
         `}>
           <div className="px-4 pt-4 pb-3 border-b border-border">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <h1 className="text-lg font-bold text-foreground">Conversations</h1>
             </div>
+
+            {/* Profile story-bubbles — switch between profiles within the active client */}
+            {clientProfiles.length > 1 && (
+              <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2 mb-2">
+                {/* All profiles bubble */}
+                <button
+                  type="button"
+                  onClick={() => { setActiveProfileId(null); setSelectedConversation(null); setShowMobileList(true); }}
+                  className="flex flex-col items-center gap-1 flex-shrink-0"
+                >
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                    activeProfileId === null
+                      ? 'ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/10'
+                      : 'bg-muted/60 hover:bg-muted'
+                  }`}>
+                    <Users className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <span className={`text-[9px] font-medium truncate max-w-[52px] ${
+                    activeProfileId === null ? 'text-primary' : 'text-muted-foreground'
+                  }`}>All</span>
+                </button>
+
+                {clientProfiles.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => { setActiveProfileId(p.id); setSelectedConversation(null); setShowMobileList(true); }}
+                    className="flex flex-col items-center gap-1 flex-shrink-0"
+                  >
+                    <div className={`w-12 h-12 rounded-full overflow-hidden transition-all ${
+                      activeProfileId === p.id
+                        ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                        : 'ring-1 ring-border/40 hover:ring-primary/50'
+                    }`}>
+                      {p.avatar_url ? (
+                        <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
+                          {(p.display_name ?? p.username ?? '?').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-[9px] font-medium truncate max-w-[52px] ${
+                      activeProfileId === p.id ? 'text-primary' : 'text-muted-foreground'
+                    }`}>{p.display_name || p.username}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />

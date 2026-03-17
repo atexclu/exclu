@@ -44,6 +44,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
   const avatarUrl = activeProfile?.avatar_url ?? null;
   const chatUnreadCount = useChatUnread(activeProfile?.id ?? null);
+  const isChatPage = location.pathname === '/app/chat';
 
   useEffect(() => {
     const fetchAdminStatus = async () => {
@@ -228,12 +229,12 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </header>
 
       {/* Main content */}
-      <div className="pt-16 sm:pt-20 flex-1 flex flex-col pb-24 sm:pb-0">
-        <main className="flex-1">{children}</main>
+      <div className={`pt-16 sm:pt-20 flex-1 flex flex-col ${isChatPage ? 'overflow-hidden' : 'pb-24 sm:pb-0'}`}>
+        <main className={`flex-1 ${isChatPage ? 'overflow-hidden' : ''}`}>{children}</main>
       </div>
 
-      {/* Mobile Floating Dock */}
-      <div className="fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none">
+      {/* Mobile Floating Dock — hidden on chat page */}
+      <div className={`fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none ${isChatPage ? 'hidden' : ''}`}>
         <div className="flex items-center gap-1 px-3 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
           {/* Links Button */}
           <Link to="/app/links">

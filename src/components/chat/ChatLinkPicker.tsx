@@ -1,13 +1,13 @@
 /**
- * ChatContentPicker
+ * ChatLinkPicker
  *
  * Inline panel that slides up above the message composer, showing
- * the creator's published links so a creator or chatter can attach
- * paid content to a chat message.
+ * the creator's published links as modern WhatsApp-style preview cards.
+ * Creator/chatter can select a link to send it in the conversation.
  */
 
 import { useState, useEffect } from 'react';
-import { X, Search, Loader2, Paperclip, FileText } from 'lucide-react';
+import { X, Search, Loader2, Link2, ExternalLink, Image, Video, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -16,35 +16,53 @@ interface LinkItem {
   title: string | null;
   slug: string;
   price_cents: number;
-  storage_path: string | null;
-  mime_type: string | null;
-  previewUrl?: string | null;
-  isVideo?: boolean;
+  previewUrl: string | null;
+  isVideo: boolean;
 }
 
-interface ChatContentPickerProps {
+interface CreatorInfo {
+  display_name: string | null;
+  avatar_url: string | null;
+  username: string | null;
+}
+
+interface ChatLinkPickerProps {
   profileId: string;
   onSelect: (link: LinkItem) => void;
   onClose: () => void;
 }
 
-export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentPickerProps) {
+export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerProps) {
   const [links, setLinks] = useState<LinkItem[]>([]);
+  const [creator, setCreator] = useState<CreatorInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const fetchLinks = async () => {
+    const fetchData = async () => {
       setIsLoading(true);
-      const { data } = await supabase
+
+      // Fetch creator profile info for the avatar on cards
+      const { data: profileData } = await supabase
+        .from('creator_profiles')
+        .select('display_name, avatar_url, username')
+        .eq('id', profileId)
+        .single();
+
+      if (profileData) {
+        setCreator(profileData as CreatorInfo);
+      }
+
+      // Fetch published links for this profile
+      const { data: linksData } = await supabase
         .from('links')
-        .select('id, title, slug, price_cents, storage_path, mime_type')
+        .select('id, title, slug, price_cents, storage_path')
         .eq('profile_id', profileId)
         .eq('status', 'published')
         .order('created_at', { ascending: false })
         .limit(50);
 
-      const rawLinks = (data ?? []) as LinkItem[];
+      const rawLinks = (linksData ?? []) as any[];
 
       // Generate signed preview URLs
       const withPreviews = await Promise.all(
@@ -56,7 +74,7 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
             if (signed?.signedUrl) {
               const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
               const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-              return { ...link, previewUrl: signed.signedUrl, isVideo };
+              return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: signed.signedUrl, isVideo };
             }
           }
 
@@ -76,12 +94,12 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
                 .createSignedUrl(asset.storage_path, 300);
               if (signed?.signedUrl) {
                 const isVideo = asset.mime_type?.startsWith('video/') || false;
-                return { ...link, previewUrl: signed.signedUrl, isVideo };
+                return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: signed.signedUrl, isVideo };
               }
             }
           }
 
-          return { ...link, previewUrl: null, isVideo: false };
+          return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: null, isVideo: false };
         })
       );
 
@@ -89,12 +107,14 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
       setIsLoading(false);
     };
 
-    fetchLinks();
+    fetchData();
   }, [profileId]);
 
   const filtered = search.trim()
     ? links.filter((l) => (l.title ?? '').toLowerCase().includes(search.toLowerCase()))
     : links;
+
+  const creatorName = creator?.display_name || creator?.username || 'Creator';
 
   return (
     <motion.div
@@ -108,8 +128,8 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Paperclip className="w-3.5 h-3.5 text-primary" />
-            <span className="text-xs font-semibold text-foreground">Attach content</span>
+            <Link2 className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-semibold text-foreground">Add link</span>
             <span className="text-[10px] text-muted-foreground">({links.length})</span>
           </div>
           <button
@@ -130,14 +150,14 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search content…"
+                placeholder="Search links…"
                 className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
               />
             </div>
           </div>
         )}
 
-        {/* Content list */}
+        {/* Links grid */}
         <div className="flex-1 overflow-y-auto p-2">
           {isLoading && (
             <div className="flex justify-center py-8">
@@ -147,9 +167,9 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
 
           {!isLoading && filtered.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
-              <Paperclip className="w-5 h-5 text-muted-foreground/30" />
+              <Link2 className="w-5 h-5 text-muted-foreground/30" />
               <p className="text-[11px] text-muted-foreground/60">
-                {search ? 'No matching content' : 'No published content yet'}
+                {search ? 'No matching links' : 'No published links yet'}
               </p>
             </div>
           )}
@@ -163,6 +183,7 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
                   onClick={() => onSelect(link)}
                   className="w-full rounded-xl border border-border/60 bg-background hover:bg-muted/40 hover:border-primary/30 transition-all group overflow-hidden"
                 >
+                  {/* WhatsApp-style link card */}
                   <div className="flex gap-3 p-2.5">
                     {/* Thumbnail */}
                     <div className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border/40">
@@ -192,20 +213,27 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
                     {/* Info */}
                     <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
                       <p className="text-xs font-semibold text-foreground truncate">
-                        {link.title || 'Untitled'}
+                        {link.title || 'Untitled link'}
                       </p>
-                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                        {link.mime_type?.startsWith('image/') ? 'Image' :
-                         link.mime_type?.startsWith('video/') ? 'Video' : 'File'}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {/* Creator avatar */}
+                        <div className="w-4 h-4 rounded-full overflow-hidden bg-muted border border-border/40 flex-shrink-0">
+                          {creator?.avatar_url ? (
+                            <img src={creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[7px] font-bold text-muted-foreground">
+                              {creatorName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground truncate">{creatorName}</span>
+                      </div>
                     </div>
 
                     {/* Price + send indicator */}
                     <div className="flex flex-col items-end justify-center gap-1 flex-shrink-0">
                       <span className="text-[11px] font-bold text-[#CFFF16]">
-                        {link.price_cents > 0
-                          ? `$${(link.price_cents / 100).toFixed(2)}`
-                          : 'Free'}
+                        {link.price_cents > 0 ? `$${(link.price_cents / 100).toFixed(2)}` : 'Free'}
                       </span>
                       <span className="text-[9px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                         Send →
