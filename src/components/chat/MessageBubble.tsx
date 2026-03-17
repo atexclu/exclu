@@ -41,27 +41,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
   return (
     <div className={`flex ${rightAligned ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div className={`max-w-[75%] flex gap-1.5 ${rightAligned ? 'flex-row-reverse items-end' : 'flex-row items-end'}`}>
-
-        {/* Team member avatar (only for non-own team messages) */}
-        {showTeamAvatar && (
-          <div className="w-5 h-5 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
-            {teamSenderInfo?.avatar_url ? (
-              <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-[9px] font-bold text-muted-foreground">{senderInitial}</span>
-            )}
-          </div>
-        )}
-
-        <div className={`flex flex-col gap-0.5 ${rightAligned ? 'items-end' : 'items-start'}`}>
-
-        {/* Sender name for non-own team messages */}
-        {showTeamAvatar && teamSenderInfo?.display_name && (
-          <span className="text-[10px] font-medium text-muted-foreground/70 px-1 mb-0.5">
-            {teamSenderInfo.display_name}
-          </span>
-        )}
+      <div className={`max-w-[75%] flex flex-col ${rightAligned ? 'items-end' : 'items-start'}`}>
 
         {/* Image / video content */}
         {message.content_type === 'image' && message.content && (
@@ -124,10 +104,25 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
         </div>
         )}
 
-        {/* Horodatage */}
-        <span className="text-[10px] text-muted-foreground/50 px-1">
-          {formatTime(message.created_at)}
-        </span>
+        {/* Footer: avatar + sender name + time — inline row below the bubble */}
+        <div className={`flex items-center gap-1 mt-0.5 px-0.5 ${rightAligned ? 'flex-row-reverse' : 'flex-row'}`}>
+          {showTeamAvatar && (
+            <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
+              {teamSenderInfo?.avatar_url ? (
+                <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-[8px] font-bold text-muted-foreground">{senderInitial}</span>
+              )}
+            </div>
+          )}
+          {showTeamAvatar && teamSenderInfo?.display_name && (
+            <span className="text-[10px] font-medium text-muted-foreground/60">
+              {teamSenderInfo.display_name}
+            </span>
+          )}
+          <span className="text-[10px] text-muted-foreground/50">
+            {formatTime(message.created_at)}
+          </span>
         </div>
       </div>
     </div>
