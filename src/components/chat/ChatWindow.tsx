@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, User, Paperclip, Link2, DollarSign } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -150,6 +150,28 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             </div>
           )}
         </div>
+
+        {/* Action buttons — desktop only, for creator/chatter */}
+        {senderType !== 'fan' && (
+          <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => window.open('/app/links/new', '_blank')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] transition-all"
+            >
+              <Plus className="w-3 h-3" />
+              Create link
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowContentPicker(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98] transition-all"
+            >
+              <Paperclip className="w-3 h-3" />
+              Attach content
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Messages — scrollable */}
@@ -204,8 +226,9 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             </button>
           </div>
         )}
+        {/* Mobile-only action buttons for creator/chatter (desktop ones are in header) */}
         {senderType !== 'fan' && (
-          <div className="flex items-center gap-1 px-3 pt-2 border-t border-border">
+          <div className="flex md:hidden items-center gap-1 px-3 pt-2 border-t border-border">
             <button
               type="button"
               onClick={() => window.open('/app/links/new', '_blank')}

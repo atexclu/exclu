@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { UserPlus, X, Loader2, Users } from 'lucide-react';
+import { UserPlus, X, Loader2, Users, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -92,19 +92,16 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
 
   return (
     <>
-      <div className="flex flex-col h-full bg-card border-l border-border">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-semibold text-foreground">Paramètres du chat</span>
-          </div>
+      <div className="flex flex-col h-full bg-card">
+        {/* Header with back button */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
-            <X className="w-4 h-4" />
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Conversations
           </button>
         </div>
 

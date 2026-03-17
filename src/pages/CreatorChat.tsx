@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft, Settings2, Send, X } from 'lucide-react';
+import { MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft, Users, Send, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AppShell from '@/components/AppShell';
 import { Input } from '@/components/ui/input';
@@ -115,82 +115,114 @@ export default function CreatorChat() {
                     <button
                       type="button"
                       onClick={() => setShowSettings((s) => !s)}
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                      className={`h-7 px-2.5 rounded-lg flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
                         showSettings ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground'
                       }`}
-                      title="Chat settings"
+                      title="Chatters"
                     >
-                      <Settings2 className="w-4 h-4" />
+                      <Users className="w-3.5 h-3.5" />
+                      Chatters
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
-                />
-              </div>
-
-              <div className="flex gap-1 mt-2 overflow-x-auto scrollbar-hide">
-                {filterTabs.map(({ key, label, badge }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setStatusFilter(key)}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                      statusFilter === key
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {label}
-                    {badge !== undefined && badge > 0 && (
-                      <span className="px-1 py-0.5 rounded-full bg-yellow-400/20 text-yellow-400 text-[9px] font-bold min-w-[14px] text-center">
-                        {badge}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-              {isLoading && (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
+            {/* Sliding content: conversations list vs settings panel */}
+            <AnimatePresence mode="wait" initial={false}>
+              {showSettings && activeProfile ? (
+                <motion.div
+                  key="settings"
+                  initial={{ x: '100%', opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: '100%', opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
+                  className="flex-1 flex flex-col overflow-hidden"
+                >
+                  <ChatSettingsPanel
+                    profileId={activeProfile.id}
+                    onClose={() => setShowSettings(false)}
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="conversations"
+                  initial={{ x: '-100%', opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: '-100%', opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
+                  className="flex-1 flex flex-col overflow-hidden"
+                >
+                  <div className="px-4 pb-3 border-b border-border">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search…"
+                        className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
+                      />
+                    </div>
 
-              {!isLoading && filteredConversations.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-4">
-                  <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground/60">
-                      {searchQuery ? 'No results' : 'No conversations'}
-                    </p>
-                    <p className="text-xs text-muted-foreground/40">
-                      {searchQuery
-                        ? 'Try a different search'
-                        : 'Fan conversations will appear here'}
-                    </p>
+                    <div className="flex gap-1 mt-2 overflow-x-auto scrollbar-hide">
+                      {filterTabs.map(({ key, label, badge }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setStatusFilter(key)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                            statusFilter === key
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {label}
+                          {badge !== undefined && badge > 0 && (
+                            <span className="px-1 py-0.5 rounded-full bg-yellow-400/20 text-yellow-400 text-[9px] font-bold min-w-[14px] text-center">
+                              {badge}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {!isLoading && filteredConversations.map((conv) => (
-                <ConversationListItem
-                  key={conv.id}
-                  conversation={conv}
-                  isSelected={selectedConversation?.id === conv.id}
-                  onClick={() => handleSelectConversation(conv)}
-                />
-              ))}
-            </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                    {isLoading && (
+                      <div className="flex justify-center py-10">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+
+                    {!isLoading && filteredConversations.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-4">
+                        <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-muted-foreground/60">
+                            {searchQuery ? 'No results' : 'No conversations'}
+                          </p>
+                          <p className="text-xs text-muted-foreground/40">
+                            {searchQuery
+                              ? 'Try a different search'
+                              : 'Fan conversations will appear here'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isLoading && filteredConversations.map((conv) => (
+                      <ConversationListItem
+                        key={conv.id}
+                        conversation={conv}
+                        isSelected={selectedConversation?.id === conv.id}
+                        onClick={() => handleSelectConversation(conv)}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* ── Panneau droit : fenêtre de chat ──────────────────────────── */}
@@ -249,43 +281,6 @@ export default function CreatorChat() {
             </AnimatePresence>
           </div>
 
-          {/* ── Settings desktop side panel ───────────────────────────────── */}
-          <AnimatePresence>
-            {showSettings && activeProfile && (
-              <motion.div
-                key="settings-panel"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 300, opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex-shrink-0 overflow-hidden hidden md:block"
-              >
-                <ChatSettingsPanel
-                  profileId={activeProfile.id}
-                  onClose={() => setShowSettings(false)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* ── Settings mobile full-screen overlay ───────────────────────── */}
-          <AnimatePresence>
-            {showSettings && activeProfile && (
-              <motion.div
-                key="settings-mobile"
-                initial={{ opacity: 0, x: '100%' }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: '100%' }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="fixed inset-0 z-40 bg-card md:hidden"
-              >
-                <ChatSettingsPanel
-                  profileId={activeProfile.id}
-                  onClose={() => setShowSettings(false)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </div>
 

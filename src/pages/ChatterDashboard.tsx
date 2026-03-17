@@ -56,6 +56,7 @@ export default function ChatterDashboard() {
   const { resolvedTheme, setTheme } = useTheme();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [chatterDisplayName, setChatterDisplayName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -103,6 +104,16 @@ export default function ChatterDashboard() {
         return;
       }
       setCurrentUserId(user.id);
+
+      // Fetch chatter's own display name
+      const { data: ownProfile } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', user.id)
+        .single();
+      if (ownProfile?.display_name) {
+        setChatterDisplayName(ownProfile.display_name);
+      }
 
       const { data: invitations } = await supabase
         .from('chatter_invitations')
@@ -491,7 +502,7 @@ export default function ChatterDashboard() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                    <span>Welcome back{activeProfile?.display_name ? <>, <span className="text-black dark:text-[#CFFF16]">{activeProfile.display_name}</span></> : ''}</span>
+                    <span>Welcome back{chatterDisplayName ? <>, <span className="text-black dark:text-[#CFFF16]">{chatterDisplayName}</span></> : ''}</span>
                   </h1>
                   <p className="text-sm text-exclu-space/70 mt-1">
                     Here's an overview of your performance
