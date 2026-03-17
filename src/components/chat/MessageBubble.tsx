@@ -2,12 +2,12 @@
  * MessageBubble
  *
  * Affiche un seul message dans la fenêtre de chat.
- * - Messages du fan : alignés à gauche, fond muted
+ * - Messages du fan : alignés à gauche, fond noir (dark) / blanc (light)
  * - Messages du créateur/chatter : alignés à droite, fond primary
  * - Messages système : centrés, italique, discrets
  */
 
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, UserCircle } from 'lucide-react';
 import type { Message } from '@/types/chat';
 
 interface MessageBubbleProps {
@@ -58,50 +58,59 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
         {/* Bulle principale (text / paid content) */}
         {message.content_type !== 'image' && (
-        <div
-          className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-            rightAligned
-              ? isOwn
-                ? 'bg-primary text-primary-foreground rounded-br-sm'
-                : 'bg-primary/60 text-primary-foreground rounded-br-sm'
-              : 'bg-muted text-foreground rounded-bl-sm'
-          }`}
-        >
-          {/* Contenu texte */}
-          {message.content && (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
-          )}
-
-          {/* Contenu payant attaché */}
-          {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
-            <div className={`mt-2 rounded-xl border p-3 flex items-center gap-3 ${
-              rightAligned ? 'border-white/20 bg-white/10' : 'border-border bg-background/60'
-            }`}>
-              <div className="flex-1 min-w-0">
-                <p className={`text-xs font-semibold truncate ${rightAligned ? 'text-primary-foreground' : 'text-foreground'}`}>
-                  {message.link.title || 'Exclusive content'}
-                </p>
-                {message.link.price_cents > 0 && (
-                  <p className={`text-[11px] mt-0.5 ${rightAligned ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                    ${(message.link.price_cents / 100).toFixed(2)}
-                  </p>
-                )}
+          <div className="relative">
+            {/* Chatter badge for team messages not sent by current user */}
+            {showTeamAvatar && (
+              <div className="absolute -top-1 -right-1 z-10">
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/90 text-white text-[8px] font-bold shadow-sm">
+                  <UserCircle className="w-2.5 h-2.5" />
+                  Chatter
+                </div>
               </div>
-              <a
-                href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                  rightAligned
-                    ? 'bg-white/20 hover:bg-white/30 text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+            )}
+            <div
+              className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                rightAligned
+                  ? 'bg-primary text-primary-foreground rounded-br-sm'
+                  : 'bg-black dark:bg-black text-white dark:text-white border border-white/10 rounded-bl-sm'
+              }`}
+            >
+              {/* Contenu texte */}
+              {message.content && (
+                <p className="whitespace-pre-wrap break-words">{message.content}</p>
+              )}
+
+              {/* Contenu payant attaché */}
+              {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
+                <div className={`mt-2 rounded-xl border p-3 flex items-center gap-3 ${
+                  rightAligned ? 'border-white/20 bg-white/10' : 'border-white/20 bg-white/10'
+                }`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-semibold truncate ${rightAligned ? 'text-primary-foreground' : 'text-white'}`}>
+                      {message.link.title || 'Exclusive content'}
+                    </p>
+                    {message.link.price_cents > 0 && (
+                      <p className={`text-[11px] mt-0.5 ${rightAligned ? 'text-primary-foreground/70' : 'text-white/70'}`}>
+                        ${(message.link.price_cents / 100).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                  <a
+                    href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                      rightAligned
+                        ? 'bg-white/20 hover:bg-white/30 text-primary-foreground'
+                        : 'bg-white/20 hover:bg-white/30 text-white'
+                    }`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
         )}
 
         {/* Footer: avatar + sender name + time — inline row below the bubble */}
