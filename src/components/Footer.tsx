@@ -34,7 +34,7 @@ const Footer = () => {
     ],
     support: [
       { label: 'Help Center', href: '/help-center' },
-      { label: 'Contact', href: '/contact' },
+      { label: 'Contact', href: 'https://telegram.me/exclu_support', external: true },
     ],
   };
 
@@ -108,7 +108,11 @@ const Footer = () => {
             <ul className="space-y-3">
               {links.support.map((link) => (
                 <li key={link.label}>
-                  <a href={link.href} className="text-exclu-space hover:text-primary transition-colors text-sm">
+                  <a
+                    href={link.href}
+                    className="text-exclu-space hover:text-primary transition-colors text-sm"
+                    {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  >
                     {link.label}
                   </a>
                 </li>

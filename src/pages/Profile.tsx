@@ -1414,6 +1414,30 @@ const Profile = () => {
               )}
             </div>
           </div>
+        {/* Support card */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15 }}
+          className="mt-6 rounded-2xl border border-border bg-card p-4"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Need help?</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Contact our support team on Telegram</p>
+            </div>
+            <a
+              href="https://telegram.me/exclu_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-sm font-medium transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Contact
+            </a>
+          </div>
+        </motion.div>
+
         {/* Logout card — mobile only */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}

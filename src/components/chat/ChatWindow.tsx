@@ -6,7 +6,9 @@
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Loader2, User, Paperclip } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { useMessages } from '@/hooks/useMessages';
@@ -69,6 +71,42 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     await sendMessage({ content: trimmed, senderType });
   };
 
+  const handleMediaSelect = async (file: File) => {
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
+      || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !isHeic) {
+      toast.error('Please select an image or video file');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('File size must be less than 50MB');
+      return;
+    }
+    try {
+      toast.loading('Uploading media\u2026', { id: 'chat-media-upload' });
+      const converted = await maybeConvertHeic(file);
+      const ext = converted.name.split('.').pop() ?? 'bin';
+      const path = `${conversation.id}/${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from('chat-media')
+        .upload(path, converted, { cacheControl: '3600', upsert: false });
+      if (uploadErr) throw uploadErr;
+      const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(path);
+      const publicUrl = urlData.publicUrl;
+      await sendMessage({
+        content: publicUrl,
+        senderType,
+        contentType: 'image',
+      });
+      toast.dismiss('chat-media-upload');
+      toast.success('Media sent');
+    } catch (err) {
+      console.error('Chat media upload error', err);
+      toast.dismiss('chat-media-upload');
+      toast.error('Failed to upload media. Please try again.');
+    }
+  };
+
   const handleAttachContent = async (link: { id: string; title: string | null; price_cents: number }) => {
     setShowContentPicker(false);
     await sendMessage({
@@ -81,7 +119,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Conversation header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
         <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
@@ -95,17 +133,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
-          {senderType !== 'chatter' && (
-            <p className="text-[11px] text-muted-foreground/60">
-              {conversation.status === 'unclaimed' ? '⏳ Pending' : '● Active'}
-              {conversation.total_revenue_cents > 0 && (
-                <span className="ml-2 text-green-400/70">
-                  ${(conversation.total_revenue_cents / 100).toFixed(2)} earned
-                </span>
-              )}
-            </p>
-          )}
-          {conversation.total_revenue_cents > 0 && senderType === 'chatter' && (
+          {conversation.total_revenue_cents > 0 && (
             <p className="text-[11px] text-green-400/70">
               ${(conversation.total_revenue_cents / 100).toFixed(2)} earned
             </p>
@@ -160,14 +188,23 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       </div>
 
       {/* Composer + action buttons */}
-      <div className="border-t border-border">
+      <div className="flex-shrink-0">
         {senderType !== 'fan' && (
-          <div className="flex items-center gap-1 px-3 pt-2">
+          <div className="flex items-center gap-1 px-3 pt-2 border-t border-border">
+            <button
+              type="button"
+              onClick={() => window.open('/app/links/new', '_blank')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              title="Create a new link"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              Create link
+            </button>
             <button
               type="button"
               onClick={() => setShowContentPicker(true)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-              title="Attach paid content"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              title="Attach existing content"
             >
               <Paperclip className="w-3.5 h-3.5" />
               Attach content
@@ -179,7 +216,8 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           onChange={setDraft}
           onSend={handleSend}
           isSending={isSending}
-          placeholder={`Reply to ${fanName}…`}
+          placeholder={`Reply to ${fanName}\u2026`}
+          onMediaSelect={handleMediaSelect}
         />
       </div>
 

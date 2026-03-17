@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Search, Loader2, ExternalLink, Package } from 'lucide-react';
+import { X, Search, Loader2, ExternalLink, Package, Image, Video, FileText, DollarSign } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -15,8 +15,8 @@ interface LinkItem {
   title: string | null;
   slug: string;
   price_cents: number;
-  thumbnail_url: string | null;
-  status: string;
+  storage_path: string | null;
+  mime_type: string | null;
 }
 
 interface ChatContentPickerProps {
@@ -35,7 +35,7 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
       setIsLoading(true);
       const { data } = await supabase
         .from('links')
-        .select('id, title, slug, price_cents, thumbnail_url, status')
+        .select('id, title, slug, price_cents, storage_path, mime_type')
         .eq('profile_id', profileId)
         .eq('status', 'published')
         .order('created_at', { ascending: false })
@@ -118,12 +118,14 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
               onClick={() => onSelect(link)}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left group"
             >
-              {/* Thumbnail */}
+              {/* Icon */}
               <div className="w-10 h-10 rounded-lg bg-muted border border-border flex-shrink-0 overflow-hidden flex items-center justify-center">
-                {link.thumbnail_url ? (
-                  <img src={link.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                {link.mime_type?.startsWith('image/') ? (
+                  <Image className="w-4 h-4 text-muted-foreground/60" />
+                ) : link.mime_type?.startsWith('video/') ? (
+                  <Video className="w-4 h-4 text-muted-foreground/60" />
                 ) : (
-                  <ExternalLink className="w-4 h-4 text-muted-foreground/40" />
+                  <FileText className="w-4 h-4 text-muted-foreground/40" />
                 )}
               </div>
 

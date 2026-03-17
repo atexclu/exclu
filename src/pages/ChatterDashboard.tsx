@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
-  DollarSign, Users,
+  DollarSign, Users, Sun, Moon, ExternalLink, User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -53,7 +53,7 @@ interface ChatterMetrics {
 
 export default function ChatterDashboard() {
   const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -285,120 +285,169 @@ export default function ChatterDashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
 
-      {/* ── Topbar ────────────────────────────────────────────────────── */}
+      {/* ── Topbar (matching creator AppShell) ─────────────────────── */}
       <header className="fixed top-0 inset-x-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-4">
           <a href="/" className="inline-flex items-center flex-shrink-0">
             <img
               src={resolvedTheme === 'light' ? logoBlack : logoWhite}
               alt="Exclu"
-              className="h-5 w-auto object-contain"
+              className="h-5 sm:h-6 w-auto object-contain"
             />
           </a>
 
-          {/* Profile switcher — center */}
-          <div className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowProfilePicker((v) => !v)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-sm font-medium"
-            >
-              {activeProfile?.avatar_url ? (
-                <img src={activeProfile.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-              ) : (
-                <div className="w-5 h-5 rounded-full bg-muted-foreground/20 flex items-center justify-center text-[10px] font-bold">
-                  {(activeProfile?.display_name ?? activeProfile?.username ?? '?').charAt(0).toUpperCase()}
-                </div>
-              )}
-              <span className="truncate max-w-[120px] sm:max-w-[180px]">
-                {activeProfile?.display_name || activeProfile?.username || 'Select profile'}
-              </span>
-              {profiles.length > 1 && <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
-            </button>
-
-            {/* Dropdown */}
-            <AnimatePresence>
-              {showProfilePicker && profiles.length > 1 && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute top-full mt-1 left-0 w-56 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden"
+          {/* Chat / Dashboard nav pill — center */}
+          <nav className="flex-1 flex items-center justify-center">
+            <div className="relative flex items-center gap-0.5 sm:gap-1 rounded-2xl bg-muted/50 dark:bg-muted/30 p-1">
+              <button
+                type="button"
+                onClick={() => setMainView('chat')}
+                className="relative z-10"
+              >
+                <div
+                  className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
+                    mainView === 'chat' ? 'text-black dark:text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  {profiles.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveProfileId(p.id);
-                        setSelectedConversation(null);
-                        setShowMobileList(true);
-                        setShowProfilePicker(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
-                        p.id === activeProfileId ? 'bg-muted/40' : ''
-                      }`}
-                    >
-                      {p.avatar_url ? (
-                        <img src={p.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                          {(p.display_name ?? p.username ?? '?').charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="truncate flex-1 text-left">{p.display_name || p.username}</span>
-                      {p.id === activeProfileId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
-                    </button>
-                  ))}
-                </motion.div>
+                  <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">Chat</span>
+                </div>
+                {mainView === 'chat' && (
+                  <motion.div
+                    layoutId="chatter-nav-active"
+                    className="absolute inset-0 rounded-xl bg-background dark:bg-white/10 shadow-sm dark:shadow-[0_0_12px_rgba(255,255,255,0.06)] border border-border/60 dark:border-white/10"
+                    transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
+                  />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMainView('dashboard')}
+                className="relative z-10"
+              >
+                <div
+                  className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${
+                    mainView === 'dashboard' ? 'text-black dark:text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">Dashboard</span>
+                </div>
+                {mainView === 'dashboard' && (
+                  <motion.div
+                    layoutId="chatter-nav-active"
+                    className="absolute inset-0 rounded-xl bg-background dark:bg-white/10 shadow-sm dark:shadow-[0_0_12px_rgba(255,255,255,0.06)] border border-border/60 dark:border-white/10"
+                    transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
+                  />
+                )}
+              </button>
+            </div>
+          </nav>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Profile avatar + switcher */}
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={() => setShowProfilePicker((v) => !v)}
+                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
+                  showProfilePicker
+                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                    : 'border-border/60 hover:border-primary/50'
+                }`}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              >
+                {activeProfile?.avatar_url ? (
+                  <img src={activeProfile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
+              </motion.button>
+
+              <AnimatePresence>
+                {showProfilePicker && profiles.length > 1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full mt-1 right-0 w-56 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden"
+                  >
+                    {profiles.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveProfileId(p.id);
+                          setSelectedConversation(null);
+                          setShowMobileList(true);
+                          setShowProfilePicker(false);
+                        }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
+                          p.id === activeProfileId ? 'bg-muted/40' : ''
+                        }`}
+                      >
+                        {p.avatar_url ? (
+                          <img src={p.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                            {(p.display_name ?? p.username ?? '?').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="truncate flex-1 text-left">{p.display_name || p.username}</span>
+                        {p.id === activeProfileId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Theme toggle — desktop only */}
+            <motion.button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="hidden sm:flex items-center justify-center w-9 h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Toggle theme"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              {resolvedTheme === 'dark' ? (
+                <Sun className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <Moon className="w-4 h-4 text-muted-foreground" />
               )}
-            </AnimatePresence>
-          </div>
+            </motion.button>
 
-          {/* Chat / Dashboard toggle */}
-          <div className="inline-flex rounded-full border border-border/60 bg-muted/30 p-0.5 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setMainView('chat')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-full font-medium transition-all ${
-                mainView === 'chat'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+            {/* Logout */}
+            <motion.div
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             >
-              <MessageCircle className="w-3 h-3" />
-              Chat
-            </button>
-            <button
-              type="button"
-              onClick={() => setMainView('dashboard')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-full font-medium transition-all ${
-                mainView === 'dashboard'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <BarChart3 className="w-3 h-3" />
-              Dashboard
-            </button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-full h-8 w-8 sm:h-9 sm:w-9 border-border/60"
+                onClick={handleSignOut}
+                aria-label="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </motion.div>
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full h-8 w-8 border-border/60 flex-shrink-0"
-            onClick={handleSignOut}
-            title="Sign out"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
         </div>
       </header>
 
       {/* ── Dashboard view ─────────────────────────────────────────── */}
       {mainView === 'dashboard' && (
-        <div className="pt-14 flex-1 overflow-y-auto">
+        <div className="pt-16 sm:pt-20 flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
             <div>
               <h2 className="text-lg font-bold text-foreground">Performance</h2>
@@ -584,7 +633,7 @@ export default function ChatterDashboard() {
 
       {/* ── Chat view: split-pane (identical layout to CreatorChat) ────── */}
       {mainView === 'chat' && (
-      <div className="pt-14 flex-1 flex overflow-hidden h-[calc(100vh-3.5rem)]">
+      <div className="pt-16 sm:pt-20 flex-1 flex overflow-hidden h-[calc(100vh-4rem)] sm:h-[calc(100vh-5rem)]">
 
         {/* ── Left panel: conversation list ──────────────────────────── */}
         <div className={`

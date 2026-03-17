@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
 import { ActionFunctionArgs, redirect } from 'react-router-dom';
 import { User } from '@supabase/supabase-js';
@@ -132,20 +133,31 @@ const Onboarding = () => {
     setCroppedAvatarAreaPixels(croppedAreaPixels);
   };
 
-  const handleAvatarFileSelect = (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size must be less than 5MB');
+  const handleAvatarFileSelect = async (file: File) => {
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('File size must be less than 20MB');
       return;
     }
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file (JPG, PNG, WebP)');
+    const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
+      || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+    if (!file.type.startsWith('image/') && !isHeic) {
+      toast.error('Please upload an image file (JPG, PNG, WebP, HEIC)');
       return;
     }
-    if (rawAvatarUrl) URL.revokeObjectURL(rawAvatarUrl);
-    const objectUrl = URL.createObjectURL(file);
-    setRawAvatarUrl(objectUrl);
-    setAvatarCrop({ x: 0, y: 0 });
-    setAvatarZoom(1);
+    try {
+      toast.loading('Processing image…', { id: 'avatar-processing' });
+      const converted = await maybeConvertHeic(file);
+      if (rawAvatarUrl) URL.revokeObjectURL(rawAvatarUrl);
+      const objectUrl = URL.createObjectURL(converted);
+      setRawAvatarUrl(objectUrl);
+      setAvatarCrop({ x: 0, y: 0 });
+      setAvatarZoom(1);
+      toast.dismiss('avatar-processing');
+    } catch (err) {
+      console.error('Avatar file processing error', err);
+      toast.dismiss('avatar-processing');
+      toast.error('Could not process this image. Try a JPG or PNG instead.');
+    }
   };
 
   // Auto-generate handle from display name

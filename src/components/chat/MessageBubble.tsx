@@ -56,7 +56,28 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
         <div className={`flex flex-col gap-0.5 ${rightAligned ? 'items-end' : 'items-start'}`}>
 
-        {/* Bulle principale */}
+        {/* Sender name for non-own team messages */}
+        {showTeamAvatar && teamSenderInfo?.display_name && (
+          <span className="text-[10px] font-medium text-muted-foreground/70 px-1 mb-0.5">
+            {teamSenderInfo.display_name}
+          </span>
+        )}
+
+        {/* Image / video content */}
+        {message.content_type === 'image' && message.content && (
+          <div className="rounded-2xl overflow-hidden max-w-[260px]">
+            {message.content.match(/\.(mp4|mov|webm|avi)$/i) ? (
+              <video src={message.content} controls className="w-full rounded-2xl" preload="metadata" />
+            ) : (
+              <a href={message.content} target="_blank" rel="noopener noreferrer">
+                <img src={message.content} alt="" className="w-full rounded-2xl object-cover" loading="lazy" />
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Bulle principale (text / paid content) */}
+        {message.content_type !== 'image' && (
         <div
           className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
             rightAligned
@@ -101,6 +122,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
             </div>
           )}
         </div>
+        )}
 
         {/* Horodatage */}
         <span className="text-[10px] text-muted-foreground/50 px-1">
