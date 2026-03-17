@@ -32,6 +32,7 @@ interface LinkInBioData {
   exclusive_content_link_id: string | null;
   exclusive_content_url: string | null;
   exclusive_content_image_url: string | null;
+  chat_enabled?: boolean;
   tips_enabled?: boolean;
   custom_requests_enabled?: boolean;
   show_agency_branding?: boolean;
@@ -341,24 +342,37 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         </div>
                       )}
 
-                      {/* Tips & Requests CTA */}
-                      {(data.tips_enabled || data.custom_requests_enabled) && (
-                        <div className="flex gap-2 mt-3">
+                      {/* Tips, Requests & Chat CTAs */}
+                      {(data.tips_enabled || data.custom_requests_enabled || data.chat_enabled) && (
+                        <div className="space-y-2 mt-3">
                           {data.tips_enabled && (
                             <div
-                              className="flex-1 h-9 rounded-full flex items-center justify-center gap-1.5 text-[10px] font-semibold text-white shadow-lg"
+                              className="h-9 rounded-full flex items-center justify-center gap-1.5 text-[10px] font-semibold text-white shadow-lg"
                               style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
                             >
                               <DollarSign className="w-3 h-3" />
                               Send a Tip
                             </div>
                           )}
-                          {data.custom_requests_enabled && (
-                            <div
-                              className="flex-1 h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center gap-1.5 text-[10px] font-medium text-white"
-                            >
-                              <MessageSquare className="w-3 h-3" />
-                              Custom Request
+                          {(data.custom_requests_enabled || data.chat_enabled) && (
+                            <div className="flex gap-2">
+                              {data.custom_requests_enabled && (
+                                <div
+                                  className="h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center gap-1.5 text-[10px] font-medium text-white"
+                                  style={{ width: data.chat_enabled ? '65%' : '100%' }}
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  Custom Request
+                                </div>
+                              )}
+                              {data.chat_enabled && (
+                                <div
+                                  className="h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center gap-1.5 text-[10px] font-medium text-white"
+                                  style={{ width: data.custom_requests_enabled ? '35%' : '100%' }}
+                                >
+                                  Chat
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

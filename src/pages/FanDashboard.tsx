@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { useTheme } from '@/contexts/ThemeContext';
+import { ChatWindow } from '@/components/chat/ChatWindow';
+import type { Conversation } from '@/types/chat';
 
 interface FavoriteCreator {
   id: string;
@@ -74,7 +76,7 @@ const FanDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { resolvedTheme, setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'favorites' | 'tips' | 'requests' | 'settings'>('favorites');
+  const [activeTab, setActiveTab] = useState<'favorites' | 'tips' | 'requests' | 'messages' | 'settings'>('favorites');
   const [favorites, setFavorites] = useState<FavoriteCreator[]>([]);
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
@@ -85,8 +87,16 @@ const FanDashboard = () => {
   const [fanAvatarUrl, setFanAvatarUrl] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Messages tab
+  const [fanConversations, setFanConversations] = useState<Conversation[]>([]);
+  const [selectedFanConversation, setSelectedFanConversation] = useState<Conversation | null>(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [showMobileConvList, setShowMobileConvList] = useState(true);
+
   // Auto-favorite creator from signup redirect
   const creatorFromSignup = searchParams.get('creator');
+  const tabParam = searchParams.get('tab');
+  const convParam = searchParams.get('conversation');
 
   useEffect(() => {
     const init = async () => {
@@ -127,10 +137,45 @@ const FanDashboard = () => {
       }
 
       await fetchData(user.id);
+
+      // Handle tab/conversation redirect from CreatorPublic
+      if (tabParam === 'messages') {
+        setActiveTab('messages');
+        await fetchFanConversations(user.id, convParam ?? null);
+      }
     };
 
     init();
-  }, [creatorFromSignup]);
+  }, [creatorFromSignup, tabParam, convParam]);
+
+  const fetchFanConversations = async (uid: string, preSelectId: string | null) => {
+    setIsLoadingConversations(true);
+    const { data } = await supabase
+      .from('conversations')
+      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url)')
+      .eq('fan_id', uid)
+      .in('status', ['unclaimed', 'active'])
+      .order('last_message_at', { ascending: false, nullsFirst: false });
+
+    if (data) {
+      // Map creator_profile into fan field shape expected by ChatWindow
+      const mapped: Conversation[] = data.map((c: any) => ({
+        ...c,
+        fan: c.creator_profile
+          ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url }
+          : null,
+      }));
+      setFanConversations(mapped);
+      if (preSelectId) {
+        const target = mapped.find((c) => c.id === preSelectId);
+        if (target) {
+          setSelectedFanConversation(target);
+          setShowMobileConvList(false);
+        }
+      }
+    }
+    setIsLoadingConversations(false);
+  };
 
   const fetchData = async (uid: string) => {
     setIsLoading(true);
@@ -222,9 +267,19 @@ const FanDashboard = () => {
 
   const tabs = [
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
+    { key: 'messages' as const, label: 'Messages', icon: MessagesSquare },
     { key: 'tips' as const, label: 'Tips', icon: DollarSign },
     { key: 'requests' as const, label: 'Requests', icon: MessageSquare },
   ];
+
+  const handleMessagesTabClick = async () => {
+    if (activeTab !== 'messages') {
+      setActiveTab('messages');
+      if (userId && fanConversations.length === 0) {
+        await fetchFanConversations(userId, null);
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -251,7 +306,7 @@ const FanDashboard = () => {
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setActiveTab(key)}
+                    onClick={() => key === 'messages' ? handleMessagesTabClick() : setActiveTab(key as any)}
                     className="relative z-10"
                   >
                     <motion.div
@@ -534,6 +589,95 @@ const FanDashboard = () => {
                     ))}
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── MESSAGES TAB ── */}
+            {!isLoading && activeTab === 'messages' && (
+              <motion.div
+                key="messages"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.25 }}
+                className="flex gap-0 -mx-4 sm:-mx-6 h-[calc(100vh-12rem)] rounded-2xl overflow-hidden border border-border/60"
+              >
+                {/* Liste des conversations */}
+                <div className={`flex flex-col border-r border-border/60 bg-card w-full md:w-72 flex-shrink-0 ${
+                  showMobileConvList ? 'flex' : 'hidden md:flex'
+                }`}>
+                  <div className="px-4 py-3 border-b border-border/60">
+                    <h2 className="text-sm font-semibold text-foreground">Messages</h2>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {isLoadingConversations && (
+                      <div className="flex justify-center py-8">
+                        <div className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                      </div>
+                    )}
+                    {!isLoadingConversations && fanConversations.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3 text-center px-4">
+                        <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
+                        <p className="text-xs text-muted-foreground/60">Aucune conversation encore</p>
+                      </div>
+                    )}
+                    {!isLoadingConversations && fanConversations.map((conv) => {
+                      const profile = conv.fan;
+                      const name = profile?.display_name || 'Creator';
+                      return (
+                        <button
+                          key={conv.id}
+                          type="button"
+                          onClick={() => { setSelectedFanConversation(conv); setShowMobileConvList(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                            selectedFanConversation?.id === conv.id
+                              ? 'bg-primary/10 border border-primary/20'
+                              : 'hover:bg-muted/60 border border-transparent'
+                          }`}
+                        >
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
+                            {profile?.avatar_url
+                              ? <img src={profile.avatar_url} alt={name} className="w-full h-full object-cover" />
+                              : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">{name.charAt(0)}</div>
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{name}</p>
+                            <p className="text-xs text-muted-foreground/60 truncate">
+                              {conv.last_message_preview || 'Début de la conversation'}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Fenêtre de chat */}
+                <div className={`flex-1 overflow-hidden ${
+                  !showMobileConvList ? 'flex flex-col' : 'hidden md:flex md:flex-col'
+                }`}>
+                  {selectedFanConversation && userId ? (
+                    <>
+                      <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border/60">
+                        <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 px-2" onClick={() => setShowMobileConvList(true)}>
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          Retour
+                        </Button>
+                      </div>
+                      <ChatWindow
+                        conversation={selectedFanConversation}
+                        currentUserId={userId}
+                        senderType="fan"
+                      />
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+                      <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
+                      <p className="text-sm text-muted-foreground/50">Sélectionne une conversation</p>
+                    </div>
+                  )}
+                </div>
               </motion.div>
             )}
 

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2 } from 'lucide-react';
+import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -42,6 +43,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const avatarUrl = activeProfile?.avatar_url ?? null;
+  const chatUnreadCount = useChatUnread(activeProfile?.id ?? null);
 
   useEffect(() => {
     const fetchAdminStatus = async () => {
@@ -114,6 +116,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
               {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
+                const badge = item.path === '/app/chat' ? chatUnreadCount : 0;
                 return (
                   <Link
                     key={item.path}
@@ -129,7 +132,14 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                       whileTap={{ scale: 0.97 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                     >
-                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <div className="relative">
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        {badge > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
+                      </div>
                       <span className="hidden sm:inline">{item.label}</span>
                     </motion.div>
                     {active && (

@@ -38,6 +38,7 @@ interface LinkInBioData {
     social_order: string[];
     content_order: string[];
   };
+  chat_enabled: boolean;
   tips_enabled: boolean;
   custom_requests_enabled: boolean;
   min_tip_amount_cents: number;
@@ -84,6 +85,7 @@ const LinkInBioEditor = () => {
       social_order: [],
       content_order: [],
     },
+    chat_enabled: true,
     tips_enabled: false,
     custom_requests_enabled: false,
     min_tip_amount_cents: 500,
@@ -152,7 +154,7 @@ const LinkInBioEditor = () => {
       if (activeProfile?.id) {
         const { data: cpData, error: cpError } = await supabase
           .from('creator_profiles')
-          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
           .eq('id', activeProfile.id)
           .maybeSingle();
 
@@ -221,6 +223,7 @@ const LinkInBioEditor = () => {
           exclusive_content_url: profileData.exclusive_content_url || null,
           exclusive_content_image_url: profileData.exclusive_content_image_url || null,
           link_order: profileData.link_order || { social_order: [], content_order: [] },
+          chat_enabled: profileData.chat_enabled !== false,
           tips_enabled: profileData.tips_enabled === true,
           custom_requests_enabled: profileData.custom_requests_enabled === true,
           min_tip_amount_cents: profileData.min_tip_amount_cents || 500,
@@ -316,6 +319,7 @@ const LinkInBioEditor = () => {
         exclusive_content_url: debouncedData.exclusive_content_url,
         exclusive_content_image_url: debouncedData.exclusive_content_image_url,
         link_order: debouncedData.link_order,
+        chat_enabled: debouncedData.chat_enabled,
         tips_enabled: debouncedData.tips_enabled,
         custom_requests_enabled: debouncedData.custom_requests_enabled,
         min_tip_amount_cents: debouncedData.min_tip_amount_cents,
@@ -813,6 +817,7 @@ const LinkInBioEditor = () => {
                           showCertification={editorData.show_certification}
                           showDeeplinks={editorData.show_deeplinks}
                           showAvailableNow={editorData.show_available_now}
+                          chatEnabled={editorData.chat_enabled}
                           isPremium={isPremium}
                           auroraGradient={editorData.aurora_gradient}
                           tipsEnabled={editorData.tips_enabled}

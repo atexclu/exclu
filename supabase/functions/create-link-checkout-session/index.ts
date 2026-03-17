@@ -99,6 +99,7 @@ serve(async (req) => {
     const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const buyerEmail = emailRegex.test(rawBuyerEmail) ? rawBuyerEmail : undefined;
+    const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : null;
 
     if (!slug || typeof slug !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing or invalid slug' }), {
@@ -211,6 +212,7 @@ serve(async (req) => {
         creator_id: link.creator_id ?? '',
         slug: link.slug ?? slug,
         buyerEmail: buyerEmail ?? '',
+        ...(conversationId ? { conversation_id: conversationId } : {}),
       },
       customer_email: buyerEmail,
       payment_intent_data: {

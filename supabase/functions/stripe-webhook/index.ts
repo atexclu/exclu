@@ -836,6 +836,7 @@ serve(async (req: Request) => {
             const buyerEmailFromMetadata = (session.metadata as any)?.buyerEmail as string | undefined;
             const emailFromStripe = session.customer_details?.email ?? null;
             const customerEmail = (buyerEmailFromMetadata || emailFromStripe || null) as string | null;
+            const chatConversationId = (session.metadata as any)?.conversation_id as string | undefined ?? null;
 
             const { error: insertError } = await supabase.from('purchases').insert({
               link_id: linkId,
@@ -845,12 +846,25 @@ serve(async (req: Request) => {
               status: 'succeeded',
               buyer_email: customerEmail,
               access_token: crypto.randomUUID(),
+              ...(chatConversationId ? { chat_conversation_id: chatConversationId } : {}),
             });
 
             if (insertError) {
               console.error('Error inserting purchase:', insertError);
             } else {
               console.log('Purchase recorded for link:', linkId);
+
+              // Incrémenter le revenu de la conversation si l'achat vient du chat
+              if (chatConversationId && amountTotal > 0) {
+                try {
+                  await supabase.rpc('increment_conversation_revenue', {
+                    p_conversation_id: chatConversationId,
+                    p_amount_cents: amountTotal,
+                  });
+                } catch (revenueErr) {
+                  console.error('Error incrementing conversation revenue:', revenueErr);
+                }
+              }
 
               // If we have both an email and a site URL, send the buyer a copy of the access link via Brevo.
               if (customerEmail && siteUrl && slug) {

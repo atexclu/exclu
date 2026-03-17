@@ -1,0 +1,324 @@
+/**
+ * CreatorChat — /app/chat
+ *
+ * Interface de chat du créateur.
+ * Layout split-pane : liste des conversations à gauche, fenêtre de chat à droite.
+ * Responsive : sur mobile, la liste et la fenêtre s'affichent en alternance.
+ *
+ * Statuts supportés :
+ *   - unclaimed : conversation créée par un fan, en attente de traitement
+ *   - active    : conversation prise en charge par le créateur ou un chatter
+ *   - archived  : filtre optionnel (onglet archives)
+ */
+
+import { useState, useEffect, useMemo } from 'react';
+import { MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft, Settings2, Send, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import AppShell from '@/components/AppShell';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { useProfiles } from '@/contexts/ProfileContext';
+import { useConversations } from '@/hooks/useConversations';
+import { ConversationListItem } from '@/components/chat/ConversationListItem';
+import { ChatWindow } from '@/components/chat/ChatWindow';
+import { ChatSettingsPanel } from '@/components/chat/ChatSettingsPanel';
+import { BroadcastPanel } from '@/pages/MassMessage';
+import { supabase } from '@/lib/supabaseClient';
+import type { Conversation } from '@/types/chat';
+
+type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
+
+export default function CreatorChat() {
+  const { activeProfile } = useProfiles();
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [showMobileList, setShowMobileList] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+
+  const statusesToFetch = useMemo<Conversation['status'][]>(() => {
+    switch (statusFilter) {
+      case 'active':    return ['active'];
+      case 'unclaimed': return ['unclaimed'];
+      case 'archived':  return ['archived'];
+      default:          return ['unclaimed', 'active'];
+    }
+  }, [statusFilter]);
+
+  const { conversations, isLoading } = useConversations({
+    profileId: activeProfile?.id ?? null,
+    statusFilter: statusesToFetch,
+  });
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
+  }, []);
+
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const q = searchQuery.toLowerCase();
+    return conversations.filter((c) => {
+      const name = c.fan?.display_name?.toLowerCase() ?? '';
+      const preview = c.last_message_preview?.toLowerCase() ?? '';
+      return name.includes(q) || preview.includes(q);
+    });
+  }, [conversations, searchQuery]);
+
+  const unclaimedCount = conversations.filter((c) => c.status === 'unclaimed').length;
+
+  const handleSelectConversation = (conv: Conversation) => {
+    setSelectedConversation(conv);
+    setShowMobileList(false);
+  };
+
+  const handleBackToList = () => {
+    setShowMobileList(true);
+  };
+
+  const filterTabs: { key: StatusFilter; label: string; badge?: number }[] = [
+    { key: 'all',       label: 'Toutes' },
+    { key: 'unclaimed', label: 'En attente', badge: unclaimedCount },
+    { key: 'active',    label: 'Actives' },
+    { key: 'archived',  label: 'Archives' },
+  ];
+
+  return (
+    <AppShell>
+      <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]">
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* ── Panneau gauche : liste des conversations ─────────────────── */}
+          <div className={`
+            flex flex-col border-r border-border bg-card
+            w-full md:w-80 lg:w-96 flex-shrink-0
+            ${showMobileList ? 'flex' : 'hidden md:flex'}
+          `}>
+            <div className="px-4 pt-4 pb-3 border-b border-border">
+              <div className="flex items-center justify-between mb-3">
+                <h1 className="text-lg font-bold text-foreground">Conversations</h1>
+                <div className="flex items-center gap-1">
+                  {activeProfile && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBroadcast(true)}
+                      className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
+                      title="Message en masse"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  )}
+                  {activeProfile && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSettings((s) => !s)}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                        showSettings ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground'
+                      }`}
+                      title="Paramètres du chat"
+                    >
+                      <Settings2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher…"
+                  className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
+                />
+              </div>
+
+              <div className="flex gap-1 mt-2 overflow-x-auto scrollbar-hide">
+                {filterTabs.map(({ key, label, badge }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setStatusFilter(key)}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                      statusFilter === key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {label}
+                    {badge !== undefined && badge > 0 && (
+                      <span className="px-1 py-0.5 rounded-full bg-yellow-400/20 text-yellow-400 text-[9px] font-bold min-w-[14px] text-center">
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              {isLoading && (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {!isLoading && filteredConversations.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center px-4">
+                  <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground/60">
+                      {searchQuery ? 'Aucun résultat' : 'Aucune conversation'}
+                    </p>
+                    <p className="text-xs text-muted-foreground/40">
+                      {searchQuery
+                        ? 'Essayez une autre recherche'
+                        : 'Les conversations de tes fans apparaîtront ici'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!isLoading && filteredConversations.map((conv) => (
+                <ConversationListItem
+                  key={conv.id}
+                  conversation={conv}
+                  isSelected={selectedConversation?.id === conv.id}
+                  onClick={() => handleSelectConversation(conv)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* ── Panneau droit : fenêtre de chat ──────────────────────────── */}
+          <div className={`
+            flex-1 flex flex-col overflow-hidden
+            ${!showMobileList ? 'flex' : 'hidden md:flex'}
+          `}>
+            <AnimatePresence mode="wait">
+              {selectedConversation && currentUserId ? (
+                <motion.div
+                  key={selectedConversation.id}
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex flex-col h-full"
+                >
+                  <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 text-xs h-8 px-2"
+                      onClick={handleBackToList}
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Retour
+                    </Button>
+                  </div>
+
+                  <ChatWindow
+                    conversation={selectedConversation}
+                    currentUserId={currentUserId}
+                    senderType="creator"
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-8"
+                >
+                  <div className="w-16 h-16 rounded-2xl border border-border bg-muted/30 flex items-center justify-center">
+                    <MessageSquare className="w-7 h-7 text-muted-foreground/30" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-base font-semibold text-foreground/60">
+                      Sélectionne une conversation
+                    </p>
+                    <p className="text-sm text-muted-foreground/40 max-w-xs">
+                      Choisis une conversation dans la liste pour commencer à répondre à tes fans
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Settings desktop side panel ───────────────────────────────── */}
+          <AnimatePresence>
+            {showSettings && activeProfile && (
+              <motion.div
+                key="settings-panel"
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 300, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex-shrink-0 overflow-hidden hidden md:block"
+              >
+                <ChatSettingsPanel
+                  profileId={activeProfile.id}
+                  onClose={() => setShowSettings(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Settings mobile full-screen overlay ───────────────────────── */}
+          <AnimatePresence>
+            {showSettings && activeProfile && (
+              <motion.div
+                key="settings-mobile"
+                initial={{ opacity: 0, x: '100%' }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: '100%' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="fixed inset-0 z-40 bg-card md:hidden"
+              >
+                <ChatSettingsPanel
+                  profileId={activeProfile.id}
+                  onClose={() => setShowSettings(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* ── Broadcast modal overlay ────────────────────────────────────── */}
+      <AnimatePresence>
+        {showBroadcast && activeProfile && (
+          <motion.div
+            key="broadcast-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto pt-16 sm:pt-24 pb-8"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowBroadcast(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-2xl mx-4 bg-card rounded-2xl border border-border shadow-2xl"
+            >
+              <button
+                type="button"
+                onClick={() => setShowBroadcast(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors z-10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <BroadcastPanel profileId={activeProfile.id} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </AppShell>
+  );
+}

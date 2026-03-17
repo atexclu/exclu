@@ -50,6 +50,34 @@
       "destination": "/index.html"
     },
     {
+      "source": "/accept-chatter-invite",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/auth/callback",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/gift-success",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/request-success",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/help-center/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/:handle",
       "destination": "/api/og-proxy"
     },

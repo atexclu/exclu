@@ -1345,13 +1345,7 @@ Pas de statut "agence" à activer : c'est automatique.
 │  │ [Pic] @girl2  │ $3,100 │ 142 ventes │ [Gérer] [Chat]│  │
 │  │ [Pic] @girl3  │ $2,500 │ 98 ventes  │ [Gérer] [Chat]│  │
 │  └──────────────────────────────────────────────────────┘  │
-│                                                             │
-│  👨‍💼 ÉQUIPE CHATTERS                     [+ Inviter]        │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ Marie   │ 5 profils │ En ligne │ 12 convos actives  │  │
-│  │ Pierre  │ 3 profils │ Hors ligne │ —                 │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+│   
 ```
 
 ### 12.5 Fonctionnalités Clés

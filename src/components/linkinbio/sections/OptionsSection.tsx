@@ -9,6 +9,7 @@ interface OptionsSectionProps {
   showCertification: boolean;
   showDeeplinks: boolean;
   showAvailableNow: boolean;
+  chatEnabled: boolean;
   isPremium: boolean;
   auroraGradient?: string;
   tipsEnabled: boolean;
@@ -18,14 +19,14 @@ interface OptionsSectionProps {
   showAgencyBranding?: boolean;
   agencyName?: string | null;
   agencyLogoUrl?: string | null;
-  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; aurora_gradient?: string; tips_enabled?: boolean; custom_requests_enabled?: boolean; min_tip_amount_cents?: number; min_custom_request_cents?: number; show_agency_branding?: boolean }) => void;
+  onUpdate: (updates: { show_join_banner?: boolean; show_certification?: boolean; show_deeplinks?: boolean; show_available_now?: boolean; chat_enabled?: boolean; aurora_gradient?: string; tips_enabled?: boolean; custom_requests_enabled?: boolean; min_tip_amount_cents?: number; min_custom_request_cents?: number; show_agency_branding?: boolean }) => void;
   onAgencyNameChange?: (name: string) => void;
   onAgencyLogoUpload?: (file: File) => void;
   onAgencyLogoRemove?: () => void;
   isUploadingLogo?: boolean;
 }
 
-export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, isPremium, auroraGradient = 'purple_dream', tipsEnabled, customRequestsEnabled, minTipAmountCents, minCustomRequestCents, showAgencyBranding, agencyName, agencyLogoUrl, onUpdate, onAgencyNameChange, onAgencyLogoUpload, onAgencyLogoRemove, isUploadingLogo }: OptionsSectionProps) {
+export function OptionsSection({ showJoinBanner, showCertification, showDeeplinks, showAvailableNow, chatEnabled, isPremium, auroraGradient = 'purple_dream', tipsEnabled, customRequestsEnabled, minTipAmountCents, minCustomRequestCents, showAgencyBranding, agencyName, agencyLogoUrl, onUpdate, onAgencyNameChange, onAgencyLogoUpload, onAgencyLogoRemove, isUploadingLogo }: OptionsSectionProps) {
   const hasAgency = Boolean(agencyName || agencyLogoUrl);
   const logoInputRef = useRef<HTMLInputElement>(null);
   return (
@@ -155,6 +156,24 @@ export function OptionsSection({ showJoinBanner, showCertification, showDeeplink
           </div>
         </div>
       )}
+
+      {/* Chat */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold text-foreground">Chat</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Display a "Message" button on your public profile so fans can chat with you
+            </p>
+          </div>
+          <Switch
+            checked={chatEnabled}
+            onCheckedChange={(checked) => onUpdate({ chat_enabled: checked })}
+          />
+        </div>
+      </div>
 
       {/* Tips & Requests Section */}
       <div className="space-y-4 pt-2">

@@ -39,7 +39,8 @@ import ReferralDashboard from "./pages/ReferralDashboard";
 import StripeValidation from "./pages/StripeValidation";
 import FanSignup from "./pages/FanSignup";
 import AuthCallback from "./pages/AuthCallback";
-import CreatorTipsRequests from "./pages/CreatorTipsRequests";
+import CreatorTipsRequests from './pages/CreatorTipsRequests';
+import CreatorChat from './pages/CreatorChat';
 import FanDashboard from './pages/FanDashboard';
 import FanProtectedRoute from '@/components/FanProtectedRoute';
 import TipSuccess from './pages/TipSuccess';
@@ -48,6 +49,8 @@ import GiftSuccess from './pages/GiftSuccess';
 import RequestSuccess from './pages/RequestSuccess';
 import CreateProfile from './pages/CreateProfile';
 import AgencyDashboard from './pages/AgencyDashboard';
+import AcceptChatterInvite from './pages/AcceptChatterInvite';
+import ChatterDashboard from './pages/ChatterDashboard';
 
 const queryClient = new QueryClient();
 
@@ -206,7 +209,7 @@ const App = () => {
                   path="/app/chat"
                   element={
                     <ProtectedRoute>
-                      <CreatorTipsRequests />
+                      <CreatorChat />
                     </ProtectedRoute>
                   }
                 />
@@ -236,6 +239,8 @@ const App = () => {
                 />
                 <Route path="/l/:slug" element={<PublicLink />} />
                 <Route path="/fan/signup" element={<FanSignup />} />
+                <Route path="/accept-chatter-invite" element={<AcceptChatterInvite />} />
+                <Route path="/app/chatter" element={<ChatterDashboard />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/tip-success" element={<TipSuccess />} />
                 <Route path="/gift-success" element={<GiftSuccess />} />

@@ -24,6 +24,8 @@ const FanSignup = () => {
   const [searchParams] = useSearchParams();
 
   const creatorHandle = searchParams.get('creator');
+  const actionParam = searchParams.get('action');
+  const profileIdParam = searchParams.get('profile');
   const returnTo = searchParams.get('return') || (creatorHandle ? `/${creatorHandle}` : '/fan');
 
   useEffect(() => {
@@ -166,6 +168,16 @@ const FanSignup = () => {
 
           if (profile?.role === 'creator' || profile?.role === 'admin') {
             navigate('/app');
+          } else if (actionParam === 'chat' && profileIdParam) {
+            const { data: conv } = await supabase
+              .from('conversations')
+              .upsert(
+                { fan_id: user.id, profile_id: profileIdParam },
+                { onConflict: 'fan_id,profile_id', ignoreDuplicates: false }
+              )
+              .select('id')
+              .single();
+            navigate(conv ? `/fan?tab=messages&conversation=${conv.id}` : '/fan?tab=messages');
           } else {
             navigate(returnTo);
           }

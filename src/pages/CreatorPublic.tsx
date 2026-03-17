@@ -47,6 +47,7 @@ interface CreatorProfileData {
   min_tip_amount_cents?: number | null;
   min_custom_request_cents?: number | null;
   show_agency_branding?: boolean | null;
+  chat_enabled?: boolean | null;
 }
 
 interface CreatorLinkCard {
@@ -200,7 +201,7 @@ const CreatorPublic = () => {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, stripe_account_id, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, stripe_account_id, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
           .eq('username', handle)
           .maybeSingle();
 
@@ -275,6 +276,7 @@ const CreatorPublic = () => {
             min_tip_amount_cents: cpData.min_tip_amount_cents,
             min_custom_request_cents: cpData.min_custom_request_cents,
             show_agency_branding: showBranding,
+            chat_enabled: cpData.chat_enabled,
           };
         }
 
@@ -483,6 +485,27 @@ const CreatorPublic = () => {
     setShowRequestModal(true);
   };
 
+  const handleMessageCta = async () => {
+    if (!creatorProfileId) return;
+    if (!currentFanId) {
+      navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
+      return;
+    }
+    const { data: conv, error } = await supabase
+      .from('conversations')
+      .upsert(
+        { fan_id: currentFanId, profile_id: creatorProfileId },
+        { onConflict: 'fan_id,profile_id', ignoreDuplicates: false }
+      )
+      .select('id')
+      .single();
+    if (error || !conv) {
+      navigate(`/fan?tab=messages`);
+      return;
+    }
+    navigate(`/fan?tab=messages&conversation=${conv.id}`);
+  };
+
   const checkEmailExists = async (email: string) => {
     if (!email || !email.includes('@')) {
       setRequestEmailExists(null);
@@ -631,6 +654,7 @@ const CreatorPublic = () => {
   const isStripeReady = profile?.stripe_connect_status === 'complete';
   const showTipsCta = profile?.tips_enabled === true && isStripeReady;
   const showRequestsCta = profile?.custom_requests_enabled === true;
+  const showChatCta = profile?.chat_enabled === true;
   const tipPresets = [500, 1000, 2500, 5000];
   const showAgencyFooter = profile?.show_agency_branding !== false && (agencyName || agencyLogoUrl);
 
@@ -960,9 +984,9 @@ const CreatorPublic = () => {
             {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
           </div>
 
-          {/* Tip & Request CTAs */}
-          {!isLoading && (showTipsCta || showRequestsCta) && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="mt-6 flex gap-3">
+          {/* Tip, Request & Chat CTAs */}
+          {!isLoading && (showTipsCta || showRequestsCta || showChatCta) && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="mt-6 space-y-3">
               {showTipsCta && (
                 <StarBorder
                   as="button"
@@ -972,7 +996,7 @@ const CreatorPublic = () => {
                   color2={gradientStops[1]}
                   speed="4s"
                   thickness={1}
-                  className="flex-1"
+                  className="w-full"
                   style={{ width: '100%' }}
                 >
                   <div className="h-12 w-full rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-lg"
@@ -981,11 +1005,23 @@ const CreatorPublic = () => {
                   </div>
                 </StarBorder>
               )}
-              {showRequestsCta && (
-                <button type="button" onClick={handleRequestCta}
-                  className="flex-1 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
-                  Custom Request
-                </button>
+              {(showRequestsCta || showChatCta) && (
+                <div className="flex gap-3">
+                  {showRequestsCta && (
+                    <button type="button" onClick={handleRequestCta}
+                      style={{ width: showChatCta ? '65%' : '100%' }}
+                      className="h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
+                      Custom Request
+                    </button>
+                  )}
+                  {showChatCta && (
+                    <button type="button" onClick={handleMessageCta}
+                      style={{ width: showRequestsCta ? '35%' : '100%' }}
+                      className="h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
+                      Chat
+                    </button>
+                  )}
+                </div>
               )}
             </motion.div>
           )}
@@ -1135,9 +1171,15 @@ const CreatorPublic = () => {
                     </div>
                   )}
 
-                  {/* Tip & Request CTAs */}
-                  {!isLoading && (showTipsCta || showRequestsCta) && (
+                  {/* Tip, Request & Chat CTAs */}
+                  {!isLoading && (showTipsCta || showRequestsCta || showChatCta) && (
                     <div className="flex gap-3 pt-1">
+                      {showRequestsCta && (
+                        <button type="button" onClick={handleRequestCta}
+                          className="flex-1 h-11 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
+                          Custom Request
+                        </button>
+                      )}
                       {showTipsCta && (
                         <StarBorder
                           as="button"
@@ -1156,10 +1198,10 @@ const CreatorPublic = () => {
                           </div>
                         </StarBorder>
                       )}
-                      {showRequestsCta && (
-                        <button type="button" onClick={handleRequestCta}
+                      {showChatCta && (
+                        <button type="button" onClick={handleMessageCta}
                           className="flex-1 h-11 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 flex items-center justify-center text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98]">
-                          Custom Request
+                          Chat
                         </button>
                       )}
                     </div>
