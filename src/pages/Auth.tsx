@@ -209,9 +209,20 @@ const Auth = () => {
           console.error('Error loading profile after login', profileError);
         }
 
-        // Fan accounts go directly to fan dashboard
+        // Fan accounts: check if they're a chatter first
         if (profile?.role === 'fan') {
-          navigate('/fan');
+          const { data: chatterInvs } = await supabase
+            .from('chatter_invitations')
+            .select('id')
+            .eq('chatter_id', user.id)
+            .eq('status', 'accepted')
+            .limit(1);
+
+          if (chatterInvs && chatterInvs.length > 0) {
+            navigate('/app/chatter');
+          } else {
+            navigate('/fan');
+          }
           return;
         }
 

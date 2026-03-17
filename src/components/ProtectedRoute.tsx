@@ -58,9 +58,25 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       }
 
       // Fan accounts skip creator onboarding entirely and go to /fan dashboard
-      // Check role only — is_creator may be stale for accounts created before migration 049
+      // Exception: chatters (fan-role with accepted invitations) can access /app/chatter
       if (profile && profile.role === 'fan') {
-        navigate('/fan', { replace: true });
+        if (location.pathname.startsWith('/app/chatter')) {
+          setIsLoading(false);
+          return;
+        }
+
+        const { data: chatterInvs } = await supabase
+          .from('chatter_invitations')
+          .select('id')
+          .eq('chatter_id', user.id)
+          .eq('status', 'accepted')
+          .limit(1);
+
+        if (chatterInvs && chatterInvs.length > 0) {
+          navigate('/app/chatter', { replace: true });
+        } else {
+          navigate('/fan', { replace: true });
+        }
         setIsLoading(false);
         return;
       }

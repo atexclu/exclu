@@ -26,7 +26,7 @@ export function RichMessageComposer({
   onSend,
   isSending,
   disabled = false,
-  placeholder = 'Écrire un message…',
+  placeholder = 'Write a message…',
 }: RichMessageComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

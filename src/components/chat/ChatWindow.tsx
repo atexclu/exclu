@@ -54,10 +54,10 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
           <p className="text-[11px] text-muted-foreground/60">
-            {conversation.status === 'unclaimed' ? '⏳ Non prise en charge' : '● Actif'}
+            {conversation.status === 'unclaimed' ? '⏳ Pending' : '● Active'}
             {conversation.total_revenue_cents > 0 && (
               <span className="ml-2 text-green-400/70">
-                ${(conversation.total_revenue_cents / 100).toFixed(2)} générés
+                ${(conversation.total_revenue_cents / 100).toFixed(2)} earned
               </span>
             )}
           </p>
@@ -86,7 +86,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
               <User className="w-5 h-5 text-muted-foreground/40" />
             </div>
-            <p className="text-sm text-muted-foreground/60">Début de la conversation</p>
+            <p className="text-sm text-muted-foreground/60">Start of conversation</p>
           </div>
         )}
 
@@ -109,7 +109,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         onChange={setDraft}
         onSend={handleSend}
         isSending={isSending}
-        placeholder={`Répondre à ${fanName}…`}
+        placeholder={`Reply to ${fanName}…`}
       />
     </div>
   );

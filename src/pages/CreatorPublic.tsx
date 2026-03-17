@@ -487,14 +487,34 @@ const CreatorPublic = () => {
 
   const handleMessageCta = async () => {
     if (!creatorProfileId) return;
-    if (!currentFanId) {
-      navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
-      return;
+    let fanId = currentFanId;
+
+    if (!fanId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
+        return;
+      }
+
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('is_creator')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (prof?.is_creator) {
+        toast.error('Connecte-toi avec un compte fan pour envoyer un message.');
+        return;
+      }
+
+      fanId = user.id;
+      setCurrentFanId(user.id);
     }
+
     const { data: conv, error } = await supabase
       .from('conversations')
       .upsert(
-        { fan_id: currentFanId, profile_id: creatorProfileId },
+        { fan_id: fanId, profile_id: creatorProfileId },
         { onConflict: 'fan_id,profile_id', ignoreDuplicates: false }
       )
       .select('id')

@@ -42,8 +42,9 @@ export default function AcceptChatterInvite() {
   const [invitation, setInvitation] = useState<InvitationInfo | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null);
 
-  const [mode, setMode] = useState<'signup' | 'login'>('signup');
+  const [mode, setMode] = useState<'signup' | 'login'>('login');
   const [isLoading, setIsLoading] = useState(false);
+  const [invitedEmailExists, setInvitedEmailExists] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -88,6 +89,17 @@ export default function AcceptChatterInvite() {
       }
 
       setInvitation(inv);
+
+      try {
+        const { data: emailCheck } = await supabase.functions.invoke('check-fan-email', {
+          body: { email: inv.email },
+        });
+        const exists = emailCheck?.exists === true;
+        setInvitedEmailExists(exists);
+        if (exists) setMode('login');
+      } catch {
+        setInvitedEmailExists(false);
+      }
 
       // Auto-accept si déjà connecté (retour depuis email verification ou session active)
       if (user) {
@@ -141,6 +153,11 @@ export default function AcceptChatterInvite() {
     setIsLoading(true);
     try {
       if (mode === 'signup') {
+        if (invitedEmailExists) {
+          toast.error('This invited email already has an account. Please log in.');
+          setMode('login');
+          return;
+        }
         if (!displayName) {
           toast.error('Please enter a username');
           return;
@@ -153,7 +170,7 @@ export default function AcceptChatterInvite() {
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
         const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent(`/accept-chatter-invite?token=${token}`)}`;
 
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -182,7 +199,27 @@ export default function AcceptChatterInvite() {
           throw error;
         }
 
-        toast.success('Check your inbox to confirm your account, then log in.');
+        const hasIdentity = (signUpData?.user?.identities?.length ?? 0) > 0;
+        if (!hasIdentity) {
+          try {
+            await supabase.auth.resend({ type: 'signup', email });
+          } catch (resendError) {
+            console.error('Error resending confirmation email after identity-less signup response', resendError);
+          }
+          toast.success(
+            'If an account already exists for this email, we have sent you a new confirmation link. Please check your inbox and spam folder.'
+          );
+          setMode('login');
+          return;
+        }
+
+        try {
+          await supabase.auth.resend({ type: 'signup', email });
+        } catch (resendError) {
+          console.error('Error resending confirmation email after signup', resendError);
+        }
+
+        toast.success('Check your inbox to confirm your account, then log in. Check spam folder too.');
         setMode('login');
       } else {
         if (!password) {
@@ -436,9 +473,9 @@ export default function AcceptChatterInvite() {
               {/* Title */}
               <div className="text-center space-y-2">
                 <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                  {mode === 'signup' ? 'Join the team' : 'Log in to accept'}
+                  {invitedEmailExists ? 'Log in to join the team' : mode === 'signup' ? 'Join the team' : 'Log in to accept'}
                 </h1>
-                {mode === 'signup' && (
+                {mode === 'signup' && !invitedEmailExists && (
                   <p className="text-exclu-space text-[13px] sm:text-sm max-w-sm mx-auto">
                     Create an account to start managing conversations for {creatorName}
                   </p>
@@ -493,12 +530,13 @@ export default function AcceptChatterInvite() {
                         type="button"
                         onClick={() => setMode('signup')}
                         className="relative pb-3.5 px-2 transition-all"
+                        disabled={invitedEmailExists}
                       >
                         <span
                           className={`text-base font-bold transition-all ${
                             mode === 'signup'
                               ? 'text-exclu-cloud'
-                              : 'text-exclu-space/60 hover:text-exclu-space'
+                              : invitedEmailExists ? 'text-exclu-space/30' : 'text-exclu-space/60 hover:text-exclu-space'
                           }`}
                         >
                           Sign up
@@ -518,7 +556,7 @@ export default function AcceptChatterInvite() {
                   </CardHeader>
                   <CardContent className="px-5 pb-5">
                     <form className="space-y-4" onSubmit={handleSubmit}>
-                      {mode === 'signup' && (
+                      {mode === 'signup' && !invitedEmailExists && (
                         <div className="space-y-1.5">
                           <label
                             htmlFor="chatter-display-name"
@@ -588,16 +626,21 @@ export default function AcceptChatterInvite() {
                       >
                         {isLoading
                           ? 'Please wait...'
-                          : mode === 'signup'
+                          : mode === 'signup' && !invitedEmailExists
                             ? 'Create account'
                             : 'Log in & accept invitation'}
                       </Button>
 
-                      {mode === 'signup' && (
+                      {mode === 'signup' && !invitedEmailExists && (
                         <p className="text-[10px] text-exclu-space/70 text-center mt-2">
                           By signing up, you agree to our{' '}
                           <a href="/terms" className="text-primary hover:underline">Terms</a> and{' '}
                           <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>.
+                        </p>
+                      )}
+                      {invitedEmailExists && (
+                        <p className="text-[11px] text-exclu-space/80 text-center mt-2">
+                          This invitation email is already linked to an account. Log in to continue.
                         </p>
                       )}
                     </form>

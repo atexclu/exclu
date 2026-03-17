@@ -18,13 +18,13 @@ function formatRelativeTime(iso: string | null): string {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'maintenant';
+  if (minutes < 1) return 'now';
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}j`;
-  return new Date(iso).toLocaleDateString('fr', { day: 'numeric', month: 'short' });
+  if (days < 7) return `${days}d`;
+  return new Date(iso).toLocaleDateString('en', { day: 'numeric', month: 'short' });
 }
 
 export function ConversationListItem({
@@ -84,8 +84,8 @@ export function ConversationListItem({
         <div className="flex items-center gap-1 mt-0.5">
           <p className={`text-xs truncate flex-1 ${isUnread ? 'text-foreground/70' : 'text-muted-foreground/60'}`}>
             {isUnclaimed
-              ? '⏳ En attente de prise en charge'
-              : (conversation.last_message_preview || 'Début de conversation')}
+              ? '⏳ Pending'
+              : (conversation.last_message_preview || 'Start of conversation')}
           </p>
 
           {/* Revenus générés si > 0 */}

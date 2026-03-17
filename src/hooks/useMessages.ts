@@ -35,6 +35,12 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const appendMessageIfMissing = useCallback((msg: Message) => {
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+  }, []);
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId) {
@@ -112,9 +118,9 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
               .select('id, title, slug, price_cents')
               .eq('id', newMsg.paid_content_id)
               .maybeSingle();
-            setMessages((prev) => [...prev, { ...newMsg, link: linkData ?? null }]);
+            appendMessageIfMissing({ ...newMsg, link: linkData ?? null });
           } else {
-            setMessages((prev) => [...prev, newMsg]);
+            appendMessageIfMissing(newMsg);
           }
 
           // Marquer immédiatement comme lu si c'est un message de l'autre partie
@@ -137,7 +143,7 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [conversationId]);
+  }, [conversationId, viewerRole, appendMessageIfMissing]);
 
   /**
    * Envoie un message dans la conversation.
@@ -162,7 +168,7 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
 
-        const { error: insertError } = await supabase.from('messages').insert({
+        const { data: insertedMessage, error: insertError } = await supabase.from('messages').insert({
           conversation_id: conversationId,
           sender_type: senderType,
           sender_id: user.id,
@@ -171,16 +177,34 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
           paid_content_id: paidContentId,
           paid_amount_cents: paidAmountCents,
           tip_link_id: tipLinkId,
-        });
+        }).select('*').single();
 
         if (insertError) throw insertError;
 
+        if (insertedMessage) {
+          let msgWithLink = insertedMessage as Message;
+          if (insertedMessage.paid_content_id) {
+            const { data: linkData } = await supabase
+              .from('links')
+              .select('id, title, slug, price_cents')
+              .eq('id', insertedMessage.paid_content_id)
+              .maybeSingle();
+            msgWithLink = { ...(insertedMessage as Message), link: linkData ?? null };
+          }
+          appendMessageIfMissing(msgWithLink);
+        }
+
         // Mettre à jour le preview de la conversation (last_message_preview)
-        await supabase.from('conversations').update({
+        const conversationUpdate: Record<string, unknown> = {
           last_message_at: new Date().toISOString(),
           last_message_preview: trimmed ? trimmed.slice(0, 120) : '📎 Contenu',
           is_read: true,
-        }).eq('id', conversationId);
+        };
+        if (senderType === 'creator' || senderType === 'chatter') {
+          conversationUpdate.status = 'active';
+        }
+
+        await supabase.from('conversations').update(conversationUpdate).eq('id', conversationId);
 
         return true;
       } catch (err: unknown) {
@@ -191,7 +215,7 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
         setIsSending(false);
       }
     },
-    [conversationId]
+    [conversationId, appendMessageIfMissing]
   );
 
   return { messages, isLoading, isSending, error, sendMessage };
