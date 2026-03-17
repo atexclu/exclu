@@ -70,6 +70,13 @@ export default function CreatorChat() {
 
   const unclaimedCount = conversations.filter((c) => c.status === 'unclaimed').length;
 
+  // Auto-select the first conversation when loaded
+  useEffect(() => {
+    if (!selectedConversation && conversations.length > 0) {
+      setSelectedConversation(conversations[0]);
+    }
+  }, [conversations]);
+
   const handleSelectConversation = (conv: Conversation) => {
     setSelectedConversation(conv);
     setShowMobileList(false);
@@ -88,12 +95,12 @@ export default function CreatorChat() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full overflow-hidden max-w-6xl mx-auto w-full">
-        <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col h-full overflow-hidden max-w-6xl mx-auto w-full p-0 md:px-6 md:py-4">
+        <div className="flex flex-1 overflow-hidden rounded-none md:rounded-2xl border-0 md:border border-border/60 md:shadow-[0_0_40px_-12px_rgba(0,0,0,0.3)]">
 
           {/* ── Panneau gauche : liste des conversations ─────────────────── */}
           <div className={`
-            flex flex-col border-r border-border bg-card
+            flex flex-col border-r border-border/60 bg-card
             w-full md:w-80 lg:w-96 flex-shrink-0
             ${showMobileList ? 'flex' : 'hidden md:flex'}
           `}>
@@ -227,7 +234,7 @@ export default function CreatorChat() {
 
           {/* ── Panneau droit : fenêtre de chat ──────────────────────────── */}
           <div className={`
-            flex-1 flex flex-col overflow-hidden bg-card
+            flex-1 flex flex-col overflow-hidden bg-card/80
             ${!showMobileList ? 'flex' : 'hidden md:flex'}
           `}>
             <AnimatePresence mode="wait">
