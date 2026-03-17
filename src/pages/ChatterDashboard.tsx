@@ -17,7 +17,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
-  LogOut, UserCheck, ChevronDown, Check,
+  LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
+  DollarSign, Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -40,6 +41,15 @@ interface ChatterProfile {
 }
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
+type MainView = 'chat' | 'dashboard';
+
+interface ChatterMetrics {
+  totalRevenueCents: number;
+  totalConversations: number;
+  activeConversations: number;
+  messagesSent: number;
+  revenueByDay: { date: string; cents: number }[];
+}
 
 export default function ChatterDashboard() {
   const navigate = useNavigate();
@@ -59,6 +69,11 @@ export default function ChatterDashboard() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showMobileList, setShowMobileList] = useState(true);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [mainView, setMainView] = useState<MainView>('chat');
+  const [metrics, setMetrics] = useState<ChatterMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
+  const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
 
   const statusesToFetch = useMemo<Conversation['status'][]>(() => {
     switch (statusFilter) {
@@ -118,6 +133,65 @@ export default function ChatterDashboard() {
 
     init();
   }, [navigate]);
+
+  // ── Fetch chatter metrics when dashboard tab is active ─────────────────
+  useEffect(() => {
+    if (mainView !== 'dashboard' || !currentUserId || !activeProfileId) return;
+    let cancelled = false;
+    const fetchMetrics = async () => {
+      setMetricsLoading(true);
+      try {
+        // Conversations assigned to this chatter for the active profile
+        const { data: convs } = await supabase
+          .from('conversations')
+          .select('id, status, total_revenue_cents, created_at')
+          .eq('profile_id', activeProfileId)
+          .eq('assigned_chatter_id', currentUserId);
+
+        const safeConvs = convs ?? [];
+        const totalRev = safeConvs.reduce((s, c: any) => s + (c.total_revenue_cents ?? 0), 0);
+        const activeCount = safeConvs.filter((c: any) => c.status === 'active').length;
+
+        // Count messages sent by this chatter in this profile's conversations
+        const convIds = safeConvs.map((c: any) => c.id);
+        let msgCount = 0;
+        if (convIds.length > 0) {
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('sender_id', currentUserId)
+            .in('conversation_id', convIds);
+          msgCount = count ?? 0;
+        }
+
+        // Revenue by day (from purchases via conversation links)
+        // Simplified: use conversations created_at + revenue for charting
+        const revByDay: Record<string, number> = {};
+        safeConvs.forEach((c: any) => {
+          if (c.total_revenue_cents > 0 && c.created_at) {
+            const day = new Date(c.created_at).toISOString().slice(0, 10);
+            revByDay[day] = (revByDay[day] ?? 0) + c.total_revenue_cents;
+          }
+        });
+
+        if (!cancelled) {
+          setMetrics({
+            totalRevenueCents: totalRev,
+            totalConversations: safeConvs.length,
+            activeConversations: activeCount,
+            messagesSent: msgCount,
+            revenueByDay: Object.entries(revByDay).map(([date, cents]) => ({ date, cents })),
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch chatter metrics', err);
+      } finally {
+        if (!cancelled) setMetricsLoading(false);
+      }
+    };
+    fetchMetrics();
+    return () => { cancelled = true; };
+  }, [mainView, currentUserId, activeProfileId]);
 
   // ── Filtered conversations ─────────────────────────────────────────────
   const filteredConversations = useMemo(() => {
@@ -282,6 +356,34 @@ export default function ChatterDashboard() {
             </AnimatePresence>
           </div>
 
+          {/* Chat / Dashboard toggle */}
+          <div className="inline-flex rounded-full border border-border/60 bg-muted/30 p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setMainView('chat')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-full font-medium transition-all ${
+                mainView === 'chat'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <MessageCircle className="w-3 h-3" />
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainView('dashboard')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-full font-medium transition-all ${
+                mainView === 'dashboard'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <BarChart3 className="w-3 h-3" />
+              Dashboard
+            </button>
+          </div>
+
           <Button
             variant="outline"
             size="icon"
@@ -294,7 +396,194 @@ export default function ChatterDashboard() {
         </div>
       </header>
 
-      {/* ── Main: split-pane (identical layout to CreatorChat) ──────── */}
+      {/* ── Dashboard view ─────────────────────────────────────────── */}
+      {mainView === 'dashboard' && (
+        <div className="pt-14 flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-foreground">Performance</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Stats for {activeProfile?.display_name || activeProfile?.username || 'this profile'}
+              </p>
+            </div>
+
+            {metricsLoading && (
+              <div className="flex justify-center py-16">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {!metricsLoading && metrics && (() => {
+              const fmtRev = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+              // Build chart series
+              const days = activeRange === '7d' ? 7 : activeRange === '30d' ? 30 : 365;
+              const today = new Date(); today.setHours(0, 0, 0, 0);
+              const revMap: Record<string, number> = {};
+              metrics.revenueByDay.forEach(({ date, cents }) => { revMap[date] = (revMap[date] ?? 0) + cents; });
+
+              const series: { label: string; value: number; dateKey: string }[] = [];
+              let cumulative = 0;
+              // Pre-compute cumulative for dates before the range
+              Object.entries(revMap).sort().forEach(([d, c]) => {
+                const rangeStart = new Date(today);
+                rangeStart.setDate(today.getDate() - days + 1);
+                if (d < rangeStart.toISOString().slice(0, 10)) cumulative += c;
+              });
+              for (let i = days - 1; i >= 0; i--) {
+                const day = new Date(today); day.setDate(today.getDate() - i);
+                const dayKey = day.toISOString().slice(0, 10);
+                cumulative += revMap[dayKey] ?? 0;
+                series.push({
+                  label: day.toLocaleDateString(undefined, { month: activeRange === '365d' ? 'short' : 'numeric', day: 'numeric' }),
+                  value: cumulative,
+                  dateKey: dayKey,
+                });
+              }
+              const maxValue = series.reduce((m, p) => (p.value > m ? p.value : m), 0);
+              const lastPoint = series[series.length - 1];
+              const tooltipPoint = hoveredPoint || lastPoint;
+
+              const height = 160, width = 600, paddingX = 4, paddingY = 10;
+              const innerWidth = width - paddingX * 2, innerHeight = height - paddingY * 2;
+              const yLevels = [0, 0.25, 0.5, 0.75, 1];
+
+              const computedPoints = series.map((pt, idx) => {
+                const x = series.length === 1 ? paddingX + innerWidth / 2 : paddingX + (innerWidth * idx) / (series.length - 1);
+                const normalized = pt.value / (maxValue || 1);
+                const y = paddingY + innerHeight - normalized * innerHeight;
+                return { x, y, ...pt };
+              });
+              const pointsAttr = computedPoints.map(p => `${p.x},${p.y}`).join(' ');
+              const fmtYLabel = (v: number) => v >= 100 ? `$${Math.round(v / 100)}` : `$${(v / 100).toFixed(1)}`;
+
+              return (
+                <>
+                  {/* Metric cards */}
+                  <div className="grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl border border-border/60 bg-card p-5">
+                      <p className="text-xs text-muted-foreground mb-1">Revenue generated</p>
+                      <p className="text-2xl font-bold text-foreground">{fmtRev(metrics.totalRevenueCents)}</p>
+                      <p className="text-[11px] text-muted-foreground/80 mt-1">Total from your conversations.</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 bg-card p-5">
+                      <p className="text-xs text-muted-foreground mb-1">Conversations</p>
+                      <p className="text-2xl font-bold text-foreground">{metrics.totalConversations}</p>
+                      <p className="text-[11px] text-muted-foreground/80 mt-1">{metrics.activeConversations} active right now.</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 bg-card p-5">
+                      <p className="text-xs text-muted-foreground mb-1">Messages sent</p>
+                      <p className="text-2xl font-bold text-foreground">{metrics.messagesSent.toLocaleString()}</p>
+                      <p className="text-[11px] text-muted-foreground/80 mt-1">Total replies to fans.</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/60 bg-card p-5">
+                      <p className="text-xs text-muted-foreground mb-1">Avg. per conversation</p>
+                      <p className="text-2xl font-bold text-foreground">
+                        {metrics.totalConversations > 0 ? fmtRev(Math.round(metrics.totalRevenueCents / metrics.totalConversations)) : '$0.00'}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/80 mt-1">Average revenue per conversation.</p>
+                    </div>
+                  </div>
+
+                  {/* Revenue chart */}
+                  <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground/70 mb-1">Revenue over time</p>
+                        <p className="text-sm text-muted-foreground/80">
+                          Cumulative revenue over the last {activeRange === '7d' ? '7 days' : activeRange === '30d' ? '30 days' : '12 months'}.
+                        </p>
+                      </div>
+                      <div className="inline-flex rounded-full border border-border/60 bg-muted/30 p-0.5 text-[11px]">
+                        {([{ key: '7d' as const, label: '7D' }, { key: '30d' as const, label: '30D' }, { key: '365d' as const, label: '1Y' }]).map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => { setActiveRange(item.key); setHoveredPoint(null); }}
+                            className={`px-3 py-1 rounded-full transition-colors ${
+                              activeRange === item.key
+                                ? 'bg-foreground text-background shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {maxValue === 0 ? (
+                      <p className="text-sm text-muted-foreground/80">No revenue data yet for this period.</p>
+                    ) : (
+                      <div className="relative">
+                        <div className="flex items-stretch gap-0">
+                          <div className="relative flex-shrink-0 w-9 h-40 sm:h-48 select-none">
+                            {yLevels.map((ratio) => {
+                              const dataVal = maxValue * (1 - ratio);
+                              const topPct = (paddingY + innerHeight * ratio) / height * 100;
+                              return (
+                                <span key={ratio} className="absolute right-1 text-[9px] leading-none text-muted-foreground/50 -translate-y-1/2" style={{ top: `${topPct}%` }}>
+                                  {fmtYLabel(dataVal)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40 sm:h-48 text-primary/80 transition-all duration-500" preserveAspectRatio="none">
+                              <defs>
+                                <linearGradient id="chatter-rev-grad" x1="0" x2="0" y1="0" y2="1">
+                                  <stop offset="0%" stopColor="rgba(163,230,53,0.6)" />
+                                  <stop offset="100%" stopColor="rgba(15,23,42,0)" />
+                                </linearGradient>
+                              </defs>
+                              <g>
+                                {yLevels.map((ratio) => {
+                                  const yVal = paddingY + innerHeight * ratio;
+                                  return <line key={ratio} x1={paddingX} x2={paddingX + innerWidth} y1={yVal} y2={yVal} stroke="rgba(148,163,184,0.15)" strokeWidth={0.5} />;
+                                })}
+                              </g>
+                              <polyline fill="url(#chatter-rev-grad)" stroke="none" points={`${paddingX + innerWidth},${height - paddingY} ${pointsAttr} ${paddingX},${height - paddingY}`} className="opacity-80 transition-all duration-500" />
+                              <polyline fill="none" stroke="currentColor" strokeWidth={2} points={pointsAttr} className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500" />
+                              <g>
+                                {computedPoints.map((pt, idx) => (
+                                  <circle key={idx} cx={pt.x} cy={pt.y} r={3} className="fill-current opacity-0 hover:opacity-100 cursor-pointer transition-opacity duration-200"
+                                    onMouseEnter={() => setHoveredPoint({ label: pt.label, value: pt.value })}
+                                    onMouseLeave={() => setHoveredPoint(null)}
+                                  />
+                                ))}
+                              </g>
+                            </svg>
+                            <div className="mt-2 flex justify-between text-[10px] text-muted-foreground/60">
+                              {series.map((pt, idx) => (
+                                <span key={idx} className="min-w-0 truncate">
+                                  {idx === 0 || idx === series.length - 1 || series.length <= 7 ? pt.label : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {tooltipPoint && (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/80">
+                            <span>Total {fmtRev(lastPoint.value)} on {lastPoint.label}</span>
+                            {hoveredPoint && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2.5 py-1 text-[10px] text-foreground">
+                                {tooltipPoint.label} · {fmtRev(tooltipPoint.value)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Chat view: split-pane (identical layout to CreatorChat) ────── */}
+      {mainView === 'chat' && (
       <div className="pt-14 flex-1 flex overflow-hidden h-[calc(100vh-3.5rem)]">
 
         {/* ── Left panel: conversation list ──────────────────────────── */}
@@ -463,6 +752,7 @@ export default function ChatterDashboard() {
           </AnimatePresence>
         </div>
       </div>
+      )}
 
       {/* Close profile picker on outside click */}
       {showProfilePicker && (

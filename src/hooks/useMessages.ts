@@ -197,7 +197,7 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
         // Mettre à jour le preview de la conversation (last_message_preview)
         const conversationUpdate: Record<string, unknown> = {
           last_message_at: new Date().toISOString(),
-          last_message_preview: trimmed ? trimmed.slice(0, 120) : '📎 Contenu',
+          last_message_preview: trimmed ? trimmed.slice(0, 120) : '📎 Content',
           is_read: true,
         };
         if (senderType === 'creator' || senderType === 'chatter') {

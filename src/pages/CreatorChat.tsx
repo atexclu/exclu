@@ -80,10 +80,10 @@ export default function CreatorChat() {
   };
 
   const filterTabs: { key: StatusFilter; label: string; badge?: number }[] = [
-    { key: 'all',       label: 'Toutes' },
-    { key: 'unclaimed', label: 'En attente', badge: unclaimedCount },
-    { key: 'active',    label: 'Actives' },
-    { key: 'archived',  label: 'Archives' },
+    { key: 'all',       label: 'All' },
+    { key: 'unclaimed', label: 'Pending', badge: unclaimedCount },
+    { key: 'active',    label: 'Active' },
+    { key: 'archived',  label: 'Archived' },
   ];
 
   return (
@@ -106,7 +106,7 @@ export default function CreatorChat() {
                       type="button"
                       onClick={() => setShowBroadcast(true)}
                       className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
-                      title="Message en masse"
+                      title="Broadcast message"
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -118,7 +118,7 @@ export default function CreatorChat() {
                       className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
                         showSettings ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground'
                       }`}
-                      title="Paramètres du chat"
+                      title="Chat settings"
                     >
                       <Settings2 className="w-4 h-4" />
                     </button>
@@ -131,7 +131,7 @@ export default function CreatorChat() {
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher…"
+                  placeholder="Search…"
                   className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
                 />
               </div>
@@ -171,12 +171,12 @@ export default function CreatorChat() {
                   <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-muted-foreground/60">
-                      {searchQuery ? 'Aucun résultat' : 'Aucune conversation'}
+                      {searchQuery ? 'No results' : 'No conversations'}
                     </p>
                     <p className="text-xs text-muted-foreground/40">
                       {searchQuery
-                        ? 'Essayez une autre recherche'
-                        : 'Les conversations de tes fans apparaîtront ici'}
+                        ? 'Try a different search'
+                        : 'Fan conversations will appear here'}
                     </p>
                   </div>
                 </div>
@@ -216,7 +216,7 @@ export default function CreatorChat() {
                       onClick={handleBackToList}
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />
-                      Retour
+                      Back
                     </Button>
                   </div>
 
@@ -238,10 +238,10 @@ export default function CreatorChat() {
                   </div>
                   <div className="space-y-1.5">
                     <p className="text-base font-semibold text-foreground/60">
-                      Sélectionne une conversation
+                      Select a conversation
                     </p>
                     <p className="text-sm text-muted-foreground/40 max-w-xs">
-                      Choisis une conversation dans la liste pour commencer à répondre à tes fans
+                      Pick a conversation from the list to start replying to fans
                     </p>
                   </div>
                 </motion.div>

@@ -13,6 +13,10 @@ import type { Message } from '@/types/chat';
 interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
+  /** Right-align this message (creator/chatter = team side) */
+  isTeam?: boolean;
+  /** Avatar/name for team messages not sent by the current user */
+  teamSenderInfo?: { display_name: string | null; avatar_url: string | null } | null;
   conversationId?: string;
 }
 
@@ -20,7 +24,8 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, isOwn, conversationId }: MessageBubbleProps) {
+export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId }: MessageBubbleProps) {
+  const rightAligned = isTeam ?? isOwn;
   if (message.content_type === 'system') {
     return (
       <div className="flex justify-center my-2">
@@ -31,15 +36,33 @@ export function MessageBubble({ message, isOwn, conversationId }: MessageBubbleP
     );
   }
 
+  const showTeamAvatar = rightAligned && !isOwn && !!teamSenderInfo;
+  const senderInitial = (teamSenderInfo?.display_name ?? '?').charAt(0).toUpperCase();
+
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div className={`max-w-[75%] flex flex-col gap-0.5 ${isOwn ? 'items-end' : 'items-start'}`}>
+    <div className={`flex ${rightAligned ? 'justify-end' : 'justify-start'} mb-2`}>
+      <div className={`max-w-[75%] flex gap-1.5 ${rightAligned ? 'flex-row-reverse items-end' : 'flex-row items-end'}`}>
+
+        {/* Team member avatar (only for non-own team messages) */}
+        {showTeamAvatar && (
+          <div className="w-5 h-5 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
+            {teamSenderInfo?.avatar_url ? (
+              <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[9px] font-bold text-muted-foreground">{senderInitial}</span>
+            )}
+          </div>
+        )}
+
+        <div className={`flex flex-col gap-0.5 ${rightAligned ? 'items-end' : 'items-start'}`}>
 
         {/* Bulle principale */}
         <div
           className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-            isOwn
-              ? 'bg-primary text-primary-foreground rounded-br-sm'
+            rightAligned
+              ? isOwn
+                ? 'bg-primary text-primary-foreground rounded-br-sm'
+                : 'bg-primary/60 text-primary-foreground rounded-br-sm'
               : 'bg-muted text-foreground rounded-bl-sm'
           }`}
         >
@@ -51,14 +74,14 @@ export function MessageBubble({ message, isOwn, conversationId }: MessageBubbleP
           {/* Contenu payant attaché */}
           {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
             <div className={`mt-2 rounded-xl border p-3 flex items-center gap-3 ${
-              isOwn ? 'border-white/20 bg-white/10' : 'border-border bg-background/60'
+              rightAligned ? 'border-white/20 bg-white/10' : 'border-border bg-background/60'
             }`}>
               <div className="flex-1 min-w-0">
-                <p className={`text-xs font-semibold truncate ${isOwn ? 'text-primary-foreground' : 'text-foreground'}`}>
-                  {message.link.title || 'Contenu exclusif'}
+                <p className={`text-xs font-semibold truncate ${rightAligned ? 'text-primary-foreground' : 'text-foreground'}`}>
+                  {message.link.title || 'Exclusive content'}
                 </p>
                 {message.link.price_cents > 0 && (
-                  <p className={`text-[11px] mt-0.5 ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                  <p className={`text-[11px] mt-0.5 ${rightAligned ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                     ${(message.link.price_cents / 100).toFixed(2)}
                   </p>
                 )}
@@ -68,7 +91,7 @@ export function MessageBubble({ message, isOwn, conversationId }: MessageBubbleP
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                  isOwn
+                  rightAligned
                     ? 'bg-white/20 hover:bg-white/30 text-primary-foreground'
                     : 'bg-muted hover:bg-muted/80 text-muted-foreground'
                 }`}
@@ -83,6 +106,7 @@ export function MessageBubble({ message, isOwn, conversationId }: MessageBubbleP
         <span className="text-[10px] text-muted-foreground/50 px-1">
           {formatTime(message.created_at)}
         </span>
+        </div>
       </div>
     </div>
   );
