@@ -1,100 +1,112 @@
 /**
  * ChatContentPicker
  *
- * Inline panel that slides up above the message composer, showing
- * the creator's published links so a creator or chatter can attach
- * paid content to a chat message.
+ * Inline panel above the message composer. Shows the profile's uploaded
+ * assets (public + private) from the content library. Supports multi-select
+ * and sends selected files directly as image/video messages in the chat.
  */
 
-import { useState, useEffect } from 'react';
-import { X, Search, Loader2, Paperclip, FileText } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, Search, Loader2, Paperclip, FileText, Check, Send, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
-interface LinkItem {
+export interface ContentAsset {
   id: string;
   title: string | null;
-  slug: string;
-  price_cents: number;
-  storage_path: string | null;
+  storage_path: string;
   mime_type: string | null;
+  is_public: boolean;
   previewUrl?: string | null;
   isVideo?: boolean;
 }
 
 interface ChatContentPickerProps {
   profileId: string;
-  onSelect: (link: LinkItem) => void;
+  onSendAssets: (assets: ContentAsset[]) => void;
   onClose: () => void;
 }
 
-export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentPickerProps) {
-  const [links, setLinks] = useState<LinkItem[]>([]);
+export function ChatContentPicker({ profileId, onSendAssets, onClose }: ChatContentPickerProps) {
+  const [assets, setAssets] = useState<ContentAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [visFilter, setVisFilter] = useState<'all' | 'public' | 'private'>('all');
 
   useEffect(() => {
-    const fetchLinks = async () => {
+    let mounted = true;
+    const fetchAssets = async () => {
       setIsLoading(true);
+
+      // Get the creator user_id owning this profile
+      const { data: profileRow } = await supabase
+        .from('creator_profiles')
+        .select('user_id')
+        .eq('id', profileId)
+        .single();
+
+      if (!profileRow || !mounted) { setIsLoading(false); return; }
+
       const { data } = await supabase
-        .from('links')
-        .select('id, title, slug, price_cents, storage_path, mime_type')
+        .from('assets')
+        .select('id, title, storage_path, mime_type, is_public')
         .eq('profile_id', profileId)
-        .eq('status', 'published')
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
-      const rawLinks = (data ?? []) as LinkItem[];
+      if (!mounted) return;
 
-      // Generate signed preview URLs
+      const rawAssets = (data ?? []) as ContentAsset[];
+
+      // Generate signed preview URLs (batch)
       const withPreviews = await Promise.all(
-        rawLinks.map(async (link) => {
-          if (link.storage_path) {
-            const { data: signed } = await supabase.storage
-              .from('content')
-              .createSignedUrl(link.storage_path, 300);
-            if (signed?.signedUrl) {
-              const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
-              const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-              return { ...link, previewUrl: signed.signedUrl, isVideo };
-            }
-          }
-
-          // Try link_media for first asset
-          const { data: linkMedia } = await supabase
-            .from('link_media')
-            .select('assets(storage_path, mime_type)')
-            .eq('link_id', link.id)
-            .order('position', { ascending: true })
-            .limit(1);
-
-          if (linkMedia?.[0]) {
-            const asset = (linkMedia[0] as any).assets;
-            if (asset?.storage_path) {
-              const { data: signed } = await supabase.storage
-                .from('content')
-                .createSignedUrl(asset.storage_path, 300);
-              if (signed?.signedUrl) {
-                const isVideo = asset.mime_type?.startsWith('video/') || false;
-                return { ...link, previewUrl: signed.signedUrl, isVideo };
-              }
-            }
-          }
-
-          return { ...link, previewUrl: null, isVideo: false };
+        rawAssets.map(async (asset) => {
+          if (!asset.storage_path) return { ...asset, previewUrl: null, isVideo: false };
+          const { data: signed } = await supabase.storage
+            .from('paid-content')
+            .createSignedUrl(asset.storage_path, 600);
+          const ext = asset.storage_path.split('.').pop()?.toLowerCase() ?? '';
+          const isVideo = ['mp4', 'mov', 'webm', 'mkv', 'm4v'].includes(ext)
+            || (asset.mime_type?.startsWith('video/') ?? false);
+          return { ...asset, previewUrl: signed?.signedUrl ?? null, isVideo };
         })
       );
 
-      setLinks(withPreviews);
-      setIsLoading(false);
+      if (mounted) {
+        setAssets(withPreviews);
+        setIsLoading(false);
+      }
     };
 
-    fetchLinks();
+    fetchAssets();
+    return () => { mounted = false; };
   }, [profileId]);
 
-  const filtered = search.trim()
-    ? links.filter((l) => (l.title ?? '').toLowerCase().includes(search.toLowerCase()))
-    : links;
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSend = () => {
+    const selected = assets.filter((a) => selectedIds.has(a.id));
+    if (selected.length > 0) onSendAssets(selected);
+  };
+
+  const filtered = assets.filter((a) => {
+    if (visFilter === 'public' && !a.is_public) return false;
+    if (visFilter === 'private' && a.is_public) return false;
+    if (search.trim()) {
+      return (a.title ?? '').toLowerCase().includes(search.toLowerCase());
+    }
+    return true;
+  });
+
+  const selectedCount = selectedIds.size;
 
   return (
     <motion.div
@@ -104,40 +116,68 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
       transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
       className="border-t border-border bg-card overflow-hidden"
     >
-      <div className="max-h-[320px] flex flex-col">
+      <div className="max-h-[360px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Paperclip className="w-3.5 h-3.5 text-primary" />
             <span className="text-xs font-semibold text-foreground">Attach content</span>
-            <span className="text-[10px] text-muted-foreground">({links.length})</span>
+            <span className="text-[10px] text-muted-foreground">({assets.length})</span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {selectedCount > 0 && (
+              <button
+                type="button"
+                onClick={handleSend}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 transition-colors"
+              >
+                <Send className="w-3 h-3" />
+                Send {selectedCount}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Search */}
-        {links.length > 5 && (
-          <div className="px-3 py-2 border-b border-border/50 flex-shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search content…"
-                className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
-              />
-            </div>
+        {/* Filters + Search */}
+        <div className="px-3 py-2 border-b border-border/50 flex-shrink-0 flex items-center gap-2">
+          <div className="flex gap-1">
+            {(['all', 'public', 'private'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setVisFilter(f)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                  visFilter === f
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted/60'
+                }`}
+              >
+                {f === 'public' && <Eye className="w-2.5 h-2.5" />}
+                {f === 'private' && <EyeOff className="w-2.5 h-2.5" />}
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
           </div>
-        )}
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+        </div>
 
-        {/* Content list */}
+        {/* Asset grid */}
         <div className="flex-1 overflow-y-auto p-2">
           {isLoading && (
             <div className="flex justify-center py-8">
@@ -149,71 +189,79 @@ export function ChatContentPicker({ profileId, onSelect, onClose }: ChatContentP
             <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
               <Paperclip className="w-5 h-5 text-muted-foreground/30" />
               <p className="text-[11px] text-muted-foreground/60">
-                {search ? 'No matching content' : 'No published content yet'}
+                {search ? 'No matching content' : 'No content uploaded yet'}
               </p>
             </div>
           )}
 
           {!isLoading && filtered.length > 0 && (
-            <div className="space-y-1.5">
-              {filtered.map((link) => (
-                <button
-                  key={link.id}
-                  type="button"
-                  onClick={() => onSelect(link)}
-                  className="w-full rounded-xl border border-border/60 bg-background hover:bg-muted/40 hover:border-primary/30 transition-all group overflow-hidden"
-                >
-                  <div className="flex gap-3 p-2.5">
-                    {/* Thumbnail */}
-                    <div className="relative flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border/40">
-                      {link.previewUrl ? (
-                        link.isVideo ? (
-                          <video
-                            src={link.previewUrl}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                          />
-                        ) : (
-                          <img
-                            src={link.previewUrl}
-                            className="w-full h-full object-cover"
-                            alt={link.title ?? ''}
-                            loading="lazy"
-                          />
-                        )
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+              {filtered.map((asset) => {
+                const isSelected = selectedIds.has(asset.id);
+                return (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    onClick={() => toggleSelect(asset.id)}
+                    className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                      isSelected
+                        ? 'border-primary ring-1 ring-primary/30'
+                        : 'border-transparent hover:border-border'
+                    }`}
+                  >
+                    {asset.previewUrl ? (
+                      asset.isVideo ? (
+                        <video
+                          src={asset.previewUrl}
+                          className="w-full h-full object-cover"
+                          muted
+                          playsInline
+                        />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-muted-foreground/30" />
-                        </div>
+                        <img
+                          src={asset.previewUrl}
+                          className="w-full h-full object-cover"
+                          alt={asset.title ?? ''}
+                          loading="lazy"
+                        />
+                      )
+                    ) : (
+                      <div className="w-full h-full bg-muted flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-muted-foreground/30" />
+                      </div>
+                    )}
+
+                    {/* Selection checkmark */}
+                    <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground scale-100'
+                        : 'bg-black/40 text-white/60 scale-90'
+                    }`}>
+                      {isSelected ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <span className="w-3 h-3 rounded-full border border-white/60" />
                       )}
                     </div>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
-                      <p className="text-xs font-semibold text-foreground truncate">
-                        {link.title || 'Untitled'}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                        {link.mime_type?.startsWith('image/') ? 'Image' :
-                         link.mime_type?.startsWith('video/') ? 'Video' : 'File'}
-                      </p>
+                    {/* Visibility badge */}
+                    <div className="absolute bottom-1 left-1">
+                      {asset.is_public ? (
+                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-green-500/80 text-white">Public</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white/80">Private</span>
+                      )}
                     </div>
 
-                    {/* Price + send indicator */}
-                    <div className="flex flex-col items-end justify-center gap-1 flex-shrink-0">
-                      <span className="text-[11px] font-bold text-[#CFFF16]">
-                        {link.price_cents > 0
-                          ? `$${(link.price_cents / 100).toFixed(2)}`
-                          : 'Free'}
-                      </span>
-                      <span className="text-[9px] text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                        Send →
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              ))}
+                    {/* Video indicator */}
+                    {asset.isVideo && (
+                      <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-black/50 flex items-center justify-center">
+                        <span className="text-[7px] text-white font-bold">▶</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

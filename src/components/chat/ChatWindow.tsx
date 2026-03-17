@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useMessages } from '@/hooks/useMessages';
 import { MessageBubble } from './MessageBubble';
 import { RichMessageComposer } from './RichMessageComposer';
-import { ChatContentPicker } from './ChatContentPicker';
+import { ChatContentPicker, type ContentAsset } from './ChatContentPicker';
 import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCustomRequest } from './ChatCustomRequest';
 import { FanTagsRow } from './FanTagsRow';
@@ -111,15 +111,17 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     }
   };
 
-  const handleAttachContent = async (link: { id: string; title: string | null; price_cents: number }) => {
+  const handleSendAssets = async (assets: ContentAsset[]) => {
     setShowContentPicker(false);
-    await sendMessage({
-      content: link.title || 'Exclusive content',
-      senderType,
-      contentType: 'paid_content',
-      paidContentId: link.id,
-      paidAmountCents: link.price_cents,
-    });
+    for (const asset of assets) {
+      if (asset.previewUrl) {
+        await sendMessage({
+          content: asset.previewUrl,
+          senderType,
+          contentType: 'image',
+        });
+      }
+    }
   };
 
   const handleAttachLink = async (link: { id: string; title: string | null; price_cents: number }) => {
@@ -300,7 +302,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           {showContentPicker && (
             <ChatContentPicker
               profileId={conversation.profile_id}
-              onSelect={handleAttachContent}
+              onSendAssets={handleSendAssets}
               onClose={() => setShowContentPicker(false)}
             />
           )}

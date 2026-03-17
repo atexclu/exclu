@@ -107,11 +107,11 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
         {/* Footer: avatar + sender name + time — inline row below the bubble */}
         <div className={`flex items-center gap-1 mt-0.5 px-0.5 ${rightAligned ? 'flex-row-reverse' : 'flex-row'}`}>
           {showTeamAvatar && (
-            <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
+            <div className="w-3 h-3 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
               {teamSenderInfo?.avatar_url ? (
                 <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-[8px] font-bold text-muted-foreground">{senderInitial}</span>
+                <span className="text-[6px] font-bold text-muted-foreground">{senderInitial}</span>
               )}
             </div>
           )}

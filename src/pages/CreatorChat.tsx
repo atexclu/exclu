@@ -88,7 +88,7 @@ export default function CreatorChat() {
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex flex-col h-full overflow-hidden max-w-6xl mx-auto w-full">
         <div className="flex flex-1 overflow-hidden">
 
           {/* ── Panneau gauche : liste des conversations ─────────────────── */}
@@ -227,7 +227,7 @@ export default function CreatorChat() {
 
           {/* ── Panneau droit : fenêtre de chat ──────────────────────────── */}
           <div className={`
-            flex-1 flex flex-col overflow-hidden
+            flex-1 flex flex-col overflow-hidden bg-card
             ${!showMobileList ? 'flex' : 'hidden md:flex'}
           `}>
             <AnimatePresence mode="wait">
