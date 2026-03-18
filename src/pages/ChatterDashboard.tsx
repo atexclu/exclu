@@ -744,7 +744,7 @@ export default function ChatterDashboard() {
 
             {/* Profile story-bubbles — switch between profiles within the active client */}
             {clientProfiles.length > 1 && (
-              <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2 mb-2">
+              <div className="flex gap-3 overflow-x-auto scrollbar-hide pt-2 pb-2 mb-2">
                 {/* All profiles bubble */}
                 <button
                   type="button"

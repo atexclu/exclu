@@ -58,68 +58,64 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
         {/* Bulle principale (text / paid content) */}
         {message.content_type !== 'image' && (
-          <div className="relative">
-            {/* Chatter badge for team messages not sent by current user */}
-            {showTeamAvatar && (
-              <div className="absolute -top-1 -right-1 z-10">
-                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/90 text-white text-[8px] font-bold shadow-sm">
-                  <UserCircle className="w-2.5 h-2.5" />
-                  Chatter
-                </div>
-              </div>
-            )}
-            <div
-              className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                rightAligned
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-black text-white border border-white/10 rounded-bl-sm'
-              }`}
-            >
+          <div
+            className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+              rightAligned
+                ? 'bg-primary text-primary-foreground rounded-br-sm'
+                : 'bg-black text-white border border-white/10 rounded-bl-sm'
+            }`}
+          >
               {/* Contenu texte */}
               {message.content && (
                 <p className="whitespace-pre-wrap break-words">{message.content}</p>
               )}
 
-              {/* Contenu payant attaché */}
+              {/* Contenu payant attaché - Link preview card */}
               {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
-                <div className={`mt-2 rounded-xl border p-3 flex items-center gap-3 ${
-                  rightAligned 
-                    ? 'border-white/20 bg-white/10' 
-                    : 'border-border/30 bg-muted/20 dark:border-white/20 dark:bg-white/10'
-                }`}>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-semibold truncate ${
+                <a
+                  href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`mt-2 block rounded-xl overflow-hidden border transition-all hover:scale-[1.02] ${
+                    rightAligned 
+                      ? 'border-white/20 bg-white/10 hover:bg-white/15' 
+                      : 'border-white/20 bg-white/10 hover:bg-white/15'
+                  }`}
+                >
+                  {/* Preview image */}
+                  <div className="w-full aspect-video bg-muted/20 overflow-hidden">
+                    <img 
+                      src="/og-link-default.png" 
+                      alt="" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  {/* Link info */}
+                  <div className="p-3">
+                    <p className={`text-xs font-semibold line-clamp-2 ${
                       rightAligned 
                         ? 'text-primary-foreground' 
-                        : 'text-foreground dark:text-white'
+                        : 'text-white'
                     }`}>
                       {message.link.title || 'Exclusive content'}
                     </p>
                     {message.link.price_cents > 0 && (
-                      <p className={`text-[11px] mt-0.5 ${
-                        rightAligned 
-                          ? 'text-primary-foreground/70' 
-                          : 'text-muted-foreground dark:text-white/70'
-                      }`}>
-                        ${(message.link.price_cents / 100).toFixed(2)}
-                      </p>
+                      <div className="flex items-center justify-between mt-1.5">
+                        <p className={`text-sm font-bold ${
+                          rightAligned 
+                            ? 'text-primary-foreground' 
+                            : 'text-primary'
+                        }`}>
+                          ${(message.link.price_cents / 100).toFixed(2)}
+                        </p>
+                        <ExternalLink className={`w-3.5 h-3.5 ${
+                          rightAligned ? 'text-primary-foreground/70' : 'text-white/70'
+                        }`} />
+                      </div>
                     )}
                   </div>
-                  <a
-                    href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                      rightAligned
-                        ? 'bg-white/20 hover:bg-white/30 text-primary-foreground'
-                        : 'bg-muted hover:bg-muted/80 text-muted-foreground dark:bg-white/20 dark:hover:bg-white/30 dark:text-white'
-                    }`}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
+                </a>
               )}
-            </div>
           </div>
         )}
 
