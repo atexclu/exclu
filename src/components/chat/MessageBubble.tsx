@@ -56,36 +56,31 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
           </div>
         )}
 
-        {/* Bulle principale (text / paid content) */}
-        {message.content_type !== 'image' && (
+        {/* Bulle principale (text only) */}
+        {message.content_type !== 'image' && message.content && (
           <div
-            className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-              rightAligned
-                ? 'bg-primary text-primary-foreground rounded-br-sm'
-                : 'bg-black text-white border border-white/10 rounded-bl-sm'
+            className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed bg-black text-white border border-white/20 ${
+              rightAligned ? 'rounded-br-sm' : 'rounded-bl-sm'
             }`}
           >
-              {/* Contenu texte */}
-              {message.content && (
-                <p className="whitespace-pre-wrap break-words">{message.content}</p>
-              )}
-
-              {/* Contenu payant attaché - Link preview image only */}
-              {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
-                <a
-                  href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 block rounded-2xl overflow-hidden max-w-[260px] hover:opacity-90 transition-opacity"
-                >
-                  <img 
-                    src="/og-link-default.png" 
-                    alt="" 
-                    className="w-full rounded-2xl"
-                  />
-                </a>
-              )}
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
           </div>
+        )}
+
+        {/* Contenu payant attaché - Link preview image only (outside bubble) */}
+        {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
+          <a
+            href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-2xl overflow-hidden max-w-[260px] hover:opacity-90 transition-opacity mt-1"
+          >
+            <img 
+              src="/og-link-default.png" 
+              alt="" 
+              className="w-full rounded-2xl"
+            />
+          </a>
         )}
 
         {/* Footer: avatar + sender name + time — inline row below the bubble */}
