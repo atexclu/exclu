@@ -1,7 +1,9 @@
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, Plus, Gift, Image as ImageIcon, FileText, DollarSign } from 'lucide-react';
+import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, Plus, Gift, Image as ImageIcon, FileText, DollarSign, Heart, Link as LinkIcon, X } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
@@ -123,7 +125,10 @@ const Onboarding = () => {
   const [linkFile, setLinkFile] = useState<File | null>(null);
   const [linkFilePreview, setLinkFilePreview] = useState<string | null>(null);
   const [linkTitle, setLinkTitle] = useState('');
+  const [linkDescription, setLinkDescription] = useState('');
   const [linkPrice, setLinkPrice] = useState('');
+  const [linkShowOnProfile, setLinkShowOnProfile] = useState(true);
+  const [linkIsSupportLink, setLinkIsSupportLink] = useState(false);
   const [isCreatingLink, setIsCreatingLink] = useState(false);
   const linkFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,8 +141,14 @@ const Onboarding = () => {
 
   // Wishlist step
   const [wishlistName, setWishlistName] = useState('');
+  const [wishlistDescription, setWishlistDescription] = useState('');
   const [wishlistPrice, setWishlistPrice] = useState('');
   const [wishlistEmoji, setWishlistEmoji] = useState('🎁');
+  const [wishlistImageFile, setWishlistImageFile] = useState<File | null>(null);
+  const [wishlistImagePreview, setWishlistImagePreview] = useState<string | null>(null);
+  const [wishlistGiftUrl, setWishlistGiftUrl] = useState('');
+  const [wishlistUnlimited, setWishlistUnlimited] = useState(true);
+  const [wishlistMaxQty, setWishlistMaxQty] = useState('1');
   const [isCreatingWishlist, setIsCreatingWishlist] = useState(false);
 
   // Crop state for avatar
@@ -523,40 +534,55 @@ const Onboarding = () => {
   };
 
   const handleCreateLink = async () => {
-    if (!currentUser || !linkFile) return;
+    if (!currentUser) return;
+    if (!linkIsSupportLink && !linkFile) {
+      toast.error('Please upload a file or enable Support link');
+      return;
+    }
     setIsCreatingLink(true);
     try {
-      const converted = await maybeConvertHeic(linkFile);
-      const assetId = crypto.randomUUID();
-      const ext = converted.name.split('.').pop() ?? 'bin';
-      const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
+      let assetId: string | null = null;
 
-      const { error: uploadError } = await supabase.storage
-        .from('paid-content')
-        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
-      if (uploadError) throw new Error('Upload failed');
+      // Upload file if not a support link
+      if (!linkIsSupportLink && linkFile) {
+        const converted = await maybeConvertHeic(linkFile);
+        assetId = crypto.randomUUID();
+        const ext = converted.name.split('.').pop() ?? 'bin';
+        const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
 
-      // Create asset
-      const { data: asset, error: assetError } = await supabase
-        .from('assets')
-        .insert({ id: assetId, creator_id: currentUser.id, title: linkTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: false })
-        .select('id')
-        .single();
-      if (assetError) throw assetError;
+        const { error: uploadError } = await supabase.storage
+          .from('paid-content')
+          .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
+        if (uploadError) throw new Error('Upload failed');
+
+        // Create asset
+        const { error: assetError } = await supabase
+          .from('assets')
+          .insert({ 
+            id: assetId, 
+            creator_id: currentUser.id, 
+            title: linkTitle.trim() || null, 
+            storage_path: storagePath, 
+            mime_type: converted.type || null, 
+            is_public: false 
+          });
+        if (assetError) throw assetError;
+      }
 
       // Create link
-      const priceCents = Math.max(0, Math.round((parseFloat(linkPrice) || 0) * 100));
+      const priceCents = Math.max(0, Math.round((parseFloat(linkPrice) || 5) * 100));
       const slug = `${handle}-${crypto.randomUUID().slice(0, 8)}`;
       const { error: linkError } = await supabase
         .from('links')
         .insert({
           creator_id: currentUser.id,
           title: linkTitle.trim() || 'My first link',
+          description: linkDescription.trim() || null,
           slug,
           price_cents: priceCents,
           currency: 'USD',
           status: 'published',
-          show_on_profile: true,
+          show_on_profile: linkShowOnProfile,
           is_public: priceCents === 0,
         });
       if (linkError) throw linkError;
@@ -609,13 +635,32 @@ const Onboarding = () => {
 
     setIsCreatingWishlist(true);
     try {
+      let finalImageUrl: string | null = null;
+
+      // Upload image if provided
+      if (wishlistImageFile) {
+        const ext = wishlistImageFile.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+        const path = `wishlist/${currentUser.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('avatars')
+          .upload(path, wishlistImageFile, { cacheControl: '3600', upsert: true });
+        if (uploadErr) throw new Error('Image upload failed');
+        const { data: publicUrl } = supabase.storage.from('avatars').getPublicUrl(path);
+        finalImageUrl = publicUrl?.publicUrl ?? null;
+      }
+
+      const maxQty = wishlistUnlimited ? null : Math.max(1, parseInt(wishlistMaxQty) || 1);
+
       const { error } = await supabase.from('wishlist_items').insert({
         creator_id: currentUser.id,
         name,
+        description: wishlistDescription.trim() || null,
         emoji: wishlistEmoji,
+        image_url: finalImageUrl,
+        gift_url: wishlistGiftUrl.trim() || null,
         price_cents: Math.round(priceRaw * 100),
         currency: 'USD',
-        max_quantity: null,
+        max_quantity: maxQty,
         sort_order: 0,
         is_visible: true,
       });
@@ -1335,6 +1380,19 @@ const Onboarding = () => {
                   />
                 </div>
 
+                {/* Description */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Description (optional)</label>
+                  <Textarea
+                    value={linkDescription}
+                    onChange={(e) => setLinkDescription(e.target.value)}
+                    placeholder="Describe what fans will get..."
+                    maxLength={500}
+                    rows={3}
+                    className="min-h-[72px] bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  />
+                </div>
+
                 {/* Price */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
@@ -1342,15 +1400,42 @@ const Onboarding = () => {
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <Input
                       type="number"
-                      min="0"
-                      step="0.01"
+                      min="5"
+                      step="0.5"
                       value={linkPrice}
                       onChange={(e) => setLinkPrice(e.target.value)}
-                      placeholder="0.00 (free)"
+                      placeholder="5.00"
                       className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
                     />
                   </div>
-                  <p className="text-[10px] text-exclu-space/50">Leave at 0 for a free link</p>
+                </div>
+
+                {/* Options */}
+                <div className="space-y-3">
+                  <p className="text-[11px] font-medium text-exclu-space/80">Options</p>
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
+                      <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                    </div>
+                    <Switch
+                      checked={linkShowOnProfile}
+                      onCheckedChange={setLinkShowOnProfile}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Heart className="w-4 h-4 text-pink-400" />
+                        <p className="text-sm font-medium text-exclu-space">Support link</p>
+                      </div>
+                      <p className="text-xs text-exclu-space/60 mt-0.5">No content attached — fans pay to support you directly</p>
+                    </div>
+                    <Switch
+                      checked={linkIsSupportLink}
+                      onCheckedChange={setLinkIsSupportLink}
+                    />
+                  </div>
                 </div>
 
                 {/* Actions */}
@@ -1369,7 +1454,7 @@ const Onboarding = () => {
                     variant="hero"
                     className="flex-1 rounded-full"
                     onClick={handleCreateLink}
-                    disabled={isCreatingLink || !linkFile}
+                    disabled={isCreatingLink || (!linkIsSupportLink && !linkFile)}
                   >
                     {isCreatingLink ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1574,6 +1659,19 @@ const Onboarding = () => {
                   />
                 </div>
 
+                {/* Description */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Description (optional)</label>
+                  <Textarea
+                    value={wishlistDescription}
+                    onChange={(e) => setWishlistDescription(e.target.value)}
+                    placeholder="Optional short description..."
+                    rows={2}
+                    maxLength={500}
+                    className="min-h-[64px] bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  />
+                </div>
+
                 {/* Price */}
                 <div className="space-y-1">
                   <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
@@ -1589,7 +1687,100 @@ const Onboarding = () => {
                       className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
                     />
                   </div>
-                  <p className="text-[10px] text-exclu-space/50">Minimum $1.00</p>
+                </div>
+
+                {/* Photo upload */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Photo (optional)</label>
+                  <p className="text-[10px] text-exclu-space/50 mb-1">Upload a photo or leave empty to use the emoji.</p>
+                  {wishlistImagePreview ? (
+                    <div className="relative w-full h-32 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink">
+                      <img src={wishlistImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { 
+                          setWishlistImageFile(null); 
+                          setWishlistImagePreview(null);
+                          if (wishlistImagePreview) URL.revokeObjectURL(wishlistImagePreview);
+                        }}
+                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/80 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed border-exclu-arsenic/60 bg-exclu-ink/80 cursor-pointer hover:border-primary/50 transition-colors">
+                      <Upload className="w-5 h-5 text-exclu-space/60" />
+                      <span className="text-xs text-exclu-space/60">Click to upload</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          if (f.size > 10 * 1024 * 1024) { toast.error('Image must be under 10 MB'); return; }
+                          const converted = await maybeConvertHeic(f);
+                          setWishlistImageFile(converted);
+                          setWishlistImagePreview(URL.createObjectURL(converted));
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* Gift URL */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Gift link (optional)</label>
+                  <div className="relative">
+                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      value={wishlistGiftUrl}
+                      onChange={(e) => setWishlistGiftUrl(e.target.value)}
+                      placeholder="https://amazon.com/..."
+                      className="h-10 pl-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    />
+                  </div>
+                  <p className="text-[10px] text-exclu-space/50">Informational link shown to fans (e.g. Amazon, brand website)</p>
+                </div>
+
+                {/* Quantity */}
+                <div>
+                  <label className="text-[11px] font-medium text-exclu-space/80 mb-2 block">Max quantity</label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <div
+                        onClick={() => setWishlistUnlimited(true)}
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
+                          wishlistUnlimited ? 'border-primary bg-primary' : 'border-exclu-arsenic'
+                        }`}
+                      >
+                        {wishlistUnlimited && <Check className="w-3 h-3 text-black" />}
+                      </div>
+                      <span className="text-sm text-exclu-cloud">Unlimited</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <div
+                        onClick={() => setWishlistUnlimited(false)}
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
+                          !wishlistUnlimited ? 'border-primary bg-primary' : 'border-exclu-arsenic'
+                        }`}
+                      >
+                        {!wishlistUnlimited && <Check className="w-3 h-3 text-black" />}
+                      </div>
+                      <span className="text-sm text-exclu-cloud">Limited</span>
+                    </label>
+                    {!wishlistUnlimited && (
+                      <Input
+                        value={wishlistMaxQty}
+                        onChange={(e) => setWishlistMaxQty(e.target.value)}
+                        type="number"
+                        min="1"
+                        className="w-20 h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
+                        placeholder="1"
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {/* Actions */}
