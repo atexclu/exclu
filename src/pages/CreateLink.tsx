@@ -38,7 +38,6 @@ const CreateLink = () => {
   const [hasExistingLinks, setHasExistingLinks] = useState(false);
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
   const [showOnProfile, setShowOnProfile] = useState(true);
-  const [isSupportLink, setIsSupportLink] = useState(false);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -206,7 +205,7 @@ const CreateLink = () => {
       return;
     }
 
-    if (!isSupportLink && !file && selectedAssetIds.length === 0) {
+    if (!file && selectedAssetIds.length === 0) {
       toast.error('Please upload or attach at least one media file for this link.');
       return;
     }
@@ -238,7 +237,6 @@ const CreateLink = () => {
           slug,
           status: 'draft',
           show_on_profile: showOnProfile,
-          is_support_link: isSupportLink,
         })
         .select();
 
@@ -365,8 +363,8 @@ const CreateLink = () => {
                     <div className="space-y-6">
                       {/* Text fields */}
                       <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space" htmlFor="title">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground" htmlFor="title">
                             Title
                           </label>
                           <Input
@@ -374,12 +372,12 @@ const CreateLink = () => {
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             placeholder="Example: Full HD teaser video"
-                            className="h-10 bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
+                            className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                             required
                           />
                         </div>
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space" htmlFor="description">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground" htmlFor="description">
                             Description (optional)
                           </label>
                           <Textarea
@@ -387,58 +385,41 @@ const CreateLink = () => {
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             placeholder="Give fans a short, enticing description of what they will unlock."
-                            className="min-h-[96px] bg-black/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/50 text-sm"
+                            className="min-h-[96px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                           />
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-exclu-space" htmlFor="price">
-                            Price
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground" htmlFor="price">
+                            Price (USD)
                           </label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              id="price"
-                              type="number"
-                              min={5}
-                              step={0.5}
-                              value={price}
-                              onChange={(e) => setPrice(e.target.value)}
-                              className="h-10 bg-black/60 border-exclu-arsenic/70 text-exclu-cloud text-sm"
-                            />
-                            <span className="text-xs text-exclu-space">USD</span>
-                          </div>
+                          <Input
+                            id="price"
+                            type="number"
+                            min={5}
+                            step={0.5}
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
+                          />
                         </div>
 
                         <div className="space-y-3">
-                          <p className="text-xs font-medium text-exclu-space">Options</p>
-                          <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                          <p className="text-sm font-medium text-foreground">Options</p>
+                          <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
                             <div className="flex-1">
-                              <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
-                              <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
+                              <p className="text-sm font-medium text-foreground">Visible on public page</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">This link will appear on your public profile</p>
                             </div>
                             <Switch
                               checked={showOnProfile}
                               onCheckedChange={setShowOnProfile}
                             />
                           </div>
-                          <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <Heart className="w-4 h-4 text-pink-400" />
-                                <p className="text-sm font-medium text-exclu-space">Support link</p>
-                              </div>
-                              <p className="text-xs text-exclu-space/60 mt-0.5">No content attached — fans pay to support you directly</p>
-                            </div>
-                            <Switch
-                              checked={isSupportLink}
-                              onCheckedChange={setIsSupportLink}
-                            />
-                          </div>
                         </div>
                       </div>
 
-                      {/* Upload + preview (hidden for support links) */}
-                      {!isSupportLink && (
+                      {/* Upload + preview */}
                       <div className="space-y-3">
                         <p className="text-xs font-medium text-exclu-space">Content source</p>
                         <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-3 sm:p-4 flex flex-col items-center justify-center text-center gap-3">
@@ -594,7 +575,6 @@ const CreateLink = () => {
                           )}
                         </div>
                       </div>
-                      )}
                     </div>
 
                     <div className="flex items-center justify-between gap-4 pt-2">

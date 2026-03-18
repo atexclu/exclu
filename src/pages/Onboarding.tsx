@@ -128,7 +128,6 @@ const Onboarding = () => {
   const [linkDescription, setLinkDescription] = useState('');
   const [linkPrice, setLinkPrice] = useState('');
   const [linkShowOnProfile, setLinkShowOnProfile] = useState(true);
-  const [linkIsSupportLink, setLinkIsSupportLink] = useState(false);
   const [isCreatingLink, setIsCreatingLink] = useState(false);
   const linkFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -534,40 +533,34 @@ const Onboarding = () => {
   };
 
   const handleCreateLink = async () => {
-    if (!currentUser) return;
-    if (!linkIsSupportLink && !linkFile) {
-      toast.error('Please upload a file or enable Support link');
+    if (!currentUser || !linkFile) {
+      toast.error('Please upload a file');
       return;
     }
     setIsCreatingLink(true);
     try {
-      let assetId: string | null = null;
+      const converted = await maybeConvertHeic(linkFile);
+      const assetId = crypto.randomUUID();
+      const ext = converted.name.split('.').pop() ?? 'bin';
+      const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
 
-      // Upload file if not a support link
-      if (!linkIsSupportLink && linkFile) {
-        const converted = await maybeConvertHeic(linkFile);
-        assetId = crypto.randomUUID();
-        const ext = converted.name.split('.').pop() ?? 'bin';
-        const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('paid-content')
+        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw new Error('Upload failed');
 
-        const { error: uploadError } = await supabase.storage
-          .from('paid-content')
-          .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
-        if (uploadError) throw new Error('Upload failed');
-
-        // Create asset
-        const { error: assetError } = await supabase
-          .from('assets')
-          .insert({ 
-            id: assetId, 
-            creator_id: currentUser.id, 
-            title: linkTitle.trim() || null, 
-            storage_path: storagePath, 
-            mime_type: converted.type || null, 
-            is_public: false 
-          });
-        if (assetError) throw assetError;
-      }
+      // Create asset
+      const { error: assetError } = await supabase
+        .from('assets')
+        .insert({ 
+          id: assetId, 
+          creator_id: currentUser.id, 
+          title: linkTitle.trim() || null, 
+          storage_path: storagePath, 
+          mime_type: converted.type || null, 
+          is_public: false 
+        });
+      if (assetError) throw assetError;
 
       // Create link
       const priceCents = Math.max(0, Math.round((parseFloat(linkPrice) || 5) * 100));
@@ -1325,12 +1318,32 @@ const Onboarding = () => {
             <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
               <CardContent className="px-5 py-5 space-y-4">
                 {/* File upload zone */}
-                <div>
+                <div className="relative rounded-2xl border-2 border-dashed border-border bg-muted/50 px-6 py-8 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary">
+                    <Plus className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-2 w-full">
+                    <p className="text-sm font-semibold text-foreground">
+                      {linkFile ? linkFile.name : 'Choose a file'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      MP4, MOV, JPG, PNG supported
+                    </p>
+                    {linkFilePreview && (
+                      <div className="mt-4 rounded-xl overflow-hidden border border-border bg-muted max-h-48">
+                        {linkFile?.type.startsWith('video/') ? (
+                          <video src={linkFilePreview} className="w-full h-48 object-cover" muted loop autoPlay />
+                        ) : (
+                          <img src={linkFilePreview} alt="Preview" className="w-full h-48 object-cover" />
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <input
                     ref={linkFileInputRef}
                     type="file"
                     accept="image/*,video/*"
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -1341,63 +1354,38 @@ const Onboarding = () => {
                       setLinkFilePreview(URL.createObjectURL(converted));
                     }}
                   />
-                  {linkFilePreview ? (
-                    <div className="relative rounded-xl overflow-hidden border border-exclu-arsenic/50">
-                      {linkFile?.type.startsWith('video/') ? (
-                        <video src={linkFilePreview} className="w-full h-40 object-cover" muted playsInline />
-                      ) : (
-                        <img src={linkFilePreview} alt="Preview" className="w-full h-40 object-cover" />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { linkFileInputRef.current?.click(); }}
-                        className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center"
-                      >
-                        <Camera className="w-6 h-6 text-white" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => linkFileInputRef.current?.click()}
-                      className="w-full h-32 rounded-xl border-2 border-dashed border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/50 flex flex-col items-center justify-center gap-2 transition-colors"
-                    >
-                      <Upload className="w-6 h-6 text-exclu-space/60" />
-                      <span className="text-xs text-exclu-space/70">Click to upload a photo or video</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* Title */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Title</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Title</label>
                   <Input
                     value={linkTitle}
                     onChange={(e) => setLinkTitle(e.target.value)}
                     placeholder="My exclusive content"
                     maxLength={100}
-                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 {/* Description */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Description (optional)</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Description (optional)</label>
                   <Textarea
                     value={linkDescription}
                     onChange={(e) => setLinkDescription(e.target.value)}
                     placeholder="Describe what fans will get..."
                     maxLength={500}
                     rows={3}
-                    className="min-h-[72px] bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    className="min-h-[72px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 {/* Price */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Price (USD)</label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       type="number"
                       min="5"
@@ -1405,15 +1393,15 @@ const Onboarding = () => {
                       value={linkPrice}
                       onChange={(e) => setLinkPrice(e.target.value)}
                       placeholder="5.00"
-                      className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      className="h-11 pl-8 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                 </div>
 
                 {/* Options */}
                 <div className="space-y-3">
-                  <p className="text-[11px] font-medium text-exclu-space/80">Options</p>
-                  <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
+                  <p className="text-sm font-medium text-foreground">Options</p>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-exclu-space">Visible on public page</p>
                       <p className="text-xs text-exclu-space/60 mt-0.5">This link will appear on your public profile</p>
@@ -1421,19 +1409,6 @@ const Onboarding = () => {
                     <Switch
                       checked={linkShowOnProfile}
                       onCheckedChange={setLinkShowOnProfile}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/50">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Heart className="w-4 h-4 text-pink-400" />
-                        <p className="text-sm font-medium text-exclu-space">Support link</p>
-                      </div>
-                      <p className="text-xs text-exclu-space/60 mt-0.5">No content attached — fans pay to support you directly</p>
-                    </div>
-                    <Switch
-                      checked={linkIsSupportLink}
-                      onCheckedChange={setLinkIsSupportLink}
                     />
                   </div>
                 </div>
@@ -1454,7 +1429,7 @@ const Onboarding = () => {
                     variant="hero"
                     className="flex-1 rounded-full"
                     onClick={handleCreateLink}
-                    disabled={isCreatingLink || (!linkIsSupportLink && !linkFile)}
+                    disabled={isCreatingLink || !linkFile}
                   >
                     {isCreatingLink ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1503,12 +1478,32 @@ const Onboarding = () => {
             <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
               <CardContent className="px-5 py-5 space-y-4">
                 {/* File upload */}
-                <div>
+                <div className="relative rounded-2xl border-2 border-dashed border-border bg-muted/50 px-6 py-8 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary">
+                    <Plus className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-2 w-full">
+                    <p className="text-sm font-semibold text-foreground">
+                      {contentFile ? contentFile.name : 'Choose a file'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      MP4, MOV, JPG, PNG supported
+                    </p>
+                    {contentFilePreview && (
+                      <div className="mt-4 rounded-xl overflow-hidden border border-border bg-muted max-h-48">
+                        {contentFile?.type.startsWith('video/') ? (
+                          <video src={contentFilePreview} className="w-full h-48 object-cover" muted loop autoPlay />
+                        ) : (
+                          <img src={contentFilePreview} alt="Preview" className="w-full h-48 object-cover" />
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <input
                     ref={contentFileInputRef}
                     type="file"
                     accept="image/*,video/*"
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -1519,46 +1514,21 @@ const Onboarding = () => {
                       setContentFilePreview(URL.createObjectURL(converted));
                     }}
                   />
-                  {contentFilePreview ? (
-                    <div className="relative rounded-xl overflow-hidden border border-exclu-arsenic/50">
-                      {contentFile?.type.startsWith('video/') ? (
-                        <video src={contentFilePreview} className="w-full h-40 object-cover" muted playsInline />
-                      ) : (
-                        <img src={contentFilePreview} alt="Preview" className="w-full h-40 object-cover" />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { contentFileInputRef.current?.click(); }}
-                        className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center"
-                      >
-                        <Camera className="w-6 h-6 text-white" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => contentFileInputRef.current?.click()}
-                      className="w-full h-32 rounded-xl border-2 border-dashed border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/50 flex flex-col items-center justify-center gap-2 transition-colors"
-                    >
-                      <Upload className="w-6 h-6 text-exclu-space/60" />
-                      <span className="text-xs text-exclu-space/70">Click to upload a photo or video</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* Title */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Title <span className="text-exclu-space/50">(optional)</span></label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Title (optional)</label>
                   <Input
                     value={contentTitle}
                     onChange={(e) => setContentTitle(e.target.value)}
-                    placeholder="Give it a name"
+                    placeholder="Example: Behind the scenes shot"
                     maxLength={100}
-                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
-                <p className="text-[10px] text-exclu-space/50 -mt-1">
+                <p className="text-xs text-muted-foreground -mt-1">
                   This content will appear in the public section of your profile.
                 </p>
 
@@ -1648,35 +1618,35 @@ const Onboarding = () => {
                 </div>
 
                 {/* Name */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Item name</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Item name</label>
                   <Input
                     value={wishlistName}
                     onChange={(e) => setWishlistName(e.target.value)}
                     placeholder="e.g. New MacBook, Louboutin..."
                     maxLength={100}
-                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 {/* Description */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Description (optional)</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Description (optional)</label>
                   <Textarea
                     value={wishlistDescription}
                     onChange={(e) => setWishlistDescription(e.target.value)}
                     placeholder="Optional short description..."
                     rows={2}
                     maxLength={500}
-                    className="min-h-[64px] bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    className="min-h-[64px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 {/* Price */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Price (USD)</label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       type="number"
                       min="1"
@@ -1684,15 +1654,15 @@ const Onboarding = () => {
                       value={wishlistPrice}
                       onChange={(e) => setWishlistPrice(e.target.value)}
                       placeholder="25.00"
-                      className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      className="h-11 pl-8 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                 </div>
 
                 {/* Photo upload */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Photo (optional)</label>
-                  <p className="text-[10px] text-exclu-space/50 mb-1">Upload a photo or leave empty to use the emoji.</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Photo (optional)</label>
+                  <p className="text-xs text-muted-foreground mb-1">Upload a photo or leave empty to use the emoji.</p>
                   {wishlistImagePreview ? (
                     <div className="relative w-full h-32 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink">
                       <img src={wishlistImagePreview} alt="Preview" className="w-full h-full object-cover" />
@@ -1709,9 +1679,9 @@ const Onboarding = () => {
                       </button>
                     </div>
                   ) : (
-                    <label className="flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed border-exclu-arsenic/60 bg-exclu-ink/80 cursor-pointer hover:border-primary/50 transition-colors">
-                      <Upload className="w-5 h-5 text-exclu-space/60" />
-                      <span className="text-xs text-exclu-space/60">Click to upload</span>
+                    <label className="flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed border-border bg-muted/50 cursor-pointer hover:border-primary/50 transition-colors">
+                      <Upload className="w-5 h-5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Click to upload</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1730,23 +1700,23 @@ const Onboarding = () => {
                 </div>
 
                 {/* Gift URL */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Gift link (optional)</label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Gift link (optional)</label>
                   <div className="relative">
-                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       value={wishlistGiftUrl}
                       onChange={(e) => setWishlistGiftUrl(e.target.value)}
                       placeholder="https://amazon.com/..."
-                      className="h-10 pl-9 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                      className="h-11 pl-9 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
-                  <p className="text-[10px] text-exclu-space/50">Informational link shown to fans (e.g. Amazon, brand website)</p>
+                  <p className="text-xs text-muted-foreground">Informational link shown to fans (e.g. Amazon, brand website)</p>
                 </div>
 
                 {/* Quantity */}
                 <div>
-                  <label className="text-[11px] font-medium text-exclu-space/80 mb-2 block">Max quantity</label>
+                  <label className="text-sm font-medium text-foreground mb-2 block">Max quantity</label>
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <div
@@ -1776,7 +1746,7 @@ const Onboarding = () => {
                         onChange={(e) => setWishlistMaxQty(e.target.value)}
                         type="number"
                         min="1"
-                        className="w-20 h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
+                        className="w-20 h-11 bg-primary/10 border-border text-foreground text-sm"
                         placeholder="1"
                       />
                     )}
