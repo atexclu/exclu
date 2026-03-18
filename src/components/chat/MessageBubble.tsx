@@ -75,10 +75,10 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
             href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}${message.chatter_ref ? `${conversationId ? '&' : '?'}chtref=${message.chatter_ref}` : ''}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block rounded-2xl max-w-[260px] hover:opacity-90 transition-opacity mt-1"
+            className="block rounded-2xl max-w-[260px] hover:opacity-90 transition-opacity mt-1 border border-white/30"
             color="white"
-            speed="5s"
-            thickness={1}
+            speed="3s"
+            thickness={2}
           >
             <img 
               src="/og-link-default.png" 

@@ -6,17 +6,15 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Loader2, ArrowLeft, MapPin, Send, Check, MessageSquare,
+  Loader2, MapPin, Send, Check, MessageSquare,
   Search, ExternalLink, User, ChevronLeft,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { getAuroraGradient } from '@/lib/auroraGradients';
-import Aurora from '@/components/ui/Aurora';
 
 interface CreatorContract {
   creator_id: string;
@@ -33,7 +31,6 @@ interface CreatorContract {
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 export default function ChatterContracts() {
-  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [creators, setCreators] = useState<CreatorContract[]>([]);
   const [search, setSearch] = useState('');
@@ -115,10 +112,8 @@ export default function ChatterContracts() {
     const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
 
     return (
-      <div className="min-h-screen bg-background text-foreground">
-        <Aurora colorStops={aurora.colors} />
-
-        <div className="relative z-10 max-w-2xl mx-auto px-4 py-8">
+      <div className="text-foreground">
+        <div className="max-w-2xl mx-auto px-4 py-8">
           {/* Back */}
           <button
             onClick={() => setSelectedCreator(null)}
@@ -237,20 +232,12 @@ export default function ChatterContracts() {
 
   // ── List view ──────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="text-foreground">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => navigate('/app/chatter')}
-            className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Contracts</h1>
-            <p className="text-xs text-muted-foreground">Creators looking for chatters to manage their conversations</p>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-foreground">Contracts</h1>
+          <p className="text-xs text-muted-foreground">Creators looking for chatters to manage their conversations</p>
         </div>
 
         {/* Search */}

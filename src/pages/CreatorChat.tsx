@@ -24,8 +24,6 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ChatSettingsPanel } from '@/components/chat/ChatSettingsPanel';
 import { BroadcastPanel } from '@/pages/MassMessage';
 import { supabase } from '@/lib/supabaseClient';
-import Aurora from '@/components/ui/Aurora';
-import { getAuroraGradient } from '@/lib/auroraGradients';
 import type { Conversation } from '@/types/chat';
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
@@ -202,17 +200,6 @@ export default function CreatorChat() {
             flex-1 flex flex-col overflow-hidden bg-card/80 relative
             ${!showMobileList ? 'flex' : 'hidden md:flex'}
           `}>
-            {/* Aurora background with creator theme colors */}
-            {activeProfile && (
-              <div className="fixed inset-0 opacity-10 pointer-events-none">
-                <Aurora
-                  colorStops={getAuroraGradient(activeProfile.aurora_gradient || 'purple_dream').colors}
-                  amplitude={0.8}
-                  blend={0.6}
-                  speed={0.5}
-                />
-              </div>
-            )}
             <AnimatePresence mode="wait">
               {selectedConversation && currentUserId ? (
                 <motion.div
