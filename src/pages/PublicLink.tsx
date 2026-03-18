@@ -83,6 +83,7 @@ interface CreatorProfileData {
   theme_color: string | null;
   aurora_gradient?: string | null;
   bio?: string | null;
+  show_certification?: boolean | null;
 }
 
 // Map theme colors to pixel colors for PixelCard
@@ -293,7 +294,7 @@ const PublicLink = () => {
       if (data.creator_id) {
         const { data: creatorProfile } = await supabase
           .from('profiles')
-          .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio')
+          .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio, show_certification')
           .eq('id', data.creator_id)
           .abortSignal(signal)
           .maybeSingle();
@@ -709,9 +710,21 @@ const PublicLink = () => {
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <h2 className="text-lg sm:text-xl font-bold text-white truncate">
-                            {creator.display_name || creator.handle}
-                          </h2>
+                          <div className="flex items-center gap-1.5">
+                            <h2 className="text-lg sm:text-xl font-bold text-white truncate">
+                              {creator.display_name || creator.handle}
+                            </h2>
+                            {creator.show_certification !== false && (() => {
+                              const badgeColors = getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'purple_dream').colors;
+                              return (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 flex-shrink-0">
+                                  <defs><linearGradient id="badge-grad-link" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={badgeColors[0]} /><stop offset="100%" stopColor={badgeColors[2] || badgeColors[1]} /></linearGradient></defs>
+                                  <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill="url(#badge-grad-link)" stroke="url(#badge-grad-link)" />
+                                  <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                                </svg>
+                              );
+                            })()}
+                          </div>
                           {creator?.bio && (
                             <p className="text-sm text-white/70 mt-1 leading-relaxed">
                               {creator.bio}

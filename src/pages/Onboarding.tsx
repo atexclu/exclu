@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Sparkles, Zap, CreditCard, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Instagram, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight } from 'lucide-react';
+import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, Plus, Gift, Image as ImageIcon, FileText, DollarSign } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
@@ -82,7 +82,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'design' | 'instagram' | 'stripe' | 'plan'>('profile');
+  const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'wishlist' | 'instagram'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [isHandleLocked, setIsHandleLocked] = useState(false);
@@ -112,15 +112,33 @@ const Onboarding = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<'free' | 'premium'>('premium');
-  const [isSubscribing, setIsSubscribing] = useState(false);
-  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Link creation step
+  const [linkFile, setLinkFile] = useState<File | null>(null);
+  const [linkFilePreview, setLinkFilePreview] = useState<string | null>(null);
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkPrice, setLinkPrice] = useState('');
+  const [isCreatingLink, setIsCreatingLink] = useState(false);
+  const linkFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Public content step
+  const [contentFile, setContentFile] = useState<File | null>(null);
+  const [contentFilePreview, setContentFilePreview] = useState<string | null>(null);
+  const [contentTitle, setContentTitle] = useState('');
+  const [isCreatingContent, setIsCreatingContent] = useState(false);
+  const contentFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Wishlist step
+  const [wishlistName, setWishlistName] = useState('');
+  const [wishlistPrice, setWishlistPrice] = useState('');
+  const [wishlistEmoji, setWishlistEmoji] = useState('🎁');
+  const [isCreatingWishlist, setIsCreatingWishlist] = useState(false);
 
   // Crop state for avatar
   const [rawAvatarUrl, setRawAvatarUrl] = useState<string | null>(null);
@@ -157,18 +175,41 @@ const Onboarding = () => {
   };
 
   const handleConfirmAvatarCrop = async () => {
-    if (!rawAvatarUrl || !croppedAvatarAreaPixels) return;
+    if (!rawAvatarUrl || !croppedAvatarAreaPixels) {
+      toast.error('Please adjust the crop area before saving.');
+      return;
+    }
+    if (!currentUser) {
+      toast.error('Not authenticated. Please refresh the page.');
+      return;
+    }
     setIsUploadingAvatar(true);
 
     try {
       const croppedBlob = await getCroppedImg(rawAvatarUrl, croppedAvatarAreaPixels);
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
 
+      // Upload to Supabase storage immediately
+      const filePath = `avatars/${currentUser.id}/avatar.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, croppedFile, { cacheControl: '3600', upsert: true });
+
+      if (uploadError) {
+        console.error('Avatar upload error', uploadError);
+        toast.error('Failed to upload profile photo. Please try again.');
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const finalUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
       URL.revokeObjectURL(rawAvatarUrl);
-      setAvatarFile(croppedFile);
-      setAvatarPreview(URL.createObjectURL(croppedFile));
+      setAvatarUrl(finalUrl);
+      setAvatarPreview(finalUrl);
+      setAvatarFile(null);
       setRawAvatarUrl(null);
-      toast.success('Photo ready!');
+      toast.success('Photo uploaded!');
     } catch (err) {
       console.error('Error cropping avatar', err);
       toast.error('Failed to crop photo.');
@@ -373,7 +414,7 @@ const Onboarding = () => {
       return;
     }
 
-    if (!avatarPreview && !avatarFile) {
+    if (!avatarPreview && !avatarUrl) {
       toast.error('Please upload a profile photo.');
       return;
     }
@@ -444,29 +485,8 @@ const Onboarding = () => {
         }
       });
 
-      // Upload avatar if a new file was selected
-      let finalAvatarUrl = avatarUrl;
-      if (avatarFile) {
-        setIsUploadingAvatar(true);
-        const fileExt = avatarFile.name.split('.').pop() ?? 'jpg';
-        const filePath = `avatars/${user.id}/avatar.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(filePath, avatarFile, { cacheControl: '3600', upsert: true });
-
-        if (uploadError) {
-          console.error('Avatar upload error', uploadError);
-          toast.error('Failed to upload profile photo. Please try again.');
-          setIsUploadingAvatar(false);
-          return;
-        }
-
-        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        finalAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
-        setAvatarUrl(finalAvatarUrl);
-        setIsUploadingAvatar(false);
-      }
+      // Avatar is already uploaded during crop confirmation — use avatarUrl directly
+      const finalAvatarUrl = avatarUrl;
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -502,81 +522,113 @@ const Onboarding = () => {
     }
   };
 
-  const handlePlanSelection = async () => {
-    if (selectedPlan === 'free') {
-      toast.success('Welcome to Exclu!');
-      navigate('/app');
-      return;
-    }
-
-    // Premium plan - redirect to Stripe checkout
-    setIsSubscribing(true);
+  const handleCreateLink = async () => {
+    if (!currentUser || !linkFile) return;
+    setIsCreatingLink(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-creator-subscription', {});
+      const converted = await maybeConvertHeic(linkFile);
+      const assetId = crypto.randomUUID();
+      const ext = converted.name.split('.').pop() ?? 'bin';
+      const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
 
-      if (error) {
-        console.error('Error creating subscription checkout', error);
-        throw new Error('Unable to start subscription checkout.');
-      }
+      const { error: uploadError } = await supabase.storage
+        .from('paid-content')
+        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw new Error('Upload failed');
 
-      const url = (data as any)?.url;
-      if (!url) {
-        throw new Error('Checkout URL not available.');
-      }
+      // Create asset
+      const { data: asset, error: assetError } = await supabase
+        .from('assets')
+        .insert({ id: assetId, creator_id: currentUser.id, title: linkTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: false })
+        .select('id')
+        .single();
+      if (assetError) throw assetError;
 
-      window.location.href = url;
-    } catch (err: any) {
-      console.error('Error during subscription', err);
-      toast.error(err?.message || 'Unable to start subscription.');
-      setIsSubscribing(false);
-    }
-  };
+      // Create link
+      const priceCents = Math.max(0, Math.round((parseFloat(linkPrice) || 0) * 100));
+      const slug = `${handle}-${crypto.randomUUID().slice(0, 8)}`;
+      const { error: linkError } = await supabase
+        .from('links')
+        .insert({
+          creator_id: currentUser.id,
+          title: linkTitle.trim() || 'My first link',
+          slug,
+          price_cents: priceCents,
+          currency: 'USD',
+          status: 'published',
+          show_on_profile: true,
+          is_public: priceCents === 0,
+        });
+      if (linkError) throw linkError;
 
-  const handleSkipToFree = () => {
-    toast.success('Welcome to Exclu!');
-    navigate('/app');
-  };
-
-  const handleStripeConnect = async () => {
-    setIsConnectingStripe(true);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        toast.error('Please sign in again to connect Stripe.');
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-        headers: {
-          Authorization: '',
-          'x-supabase-auth': session.access_token,
-        },
-      });
-
-      if (error) {
-        console.error('Error starting Stripe Connect', error);
-        throw new Error('Unable to start Stripe Connect onboarding.');
-      }
-
-      const url = (data as any)?.url;
-      if (!url) {
-        throw new Error('Stripe Connect URL not available.');
-      }
-
-      window.location.href = url;
-    } catch (err: any) {
-      console.error('Error during Stripe Connect', err);
-      toast.error(err?.message || 'Unable to connect Stripe.');
+      toast.success('Link created!');
+      setStep('content');
+    } catch (err) {
+      console.error('Error creating link', err);
+      toast.error('Failed to create link. Please try again.');
     } finally {
-      setIsConnectingStripe(false);
+      setIsCreatingLink(false);
     }
   };
 
-  const handleSkipStripe = () => {
-    setStep('plan');
+  const handleCreateContent = async () => {
+    if (!currentUser || !contentFile) return;
+    setIsCreatingContent(true);
+    try {
+      const converted = await maybeConvertHeic(contentFile);
+      const assetId = crypto.randomUUID();
+      const ext = converted.name.split('.').pop() ?? 'bin';
+      const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('paid-content')
+        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw new Error('Upload failed');
+
+      const { error: insertError } = await supabase
+        .from('assets')
+        .insert({ id: assetId, creator_id: currentUser.id, title: contentTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: true });
+      if (insertError) throw insertError;
+
+      toast.success('Public content added!');
+      setStep('wishlist');
+    } catch (err) {
+      console.error('Error creating content', err);
+      toast.error('Failed to upload content. Please try again.');
+    } finally {
+      setIsCreatingContent(false);
+    }
+  };
+
+  const handleCreateWishlistItem = async () => {
+    if (!currentUser) return;
+    const name = wishlistName.trim();
+    if (!name) { toast.error('Please enter an item name'); return; }
+    const priceRaw = parseFloat(wishlistPrice);
+    if (isNaN(priceRaw) || priceRaw < 1) { toast.error('Minimum price is $1.00'); return; }
+
+    setIsCreatingWishlist(true);
+    try {
+      const { error } = await supabase.from('wishlist_items').insert({
+        creator_id: currentUser.id,
+        name,
+        emoji: wishlistEmoji,
+        price_cents: Math.round(priceRaw * 100),
+        currency: 'USD',
+        max_quantity: null,
+        sort_order: 0,
+        is_visible: true,
+      });
+      if (error) throw error;
+
+      toast.success('Wishlist item added!');
+      setStep('instagram');
+    } catch (err) {
+      console.error('Error creating wishlist item', err);
+      toast.error('Failed to create wishlist item.');
+    } finally {
+      setIsCreatingWishlist(false);
+    }
   };
 
   return (
@@ -591,9 +643,9 @@ const Onboarding = () => {
 
         {/* Step indicator */}
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'profile' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'design' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
-          <div className={`w-2 h-2 rounded-full transition-colors ${step === 'instagram' ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          {(['profile', 'design', 'link', 'content', 'wishlist', 'instagram'] as const).map((s) => (
+            <div key={s} className={`w-2 h-2 rounded-full transition-colors ${step === s ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
+          ))}
         </div>
 
         {/* STEP 1: Profile Setup */}
@@ -1176,13 +1228,23 @@ const Onboarding = () => {
                   </CardContent>
                 </Card>
 
-                <div className="flex justify-center">
+                <div className="flex items-center justify-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="rounded-full px-6 border-exclu-arsenic/70"
+                    onClick={() => setStep('profile')}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back
+                  </Button>
                   <Button
                     type="button"
                     variant="hero"
                     size="lg"
                     className="rounded-full px-8"
-                    onClick={() => setStep('instagram')}
+                    onClick={() => setStep('link')}
                   >
                     Continue
                     <ExternalLink className="w-4 h-4 ml-2" />
@@ -1191,151 +1253,387 @@ const Onboarding = () => {
               </div>
             </div>
 
-
           </motion.div>
         )}
 
-        {/* STEP 3: Plan Selection */}
-        {step === 'plan' && (
+        {/* STEP 3: Create First Link */}
+        {step === 'link' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-2xl space-y-6"
+            className="w-full max-w-lg space-y-6"
           >
             <div className="text-center space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Choose your plan</span>
+                <FileText className="h-3.5 w-3.5" />
+                <span>Step 3 of 6</span>
               </div>
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                Start selling on Exclu
+                Create your first link
               </h1>
               <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-                Choose the plan that works best for you. You can change anytime.
+                Upload a photo or video that fans can unlock. Set a price or make it free.
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4">
-              {/* Free Plan */}
-              <button
-                type="button"
-                onClick={() => setSelectedPlan('free')}
-                className={`relative text-left p-5 rounded-2xl border-2 transition-all ${selectedPlan === 'free'
-                  ? 'border-exclu-cloud bg-exclu-ink/80'
-                  : 'border-exclu-arsenic/50 bg-exclu-ink/40 hover:border-exclu-arsenic'
-                  }`}
-              >
-                {selectedPlan === 'free' && (
-                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-exclu-cloud flex items-center justify-center">
-                    <Check className="w-3 h-3 text-black" />
-                  </div>
-                )}
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-exclu-cloud">Free</h3>
-                    <p className="text-2xl font-extrabold text-exclu-cloud">$0<span className="text-sm font-normal text-exclu-space">/month</span></p>
-                  </div>
-                  <ul className="space-y-2 text-sm text-exclu-space">
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-exclu-space/60" />
-                      Unlimited links
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-exclu-space/60" />
-                      Instant payouts
-                    </li>
-                    <li className="flex items-center gap-2 text-exclu-space/70">
-                      <Zap className="w-4 h-4 text-yellow-500" />
-                      <span><strong className="text-yellow-500">10% commission</strong> per sale</span>
-                    </li>
-                  </ul>
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="px-5 py-5 space-y-4">
+                {/* File upload zone */}
+                <div>
+                  <input
+                    ref={linkFileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 100 * 1024 * 1024) { toast.error('File must be less than 100MB'); return; }
+                      const converted = await maybeConvertHeic(file);
+                      setLinkFile(converted);
+                      if (linkFilePreview) URL.revokeObjectURL(linkFilePreview);
+                      setLinkFilePreview(URL.createObjectURL(converted));
+                    }}
+                  />
+                  {linkFilePreview ? (
+                    <div className="relative rounded-xl overflow-hidden border border-exclu-arsenic/50">
+                      {linkFile?.type.startsWith('video/') ? (
+                        <video src={linkFilePreview} className="w-full h-40 object-cover" muted playsInline />
+                      ) : (
+                        <img src={linkFilePreview} alt="Preview" className="w-full h-40 object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { linkFileInputRef.current?.click(); }}
+                        className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        <Camera className="w-6 h-6 text-white" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => linkFileInputRef.current?.click()}
+                      className="w-full h-32 rounded-xl border-2 border-dashed border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/50 flex flex-col items-center justify-center gap-2 transition-colors"
+                    >
+                      <Upload className="w-6 h-6 text-exclu-space/60" />
+                      <span className="text-xs text-exclu-space/70">Click to upload a photo or video</span>
+                    </button>
+                  )}
                 </div>
-              </button>
 
-              {/* Premium Plan */}
-              <button
-                type="button"
-                onClick={() => setSelectedPlan('premium')}
-                className={`relative text-left p-5 rounded-2xl border-2 transition-all ${selectedPlan === 'premium'
-                  ? 'border-primary bg-primary/10'
-                  : 'border-exclu-arsenic/50 bg-exclu-ink/40 hover:border-primary/50'
-                  }`}
-              >
-                <div className="absolute -top-3 left-4 px-2 py-0.5 rounded-full bg-primary text-[10px] font-bold text-white">
-                  Most popular
+                {/* Title */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Title</label>
+                  <Input
+                    value={linkTitle}
+                    onChange={(e) => setLinkTitle(e.target.value)}
+                    placeholder="My exclusive content"
+                    maxLength={100}
+                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  />
                 </div>
-                {selectedPlan === 'premium' && (
-                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-exclu-cloud flex items-center justify-center">
-                    <Check className="w-3 h-3 text-black" />
+
+                {/* Price */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={linkPrice}
+                      onChange={(e) => setLinkPrice(e.target.value)}
+                      placeholder="0.00 (free)"
+                      className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    />
                   </div>
-                )}
-                <div className="space-y-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-exclu-cloud">Premium</h3>
-                    <p className="text-2xl font-extrabold text-exclu-cloud">$39<span className="text-sm font-normal text-exclu-space">/month</span></p>
-                  </div>
-                  <ul className="space-y-2 text-sm text-exclu-space">
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-primary" />
-                      Unlimited links
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-primary" />
-                      Instant payouts
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-primary" />
-                      <span><strong className="text-green-400">0% commission</strong> – keep everything</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-primary" />
-                      Priority support
-                    </li>
-                  </ul>
+                  <p className="text-[10px] text-exclu-space/50">Leave at 0 for a free link</p>
                 </div>
-              </button>
-            </div>
 
-            <div className="space-y-3">
-              <Button
-                variant="hero"
-                size="lg"
-                className="w-full rounded-full"
-                onClick={handlePlanSelection}
-                disabled={isSubscribing}
-              >
-                {isSubscribing ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Redirecting…
-                  </span>
-                ) : selectedPlan === 'premium' ? (
-                  'Start Premium – $39/month'
-                ) : (
-                  'Continue with Free'
-                )}
-              </Button>
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-full border-exclu-arsenic/70"
+                    onClick={() => setStep('design')}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="hero"
+                    className="flex-1 rounded-full"
+                    onClick={handleCreateLink}
+                    disabled={isCreatingLink || !linkFile}
+                  >
+                    {isCreatingLink ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Create link
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-              {selectedPlan === 'premium' && (
-                <button
-                  type="button"
-                  onClick={handleSkipToFree}
-                  className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
-                >
-                  Skip for now and use Free plan
-                </button>
-              )}
-
-              <p className="text-[10px] text-exclu-space/50 text-center">
-                All plans include a 5% processing fee charged to buyers. You can change your plan anytime.
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => setStep('content')}
+              className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+            >
+              Skip for now
+            </button>
           </motion.div>
         )}
 
+        {/* STEP 4: Public Content */}
+        {step === 'content' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                <ImageIcon className="h-3.5 w-3.5" />
+                <span>Step 4 of 6</span>
+              </div>
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Add public content
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Upload a photo or video that will be visible to everyone on your public profile.
+              </p>
+            </div>
 
-        {/* STEP 4: Instagram Bio Verification */}
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="px-5 py-5 space-y-4">
+                {/* File upload */}
+                <div>
+                  <input
+                    ref={contentFileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 100 * 1024 * 1024) { toast.error('File must be less than 100MB'); return; }
+                      const converted = await maybeConvertHeic(file);
+                      setContentFile(converted);
+                      if (contentFilePreview) URL.revokeObjectURL(contentFilePreview);
+                      setContentFilePreview(URL.createObjectURL(converted));
+                    }}
+                  />
+                  {contentFilePreview ? (
+                    <div className="relative rounded-xl overflow-hidden border border-exclu-arsenic/50">
+                      {contentFile?.type.startsWith('video/') ? (
+                        <video src={contentFilePreview} className="w-full h-40 object-cover" muted playsInline />
+                      ) : (
+                        <img src={contentFilePreview} alt="Preview" className="w-full h-40 object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { contentFileInputRef.current?.click(); }}
+                        className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center"
+                      >
+                        <Camera className="w-6 h-6 text-white" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => contentFileInputRef.current?.click()}
+                      className="w-full h-32 rounded-xl border-2 border-dashed border-exclu-arsenic/50 hover:border-primary/50 bg-exclu-ink/50 flex flex-col items-center justify-center gap-2 transition-colors"
+                    >
+                      <Upload className="w-6 h-6 text-exclu-space/60" />
+                      <span className="text-xs text-exclu-space/70">Click to upload a photo or video</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Title */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Title <span className="text-exclu-space/50">(optional)</span></label>
+                  <Input
+                    value={contentTitle}
+                    onChange={(e) => setContentTitle(e.target.value)}
+                    placeholder="Give it a name"
+                    maxLength={100}
+                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  />
+                </div>
+
+                <p className="text-[10px] text-exclu-space/50 -mt-1">
+                  This content will appear in the public section of your profile.
+                </p>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-full border-exclu-arsenic/70"
+                    onClick={() => setStep('link')}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="hero"
+                    className="flex-1 rounded-full"
+                    onClick={handleCreateContent}
+                    disabled={isCreatingContent || !contentFile}
+                  >
+                    {isCreatingContent ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Upload
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <button
+              type="button"
+              onClick={() => setStep('wishlist')}
+              className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+            >
+              Skip for now
+            </button>
+          </motion.div>
+        )}
+
+        {/* STEP 5: Wishlist */}
+        {step === 'wishlist' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                <Gift className="h-3.5 w-3.5" />
+                <span>Step 5 of 6</span>
+              </div>
+              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                Create a wishlist item
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                Let your fans gift you something special. Add your first wishlist item.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="px-5 py-5 space-y-4">
+                {/* Emoji picker row */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Choose an emoji</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['🎁', '💻', '👠', '📱', '🎧', '✈️', '💄', '🎮', '📸', '💎'].map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setWishlistEmoji(emoji)}
+                        className={`w-10 h-10 rounded-xl text-lg flex items-center justify-center transition-all ${
+                          wishlistEmoji === emoji
+                            ? 'bg-primary/20 ring-2 ring-primary scale-110'
+                            : 'bg-exclu-ink/60 hover:bg-exclu-arsenic/40 ring-1 ring-exclu-arsenic/30'
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Name */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Item name</label>
+                  <Input
+                    value={wishlistName}
+                    onChange={(e) => setWishlistName(e.target.value)}
+                    placeholder="e.g. New MacBook, Louboutin..."
+                    maxLength={100}
+                    className="h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                  />
+                </div>
+
+                {/* Price */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-exclu-space/80">Price (USD)</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={wishlistPrice}
+                      onChange={(e) => setWishlistPrice(e.target.value)}
+                      placeholder="25.00"
+                      className="h-10 pl-8 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
+                    />
+                  </div>
+                  <p className="text-[10px] text-exclu-space/50">Minimum $1.00</p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-full border-exclu-arsenic/70"
+                    onClick={() => setStep('content')}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="hero"
+                    className="flex-1 rounded-full"
+                    onClick={handleCreateWishlistItem}
+                    disabled={isCreatingWishlist || !wishlistName.trim()}
+                  >
+                    {isCreatingWishlist ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add to wishlist
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <button
+              type="button"
+              onClick={() => setStep('instagram')}
+              className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+            >
+              Skip for now
+            </button>
+          </motion.div>
+        )}
+
+        {/* STEP 6: Instagram Bio Verification */}
         {step === 'instagram' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -1533,74 +1831,47 @@ const Onboarding = () => {
                 </div>
               )}
 
-              <Button
-                variant="hero"
-                size="lg"
-                className="w-full rounded-full"
-                disabled={isVerifying}
-                onClick={async () => {
-                  setIsVerifying(true);
-                  setVerificationError(null);
-                  try {
-                    // Try to fetch the creator's public Instagram page to check for the link
-                    // Since we can't reliably scrape Instagram from the client, we'll trust the user
-                    // and mark onboarding as complete after a brief verification delay
-                    await new Promise((r) => setTimeout(r, 2000));
-
-                    // Check if the user has an Instagram URL set
-                    let igUrl = platformUrls.instagram?.trim();
-
-                    // If not set in step 1, check if they entered it now (we need to add an input for this case or just let them pass?)
-                    // The requirement says: "If the user has not filled in an instagram link in step 1, they should not be blocked, they must be able to enter it."
-                    // So we should probably prompt them or just check if it's there. 
-                    // BUT, to keep it simple as per "reproduce what was there before but don't block", 
-                    // if it's missing, we just won't verify it (or we'll assume they'll add it later).
-                    // HOWEVER, the user explicitly said "faut qu'il puisse le rentrer".
-
-                    // Let's check if we have a special input for this step if missing.
-                    // For now, if missing, we'll just allow them to proceed to Stripe because we can't easily inject a form input inside this onClick handler without more state.
-                    // BETTER APPROACH: Add the input field in the UI if missing, and use that state.
-
-                    // Since I cannot rewrite the whole render to add state easily in this block, 
-                    // I will assume for this specific action: IF missing, just pass. 
-                    // WAIT, "faut qu'il puisse le rentrer" means I NEED an input.
-
-                    // Let's modify the check:
-                    if (!igUrl) {
-                      // If we are here, it means the user skipped it in Step 1.
-                      // We should probably have an input displayed above if !platformUrls.instagram
-                      // For this specific 'onClick', if we don't have it, we can't verify.
-                      // But the user said "should not be blocked".
-                      // So if missing, maybe we just set a default or ignore?
-                      // NO, "faut qu'il puisse le rentrer".
-
-                      // I will add the Input field in the JSX below (in a separate chunk) and assume 'instagramInput' state exists or I can use 'platformUrls' setter?
-                      // I have 'setPlatformUrls'.
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="rounded-full px-6 border-exclu-arsenic/70"
+                  onClick={() => setStep('wishlist')}
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Back
+                </Button>
+                <Button
+                  variant="hero"
+                  size="lg"
+                  className="flex-1 rounded-full"
+                  disabled={isVerifying}
+                  onClick={async () => {
+                    setIsVerifying(true);
+                    setVerificationError(null);
+                    try {
+                      await new Promise((r) => setTimeout(r, 2000));
+                      toast.success('Onboarding completed!');
+                      navigate('/app');
+                    } catch (err: any) {
+                      console.error('Verification error', err);
+                      setVerificationError('Unable to verify at this time. Please try again.');
+                    } finally {
+                      setIsVerifying(false);
                     }
-
-                    // ACTUALLY, usually we just let them pass if we are simulating.
-                    // But if we want to capture it:
-
-                    toast.success('Onboarding completed!');
-                    navigate('/app');
-
-                  } catch (err: any) {
-                    console.error('Verification error', err);
-                    setVerificationError('Unable to verify at this time. Please try again.');
-                  } finally {
-                    setIsVerifying(false);
-                  }
-                }}
-              >
-                {isVerifying ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Verifying…
-                  </span>
-                ) : (
-                  'Verify'
-                )}
-              </Button>
+                  }}
+                >
+                  {isVerifying ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Verifying…
+                    </span>
+                  ) : (
+                    'Verify'
+                  )}
+                </Button>
+              </div>
 
               <button
                 type="button"
@@ -1616,95 +1887,6 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 5: Stripe Connect */}
-        {step === 'stripe' && (
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-lg space-y-6"
-          >
-            <div className="text-center space-y-3">
-              <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
-                <span className="text-base font-semibold tracking-tight text-white">Stripe</span>
-              </div>
-              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                Connect your Stripe account
-              </h1>
-              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-                To receive payments from your fans, you need to connect a Stripe account. This only takes a few minutes.
-              </p>
-            </div>
-
-            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Instant payouts</p>
-                      <p className="text-xs text-exclu-space/70">Get paid directly to your bank account</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Secure & trusted</p>
-                      <p className="text-xs text-exclu-space/70">Stripe is used by millions of businesses worldwide</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="w-4 h-4 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-exclu-cloud">Easy setup</p>
-                      <p className="text-xs text-exclu-space/70">Connect in just a few clicks</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-3">
-              <Button
-                variant="hero"
-                size="lg"
-                className="w-full rounded-full"
-                onClick={handleStripeConnect}
-                disabled={isConnectingStripe}
-              >
-                {isConnectingStripe ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Redirecting to Stripe…
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4" />
-                    Connect with Stripe
-                  </span>
-                )}
-              </Button>
-
-              <button
-                type="button"
-                onClick={handleSkipStripe}
-                className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
-              >
-                Skip for now – I'll do this later
-              </button>
-
-              <p className="text-[10px] text-exclu-space/50 text-center">
-                You won't be able to receive payments until you connect Stripe. You can do this anytime from your profile settings.
-              </p>
-            </div>
-          </motion.div>
-        )}
       </main>
       <Footer />
     </div >

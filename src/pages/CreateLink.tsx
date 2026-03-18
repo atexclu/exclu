@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Image as ImageIcon, Film, Sparkles, CreditCard, Heart } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Film, Sparkles, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -37,32 +37,8 @@ const CreateLink = () => {
   const [libraryError, setLibraryError] = useState<string | null>(null);
   const [hasExistingLinks, setHasExistingLinks] = useState(false);
   const [canCreateLinks, setCanCreateLinks] = useState<boolean | null>(null);
-  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [showOnProfile, setShowOnProfile] = useState(true);
   const [isSupportLink, setIsSupportLink] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  const handleConnectStripe = async () => {
-    setIsConnecting(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        toast.error('Please sign in again to connect Stripe.');
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-        headers: { Authorization: '', 'x-supabase-auth': session.access_token },
-      });
-      if (error) throw new Error('Unable to start Stripe Connect onboarding.');
-      const url = (data as any)?.url;
-      if (!url) throw new Error('Stripe Connect URL not available.');
-      window.location.href = url;
-    } catch (err: any) {
-      console.error('Error during Stripe Connect', err);
-      toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
-      setIsConnecting(false);
-    }
-  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
@@ -139,27 +115,8 @@ const CreateLink = () => {
         return;
       }
 
-      // Check creator's Stripe Connect status before allowing link creation
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('stripe_connect_status, stripe_account_id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (!isMounted) return;
-
-      if (profileError) {
-        console.error('Error loading profile for link creation', profileError);
-      }
-
-      const connectStatus = profile?.stripe_connect_status ?? null;
-      setStripeConnectStatus(connectStatus);
-
-      const hasStripeAccount = !!profile?.stripe_account_id;
-      const isConnectComplete = connectStatus === 'complete';
-
-      // Creators can only create paid links once their Stripe Connect account is fully onboarded
-      setCanCreateLinks(hasStripeAccount && isConnectComplete);
+      // Links are always accessible — payment provider will be configured separately
+      setCanCreateLinks(true);
 
       // Check if user has existing links (for copywriting in the header)
       const linksCountQuery = supabase
@@ -367,45 +324,7 @@ const CreateLink = () => {
   return (
     <AppShell>
       <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pb-16">
-        {canCreateLinks === false ? (
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="mt-6 sm:mt-10 max-w-xl mx-auto"
-          >
-            <div className="rounded-2xl border-2 border-dashed border-border bg-muted/20 p-8 text-center space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-                <CreditCard className="w-8 h-8 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {stripeConnectStatus === 'restricted'
-                    ? 'Your Stripe account is restricted'
-                    : 'Connect Stripe to start selling'}
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {stripeConnectStatus === 'restricted'
-                    ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
-                    : 'Connect your Stripe account to create and sell paid content links.'}
-                </p>
-                <Button
-                  variant="hero"
-                  disabled={isConnecting}
-                  onClick={handleConnectStripe}
-                  className="rounded-full"
-                >
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  {isConnecting
-                    ? 'Loading...'
-                    : stripeConnectStatus === 'restricted'
-                      ? 'Review Stripe setup'
-                      : 'Connect Stripe'}
-                </Button>
-              </div>
-            </div>
-          </motion.section>
-        ) : (
+        {canCreateLinks && (
           <>
             <motion.section
               initial={{ opacity: 0, y: 20 }}

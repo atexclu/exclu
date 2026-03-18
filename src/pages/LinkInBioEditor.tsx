@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, CreditCard, Menu, ExternalLink, Gift } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -99,9 +99,6 @@ const LinkInBioEditor = () => {
   const [isPremium, setIsPremium] = useState(false);
   const [agencyName, setAgencyName] = useState<string | null>(null);
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
-  const [stripeConnected, setStripeConnected] = useState(false);
-  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
-  const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -199,11 +196,6 @@ const LinkInBioEditor = () => {
       }
 
       if (profileData) {
-        const hasStripeAccount = Boolean(profileData.stripe_account_id);
-        const isStripeComplete = profileData.stripe_connect_status === 'complete';
-        setStripeConnectStatus(profileData.stripe_connect_status ?? null);
-        setStripeConnected(hasStripeAccount && isStripeComplete);
-
         skipNextAutoSaveRef.current = true;
         const dataToLoad: LinkInBioData = {
           display_name: profileData.display_name || '',
@@ -727,66 +719,10 @@ const LinkInBioEditor = () => {
 
                     {activeSection === 'links' && (
                       <div className="space-y-4">
-                        {!stripeConnected ? (
-                          <div className="rounded-2xl border-2 border-dashed border-border bg-muted/20 p-8 text-center space-y-4">
-                            <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-                              <CreditCard className="w-8 h-8 text-primary" />
-                            </div>
-                            <div>
-                              <h3 className="text-lg font-semibold text-foreground mb-2">
-                                {stripeConnectStatus === 'restricted'
-                                  ? 'Your Stripe account is restricted'
-                                  : 'Connect Stripe to manage paid links'}
-                              </h3>
-                              <p className="text-sm text-muted-foreground mb-4">
-                                {stripeConnectStatus === 'restricted'
-                                  ? 'Your Stripe account was rejected or limited by Stripe. Please review your details on Stripe and try again.'
-                                  : 'Connect your Stripe account to create and sell paid content links on your profile.'}
-                              </p>
-                              <Button
-                                variant="hero"
-                                disabled={isStripeLoading}
-                                onClick={async () => {
-                                  setIsStripeLoading(true);
-                                  try {
-                                    const { data: { session } } = await supabase.auth.getSession();
-                                    if (!session?.access_token) {
-                                      toast.error('Please sign in again to connect Stripe.');
-                                      return;
-                                    }
-                                    const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-                                      headers: {
-                                        Authorization: '',
-                                        'x-supabase-auth': session.access_token,
-                                      },
-                                    });
-                                    if (error) throw new Error('Unable to start Stripe Connect onboarding.');
-                                    const url = (data as any)?.url;
-                                    if (!url) throw new Error('Stripe Connect URL not available.');
-                                    window.location.href = url;
-                                  } catch (err: any) {
-                                    console.error('Error during Stripe Connect', err);
-                                    toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
-                                    setIsStripeLoading(false);
-                                  }
-                                }}
-                                className="rounded-full"
-                              >
-                                <CreditCard className="w-4 h-4 mr-2" />
-                                {isStripeLoading
-                                  ? 'Loading...'
-                                  : stripeConnectStatus === 'restricted'
-                                    ? 'Review Stripe setup'
-                                    : 'Connect Stripe'}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <ContentSection
-                            links={links}
-                            onUpdate={fetchLinks}
-                          />
-                        )}
+                        <ContentSection
+                          links={links}
+                          onUpdate={fetchLinks}
+                        />
                       </div>
                     )}
 
