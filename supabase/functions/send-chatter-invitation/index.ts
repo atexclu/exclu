@@ -79,8 +79,15 @@ function buildInvitationEmail(params: {
   creatorName:  string;
   profileHandle: string;
   acceptUrl:    string;
+  customMessage?: string | null;
 }): string {
-  const { creatorName, profileHandle, acceptUrl } = params;
+  const { creatorName, profileHandle, acceptUrl, customMessage } = params;
+
+  const customMessageHtml = customMessage ? `
+      <div class="info-box" style="background-color:#0b1120; border-color:#334155;">
+        <h3>Message de ${creatorName} :</h3>
+        <p style="font-size:14px; line-height:1.6; color:#cbd5e1; margin:0; white-space:pre-wrap;">${customMessage}</p>
+      </div>` : '';
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -118,6 +125,7 @@ function buildInvitationEmail(params: {
       <p>Bonjour,</p>
       <p><strong>${creatorName}</strong> vous invite à rejoindre son équipe de chatters sur Exclu pour gérer les conversations du profil <strong>@${profileHandle}</strong>.</p>
       <a href="${acceptUrl}" class="button">Accepter l'invitation →</a>
+      ${customMessageHtml}
       <div class="info-box">
         <h3>En tant que chatter, vous pourrez :</h3>
         <ul>
@@ -187,10 +195,11 @@ serve(async (req: Request) => {
 
     // ── Validation du body ────────────────────────────────────────────────────
     const body = await req.json();
-    const { profile_id, to_email, permissions } = body as {
+    const { profile_id, to_email, permissions, custom_message } = body as {
       profile_id:  string;
       to_email:    string;
       permissions: Record<string, boolean>;
+      custom_message?: string | null;
     };
 
     if (!profile_id || !to_email || !to_email.includes('@')) {
@@ -297,7 +306,12 @@ serve(async (req: Request) => {
     const creatorName  = creatorAccount.display_name || profile.username || 'Un créateur';
     const profileHandle = profile.username || profile_id;
 
-    const emailHtml = buildInvitationEmail({ creatorName, profileHandle, acceptUrl });
+    const emailHtml = buildInvitationEmail({ 
+      creatorName, 
+      profileHandle, 
+      acceptUrl,
+      customMessage: custom_message,
+    });
 
     // ── Envoyer l'email via Brevo ─────────────────────────────────────────────
     const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {

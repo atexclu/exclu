@@ -8,11 +8,16 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { UserPlus, X, Loader2, Users, ArrowLeft } from 'lucide-react';
+import { UserPlus, X, Loader2, Users, ArrowLeft, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { InviteChatterModal } from './InviteChatterModal';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface ChatterEntry {
   id: string | null;
@@ -115,9 +120,68 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
               {/* Section chatters */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                    Chatters ({chatters.filter((c) => c.status === 'accepted').length})
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                      Chatters ({chatters.filter((c) => c.status === 'accepted').length})
+                    </p>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          aria-label="Information sur les chatters"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-4 bg-card border-border" align="start">
+                        <div className="space-y-3">
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground mb-1">À quoi servent les chatters ?</h4>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              Les chatters sont des membres de votre équipe qui peuvent gérer vos conversations avec les fans à votre place.
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground mb-1.5">Comment inviter un chatter</h4>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              Cliquez sur "Inviter", entrez l'email du chatter et ajoutez un message personnalisé avec vos guidelines (ton à adopter, règles de conversation, etc.). Le chatter recevra un email d'invitation.
+                            </p>
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground mb-1.5">Accès du chatter</h4>
+                            <ul className="text-xs text-muted-foreground space-y-1">
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>Gérer toutes les conversations en temps réel</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>Envoyer des liens de contenu payant</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>Taguer et organiser les fans</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>Accéder à votre bibliothèque de contenu</span>
+                              </li>
+                            </ul>
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground mb-1.5">Répartition des paiements</h4>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              Tous les paiements (ventes de contenu, tips, cadeaux) sont versés directement sur votre compte. Vous gérez la rémunération de vos chatters en dehors de la plateforme.
+                            </p>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                   <Button
                     type="button"
                     size="sm"

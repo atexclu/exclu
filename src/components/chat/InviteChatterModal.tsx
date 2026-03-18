@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface InviteChatterModalProps {
@@ -21,6 +22,7 @@ interface InviteChatterModalProps {
 
 export function InviteChatterModal({ profileId, onClose, onInvited }: InviteChatterModalProps) {
   const [email, setEmail] = useState('');
+  const [customMessage, setCustomMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,7 +35,11 @@ export function InviteChatterModal({ profileId, onClose, onInvited }: InviteChat
     setIsSending(true);
     try {
       const { data, error } = await supabase.functions.invoke('send-chatter-invitation', {
-        body: { profile_id: profileId, to_email: email.trim() },
+        body: { 
+          profile_id: profileId, 
+          to_email: email.trim(),
+          custom_message: customMessage.trim() || null,
+        },
       });
 
       if (error || data?.error) {
@@ -87,8 +93,8 @@ export function InviteChatterModal({ profileId, onClose, onInvited }: InviteChat
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
                 Email du chatter
               </label>
               <Input
@@ -96,10 +102,28 @@ export function InviteChatterModal({ profileId, onClose, onInvited }: InviteChat
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="chatter@example.com"
-                className="h-9 text-sm"
+                className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                 disabled={isSending}
                 autoFocus
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Message personnalisé (optionnel)
+              </label>
+              <Textarea
+                value={customMessage}
+                onChange={(e) => setCustomMessage(e.target.value)}
+                placeholder="Présentation, guidelines pour gérer les conversations, ton à adopter, etc."
+                rows={4}
+                maxLength={1000}
+                className="min-h-[100px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground resize-none"
+                disabled={isSending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Ce message sera inclus dans l'email d'invitation pour donner du contexte au chatter.
+              </p>
             </div>
 
             <div className="flex gap-2 pt-1">
