@@ -18,6 +18,7 @@ import { ChatContentPicker, type ContentAsset } from './ChatContentPicker';
 import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCustomRequest } from './ChatCustomRequest';
 import { FanTagsRow } from './FanTagsRow';
+import Aurora from '@/components/ui/Aurora';
 import type { Conversation } from '@/types/chat';
 
 interface SenderProfile {
@@ -124,10 +125,14 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     }
   };
 
-  const handleAttachLink = async (link: { id: string; title: string | null; price_cents: number }) => {
+  const handleAttachLink = async (link: { id: string; title: string | null; price_cents: number; description: string | null }) => {
     setShowLinkPicker(false);
+    // Auto-fill message input with link description if available
+    if (link.description) {
+      setDraft(link.description);
+    }
     await sendMessage({
-      content: link.title || 'Exclusive content',
+      content: link.description || link.title || 'Exclusive content',
       senderType,
       contentType: 'paid_content',
       paidContentId: link.id,
@@ -208,7 +213,12 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       </div>
 
       {/* Messages — scrollable */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
+        {/* Aurora background */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <Aurora colorStops={['#5227FF', '#7cff67', '#5227FF']} amplitude={0.8} blend={0.6} speed={0.5} />
+        </div>
+        <div className="relative z-10">
         {isLoading && (
           <div className="flex justify-center py-8">
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -242,6 +252,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
 
         {/* Scroll anchor */}
         <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Composer + action buttons */}

@@ -16,6 +16,7 @@ interface LinkItem {
   title: string | null;
   slug: string;
   price_cents: number;
+  description: string | null;
   previewUrl: string | null;
   isVideo: boolean;
 }
@@ -56,7 +57,7 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
       // Fetch published links for this profile
       const { data: linksData } = await supabase
         .from('links')
-        .select('id, title, slug, price_cents, storage_path')
+        .select('id, title, slug, price_cents, description, storage_path')
         .eq('profile_id', profileId)
         .eq('status', 'published')
         .order('created_at', { ascending: false })
@@ -74,7 +75,7 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
             if (signed?.signedUrl) {
               const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
               const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-              return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: signed.signedUrl, isVideo };
+              return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, description: link.description, previewUrl: signed.signedUrl, isVideo };
             }
           }
 
@@ -94,12 +95,12 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
                 .createSignedUrl(asset.storage_path, 300);
               if (signed?.signedUrl) {
                 const isVideo = asset.mime_type?.startsWith('video/') || false;
-                return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: signed.signedUrl, isVideo };
+                return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, description: link.description, previewUrl: signed.signedUrl, isVideo };
               }
             }
           }
 
-          return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, previewUrl: null, isVideo: false };
+          return { id: link.id, title: link.title, slug: link.slug, price_cents: link.price_cents, description: link.description, previewUrl: null, isVideo: false };
         })
       );
 

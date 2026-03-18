@@ -70,49 +70,20 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
                 <p className="whitespace-pre-wrap break-words">{message.content}</p>
               )}
 
-              {/* Contenu payant attaché - Link preview card */}
+              {/* Contenu payant attaché - Link preview image only */}
               {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
-                <div className="mt-2 max-w-[260px]">
-                  <a
-                    href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block rounded-xl overflow-hidden border border-white/20 bg-white/10 hover:bg-white/15 transition-all"
-                  >
-                    {/* Preview image */}
-                    <div className="w-full aspect-video bg-muted/20 overflow-hidden">
-                      <img 
-                        src="/og-link-default.png" 
-                        alt="" 
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    {/* Link info */}
-                    <div className="p-2.5">
-                      <p className={`text-[11px] font-semibold line-clamp-1 ${
-                        rightAligned 
-                          ? 'text-primary-foreground' 
-                          : 'text-white'
-                      }`}>
-                        {message.link.title || 'Exclusive content'}
-                      </p>
-                      {message.link.price_cents > 0 && (
-                        <div className="flex items-center justify-between mt-1">
-                          <p className={`text-xs font-bold ${
-                            rightAligned 
-                              ? 'text-primary-foreground' 
-                              : 'text-primary'
-                          }`}>
-                            ${(message.link.price_cents / 100).toFixed(2)}
-                          </p>
-                          <ExternalLink className={`w-3 h-3 ${
-                            rightAligned ? 'text-primary-foreground/70' : 'text-white/70'
-                          }`} />
-                        </div>
-                      )}
-                    </div>
-                  </a>
-                </div>
+                <a
+                  href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 block rounded-2xl overflow-hidden max-w-[260px] hover:opacity-90 transition-opacity"
+                >
+                  <img 
+                    src="/og-link-default.png" 
+                    alt="" 
+                    className="w-full rounded-2xl"
+                  />
+                </a>
               )}
           </div>
         )}
