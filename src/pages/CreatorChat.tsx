@@ -24,6 +24,8 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ChatSettingsPanel } from '@/components/chat/ChatSettingsPanel';
 import { BroadcastPanel } from '@/pages/MassMessage';
 import { supabase } from '@/lib/supabaseClient';
+import Aurora from '@/components/ui/Aurora';
+import { getAuroraGradient } from '@/lib/auroraGradients';
 import type { Conversation } from '@/types/chat';
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
@@ -146,7 +148,7 @@ export default function CreatorChat() {
                   transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
                   className="flex-1 flex flex-col overflow-hidden"
                 >
-                  <div className="px-4 pt-3 pb-3">
+                  <div className="px-4 pt-4 pb-3">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                       <Input
@@ -197,9 +199,20 @@ export default function CreatorChat() {
 
           {/* ── Panneau droit : fenêtre de chat ──────────────────────────── */}
           <div className={`
-            flex-1 flex flex-col overflow-hidden bg-card/80
+            flex-1 flex flex-col overflow-hidden bg-card/80 relative
             ${!showMobileList ? 'flex' : 'hidden md:flex'}
           `}>
+            {/* Aurora background with creator theme colors */}
+            {activeProfile && (
+              <div className="fixed inset-0 opacity-10 pointer-events-none">
+                <Aurora
+                  colorStops={getAuroraGradient(activeProfile.aurora_gradient || 'purple_dream').colors}
+                  amplitude={0.8}
+                  blend={0.6}
+                  speed={0.5}
+                />
+              </div>
+            )}
             <AnimatePresence mode="wait">
               {selectedConversation && currentUserId ? (
                 <motion.div

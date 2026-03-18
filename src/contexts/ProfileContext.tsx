@@ -13,6 +13,7 @@ export interface CreatorProfile {
   stripe_connect_status: string;
   profile_view_count: number;
   country: string | null;
+  aurora_gradient: string | null;
   created_at: string;
 }
 

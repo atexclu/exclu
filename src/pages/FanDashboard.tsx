@@ -568,18 +568,6 @@ const FanDashboard = () => {
                               Request
                             </Button>
                           )}
-                          {fav.creator.tips_enabled && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="hero"
-                              className="flex-1 rounded-xl text-xs h-8"
-                              onClick={(e) => { e.stopPropagation(); navigate(`/${fav.creator.handle}?tip=true`); }}
-                            >
-                              <DollarSign className="w-3 h-3 mr-1" />
-                              Tip
-                            </Button>
-                          )}
                         </div>
                       </motion.div>
                     ))}
