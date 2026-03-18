@@ -223,12 +223,17 @@ export function ChatContentPicker({ profileId, onSendAssets, onClose }: ChatCont
                           className="w-full h-full object-cover"
                           alt={asset.title ?? ''}
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.src = '/og-link-default.png';
+                          }}
                         />
                       )
                     ) : (
-                      <div className="w-full h-full bg-muted flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-muted-foreground/30" />
-                      </div>
+                      <img
+                        src="/og-link-default.png"
+                        className="w-full h-full object-cover opacity-50"
+                        alt="No preview"
+                      />
                     )}
 
                     {/* Selection checkmark */}

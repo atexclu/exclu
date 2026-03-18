@@ -136,18 +136,9 @@ const Auth = () => {
         if (error) {
           const message = (error.message || '').toLowerCase();
 
-          // If Supabase indicates the user is already registered, gently guide them
-          // and resend a confirmation email without explicitly confirming the account exists.
+          // If the user already exists, redirect to login
           if (message.includes('already registered') || message.includes('user already registered')) {
-            try {
-              await supabase.auth.resend({ type: 'signup', email });
-            } catch (resendError) {
-              console.error('Error resending confirmation email after duplicate signup attempt', resendError);
-            }
-
-            toast.success(
-              'If an account already exists for this email, we have sent you a new confirmation link. Please check your inbox and spam folder.'
-            );
+            toast.info('An account already exists with this email. Please log in.');
             setMode('login');
             return;
           }
