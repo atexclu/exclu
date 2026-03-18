@@ -654,15 +654,12 @@ const FanDashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
-                className="flex gap-0 -mx-4 sm:-mx-6 h-[calc(100vh-12rem)] rounded-2xl overflow-hidden border border-border/60"
+                className="flex gap-0 -mx-4 sm:-mx-6 h-[calc(100vh-12rem)]"
               >
                 {/* Liste des conversations */}
                 <div className={`flex flex-col border-r border-border/60 bg-card w-full md:w-72 flex-shrink-0 ${
                   showMobileConvList ? 'flex' : 'hidden md:flex'
                 }`}>
-                  <div className="px-4 py-3 border-b border-border/60">
-                    <h2 className="text-sm font-semibold text-foreground">Messages</h2>
-                  </div>
                   <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {isLoadingConversations && (
                       <div className="flex justify-center py-8">

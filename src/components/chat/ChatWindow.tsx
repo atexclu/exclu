@@ -325,7 +325,8 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         {!isLoading && messages.map((msg) => {
           const isTeam = ['creator', 'chatter'].includes(msg.sender_type);
           const isOwn = msg.sender_id === currentUserId;
-          const teamSenderInfo = isTeam && !isOwn ? senderProfiles.get(msg.sender_id) ?? null : null;
+          // Hide chatter/creator distinction for fans
+          const teamSenderInfo = senderType !== 'fan' && isTeam && !isOwn ? senderProfiles.get(msg.sender_id) ?? null : null;
           return (
             <MessageBubble
               key={msg.id}
