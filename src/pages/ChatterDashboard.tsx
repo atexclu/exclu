@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
-  DollarSign, Users, Sun, Moon, ExternalLink, User, Camera,
+  DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import logoWhite from '@/assets/logo-white.svg';
 import logoBlack from '@/assets/logo-black.svg';
 import ChatterContracts from '@/pages/ChatterContracts';
+import { BroadcastPanel } from '@/pages/MassMessage';
 import type { Conversation } from '@/types/chat';
 
 interface ChatterProfile {
@@ -77,6 +78,7 @@ export default function ChatterDashboard() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
 
   // Derived: profiles for the active client
   const activeClient = clients.find((c) => c.user_id === activeClientUserId) ?? null;
@@ -942,17 +944,27 @@ export default function ChatterDashboard() {
           <div className="px-4 pt-4 pb-4 border-b border-border">
             <div className="flex items-center justify-between mb-2">
               <h1 className="text-lg font-bold text-foreground">Conversations</h1>
-              {activeProfile && (
-                <a
-                  href={`/${activeProfile.username}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted transition-colors"
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowBroadcast(true)}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
+                  title="Broadcast message"
                 >
-                  <ExternalLink className="w-3 h-3" />
-                  View profile
-                </a>
-              )}
+                  <Megaphone className="w-4 h-4" />
+                </button>
+                {activeProfile && (
+                  <a
+                    href={`/${activeProfile.username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    View profile
+                  </a>
+                )}
+              </div>
             </div>
 
             {/* Profile story-bubbles — switch between profiles within the active client */}
@@ -1145,6 +1157,40 @@ export default function ChatterDashboard() {
           <ChatterContracts />
         </div>
       )}
+
+      {/* ── Broadcast modal overlay ────────────────────────────────── */}
+      <AnimatePresence>
+        {showBroadcast && (activeProfileId || allProfileIds.length > 0) && (
+          <motion.div
+            key="broadcast-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto pt-16 sm:pt-24 pb-8"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowBroadcast(false); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.97 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-2xl mx-4 bg-card rounded-2xl border border-border shadow-2xl"
+            >
+              <button
+                type="button"
+                onClick={() => setShowBroadcast(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors z-10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <BroadcastPanel
+                profileId={activeProfileId ?? allProfileIds[0]}
+                senderType="chatter"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Close profile picker on outside click */}
       {showProfilePicker && (

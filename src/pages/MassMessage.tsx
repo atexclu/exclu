@@ -49,9 +49,10 @@ interface MassMessageRecord {
 
 interface BroadcastPanelProps {
   profileId?: string;
+  senderType?: 'creator' | 'chatter';
 }
 
-export function BroadcastPanel({ profileId: propProfileId }: BroadcastPanelProps) {
+export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator' }: BroadcastPanelProps) {
   const { activeProfile } = useProfiles();
   const resolvedProfileId = propProfileId ?? activeProfile?.id ?? null;
 
@@ -195,7 +196,7 @@ export function BroadcastPanel({ profileId: propProfileId }: BroadcastPanelProps
           const batch = conversations.slice(i, i + batchSize);
           const messages = batch.map((conv: any) => ({
             conversation_id: conv.id,
-            sender_type: 'creator',
+            sender_type: senderType,
             sender_id: currentUser.data.user!.id,
             content: content.trim(),
             content_type: 'text',

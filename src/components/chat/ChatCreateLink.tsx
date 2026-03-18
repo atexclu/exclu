@@ -211,11 +211,31 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
       className="border-t border-border bg-card overflow-hidden"
     >
       <div className="max-h-[400px] flex flex-col">
-        {/* Header */}
+        {/* Header with inline filters */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-3.5 h-3.5 text-[#CFFF16]" />
-            <span className="text-xs font-semibold text-foreground">Create paid link</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-3.5 h-3.5 text-[#CFFF16]" />
+              <span className="text-xs font-semibold text-foreground">Create paid link</span>
+            </div>
+            <div className="flex gap-1">
+              {(['all', 'public', 'private'] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setVisFilter(f)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                    visFilter === f
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  {f === 'public' && <Eye className="w-2.5 h-2.5" />}
+                  {f === 'private' && <EyeOff className="w-2.5 h-2.5" />}
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             type="button"
@@ -229,18 +249,18 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
         {/* Title + Price inputs */}
         <div className="px-3 py-2 border-b border-border/50 flex-shrink-0 flex items-center gap-2">
           <div className="relative flex-1">
-            <Type className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <Type className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Link title…"
               maxLength={100}
-              className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
+              className="w-full pl-8 pr-3 py-2.5 text-xs bg-muted/50 border border-white/20 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 text-foreground placeholder:text-muted-foreground"
             />
           </div>
-          <div className="relative w-24">
-            <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#CFFF16]" />
+          <div className="relative w-28">
+            <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#CFFF16]" />
             <input
               type="number"
               value={price}
@@ -248,39 +268,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
               placeholder="Price"
               min="1"
               step="0.01"
-              className="w-full pl-6 pr-2 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-        </div>
-
-        {/* Filters + Search */}
-        <div className="px-3 py-2 border-b border-border/50 flex-shrink-0 flex items-center gap-2">
-          <div className="flex gap-1">
-            {(['all', 'public', 'private'] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setVisFilter(f)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                  visFilter === f
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-muted/60'
-                }`}
-              >
-                {f === 'public' && <Eye className="w-2.5 h-2.5" />}
-                {f === 'private' && <EyeOff className="w-2.5 h-2.5" />}
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search content…"
-              className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-muted/50 border-0 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 text-foreground placeholder:text-muted-foreground"
+              className="w-full pl-7 pr-2 py-2.5 text-xs bg-muted/50 border border-white/20 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 text-foreground placeholder:text-muted-foreground"
             />
           </div>
         </div>
