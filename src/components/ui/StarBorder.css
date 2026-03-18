@@ -1,7 +1,6 @@
 .star-border-container {
   display: inline-block;
   position: relative;
-  border-radius: 9999px;
   overflow: hidden;
 }
 

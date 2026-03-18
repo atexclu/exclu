@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Search, Loader2, Link2, ExternalLink, Image, Video, FileText } from 'lucide-react';
+import { X, Search, Loader2, Link2, ExternalLink, Image, Video, FileText, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -31,9 +31,10 @@ interface ChatLinkPickerProps {
   profileId: string;
   onSelect: (link: LinkItem) => void;
   onClose: () => void;
+  onCreateLink?: () => void;
 }
 
-export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerProps) {
+export function ChatLinkPicker({ profileId, onSelect, onClose, onCreateLink }: ChatLinkPickerProps) {
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [creator, setCreator] = useState<CreatorInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,7 +71,7 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
         rawLinks.map(async (link) => {
           if (link.storage_path) {
             const { data: signed } = await supabase.storage
-              .from('content')
+              .from('paid-content')
               .createSignedUrl(link.storage_path, 300);
             if (signed?.signedUrl) {
               const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
@@ -91,7 +92,7 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
             const asset = (linkMedia[0] as any).assets;
             if (asset?.storage_path) {
               const { data: signed } = await supabase.storage
-                .from('content')
+                .from('paid-content')
                 .createSignedUrl(asset.storage_path, 300);
               if (signed?.signedUrl) {
                 const isVideo = asset.mime_type?.startsWith('video/') || false;
@@ -245,6 +246,34 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
                   </div>
                 </button>
               ))}
+
+              {/* Create new link card (creator only) */}
+              {onCreateLink && (
+                <button
+                  type="button"
+                  onClick={onCreateLink}
+                  className="w-full rounded-xl border border-dashed border-white/10 bg-black hover:border-white/40 transition-all group overflow-hidden"
+                >
+                  <div className="flex items-center justify-center p-4">
+                    <Plus className="w-5 h-5 text-white/30 group-hover:text-white transition-colors" />
+                  </div>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Create new link card when no links exist (creator only) */}
+          {!isLoading && filtered.length === 0 && onCreateLink && (
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={onCreateLink}
+                className="w-full rounded-xl border border-dashed border-white/10 bg-black hover:border-white/40 transition-all group overflow-hidden"
+              >
+                <div className="flex items-center justify-center p-4">
+                  <Plus className="w-5 h-5 text-white/30 group-hover:text-white transition-colors" />
+                </div>
+              </button>
             </div>
           )}
         </div>

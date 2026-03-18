@@ -9,6 +9,7 @@
 
 import { ExternalLink, UserCircle } from 'lucide-react';
 import type { Message } from '@/types/chat';
+import StarBorder from '@/components/ui/StarBorder';
 
 interface MessageBubbleProps {
   message: Message;
@@ -67,20 +68,24 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
           </div>
         )}
 
-        {/* Contenu payant attaché - Link preview image only (outside bubble) */}
+        {/* Contenu payant attaché - Link preview image with StarBorder */}
         {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
-          <a
+          <StarBorder
+            as="a"
             href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="block rounded-2xl overflow-hidden max-w-[260px] hover:opacity-90 transition-opacity mt-1"
+            className="block rounded-2xl max-w-[260px] hover:opacity-90 transition-opacity mt-1"
+            color="white"
+            speed="5s"
+            thickness={1}
           >
             <img 
               src="/og-link-default.png" 
               alt="" 
               className="w-full rounded-2xl"
             />
-          </a>
+          </StarBorder>
         )}
 
         {/* Footer: avatar + sender name + time — inline row below the bubble */}

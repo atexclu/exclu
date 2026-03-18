@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Loader2, User, Paperclip, Link2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
@@ -33,6 +34,7 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ conversation, currentUserId, senderType }: ChatWindowProps) {
+  const navigate = useNavigate();
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversation.id, senderType);
   const [draft, setDraft] = useState('');
   const [showContentPicker, setShowContentPicker] = useState(false);
@@ -277,6 +279,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               profileId={conversation.profile_id}
               onSelect={handleAttachLink}
               onClose={() => setShowLinkPicker(false)}
+              onCreateLink={senderType === 'creator' ? () => navigate('/app/links/new') : undefined}
             />
           )}
         </AnimatePresence>
