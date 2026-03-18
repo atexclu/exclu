@@ -1634,6 +1634,91 @@ CREATE TABLE fan_tags (
 );
 ```
 
+### 13.10 Système Contracts (Marketplace Chatters)
+
+Le système **Contracts** permet aux créateurs de signaler qu'ils cherchent des chatters, et aux chatters de découvrir ces créateurs et de soumettre des demandes d'accès.
+
+#### Onboarding Créateur
+
+Une nouvelle étape d'onboarding (étape 6, entre Wishlist et Instagram) propose au créateur de choisir comment gérer ses conversations :
+
+- **"I manage my conversations myself"** — option par défaut, aucune action
+- **"Let a team of chatters handle my conversations"** — active `seeking_chatters = true` + champ de description optionnel
+
+Le choix est sauvegardé dans `profiles.seeking_chatters` et `profiles.seeking_chatters_description`.
+
+#### Page Contracts (Chatter Dashboard)
+
+Route : `/app/chatter/contracts`
+
+- **Liste** : grille de cartes créateurs avec photo, nom, handle, badge "Pending" si demande déjà envoyée
+- **Recherche** : filtre par nom, handle ou description
+- **Détail** : au clic sur un créateur → vue détaillée avec avatar, bio, localisation, description des attentes, lien vers le profil public
+- **Demande d'accès** : formulaire avec message optionnel → appel edge function `handle-chatter-request` (action=send) → email Brevo au créateur
+
+#### Gestion Côté Créateur (Chat Settings)
+
+Dans le panneau `ChatSettingsPanel` :
+
+1. **Toggle "Contracts visibility"** : active/désactive `seeking_chatters` (visible ou non sur la marketplace)
+2. **Section "Pending requests"** : liste des demandes en attente avec :
+   - Avatar, nom, date de la demande
+   - Message du chatter (si fourni)
+   - Boutons **Accept** / **Decline**
+3. **Accept** → crée une `chatter_invitation` (status=accepted) + email de confirmation au chatter
+4. **Decline** → met à jour le status en `rejected` + email de notification au chatter
+
+#### Edge Function : `handle-chatter-request`
+
+Trois actions supportées :
+
+| Action | Appelant | Description |
+|--------|----------|-------------|
+| `send` | Chatter | Crée une entrée `chatter_requests` + email au créateur |
+| `accept` | Créateur | Accepte la demande, crée `chatter_invitation`, email au chatter |
+| `reject` | Créateur | Rejette la demande, email au chatter |
+
+#### Base de Données (Migration 091)
+
+```sql
+-- Colonnes ajoutées à profiles
+profiles.seeking_chatters          BOOLEAN DEFAULT false
+profiles.seeking_chatters_description  TEXT DEFAULT NULL
+
+-- Nouvelle table
+CREATE TABLE chatter_requests (
+  id              UUID PRIMARY KEY,
+  creator_id      UUID NOT NULL REFERENCES auth.users(id),
+  profile_id      UUID REFERENCES creator_profiles(id),
+  chatter_id      UUID NOT NULL REFERENCES auth.users(id),
+  message         TEXT,
+  status          TEXT CHECK (status IN ('pending', 'accepted', 'rejected')),
+  created_at      TIMESTAMPTZ,
+  responded_at    TIMESTAMPTZ,
+  UNIQUE(creator_id, chatter_id)
+);
+
+-- RPC
+get_creators_seeking_chatters() → liste des créateurs cherchant des chatters
+```
+
+#### Flux Complet
+
+```
+Créateur active "seeking_chatters" (onboarding ou chat settings)
+         ↓
+Chatter découvre le créateur sur /app/chatter/contracts
+         ↓
+Chatter envoie une demande (+ message optionnel)
+         ↓
+Email envoyé au créateur via Brevo
+         ↓
+Créateur voit la demande dans Chat Settings > Pending requests
+         ↓
+  ┌── Accept → chatter_invitation créée → email au chatter → accès dashboard
+  └── Decline → status = rejected → email au chatter
+```
+
 ---
 
 ## Annexes

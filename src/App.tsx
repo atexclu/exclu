@@ -51,6 +51,7 @@ import CreateProfile from './pages/CreateProfile';
 import AgencyDashboard from './pages/AgencyDashboard';
 import AcceptChatterInvite from './pages/AcceptChatterInvite';
 import ChatterDashboard from './pages/ChatterDashboard';
+import ChatterContracts from './pages/ChatterContracts';
 
 const queryClient = new QueryClient();
 
@@ -241,6 +242,7 @@ const App = () => {
                 <Route path="/fan/signup" element={<FanSignup />} />
                 <Route path="/accept-chatter-invite" element={<AcceptChatterInvite />} />
                 <Route path="/app/chatter" element={<ChatterDashboard />} />
+                <Route path="/app/chatter/contracts" element={<ChatterContracts />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/tip-success" element={<TipSuccess />} />
                 <Route path="/gift-success" element={<GiftSuccess />} />

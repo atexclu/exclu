@@ -263,6 +263,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
                           )}
                         </button>
+                        {wishlistItems.filter(i => i.is_visible).length > 0 && (
                         <button
                           onClick={() => setActiveTab('wishlist')}
                           className={`relative px-2 py-1.5 text-[11px] font-medium transition-colors ${activeTab === 'wishlist'
@@ -275,6 +276,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
                           )}
                         </button>
+                        )}
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/10" />
                     </div>

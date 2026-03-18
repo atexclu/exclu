@@ -397,9 +397,15 @@ export default function ChatterDashboard() {
             Contact the creator to receive an invitation.
           </p>
         </div>
-        <Button variant="outline" onClick={() => navigate('/')}>
-          Back to home
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => navigate('/')}>
+            Back to home
+          </Button>
+          <Button variant="hero" onClick={() => navigate('/app/chatter/contracts')}>
+            <Users className="w-4 h-4 mr-2" />
+            Browse contracts
+          </Button>
+        </div>
       </div>
     );
   }
@@ -462,6 +468,16 @@ export default function ChatterDashboard() {
                     transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
                   />
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/app/chatter/contracts')}
+                className="relative z-10"
+              >
+                <div className="relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 text-muted-foreground hover:text-foreground">
+                  <Users className="w-4 h-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">Contracts</span>
+                </div>
               </button>
             </div>
           </nav>

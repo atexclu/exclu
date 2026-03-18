@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SiOnlyfans, SiTiktok, SiInstagram, SiSnapchat, SiX, SiYoutube, SiTelegram, SiLinktree } from 'react-icons/si';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, Plus, Gift, Image as ImageIcon, FileText, DollarSign, Heart, Link as LinkIcon, X } from 'lucide-react';
+import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, ChevronRight, Plus, Gift, Image as ImageIcon, FileText, DollarSign, Heart, Link as LinkIcon, X } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
@@ -84,7 +84,9 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'wishlist' | 'instagram'>('profile');
+  const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'wishlist' | 'chatting' | 'instagram'>('profile');
+  const [seekingChatters, setSeekingChatters] = useState(false);
+  const [seekingChattersDescription, setSeekingChattersDescription] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
   const [isHandleLocked, setIsHandleLocked] = useState(false);
@@ -684,7 +686,7 @@ const Onboarding = () => {
 
         {/* Step indicator */}
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          {(['profile', 'design', 'link', 'content', 'wishlist', 'instagram'] as const).map((s) => (
+          {(['profile', 'design', 'link', 'content', 'wishlist', 'chatting', 'instagram'] as const).map((s) => (
             <div key={s} className={`w-2 h-2 rounded-full transition-colors ${step === s ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           ))}
         </div>
@@ -1807,6 +1809,143 @@ const Onboarding = () => {
 
             <button
               type="button"
+              onClick={() => setStep('chatting')}
+              className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
+            >
+              Skip for now
+            </button>
+          </motion.div>
+        )}
+
+        {/* STEP 6: Chat Management */}
+        {step === 'chatting' && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="w-full max-w-lg space-y-6"
+          >
+            <div className="text-center space-y-3">
+              <h1 className="text-[1.6rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
+                How do you want to manage your fan conversations?
+              </h1>
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
+                On Exclu, you can handle your DMs yourself or let a professional chatting team manage them for you.
+              </p>
+            </div>
+
+            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
+              <CardContent className="px-5 py-5 space-y-5">
+                {/* Toggle options */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setSeekingChatters(false)}
+                    className={`w-full flex items-center gap-3 rounded-xl border-2 p-4 transition-all text-left ${
+                      !seekingChatters
+                        ? 'border-primary bg-primary/5'
+                        : 'border-exclu-arsenic/50 bg-exclu-ink/60 hover:border-exclu-arsenic'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                      !seekingChatters ? 'border-primary' : 'border-exclu-arsenic'
+                    }`}>
+                      {!seekingChatters && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-exclu-cloud">I manage my conversations myself</p>
+                      <p className="text-[11px] text-exclu-space/70 mt-0.5">You'll reply to fans directly from your Exclu dashboard.</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSeekingChatters(true)}
+                    className={`w-full flex items-center gap-3 rounded-xl border-2 p-4 transition-all text-left ${
+                      seekingChatters
+                        ? 'border-primary bg-primary/5'
+                        : 'border-exclu-arsenic/50 bg-exclu-ink/60 hover:border-exclu-arsenic'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                      seekingChatters ? 'border-primary' : 'border-exclu-arsenic'
+                    }`}>
+                      {seekingChatters && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-exclu-cloud">Let a team of chatters handle my conversations</p>
+                      <p className="text-[11px] text-exclu-space/70 mt-0.5">Professional chatters will manage your fan DMs and generate sales on your behalf.</p>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Description input (shown when seeking chatters) */}
+                {seekingChatters && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2"
+                  >
+                    <label className="text-xs font-medium text-exclu-space">
+                      Describe what you're looking for <span className="text-exclu-space/50">(optional)</span>
+                    </label>
+                    <textarea
+                      value={seekingChattersDescription}
+                      onChange={(e) => setSeekingChattersDescription(e.target.value)}
+                      placeholder="e.g. I'm looking for an experienced chatting team that can engage with my fans, send personalized content, and maximize sales. Available to start immediately."
+                      rows={4}
+                      maxLength={1000}
+                      className="w-full rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/80 px-4 py-3 text-xs text-exclu-cloud placeholder:text-exclu-space/40 focus:outline-none focus:ring-2 focus:ring-primary/60 resize-none"
+                    />
+                    <p className="text-[10px] text-exclu-space/50">{seekingChattersDescription.length}/1000 characters</p>
+
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                      <p className="text-[11px] text-exclu-space leading-relaxed">
+                        Your profile will be visible on the <strong className="text-exclu-cloud">Contracts</strong> marketplace where professional chatters can discover you and request to manage your conversations. You can disable this anytime from your Chat settings.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="rounded-full px-6 border-exclu-arsenic/70"
+                onClick={() => setStep('wishlist')}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+              <Button
+                variant="hero"
+                size="lg"
+                className="flex-1 rounded-full"
+                onClick={async () => {
+                  if (currentUser) {
+                    try {
+                      await supabase.from('profiles').update({
+                        seeking_chatters: seekingChatters,
+                        seeking_chatters_description: seekingChatters ? (seekingChattersDescription.trim() || null) : null,
+                      }).eq('id', currentUser.id);
+                    } catch (err) {
+                      console.error('Error saving chatting preference:', err);
+                    }
+                  }
+                  setStep('instagram');
+                }}
+              >
+                Continue
+                <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+
+            <button
+              type="button"
               onClick={() => setStep('instagram')}
               className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
             >
@@ -1815,7 +1954,7 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 6: Instagram Bio Verification */}
+        {/* STEP 7: Instagram Bio Verification */}
         {step === 'instagram' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -2019,7 +2158,7 @@ const Onboarding = () => {
                   variant="outline"
                   size="lg"
                   className="rounded-full px-6 border-exclu-arsenic/70"
-                  onClick={() => setStep('wishlist')}
+                  onClick={() => setStep('chatting')}
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" />
                   Back

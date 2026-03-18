@@ -8,7 +8,8 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { UserPlus, X, Loader2, Users, ArrowLeft, Info } from 'lucide-react';
+import { UserPlus, X, Loader2, Users, ArrowLeft, Info, Check, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -29,21 +30,38 @@ interface ChatterEntry {
   status: 'pending' | 'accepted' | 'revoked';
 }
 
+interface ChatterRequest {
+  id: string;
+  chatter_id: string;
+  message: string | null;
+  status: string;
+  created_at: string;
+  chatter_display_name: string | null;
+  chatter_email: string | null;
+  chatter_avatar_url: string | null;
+}
+
 interface ChatSettingsPanelProps {
   profileId: string;
   onClose: () => void;
 }
+
+const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
 export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps) {
   const [chatters, setChatters] = useState<ChatterEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [seekingChatters, setSeekingChatters] = useState(false);
+  const [seekingToggling, setSeekingToggling] = useState(false);
+  const [chatterRequests, setChatterRequests] = useState<ChatterRequest[]>([]);
+  const [handlingRequestId, setHandlingRequestId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Charger les chatters via RPC
+      // Load chatters via RPC
       const { data: chattersData } = await supabase.rpc('get_profile_chatters', {
         p_profile_id: profileId,
       });
@@ -60,6 +78,53 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
             status: c.status ?? 'pending',
           }))
         );
+      }
+
+      // Load seeking_chatters status
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('seeking_chatters')
+          .eq('id', user.id)
+          .single();
+        if (profileData) {
+          setSeekingChatters(profileData.seeking_chatters ?? false);
+        }
+
+        // Load pending chatter requests
+        const { data: requests } = await supabase
+          .from('chatter_requests')
+          .select('id, chatter_id, message, status, created_at')
+          .eq('creator_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (requests && requests.length > 0) {
+          // Fetch chatter profiles
+          const chatterIds = requests.map((r: any) => r.chatter_id);
+          const { data: chatterProfiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url, email')
+            .in('id', chatterIds);
+
+          const profileMap = new Map<string, any>();
+          (chatterProfiles ?? []).forEach((p: any) => profileMap.set(p.id, p));
+
+          setChatterRequests(
+            requests.map((r: any) => {
+              const cp = profileMap.get(r.chatter_id);
+              return {
+                ...r,
+                chatter_display_name: cp?.display_name ?? null,
+                chatter_email: cp?.email ?? null,
+                chatter_avatar_url: cp?.avatar_url ?? null,
+              };
+            })
+          );
+        } else {
+          setChatterRequests([]);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -117,6 +182,162 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
             </div>
           ) : (
             <>
+              {/* Contracts visibility toggle */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    {seekingChatters ? (
+                      <Eye className="w-3.5 h-3.5 text-primary" />
+                    ) : (
+                      <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
+                    )}
+                    <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                      Contracts visibility
+                    </p>
+                  </div>
+                  <Switch
+                    checked={seekingChatters}
+                    disabled={seekingToggling}
+                    onCheckedChange={async (checked) => {
+                      setSeekingToggling(true);
+                      try {
+                        const { data: { user } } = await supabase.auth.getUser();
+                        if (!user) return;
+                        const { error } = await supabase
+                          .from('profiles')
+                          .update({ seeking_chatters: checked })
+                          .eq('id', user.id);
+                        if (error) throw error;
+                        setSeekingChatters(checked);
+                        toast.success(checked ? 'Visible on Contracts marketplace' : 'Hidden from Contracts marketplace');
+                      } catch {
+                        toast.error('Failed to update visibility');
+                      } finally {
+                        setSeekingToggling(false);
+                      }
+                    }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
+                  {seekingChatters
+                    ? 'Chatters can discover your profile and request to manage your conversations.'
+                    : 'Enable to appear on the Contracts marketplace where chatters can find you.'}
+                </p>
+              </div>
+
+              {/* Pending chatter requests */}
+              {chatterRequests.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Pending requests ({chatterRequests.length})
+                  </p>
+                  {chatterRequests.map((req) => {
+                    const name = req.chatter_display_name || req.chatter_email || 'Unknown';
+                    const initial = name.charAt(0).toUpperCase();
+                    const isHandling = handlingRequestId === req.id;
+
+                    return (
+                      <div
+                        key={req.id}
+                        className="rounded-xl border border-border bg-muted/20 p-3 space-y-2"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
+                            {req.chatter_avatar_url ? (
+                              <img src={req.chatter_avatar_url} alt={name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">
+                                {initial}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-foreground truncate">{name}</p>
+                            <p className="text-[10px] text-muted-foreground/60">
+                              {new Date(req.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        {req.message && (
+                          <p className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg p-2 whitespace-pre-wrap">
+                            {req.message}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="hero"
+                            className="h-7 text-xs gap-1 rounded-lg flex-1"
+                            disabled={isHandling}
+                            onClick={async () => {
+                              setHandlingRequestId(req.id);
+                              try {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session?.access_token) throw new Error('Not authenticated');
+                                const resp = await fetch(`${SUPABASE_FUNCTIONS_URL}/handle-chatter-request`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({ action: 'accept', request_id: req.id }),
+                                });
+                                const result = await resp.json();
+                                if (!resp.ok) throw new Error(result.error || 'Failed');
+                                toast.success('Request accepted! Chatter has been granted access.');
+                                setChatterRequests((prev) => prev.filter((r) => r.id !== req.id));
+                                loadData();
+                              } catch (err: any) {
+                                toast.error(err?.message || 'Failed to accept request');
+                              } finally {
+                                setHandlingRequestId(null);
+                              }
+                            }}
+                          >
+                            {isHandling ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Accept
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 rounded-lg flex-1 text-red-400 hover:text-red-300 border-red-400/30 hover:border-red-400/50"
+                            disabled={isHandling}
+                            onClick={async () => {
+                              setHandlingRequestId(req.id);
+                              try {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session?.access_token) throw new Error('Not authenticated');
+                                const resp = await fetch(`${SUPABASE_FUNCTIONS_URL}/handle-chatter-request`, {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${session.access_token}`,
+                                  },
+                                  body: JSON.stringify({ action: 'reject', request_id: req.id }),
+                                });
+                                const result = await resp.json();
+                                if (!resp.ok) throw new Error(result.error || 'Failed');
+                                toast.success('Request declined.');
+                                setChatterRequests((prev) => prev.filter((r) => r.id !== req.id));
+                              } catch (err: any) {
+                                toast.error(err?.message || 'Failed to reject request');
+                              } finally {
+                                setHandlingRequestId(null);
+                              }
+                            }}
+                          >
+                            <XCircle className="w-3 h-3" />
+                            Decline
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Section chatters */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">

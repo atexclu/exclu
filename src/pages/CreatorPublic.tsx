@@ -314,9 +314,9 @@ const CreatorPublic = () => {
         }
 
         // ── Step 3: Load links (use profile_id when available, else creator_id) ──
-        const isStripeComplete = profileData.stripe_connect_status === 'complete';
-
-        if (isStripeComplete) {
+        // Always load links regardless of Stripe status — links should be visible
+        // on the public profile. The purchase flow itself checks Stripe readiness.
+        {
           let linksQuery = supabase
             .from('links')
             .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
@@ -339,8 +339,6 @@ const CreatorPublic = () => {
           } else {
             setLinks((linksData ?? []) as CreatorLinkCard[]);
           }
-        } else {
-          setLinks([]);
         }
 
         // ── Step 4: Load public content ──
@@ -1087,10 +1085,10 @@ const CreatorPublic = () => {
               {/* Glow ring behind the photo card */}
               <div className="absolute -inset-3 rounded-[2rem] opacity-40 blur-2xl pointer-events-none"
                 style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }} />
-              <div className="relative w-full rounded-3xl overflow-hidden border-2 shadow-2xl shadow-black/60" style={{ borderColor: `${gradientStops[0]}60` }}>
+              <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl shadow-black/60">
                 {/* Photo */}
                 {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt={displayName} className="w-full object-cover" style={{ maxHeight: '600px' }} />
+                  <img src={profile.avatar_url} alt={displayName} className="block w-full aspect-[3/4] object-cover" />
                 ) : (
                   <div className="flex items-center justify-center bg-exclu-ink" style={{ height: '450px' }}>
                     <span className="text-7xl font-extrabold text-white/20">{displayName.charAt(0).toUpperCase()}</span>
