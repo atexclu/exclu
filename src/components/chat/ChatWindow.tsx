@@ -273,18 +273,33 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               <Link2 className="w-3 h-3" />
               Add link
             </button>
-            <button
-              type="button"
-              onClick={openContentPicker}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-                showContentPicker
-                  ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
-                  : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
-              }`}
-            >
-              <Paperclip className="w-3 h-3" />
-              Attach content
-            </button>
+            {senderType === 'chatter' ? (
+              <button
+                type="button"
+                onClick={() => { setShowLinkPicker(false); setShowContentPicker(false); setShowCreateLink(true); }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                  showCreateLink
+                    ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
+                    : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
+                }`}
+              >
+                <DollarSign className="w-3 h-3" />
+                Sell content
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={openContentPicker}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                  showContentPicker
+                    ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
+                    : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
+                }`}
+              >
+                <Paperclip className="w-3 h-3" />
+                Attach content
+              </button>
+            )}
           </div>
         )}
 

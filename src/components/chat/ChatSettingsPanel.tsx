@@ -151,6 +151,28 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
           .eq('id', chatter.invitation_id);
         if (error) throw error;
       }
+
+      // Send revoke notification email to the chatter
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch(`${SUPABASE_FUNCTIONS_URL}/handle-chatter-request`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              action: 'revoke',
+              chatter_id: chatter.id ?? null,
+              invitation_id: chatter.invitation_id,
+            }),
+          });
+        }
+      } catch (emailErr) {
+        console.error('Failed to send revoke email (non-blocking):', emailErr);
+      }
+
       toast.success('Accès chatter révoqué');
       setChatters((prev) => prev.filter((c) => c.invitation_id !== chatter.invitation_id));
     } catch {

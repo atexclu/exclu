@@ -18,7 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
-  DollarSign, Users, Sun, Moon, ExternalLink, User,
+  DollarSign, Users, Sun, Moon, ExternalLink, User, Camera,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -65,6 +65,7 @@ export default function ChatterDashboard() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [chatterDisplayName, setChatterDisplayName] = useState<string | null>(null);
+  const [chatterAvatarUrl, setChatterAvatarUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -119,14 +120,17 @@ export default function ChatterDashboard() {
       }
       setCurrentUserId(user.id);
 
-      // Fetch chatter's own display name
+      // Fetch chatter's own display name & avatar
       const { data: ownProfile } = await supabase
         .from('profiles')
-        .select('display_name')
+        .select('display_name, avatar_url')
         .eq('id', user.id)
         .single();
       if (ownProfile?.display_name) {
         setChatterDisplayName(ownProfile.display_name);
+      }
+      if (ownProfile?.avatar_url) {
+        setChatterAvatarUrl(ownProfile.avatar_url);
       }
 
       // 1. Get invited profile IDs
@@ -369,6 +373,41 @@ export default function ChatterDashboard() {
     navigate('/');
   };
 
+  const handleChatterAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUserId) return;
+
+    const fileExt = file.name.split('.').pop() ?? 'jpg';
+    const filePath = `avatars/${currentUserId}/chatter.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+    if (uploadError) {
+      console.error('Chatter avatar upload error', uploadError);
+      toast.error('Failed to upload photo');
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: newAvatarUrl })
+      .eq('id', currentUserId);
+
+    if (updateError) {
+      console.error('Error saving chatter avatar', updateError);
+      toast.error('Failed to save photo');
+      return;
+    }
+
+    setChatterAvatarUrl(newAvatarUrl);
+    toast.success('Profile photo updated!');
+  };
+
   const filterTabs: { key: StatusFilter; label: string; badge?: number }[] = [
     { key: 'all',       label: 'All' },
     { key: 'unclaimed', label: 'Pending', badge: unclaimedCount },
@@ -416,13 +455,35 @@ export default function ChatterDashboard() {
       {/* ── Topbar (matching creator AppShell) ─────────────────────── */}
       <header className="fixed top-0 inset-x-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-4">
-          <a href="/" className="inline-flex items-center flex-shrink-0">
-            <img
-              src={resolvedTheme === 'light' ? logoBlack : logoWhite}
-              alt="Exclu"
-              className="h-5 sm:h-6 w-auto object-contain"
-            />
-          </a>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <a href="/" className="inline-flex items-center">
+              <img
+                src={resolvedTheme === 'light' ? logoBlack : logoWhite}
+                alt="Exclu"
+                className="h-5 sm:h-6 w-auto object-contain"
+              />
+            </a>
+
+            {/* Chatter avatar — click to upload */}
+            <label className="relative w-8 h-8 rounded-full overflow-hidden cursor-pointer group border-2 border-border/60 hover:border-primary/50 transition-all flex-shrink-0">
+              {chatterAvatarUrl ? (
+                <img src={chatterAvatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <User className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <Camera className="w-3.5 h-3.5 text-white" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleChatterAvatarUpload}
+              />
+            </label>
+          </div>
 
           {/* Chat / Dashboard nav pill — center */}
           <nav className="flex-1 flex items-center justify-center">
@@ -888,17 +949,7 @@ export default function ChatterDashboard() {
               </div>
             )}
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search…"
-                className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
-              />
-            </div>
-
-            <div className="flex gap-1 mt-2 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide">
               {filterTabs.map(({ key, label, badge }) => (
                 <button
                   key={key}
@@ -918,6 +969,16 @@ export default function ChatterDashboard() {
                   )}
                 </button>
               ))}
+            </div>
+
+            <div className="relative mt-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search…"
+                className="pl-8 h-8 text-xs bg-muted/50 border-0 rounded-xl"
+              />
             </div>
           </div>
 

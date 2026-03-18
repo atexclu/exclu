@@ -5,6 +5,7 @@
  *   - action=send   → Chatter sends a request to manage a creator's conversations
  *   - action=accept → Creator accepts a chatter request (creates invitation, emails chatter)
  *   - action=reject → Creator rejects a chatter request (emails chatter)
+ *   - action=revoke → Creator revokes an active chatter's access (emails chatter)
  *
  * Uses Brevo for transactional emails (same template as other platform emails).
  */
@@ -90,6 +91,22 @@ function buildResponseEmail(params: {
 <p>Hi,</p>
 ${body}
 </div><div class="footer">© 2025 Exclu — All rights reserved<br><a href="${normalizedSiteOrigin}">exclu.at</a></div></div></body></html>`;
+}
+
+function buildRevokeEmail(params: {
+  creatorName: string;
+  contractsUrl: string;
+}): string {
+  const { creatorName, contractsUrl } = params;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Access revoked</title>
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;box-shadow:0 12px 30px rgba(0,0,0,0.55);overflow:hidden}.header{padding:28px 28px 18px 28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;line-height:1.3;font-weight:700}.content{padding:26px 28px 30px 28px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px 0}.content strong{color:#ffffff;font-weight:600}.button{display:inline-block;background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 24px 0;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b;background-color:#020617}.footer a{color:#a3e635;text-decoration:none}@media(max-width:480px){.container{margin:0 10px}.content{padding:20px}.header{padding:20px}.header h1{font-size:22px}.button{padding:12px 24px;font-size:14px}}</style></head><body>
+<div class="container"><div class="header"><h1>Your chatter access has been revoked</h1></div><div class="content">
+<p>Hi,</p>
+<p><strong>${creatorName}</strong> has revoked your access to manage their fan conversations on Exclu.</p>
+<p>You will no longer be able to view or reply to their conversations from your chatter dashboard.</p>
+<p>You can still browse other creators looking for chatters on the Contracts marketplace:</p>
+<a href="${contractsUrl}" class="button">Browse contracts \u2192</a>
+</div><div class="footer">\u00a9 2025 Exclu \u2014 All rights reserved<br><a href="${normalizedSiteOrigin}">exclu.at</a></div></div></body></html>`;
 }
 
 async function sendBrevoEmail(to: string, subject: string, html: string) {
@@ -384,6 +401,53 @@ serve(async (req: Request) => {
         const dashboardUrl = `${normalizedSiteOrigin}/app/chatter`;
         const emailHtml = buildResponseEmail({ creatorName, accepted: false, dashboardUrl });
         await sendBrevoEmail(chatterEmail, `Update on your chatter request on Exclu`, emailHtml);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ACTION: revoke — Creator revokes an active chatter's access
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === 'revoke') {
+      const { chatter_id, invitation_id } = body as { chatter_id?: string; invitation_id?: string };
+
+      if (!chatter_id && !invitation_id) {
+        return new Response(JSON.stringify({ error: 'Missing chatter_id or invitation_id' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Resolve chatter email
+      let chatterEmail: string | null = null;
+      if (chatter_id) {
+        const { data: { user: chatterAuth } } = await supabaseAdmin.auth.admin.getUserById(chatter_id);
+        chatterEmail = chatterAuth?.email ?? null;
+      }
+      if (!chatterEmail && invitation_id) {
+        const { data: inv } = await supabaseAdmin
+          .from('chatter_invitations')
+          .select('email')
+          .eq('id', invitation_id)
+          .single();
+        chatterEmail = inv?.email ?? null;
+      }
+
+      // Get creator name for the email
+      const { data: creatorProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('display_name, handle')
+        .eq('id', user.id)
+        .single();
+
+      const creatorName = creatorProfile?.display_name || creatorProfile?.handle || 'A creator';
+
+      if (chatterEmail) {
+        const contractsUrl = `${normalizedSiteOrigin}/app/chatter/contracts`;
+        const emailHtml = buildRevokeEmail({ creatorName, contractsUrl });
+        await sendBrevoEmail(chatterEmail, `${creatorName} has revoked your chatter access on Exclu`, emailHtml);
       }
 
       return new Response(JSON.stringify({ success: true }), {

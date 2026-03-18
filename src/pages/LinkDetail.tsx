@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
-import { Eye, Coins, ArrowRight, MessageCircle, Image as ImageIcon, Video, X, Plus, Trash2 } from 'lucide-react';
+import { Eye, Coins, ArrowRight, MessageCircle, Image as ImageIcon, Video, X, Plus, Trash2, Users } from 'lucide-react';
 
 interface LinkDetailData {
   id: string;
@@ -20,6 +20,7 @@ interface LinkDetailData {
   created_at: string;
   storage_path: string | null;
   mime_type: string | null;
+  created_by_chatter_id: string | null;
 }
 
 interface PurchaseRow {
@@ -44,6 +45,7 @@ const LinkDetail = () => {
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [contentPreviewUrl, setContentPreviewUrl] = useState<string | null>(null);
+  const [chatterInfo, setChatterInfo] = useState<{ display_name: string | null; email: string | null } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -68,7 +70,7 @@ const LinkDetail = () => {
       try {
         const { data, error: linkError } = await supabase
           .from('links')
-          .select('id, title, description, price_cents, currency, status, slug, click_count, created_at, storage_path, mime_type')
+          .select('id, title, description, price_cents, currency, status, slug, click_count, created_at, storage_path, mime_type, created_by_chatter_id')
           .eq('id', id)
           .eq('creator_id', user.id)
           .single();
@@ -110,6 +112,18 @@ const LinkDetail = () => {
         setRevenueCents(revenue);
         setPurchases(safePurchases);
         setIsPremium(isPremium);
+
+        // Fetch chatter profile if link was created by a chatter
+        if (data.created_by_chatter_id) {
+          const { data: chatterProfile } = await supabase
+            .from('profiles')
+            .select('display_name, email')
+            .eq('id', data.created_by_chatter_id)
+            .single();
+          if (chatterProfile && isMounted) {
+            setChatterInfo(chatterProfile);
+          }
+        }
 
         // Load content preview if storage_path exists
         if (data.storage_path) {
@@ -254,6 +268,13 @@ const LinkDetail = () => {
                 <p className="text-exclu-space text-sm max-w-xl">
                   {link.description || 'This is one of your premium pieces of content. Here you can see how it performs.'}
                 </p>
+              )}
+              {link?.created_by_chatter_id && chatterInfo && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs">
+                  <Users className="w-3 h-3 text-primary" />
+                  <span className="text-exclu-space">Created by chatter</span>
+                  <span className="font-semibold text-exclu-cloud">{chatterInfo.display_name || chatterInfo.email || 'Unknown'}</span>
+                </div>
               )}
             </div>
 
