@@ -72,7 +72,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
         {(message.content_type === 'paid_content' || message.content_type === 'tip_link') && message.link && (
           <StarBorder
             as="a"
-            href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}`}
+            href={`/l/${message.link.slug}${conversationId ? `?from_conversation=${conversationId}` : ''}${message.chatter_ref ? `${conversationId ? '&' : '?'}chtref=${message.chatter_ref}` : ''}`}
             target="_blank"
             rel="noopener noreferrer"
             className="block rounded-2xl max-w-[260px] hover:opacity-90 transition-opacity mt-1"

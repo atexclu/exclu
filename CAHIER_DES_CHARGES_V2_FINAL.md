@@ -1418,14 +1418,46 @@ Durant l'onboarding ou dans les settings :
 
 ### 13.3 Répartition des Revenus (Vente via Chat)
 
-| Partie | Pourcentage |
-|--------|-------------|
-| Créateur | 45% |
-| Agence/Chatter | 25% |
-| EXCLU | 15% |
-| Processing (Stripe) | ~5% |
+Quand un **chatter** envoie un lien de contenu payant et que le fan l'achète :
 
-**Versement** : Directement sur les comptes Stripe respectifs via Split Payment.
+| Partie | Pourcentage (sur le prix de base) |
+|--------|-----------------------------------|
+| Créateur | 60% |
+| Chatter | 25% |
+| EXCLU | 15% + 5% frais de traitement |
+
+- Le fan paie le **prix de base + 5%** de frais de traitement (Stripe).
+- Le créateur reçoit **60%** du prix de base directement sur son compte Stripe Connect.
+- Le chatter accumule **25%** du prix de base dans sa cagnotte Exclu (paiement séparé).
+- Exclu conserve **15%** du prix de base + les **5%** de frais de traitement.
+- **Ce split s'applique que le créateur soit Premium ou non.**
+
+Quand le **créateur lui-même** envoie un lien qui génère une vente, la répartition standard s'applique (pas de commission chatter) :
+- Premium : créateur 100%, Exclu 5% (frais)
+- Free : créateur 90%, Exclu 10% + 5% (frais)
+
+#### Tracking des Ventes Chatter
+
+Chaque message de type `paid_content` envoyé par un chatter contient un **code de tracking unique** (`chatter_ref`).
+Ce code est intégré dans l'URL du lien : `/l/{slug}?from_conversation={id}&chtref={code}`.
+Lors du checkout Stripe, le code est résolu pour identifier le chatter et appliquer le split 60/25/15.
+Ce mécanisme garantit une attribution fiable et auditable de chaque vente.
+
+#### Création de Liens par le Chatter
+
+Le chatter peut créer des liens directement depuis l'interface de chat :
+1. Cliquer sur "Add content" dans le chat
+2. Sélectionner un ou plusieurs contenus de la bibliothèque du créateur
+3. Définir un titre et un prix
+4. Envoyer → le lien est créé (non visible sur le profil public) et envoyé dans le chat
+
+Ces liens sont marqués `created_by_chatter_id` et `is_visible = false` (non affichés sur la page publique du créateur).
+
+#### Cagnotte Chatter & Paiement
+
+- Les gains du chatter s'accumulent dans `profiles.chatter_earnings_cents`.
+- Le chatter peut demander un paiement via le dashboard (seuil minimum : 100$).
+- Le paiement est géré manuellement par l'équipe Exclu (virement, PayPal, etc.).
 
 ### 13.4 Interface Chatter
 

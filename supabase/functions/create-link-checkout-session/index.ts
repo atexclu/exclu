@@ -100,6 +100,7 @@ serve(async (req) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const buyerEmail = emailRegex.test(rawBuyerEmail) ? rawBuyerEmail : undefined;
     const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : null;
+    const chatterRef = typeof body?.chtref === 'string' ? body.chtref.trim() : null;
 
     if (!slug || typeof slug !== 'string') {
       return new Response(JSON.stringify({ error: 'Missing or invalid slug' }), {
@@ -170,21 +171,59 @@ serve(async (req) => {
     // We standardize on USD for the platform
     const currency = 'usd';
 
-    // Calculate pricing:
-    // - Creator sets their price (link.price_cents)
-    // - Fan pays +5% processing fee on top
-    // - Platform takes 10% commission from creator price (Free plan) or 0% (Premium plan)
+    // ── Resolve chatter tracking code (if sale is attributed to a chatter) ──
+    let resolvedChatterId: string | null = null;
+    if (chatterRef) {
+      try {
+        const { data: chatterId } = await supabase.rpc('resolve_chatter_ref', {
+          p_chatter_ref: chatterRef,
+        });
+        if (chatterId) {
+          resolvedChatterId = chatterId as string;
+          console.log('Chatter attribution resolved:', resolvedChatterId, 'from ref:', chatterRef);
+        }
+      } catch (err) {
+        console.error('Error resolving chatter_ref:', err);
+      }
+    }
+
+    // ── Calculate pricing ────────────────────────────────────────────────
+    // Fan always pays base_price + 5% processing fee.
+    // Revenue split depends on whether a chatter is attributed:
+    //
+    // WITH chatter (60/25/15 — regardless of premium status):
+    //   Creator: 60% of base_price  →  sent to Stripe Connect
+    //   Chatter: 25% of base_price  →  tracked in DB wallet
+    //   Exclu:   15% of base_price + 5% processing fee  →  application_fee
+    //
+    // WITHOUT chatter (standard split):
+    //   Premium: Creator 100%, Exclu 5% (processing only)
+    //   Free:    Creator 90%, Exclu 10% + 5%
     const creatorPriceCents = link.price_cents;
     const fanProcessingFeeCents = Math.round(creatorPriceCents * 0.05);
     const totalFanPaysCents = creatorPriceCents + fanProcessingFeeCents;
 
-    // Determine platform commission based on creator plan
-    // Free plan: 10% commission; subscribed plan ($39/mo): 0% commission
-    const isSubscribed = creatorProfile.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.1;
-    // Platform fee = commission on creator price + the 5% fan processing fee (goes to platform)
-    const platformCommissionCents = Math.round(creatorPriceCents * commissionRate);
-    const applicationFeeAmount = platformCommissionCents + fanProcessingFeeCents;
+    let applicationFeeAmount: number;
+    let chatterEarningsCents = 0;
+    let creatorNetCents: number;
+    let platformFeeCents: number;
+
+    if (resolvedChatterId) {
+      // Chatter-attributed sale: 60/25/15 split
+      creatorNetCents = Math.round(creatorPriceCents * 0.60);
+      chatterEarningsCents = Math.round(creatorPriceCents * 0.25);
+      platformFeeCents = Math.round(creatorPriceCents * 0.15) + fanProcessingFeeCents;
+      // Exclu retains chatter's share + platform share + processing fee
+      applicationFeeAmount = chatterEarningsCents + platformFeeCents;
+    } else {
+      // Standard split (no chatter)
+      const isSubscribed = creatorProfile.is_creator_subscribed === true;
+      const commissionRate = isSubscribed ? 0 : 0.1;
+      const platformCommissionCents = Math.round(creatorPriceCents * commissionRate);
+      platformFeeCents = platformCommissionCents + fanProcessingFeeCents;
+      creatorNetCents = creatorPriceCents - platformCommissionCents;
+      applicationFeeAmount = platformFeeCents;
+    }
 
     const successUrl = `${siteUrl.replace(/\/$/, '')}/l/${encodeURIComponent(slug)}?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${siteUrl.replace(/\/$/, '')}/l/${encodeURIComponent(slug)}`;
@@ -213,6 +252,12 @@ serve(async (req) => {
         slug: link.slug ?? slug,
         buyerEmail: buyerEmail ?? '',
         ...(conversationId ? { conversation_id: conversationId } : {}),
+        ...(resolvedChatterId ? {
+          chatter_id: resolvedChatterId,
+          chatter_earnings_cents: String(chatterEarningsCents),
+          creator_net_cents: String(creatorNetCents),
+          platform_fee_cents: String(platformFeeCents),
+        } : {}),
       },
       customer_email: buyerEmail,
       payment_intent_data: {

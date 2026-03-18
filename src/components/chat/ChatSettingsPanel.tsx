@@ -174,8 +174,25 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
 
                           <div>
                             <h4 className="text-sm font-semibold text-foreground mb-1.5">Répartition des paiements</h4>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              Tous les paiements (ventes de contenu, tips, cadeaux) sont versés directement sur votre compte. Vous gérez la rémunération de vos chatters en dehors de la plateforme.
+                            <p className="text-xs text-muted-foreground leading-relaxed mb-1.5">
+                              Sur chaque vente de contenu générée par un chatter via le chat, une commission de 40% s'applique :
+                            </p>
+                            <ul className="text-xs text-muted-foreground space-y-1">
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span><strong className="text-foreground">60%</strong> pour vous (créateur)</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span><strong className="text-foreground">25%</strong> pour le chatter</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span><strong className="text-foreground">15%</strong> pour Exclu</span>
+                              </li>
+                            </ul>
+                            <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">
+                              +5% de frais de traitement à la charge du fan. Les ventes que vous réalisez vous-même ne sont pas soumises à cette commission.
                             </p>
                           </div>
                         </div>

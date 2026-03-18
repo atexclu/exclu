@@ -46,6 +46,7 @@ export interface Message {
   paid_amount_cents: number | null;
   tip_link_id: string | null;
   wishlist_item_id: string | null;
+  chatter_ref: string | null;
   is_read: boolean;
   read_at: string | null;
   created_at: string;

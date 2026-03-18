@@ -168,6 +168,13 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not authenticated');
 
+        // Generate a unique chatter_ref when a chatter sends paid content
+        // This code is embedded in the link URL for revenue attribution tracking
+        const chatterRef =
+          senderType === 'chatter' && contentType === 'paid_content' && paidContentId
+            ? Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join('')
+            : null;
+
         const { data: insertedMessage, error: insertError } = await supabase.from('messages').insert({
           conversation_id: conversationId,
           sender_type: senderType,
@@ -177,6 +184,7 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
           paid_content_id: paidContentId,
           paid_amount_cents: paidAmountCents,
           tip_link_id: tipLinkId,
+          ...(chatterRef ? { chatter_ref: chatterRef } : {}),
         }).select('*').single();
 
         if (insertError) throw insertError;

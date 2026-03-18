@@ -965,6 +965,12 @@ serve(async (req: Request) => {
             const customerEmail = (buyerEmailFromMetadata || emailFromStripe || null) as string | null;
             const chatConversationId = (session.metadata as any)?.conversation_id as string | undefined ?? null;
 
+            // ── Chatter revenue attribution ──────────────────────────────────
+            const chatChatterId = (session.metadata as any)?.chatter_id as string | undefined ?? null;
+            const chatterEarningsCents = parseInt((session.metadata as any)?.chatter_earnings_cents ?? '0', 10);
+            const creatorNetCents = parseInt((session.metadata as any)?.creator_net_cents ?? '0', 10);
+            const platformFeeCents = parseInt((session.metadata as any)?.platform_fee_cents ?? '0', 10);
+
             const { error: insertError } = await supabase.from('purchases').insert({
               link_id: linkId,
               amount_cents: amountTotal,
@@ -974,12 +980,31 @@ serve(async (req: Request) => {
               buyer_email: customerEmail,
               access_token: crypto.randomUUID(),
               ...(chatConversationId ? { chat_conversation_id: chatConversationId } : {}),
+              ...(chatChatterId ? {
+                chat_chatter_id: chatChatterId,
+                chatter_earnings_cents: chatterEarningsCents,
+                creator_net_cents: creatorNetCents,
+                platform_fee_cents: platformFeeCents,
+              } : {}),
             });
 
             if (insertError) {
               console.error('Error inserting purchase:', insertError);
             } else {
-              console.log('Purchase recorded for link:', linkId);
+              console.log('Purchase recorded for link:', linkId, chatChatterId ? `(chatter: ${chatChatterId})` : '');
+
+              // ── Increment chatter wallet if sale is attributed ──────────
+              if (chatChatterId && chatterEarningsCents > 0) {
+                try {
+                  await supabase.rpc('increment_chatter_earnings', {
+                    p_chatter_id: chatChatterId,
+                    p_amount_cents: chatterEarningsCents,
+                  });
+                  console.log('Chatter earnings incremented:', chatChatterId, '+', chatterEarningsCents, 'cents');
+                } catch (earningsErr) {
+                  console.error('Error incrementing chatter earnings:', earningsErr);
+                }
+              }
 
               // Incrémenter le revenu de la conversation si l'achat vient du chat
               if (chatConversationId && amountTotal > 0) {

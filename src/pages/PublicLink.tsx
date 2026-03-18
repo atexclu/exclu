@@ -213,6 +213,7 @@ const PublicLink = () => {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
   const fromConversationId = searchParams.get('from_conversation');
+  const chatterRef = searchParams.get('chtref');
   
   const [link, setLink] = useState<PublicLinkData | null>(null);
   const [contentItems, setContentItems] = useState<ContentItem[]>([]);
@@ -404,7 +405,7 @@ const PublicLink = () => {
     setIsUnlocking(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-link-checkout-session', {
-        body: { slug, buyerEmail: buyerEmail || null, conversation_id: fromConversationId || null },
+        body: { slug, buyerEmail: buyerEmail || null, conversation_id: fromConversationId || null, chtref: chatterRef || null },
       });
 
       if (error || !(data as any)?.url) {

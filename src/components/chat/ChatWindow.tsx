@@ -17,6 +17,7 @@ import { MessageBubble } from './MessageBubble';
 import { RichMessageComposer } from './RichMessageComposer';
 import { ChatContentPicker, type ContentAsset } from './ChatContentPicker';
 import { ChatLinkPicker } from './ChatLinkPicker';
+import { ChatCreateLink } from './ChatCreateLink';
 import { ChatCustomRequest } from './ChatCustomRequest';
 import { ChatTipForm } from './ChatTipForm';
 import { FanTagsRow } from './FanTagsRow';
@@ -40,6 +41,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [draft, setDraft] = useState('');
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
+  const [showCreateLink, setShowCreateLink] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [showTipForm, setShowTipForm] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -179,13 +181,26 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     });
   };
 
+  const handleChatterLinkCreated = async (link: { id: string; title: string | null; slug: string; price_cents: number; description: string | null }) => {
+    setShowCreateLink(false);
+    await sendMessage({
+      content: link.description || link.title || 'Exclusive content',
+      senderType,
+      contentType: 'paid_content',
+      paidContentId: link.id,
+      paidAmountCents: link.price_cents,
+    });
+  };
+
   const openLinkPicker = () => {
     setShowContentPicker(false);
+    setShowCreateLink(false);
     setShowLinkPicker(true);
   };
 
   const openContentPicker = () => {
     setShowLinkPicker(false);
+    setShowCreateLink(false);
     setShowContentPicker(true);
   };
 
@@ -353,7 +368,24 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               profileId={conversation.profile_id}
               onSelect={handleAttachLink}
               onClose={() => setShowLinkPicker(false)}
-              onCreateLink={senderType === 'creator' ? () => navigate('/app/links/new') : undefined}
+              onCreateLink={
+                senderType === 'creator'
+                  ? () => navigate('/app/links/new')
+                  : senderType === 'chatter'
+                    ? () => { setShowLinkPicker(false); setShowCreateLink(true); }
+                    : undefined
+              }
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Inline link creation panel (chatter only) — above composer */}
+        <AnimatePresence>
+          {showCreateLink && (
+            <ChatCreateLink
+              profileId={conversation.profile_id}
+              onLinkCreated={handleChatterLinkCreated}
+              onClose={() => setShowCreateLink(false)}
             />
           )}
         </AnimatePresence>
