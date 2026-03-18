@@ -206,6 +206,48 @@ export default function ChatterDashboard() {
     init();
   }, [navigate]);
 
+  // ── Realtime subscription to detect new profiles ───────────────────────
+  useEffect(() => {
+    if (!currentUserId || clients.length === 0) return;
+
+    const creatorUserIds = clients.map((c) => c.user_id);
+    
+    const channel = supabase
+      .channel('chatter-profiles-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'creator_profiles',
+          filter: `user_id=in.(${creatorUserIds.join(',')})`,
+        },
+        async (payload) => {
+          // New profile added by a creator we manage
+          const newProfile = payload.new as ChatterProfile;
+          
+          // Add to profiles list
+          setProfiles((prev) => [...prev, newProfile]);
+          
+          // Update the client's profiles list
+          setClients((prev) =>
+            prev.map((client) =>
+              client.user_id === newProfile.user_id
+                ? { ...client, profiles: [...client.profiles, newProfile] }
+                : client
+            )
+          );
+          
+          toast.success(`Nouveau profil détecté : ${newProfile.display_name || newProfile.username}`);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId, clients]);
+
   // ── Fetch chatter metrics when dashboard tab is active ─────────────────
   useEffect(() => {
     if (mainView !== 'dashboard' || !currentUserId) return;

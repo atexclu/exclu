@@ -229,16 +229,16 @@ serve(async (req: Request) => {
       });
     }
 
-    // ── Vérifier que le créateur est Premium (mode team = premium only) ───────
+    // ── Récupérer les infos du créateur ───────────────────────────────────────
     const { data: creatorAccount } = await supabaseAdmin
       .from('profiles')
-      .select('is_creator_subscribed, display_name, handle')
+      .select('display_name, handle')
       .eq('id', user.id)
       .single();
 
-    if (!creatorAccount?.is_creator_subscribed) {
-      return new Response(JSON.stringify({ error: 'premium_required', message: 'Team mode requires a Premium subscription.' }), {
-        status: 403,
+    if (!creatorAccount) {
+      return new Response(JSON.stringify({ error: 'creator_not_found', message: 'Creator account not found.' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
