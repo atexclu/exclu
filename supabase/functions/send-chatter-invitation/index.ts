@@ -125,6 +125,11 @@ function buildInvitationEmail(params: {
       <p>Bonjour,</p>
       <p><strong>${creatorName}</strong> vous invite à rejoindre son équipe de chatters sur Exclu pour gérer les conversations du profil <strong>@${profileHandle}</strong>.</p>
       <a href="${acceptUrl}" class="button">Accepter l'invitation →</a>
+      <p style="margin-top:16px; margin-bottom:8px;">
+        <a href="${siteUrl}/${profileHandle}" style="color:#a3e635; text-decoration:none; font-size:14px;">
+          Voir le profil de ${creatorName} →
+        </a>
+      </p>
       ${customMessageHtml}
       <div class="info-box">
         <h3>En tant que chatter, vous pourrez :</h3>
@@ -227,7 +232,7 @@ serve(async (req: Request) => {
     // ── Vérifier que le créateur est Premium (mode team = premium only) ───────
     const { data: creatorAccount } = await supabaseAdmin
       .from('profiles')
-      .select('is_creator_subscribed, display_name')
+      .select('is_creator_subscribed, display_name, handle')
       .eq('id', user.id)
       .single();
 
@@ -303,8 +308,8 @@ serve(async (req: Request) => {
 
     // ── Construire le lien d'acceptation ─────────────────────────────────────
     const acceptUrl    = `${normalizedSiteOrigin}/accept-chatter-invite?token=${invitation.token}`;
-    const creatorName  = creatorAccount.display_name || profile.username || 'Un créateur';
-    const profileHandle = profile.username || profile_id;
+    const creatorName  = creatorAccount.display_name || creatorAccount.handle || 'Un créateur';
+    const profileHandle = creatorAccount.handle || profile.username || profile_id;
 
     const emailHtml = buildInvitationEmail({ 
       creatorName, 

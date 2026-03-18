@@ -89,6 +89,7 @@ const Onboarding = () => {
   const [handle, setHandle] = useState('');
   const [isHandleLocked, setIsHandleLocked] = useState(false);
   const [country, setCountry] = useState('');
+  const [bio, setBio] = useState('');
   const [auroraGradient, setAuroraGradient] = useState('purple_dream');
   const [platformUrls, setPlatformUrls] = useState<Record<PlatformKey, string>>({
     instagram: '',
@@ -295,7 +296,7 @@ const Onboarding = () => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('display_name, handle, country')
+        .select('display_name, handle, country, bio')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -315,6 +316,7 @@ const Onboarding = () => {
       const resolvedHandle = (profile?.handle || metadataHandle || '').trim();
       setHandle(resolvedHandle);
       setCountry(profile?.country || '');
+      setBio(profile?.bio || '');
 
       if (!profile?.handle && metadataHandle) {
         supabase
@@ -507,6 +509,7 @@ const Onboarding = () => {
             handle: trimmedHandle,
             is_creator: true,
             country,
+            bio: bio.trim() || null,
             aurora_gradient: auroraGradient,
             social_links: socialLinksObj,
             avatar_url: finalAvatarUrl,
@@ -849,6 +852,24 @@ const Onboarding = () => {
                       <p className="text-[11px] text-exclu-space/70">
                         This must match the country where you pay taxes. Stripe will use it to determine your payout
                         requirements.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label htmlFor="bio" className="text-xs font-medium text-exclu-space">
+                        Bio <span className="text-exclu-space/60 font-normal">(optional)</span>
+                      </label>
+                      <textarea
+                        id="bio"
+                        value={bio}
+                        onChange={(e) => setBio(e.target.value)}
+                        placeholder="Tell your fans about yourself..."
+                        rows={3}
+                        maxLength={500}
+                        className="w-full rounded-md border border-exclu-arsenic/70 bg-white px-3 py-2 text-xs text-black placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/60 resize-none"
+                      />
+                      <p className="text-[11px] text-exclu-space/70">
+                        {bio.length}/500 characters
                       </p>
                     </div>
 

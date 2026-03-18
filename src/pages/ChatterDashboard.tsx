@@ -426,18 +426,18 @@ export default function ChatterDashboard() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Client avatar + switcher (multiple creator clients) */}
+            {/* Client avatar + switcher (multiple creator clients OR multiple profiles) */}
             <div className="relative">
               <motion.button
                 type="button"
-                onClick={() => clients.length > 1 ? setShowProfilePicker((v) => !v) : undefined}
+                onClick={() => (clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? setShowProfilePicker((v) => !v) : undefined}
                 className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
                   showProfilePicker
                     ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
                     : 'border-border/60 hover:border-primary/50'
-                } ${clients.length <= 1 ? 'cursor-default' : 'cursor-pointer'}`}
-                whileHover={clients.length > 1 ? { scale: 1.08 } : {}}
-                whileTap={clients.length > 1 ? { scale: 0.95 } : {}}
+                } ${(clients.length <= 1 && (!activeClient || activeClient.profiles.length <= 1)) ? 'cursor-default' : 'cursor-pointer'}`}
+                whileHover={(clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? { scale: 1.08 } : {}}
+                whileTap={(clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? { scale: 0.95 } : {}}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               >
                 {activeClient?.avatar_url ? (
@@ -449,9 +449,9 @@ export default function ChatterDashboard() {
                 )}
               </motion.button>
 
-              {/* Client switcher dropdown — only when working for multiple creators */}
+              {/* Client/Profile switcher dropdown */}
               <AnimatePresence>
-                {showProfilePicker && clients.length > 1 && (
+                {showProfilePicker && (clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -459,10 +459,12 @@ export default function ChatterDashboard() {
                     transition={{ duration: 0.15 }}
                     className="absolute top-full mt-1 right-0 w-56 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden"
                   >
-                    <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Your clients
-                    </div>
-                    {clients.map((client) => (
+                    {clients.length > 1 && (
+                      <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Your clients
+                      </div>
+                    )}
+                    {clients.length > 1 && clients.map((client) => (
                       <button
                         key={client.user_id}
                         type="button"
@@ -491,6 +493,43 @@ export default function ChatterDashboard() {
                         {client.user_id === activeClientUserId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
                       </button>
                     ))}
+                    
+                    {/* Show profiles when single client with multiple profiles */}
+                    {clients.length === 1 && activeClient && activeClient.profiles.length > 1 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-t border-border/40 mt-1 pt-2">
+                          Profiles
+                        </div>
+                        {activeClient.profiles.map((profile) => (
+                          <button
+                            key={profile.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveProfileId(profile.id);
+                              setSelectedConversation(null);
+                              setShowMobileList(true);
+                              setShowProfilePicker(false);
+                            }}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
+                              profile.id === activeProfileId ? 'bg-muted/40' : ''
+                            }`}
+                          >
+                            {profile.avatar_url ? (
+                              <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border/40" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                                {(profile.display_name ?? profile.username ?? '?').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0 text-left">
+                              <p className="text-xs font-medium truncate">{profile.display_name || profile.username || 'Profile'}</p>
+                              <p className="text-[10px] text-muted-foreground">@{profile.username || profile.id.slice(0, 8)}</p>
+                            </div>
+                            {profile.id === activeProfileId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
