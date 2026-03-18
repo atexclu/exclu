@@ -437,6 +437,101 @@ async function sendCreatorGiftNotificationEmail(params: {
   return false;
 }
 
+/**
+ * Find or create a conversation between a fan and a creator profile,
+ * then insert a system message. Used after tip/request payments.
+ */
+async function ensureConversationAndNotify(params: {
+  fanId: string;
+  creatorId: string;
+  profileId: string | null;
+  messageContent: string;
+}): Promise<void> {
+  const { fanId, creatorId, profileId, messageContent } = params;
+  if (!fanId || !creatorId) return;
+
+  try {
+    // Resolve profile_id: use provided or find the creator's default profile
+    let resolvedProfileId = profileId;
+    if (!resolvedProfileId) {
+      const { data: defaultProfile } = await supabase
+        .from('creator_profiles')
+        .select('id')
+        .eq('user_id', creatorId)
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+      resolvedProfileId = defaultProfile?.id ?? null;
+    }
+
+    if (!resolvedProfileId) {
+      console.warn('ensureConversationAndNotify: no profile_id found for creator', creatorId);
+      return;
+    }
+
+    // Find existing conversation or create one
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('fan_id', fanId)
+      .eq('profile_id', resolvedProfileId)
+      .maybeSingle();
+
+    let conversationId: string;
+
+    if (existingConv) {
+      conversationId = existingConv.id;
+    } else {
+      const { data: newConv, error: convErr } = await supabase
+        .from('conversations')
+        .insert({
+          fan_id: fanId,
+          profile_id: resolvedProfileId,
+          status: 'active',
+          last_message_at: new Date().toISOString(),
+          last_message_preview: messageContent.slice(0, 100),
+        })
+        .select('id')
+        .single();
+
+      if (convErr || !newConv) {
+        console.error('ensureConversationAndNotify: failed to create conversation', convErr);
+        return;
+      }
+      conversationId = newConv.id;
+    }
+
+    // Insert system message
+    const { error: msgErr } = await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_type: 'system',
+        sender_id: fanId,
+        content: messageContent,
+        content_type: 'system',
+      });
+
+    if (msgErr) {
+      console.error('ensureConversationAndNotify: failed to insert message', msgErr);
+      return;
+    }
+
+    // Update conversation last_message fields
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_message_preview: messageContent.slice(0, 100),
+      })
+      .eq('id', conversationId);
+
+    console.log('Conversation notification sent:', conversationId, messageContent.slice(0, 60));
+  } catch (err) {
+    console.error('ensureConversationAndNotify error (non-fatal):', err);
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { status: 200 });
@@ -568,6 +663,24 @@ serve(async (req: Request) => {
                   }
                 } catch (emailErr) {
                   console.error('Error sending tip notification email (non-fatal):', emailErr);
+                }
+
+                // Auto-create conversation + send notification (non-anonymous tips from logged-in fans)
+                const tipProfileId = session.metadata?.profile_id || null;
+                const { data: tipRow } = await supabase
+                  .from('tips')
+                  .select('is_anonymous, amount_cents')
+                  .eq('id', tipId)
+                  .single();
+
+                if (fanId && tipRow && !tipRow.is_anonymous) {
+                  const tipAmtFmt = `$${((tipRow.amount_cents || 0) / 100).toFixed(2)}`;
+                  await ensureConversationAndNotify({
+                    fanId,
+                    creatorId,
+                    profileId: tipProfileId,
+                    messageContent: `💰 Sent a tip of ${tipAmtFmt}`,
+                  });
                 }
               }
             }
@@ -773,6 +886,20 @@ serve(async (req: Request) => {
                   }
                 } catch (emailErr) {
                   console.error('Error sending request notification email (non-fatal):', emailErr);
+                }
+
+                // Auto-create conversation + send notification for custom request
+                const reqFanId = session.metadata?.fan_id || null;
+                const reqProfileId = session.metadata?.profile_id || null;
+                if (reqFanId) {
+                  const reqAmtFmt = `$${((existingReq.proposed_amount_cents || 0) / 100).toFixed(2)}`;
+                  const trimDesc = (existingReq.description || '').slice(0, 80);
+                  await ensureConversationAndNotify({
+                    fanId: reqFanId,
+                    creatorId,
+                    profileId: reqProfileId,
+                    messageContent: `📩 Custom request for ${reqAmtFmt}: "${trimDesc}"`,
+                  });
                 }
 
                 // If new account was created, generate confirmation link and send via Brevo

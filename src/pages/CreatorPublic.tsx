@@ -1087,12 +1087,12 @@ const CreatorPublic = () => {
               {/* Glow ring behind the photo card */}
               <div className="absolute -inset-3 rounded-[2rem] opacity-40 blur-2xl pointer-events-none"
                 style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }} />
-              <div className="relative w-full rounded-3xl overflow-hidden border-2 shadow-2xl shadow-black/60" style={{ aspectRatio: '3/4', borderColor: `${gradientStops[0]}60` }}>
+              <div className="relative w-full rounded-3xl overflow-hidden border-2 shadow-2xl shadow-black/60" style={{ borderColor: `${gradientStops[0]}60` }}>
                 {/* Photo */}
                 {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt={displayName} className="absolute inset-0 w-full h-full object-cover" />
+                  <img src={profile.avatar_url} alt={displayName} className="w-full object-cover" style={{ maxHeight: '600px' }} />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-exclu-ink">
+                  <div className="flex items-center justify-center bg-exclu-ink" style={{ height: '450px' }}>
                     <span className="text-7xl font-extrabold text-white/20">{displayName.charAt(0).toUpperCase()}</span>
                   </div>
                 )}

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, User, Paperclip, Link2, DollarSign } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -18,6 +18,7 @@ import { RichMessageComposer } from './RichMessageComposer';
 import { ChatContentPicker, type ContentAsset } from './ChatContentPicker';
 import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCustomRequest } from './ChatCustomRequest';
+import { ChatTipForm } from './ChatTipForm';
 import { FanTagsRow } from './FanTagsRow';
 import Aurora from '@/components/ui/Aurora';
 import type { Conversation } from '@/types/chat';
@@ -40,10 +41,46 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
+  const [showTipForm, setShowTipForm] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
   const fanName = fan?.display_name || 'Fan';
+
+  // Creator profile info (fetched for fan senderType)
+  const [creatorInfo, setCreatorInfo] = useState<{
+    location: string | null;
+    show_available_now: boolean;
+    tips_enabled: boolean;
+    custom_requests_enabled: boolean;
+    display_name: string | null;
+    is_premium: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (senderType !== 'fan') return;
+    supabase
+      .from('creator_profiles')
+      .select('location, show_available_now, tips_enabled, custom_requests_enabled, display_name, user_id')
+      .eq('id', conversation.profile_id)
+      .single()
+      .then(async ({ data }) => {
+        if (!data) return;
+        const { data: parent } = await supabase
+          .from('profiles')
+          .select('is_creator_subscribed, stripe_connect_status')
+          .eq('id', data.user_id)
+          .single();
+        setCreatorInfo({
+          location: data.location,
+          show_available_now: data.show_available_now === true,
+          tips_enabled: data.tips_enabled === true && parent?.stripe_connect_status === 'complete',
+          custom_requests_enabled: data.custom_requests_enabled === true,
+          display_name: data.display_name,
+          is_premium: parent?.is_creator_subscribed === true,
+        });
+      });
+  }, [conversation.profile_id, senderType]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -167,9 +204,32 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
-          {conversation.total_revenue_cents > 0 && (
+          {senderType !== 'fan' && conversation.total_revenue_cents > 0 && (
             <p className="text-[11px] text-green-400/70">
               ${(conversation.total_revenue_cents / 100).toFixed(2)} earned
+            </p>
+          )}
+          {/* Creator info for fan view: location + available now */}
+          {senderType === 'fan' && creatorInfo && (creatorInfo.location || (creatorInfo.show_available_now && creatorInfo.is_premium)) && (
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+              {creatorInfo.location && (
+                <>
+                  <MapPin className="w-2.5 h-2.5" />
+                  <span>{creatorInfo.location}</span>
+                </>
+              )}
+              {creatorInfo.location && creatorInfo.show_available_now && creatorInfo.is_premium && (
+                <span className="mx-0.5">·</span>
+              )}
+              {creatorInfo.show_available_now && creatorInfo.is_premium && (
+                <span className="inline-flex items-center gap-1 text-green-400">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
+                  </span>
+                  Available now
+                </span>
+              )}
             </p>
           )}
           {senderType !== 'fan' && (
@@ -210,6 +270,32 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               <Paperclip className="w-3 h-3" />
               Attach content
             </button>
+          </div>
+        )}
+
+        {/* Action buttons — for fan */}
+        {senderType === 'fan' && creatorInfo && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {creatorInfo.custom_requests_enabled && (
+              <button
+                type="button"
+                onClick={() => setShowCustomRequest(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]"
+              >
+                <DollarSign className="w-3 h-3" />
+                Request
+              </button>
+            )}
+            {creatorInfo.tips_enabled && (
+              <button
+                type="button"
+                onClick={() => setShowTipForm(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]"
+              >
+                <Heart className="w-3 h-3" />
+                Send tip
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -259,19 +345,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
 
       {/* Composer + action buttons */}
       <div className="flex-shrink-0">
-        {senderType === 'fan' && (
-          <div className="flex items-center gap-1 px-3 pt-2 border-t border-border">
-            <button
-              type="button"
-              onClick={() => setShowCustomRequest(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-              title="Send a custom request"
-            >
-              <DollarSign className="w-3.5 h-3.5" />
-              Custom Request
-            </button>
-          </div>
-        )}
         {/* Inline link picker panel — above composer */}
         <AnimatePresence>
           {showLinkPicker && (
@@ -311,6 +384,17 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           <ChatCustomRequest
             profileId={conversation.profile_id}
             onClose={() => setShowCustomRequest(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Tip form modal (fan only) */}
+      <AnimatePresence>
+        {showTipForm && (
+          <ChatTipForm
+            profileId={conversation.profile_id}
+            creatorName={fanName}
+            onClose={() => setShowTipForm(false)}
           />
         )}
       </AnimatePresence>
