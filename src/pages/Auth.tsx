@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Mail, Lock, Sparkles, AtSign } from 'lucide-react';
+import { Mail, Lock, Sparkles, AtSign, User, Palette } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 const Auth = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset' | 'update-password'>('signup');
   const [isLoading, setIsLoading] = useState(false);
+  const [accountType, setAccountType] = useState<'creator' | 'fan'>('creator');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -76,28 +77,35 @@ const Auth = () => {
         if (error) throw error;
         toast.success('Check your inbox to reset your password');
       } else if (mode === 'signup') {
-        const username = String(formData.get('username') || '').trim().toLowerCase();
-        if (!password || !username) {
+        const username = accountType === 'creator' ? String(formData.get('username') || '').trim().toLowerCase() : '';
+        if (!password) {
           toast.error('Please fill in all fields');
           return;
         }
 
-        // Validate username format
-        if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-          toast.error('Username can only contain letters, numbers and underscores');
-          return;
-        }
+        if (accountType === 'creator') {
+          if (!username) {
+            toast.error('Please choose a username');
+            return;
+          }
 
-        // Check if username is already taken
-        const { data: existingHandle } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('handle', username)
-          .maybeSingle();
+          // Validate username format
+          if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+            toast.error('Username can only contain letters, numbers and underscores');
+            return;
+          }
 
-        if (existingHandle) {
-          toast.error('This username is already taken');
-          return;
+          // Check if username is already taken
+          const { data: existingHandle } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('handle', username)
+            .maybeSingle();
+
+          if (existingHandle) {
+            toast.error('This username is already taken');
+            return;
+          }
         }
 
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
@@ -109,8 +117,8 @@ const Auth = () => {
           options: {
             emailRedirectTo: `${siteUrl}/auth/callback`,
             data: {
-              handle: username,
-              is_creator: true,
+              ...(accountType === 'creator' ? { handle: username } : {}),
+              is_creator: accountType === 'creator',
               referral_code: refCode,
             },
           },
@@ -252,7 +260,7 @@ const Auth = () => {
           <div className="text-center space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full bg-exclu-ink/80 px-3 py-1 text-[11px] font-medium text-exclu-cloud/80">
               <Sparkles className="h-3.5 w-3.5 text-primary" />
-              <span>Exclu for creators</span>
+              <span>{mode === 'signup' && accountType === 'fan' ? 'Exclu for fans' : 'Exclu for creators'}</span>
             </div>
             <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
               {mode === 'signup'
@@ -263,9 +271,14 @@ const Auth = () => {
                     ? 'Set your new password'
                     : 'Reset your password'}
             </h1>
-            {mode === 'signup' && (
+            {mode === 'signup' && accountType === 'creator' && (
               <p className="text-primary text-[13px] sm:text-sm max-w-sm mx-auto font-medium">
                 OnlyFans creators are making 77.4% more with Exclu — discover why…
+              </p>
+            )}
+            {mode === 'signup' && accountType === 'fan' && (
+              <p className="text-exclu-space text-[13px] sm:text-sm max-w-sm mx-auto">
+                Support your favorite creators and access exclusive content.
               </p>
             )}
             {mode === 'reset' && (
@@ -324,6 +337,32 @@ const Auth = () => {
                   </button>
                 </div>
               )}
+              {mode === 'signup' && (
+                <div className="relative flex rounded-xl bg-exclu-ink/60 border border-exclu-arsenic/40 p-1">
+                  <motion.div
+                    layoutId="role-picker-bg"
+                    className="absolute top-1 bottom-1 rounded-lg bg-primary"
+                    style={{ width: 'calc(50% - 4px)', left: accountType === 'creator' ? '4px' : 'calc(50% + 0px)' }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAccountType('creator')}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                  >
+                    <Palette className={`w-4 h-4 transition-colors ${accountType === 'creator' ? 'text-black' : 'text-exclu-space/60'}`} />
+                    <span className={accountType === 'creator' ? 'text-black' : 'text-exclu-space/60'}>I'm a creator</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAccountType('fan')}
+                    className="relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                  >
+                    <User className={`w-4 h-4 transition-colors ${accountType === 'fan' ? 'text-black' : 'text-exclu-space/60'}`} />
+                    <span className={accountType === 'fan' ? 'text-black' : 'text-exclu-space/60'}>I'm a fan</span>
+                  </button>
+                </div>
+              )}
               <div className="space-y-1">
                 <CardTitle className="text-base text-exclu-cloud">
                   {mode === 'signup'
@@ -375,7 +414,7 @@ const Auth = () => {
                   </>
                 )}
 
-                {mode === 'signup' && (
+                {mode === 'signup' && accountType === 'creator' && (
                   <div className="space-y-1.5">
                     <label htmlFor="username" className="flex items-center gap-2 text-xs font-medium text-exclu-space">
                       <AtSign className="h-3.5 w-3.5 text-exclu-space/80" />
