@@ -116,7 +116,7 @@ export function ChatContentPicker({ profileId, onSendAssets, onClose }: ChatCont
       transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
       className="border-t border-border bg-card overflow-hidden"
     >
-      <div className="max-h-[360px] flex flex-col">
+      <div className="max-h-[280px] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 flex-shrink-0">
           <div className="flex items-center gap-2">
@@ -195,7 +195,7 @@ export function ChatContentPicker({ profileId, onSendAssets, onClose }: ChatCont
           )}
 
           {!isLoading && filtered.length > 0 && (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
               {filtered.map((asset) => {
                 const isSelected = selectedIds.has(asset.id);
                 return (

@@ -151,7 +151,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden overflow-x-hidden">
       {/* Conversation header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
         <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
