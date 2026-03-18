@@ -77,7 +77,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
             rel="noopener noreferrer"
             className="block rounded-2xl max-w-[260px] hover:opacity-90 transition-opacity mt-1 border border-white/30"
             color="white"
-            speed="3s"
+            speed="6s"
             thickness={2}
           >
             <img 

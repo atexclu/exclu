@@ -19,6 +19,7 @@ interface RichMessageComposerProps {
   disabled?: boolean;
   placeholder?: string;
   onMediaSelect?: (file: File) => void;
+  hasPendingMedia?: boolean;
 }
 
 export function RichMessageComposer({
@@ -29,6 +30,7 @@ export function RichMessageComposer({
   disabled = false,
   placeholder = 'Write a message…',
   onMediaSelect,
+  hasPendingMedia = false,
 }: RichMessageComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,7 +47,7 @@ export function RichMessageComposer({
     // Enter seul = envoyer, Shift+Enter = nouvelle ligne
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && !isSending && !disabled) {
+      if ((value.trim() || hasPendingMedia) && !isSending && !disabled) {
         onSend();
       }
     }
@@ -97,7 +99,7 @@ export function RichMessageComposer({
         size="icon"
         className="h-10 w-10 rounded-xl flex-shrink-0"
         onClick={onSend}
-        disabled={!value.trim() || isSending || disabled}
+        disabled={(!value.trim() && !hasPendingMedia) || isSending || disabled}
       >
         {isSending ? (
           <Loader2 className="w-4 h-4 animate-spin" />

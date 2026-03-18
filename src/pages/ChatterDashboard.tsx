@@ -76,6 +76,7 @@ export default function ChatterDashboard() {
   const [profiles, setProfiles] = useState<ChatterProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
 
   // Derived: profiles for the active client
   const activeClient = clients.find((c) => c.user_id === activeClientUserId) ?? null;
@@ -464,26 +465,6 @@ export default function ChatterDashboard() {
                 className="h-5 sm:h-6 w-auto object-contain"
               />
             </a>
-
-            {/* Chatter avatar — click to upload */}
-            <label className="relative w-8 h-8 rounded-full overflow-hidden cursor-pointer group border-2 border-border/60 hover:border-primary/50 transition-all flex-shrink-0">
-              {chatterAvatarUrl ? (
-                <img src={chatterAvatarUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center">
-                  <User className="w-4 h-4 text-muted-foreground" />
-                </div>
-              )}
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera className="w-3.5 h-3.5 text-white" />
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleChatterAvatarUpload}
-              />
-            </label>
           </div>
 
           {/* Chat / Dashboard nav pill — center */}
@@ -666,39 +647,90 @@ export default function ChatterDashboard() {
               </AnimatePresence>
             </div>
 
-            {/* Theme toggle — desktop only */}
-            <motion.button
-              type="button"
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="hidden sm:flex items-center justify-center w-9 h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
-              aria-label="Toggle theme"
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            >
-              {resolvedTheme === 'dark' ? (
-                <Sun className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <Moon className="w-4 h-4 text-muted-foreground" />
-              )}
-            </motion.button>
-
-            {/* Logout */}
-            <motion.div
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            >
-              <Button
-                variant="outline"
-                size="icon"
-                className="rounded-full h-8 w-8 sm:h-9 sm:w-9 border-border/60"
-                onClick={handleSignOut}
-                aria-label="Sign out"
+            {/* Chatter account menu */}
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={() => setShowAccountMenu((v) => !v)}
+                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
+                  showAccountMenu
+                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                    : 'border-border/60 hover:border-primary/50'
+                }`}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </motion.div>
+                {chatterAvatarUrl ? (
+                  <img src={chatterAvatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
+              </motion.button>
+
+              <AnimatePresence>
+                {showAccountMenu && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowAccountMenu(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      className="absolute top-full right-0 mt-2 w-56 z-50 rounded-xl border border-border/60 bg-card shadow-xl overflow-hidden"
+                    >
+                      <div className="p-2 border-b border-border/40">
+                        <p className="text-xs font-medium text-muted-foreground px-2 py-1">My Account</p>
+                      </div>
+                      <div className="p-1.5">
+                        {/* Upload photo */}
+                        <label className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors cursor-pointer">
+                          <Camera className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm">{chatterAvatarUrl ? 'Change photo' : 'Upload photo'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => { handleChatterAvatarUpload(e); setShowAccountMenu(false); }}
+                          />
+                        </label>
+                        {/* Theme toggle */}
+                        <button
+                          type="button"
+                          onClick={() => { setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'); setShowAccountMenu(false); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors"
+                        >
+                          {resolvedTheme === 'dark' ? (
+                            <Sun className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <Moon className="w-4 h-4 text-muted-foreground" />
+                          )}
+                          <span className="text-sm">{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+                        </button>
+                      </div>
+                      <div className="p-1.5 border-t border-border/40">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAccountMenu(false); handleSignOut(); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors text-red-500"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span className="text-sm">Sign out</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </header>

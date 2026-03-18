@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -43,6 +43,8 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [showCreateLink, setShowCreateLink] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [showTipForm, setShowTipForm] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
@@ -111,9 +113,19 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
 
   const handleSend = async () => {
     const trimmed = draft.trim();
-    if (!trimmed) return;
+    const media = pendingMedia;
+
+    if (!trimmed && !media) return;
+
     setDraft('');
-    await sendMessage({ content: trimmed, senderType });
+    setPendingMedia(null);
+
+    if (trimmed) {
+      await sendMessage({ content: trimmed, senderType });
+    }
+    if (media) {
+      await sendMessage({ content: media.url, senderType, contentType: 'image' });
+    }
   };
 
   const handleMediaSelect = async (file: File) => {
@@ -123,32 +135,32 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       toast.error('Please select an image or video file');
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('File size must be less than 50MB');
+    const MAX_SIZE = 25 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error('File size must be less than 25 MB');
       return;
     }
     try {
+      setIsUploading(true);
       toast.loading('Uploading media\u2026', { id: 'chat-media-upload' });
       const converted = await maybeConvertHeic(file);
       const ext = converted.name.split('.').pop() ?? 'bin';
+      const isVideo = file.type.startsWith('video/') || ['mp4', 'mov', 'webm', 'avi'].includes(ext.toLowerCase());
       const path = `${conversation.id}/${Date.now()}.${ext}`;
       const { error: uploadErr } = await supabase.storage
         .from('chat-media')
         .upload(path, converted, { cacheControl: '3600', upsert: false });
       if (uploadErr) throw uploadErr;
       const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(path);
-      const publicUrl = urlData.publicUrl;
-      await sendMessage({
-        content: publicUrl,
-        senderType,
-        contentType: 'image',
-      });
+      setPendingMedia({ url: urlData.publicUrl, isVideo });
       toast.dismiss('chat-media-upload');
-      toast.success('Media sent');
+      toast.success('Media ready — press Send');
     } catch (err) {
       console.error('Chat media upload error', err);
       toast.dismiss('chat-media-upload');
       toast.error('Failed to upload media. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -411,13 +423,34 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           )}
         </AnimatePresence>
 
+        {/* Pending media preview */}
+        {pendingMedia && (
+          <div className="px-3 pt-2 pb-1 border-t border-border bg-card">
+            <div className="relative inline-block rounded-xl overflow-hidden border border-border max-w-[120px]">
+              {pendingMedia.isVideo ? (
+                <video src={pendingMedia.url} className="w-full h-20 object-cover" muted />
+              ) : (
+                <img src={pendingMedia.url} alt="" className="w-full h-20 object-cover" />
+              )}
+              <button
+                type="button"
+                onClick={() => setPendingMedia(null)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center hover:bg-black/90 transition-colors"
+              >
+                <X className="w-3 h-3 text-white" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <RichMessageComposer
           value={draft}
           onChange={setDraft}
           onSend={handleSend}
-          isSending={isSending}
+          isSending={isSending || isUploading}
           placeholder={`Reply to ${fanName}\u2026`}
           onMediaSelect={handleMediaSelect}
+          hasPendingMedia={!!pendingMedia}
         />
       </div>
 
