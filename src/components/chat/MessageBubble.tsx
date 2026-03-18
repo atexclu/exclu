@@ -41,7 +41,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
   return (
     <div className={`flex ${rightAligned ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div className={`max-w-[75%] flex flex-col ${rightAligned ? 'items-end' : 'items-start'}`}>
+      <div className={`max-w-[75%] min-w-0 flex flex-col ${rightAligned ? 'items-end' : 'items-start'}`}>
 
         {/* Image / video content */}
         {message.content_type === 'image' && message.content && (

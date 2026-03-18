@@ -92,43 +92,48 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 30 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-2xl border border-border bg-card p-5 space-y-4 shadow-2xl"
+        className="w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-2xl border border-white/10 bg-black/95 backdrop-blur-xl p-5 space-y-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold text-foreground">Custom Request</h3>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center">
+              <DollarSign className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Custom Request</h3>
+              <p className="text-[10px] text-white/40">Describe what you want and propose a price</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center transition-colors"
+            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center transition-colors"
           >
-            <X className="w-3.5 h-3.5 text-muted-foreground" />
+            <X className="w-3.5 h-3.5 text-white/60" />
           </button>
         </div>
 
         {/* Description */}
         <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">Describe what you'd like</p>
+          <label className="text-[11px] font-medium text-white/60">What would you like?</label>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="I'd love a custom photo of..."
             maxLength={2000}
             rows={3}
-            className="text-sm rounded-xl resize-none"
+            className="text-sm rounded-xl resize-none bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-primary/50"
           />
-          <p className="text-[10px] text-muted-foreground/50 text-right">{description.length}/2000</p>
+          <p className="text-[10px] text-white/30 text-right">{description.length}/2000</p>
         </div>
 
         {/* Amount */}
         <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">Your proposed price</p>
+          <label className="text-[11px] font-medium text-white/60">Your proposed price</label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 text-sm font-medium">$</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm font-medium">$</span>
             <Input
               type="number"
               min={MIN_AMOUNT_CENTS / 100}
@@ -136,11 +141,11 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder={`${(MIN_AMOUNT_CENTS / 100).toFixed(0)} min`}
-              className="h-10 text-sm rounded-xl pl-7"
+              className="h-10 text-sm rounded-xl pl-7 bg-white/5 border-white/10 text-white placeholder:text-white/30 focus-visible:ring-primary/50"
             />
           </div>
-          <p className="text-[10px] text-muted-foreground/50">
-            Minimum: ${(MIN_AMOUNT_CENTS / 100).toFixed(0)} · A 5% processing fee is added at checkout
+          <p className="text-[10px] text-white/30">
+            Minimum ${(MIN_AMOUNT_CENTS / 100).toFixed(0)} · 5% processing fee added at checkout
           </p>
         </div>
 
@@ -148,7 +153,8 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
         <Button
           onClick={handleSubmit}
           disabled={isSubmitting || !description || !amount}
-          className="w-full h-10 rounded-xl text-sm font-medium"
+          variant="hero"
+          className="w-full h-10 rounded-xl text-sm font-semibold"
         >
           {isSubmitting ? (
             <Loader2 className="w-4 h-4 animate-spin mr-2" />

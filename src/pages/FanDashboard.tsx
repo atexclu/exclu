@@ -9,6 +9,7 @@ import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ChatWindow } from '@/components/chat/ChatWindow';
+import { ChatCustomRequest } from '@/components/chat/ChatCustomRequest';
 import type { Conversation } from '@/types/chat';
 
 interface FavoriteCreator {
@@ -72,6 +73,26 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-gray-500/20 text-gray-400',
 };
 
+function RequestCreatorModal({ creatorId, onClose }: { creatorId: string; onClose: () => void }) {
+  const [profileId, setProfileId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from('creator_profiles')
+      .select('id')
+      .eq('user_id', creatorId)
+      .eq('is_active', true)
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (data) setProfileId(data.id);
+      });
+  }, [creatorId]);
+
+  if (!profileId) return null;
+  return <ChatCustomRequest profileId={profileId} onClose={onClose} />;
+}
+
 const FanDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -92,6 +113,9 @@ const FanDashboard = () => {
   const [selectedFanConversation, setSelectedFanConversation] = useState<Conversation | null>(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [showMobileConvList, setShowMobileConvList] = useState(true);
+
+  // Request from favorites
+  const [requestCreator, setRequestCreator] = useState<FavoriteCreator | null>(null);
 
   // Auto-favorite creator from signup redirect
   const creatorFromSignup = searchParams.get('creator');
@@ -277,6 +301,36 @@ const FanDashboard = () => {
       setActiveTab('messages');
       if (userId && fanConversations.length === 0) {
         await fetchFanConversations(userId, null);
+      }
+    }
+  };
+
+  const handleOpenChat = async (creatorId: string) => {
+    if (!userId) return;
+    setActiveTab('messages');
+    // Find or create conversation for this fan + creator
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url)')
+      .eq('fan_id', userId)
+      .in('status', ['unclaimed', 'active'])
+      .limit(100);
+
+    // Match by creator user_id through profile
+    const convs = (existing ?? []) as any[];
+    const match = convs.find((c: any) => c.creator_profile?.id && favorites.some(f => f.creator_id === creatorId));
+    const mapped: Conversation[] = convs.map((c: any) => ({
+      ...c,
+      fan: c.creator_profile
+        ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url }
+        : null,
+    }));
+    setFanConversations(mapped);
+    if (match) {
+      const target = mapped.find(c => c.id === match.id);
+      if (target) {
+        setSelectedFanConversation(target);
+        setShowMobileConvList(false);
       }
     }
   };
@@ -497,11 +551,23 @@ const FanDashboard = () => {
                             size="sm"
                             variant="outline"
                             className="flex-1 rounded-xl text-xs h-8 border-exclu-arsenic/60 hover:bg-white/5"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/${fav.creator.handle}`); }}
+                            onClick={(e) => { e.stopPropagation(); handleOpenChat(fav.creator_id); }}
                           >
-                            <ExternalLink className="w-3 h-3 mr-1" />
-                            Visit
+                            <MessagesSquare className="w-3 h-3 mr-1" />
+                            Chat
                           </Button>
+                          {fav.creator.custom_requests_enabled && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 rounded-xl text-xs h-8 border-exclu-arsenic/60 hover:bg-white/5"
+                              onClick={(e) => { e.stopPropagation(); setActiveTab('requests'); setRequestCreator(fav); }}
+                            >
+                              <MessageSquare className="w-3 h-3 mr-1" />
+                              Request
+                            </Button>
+                          )}
                           {fav.creator.tips_enabled && (
                             <Button
                               type="button"
@@ -889,6 +955,16 @@ const FanDashboard = () => {
               </motion.div>
             )}
 
+          </AnimatePresence>
+
+          {/* Custom Request modal triggered from favorites */}
+          <AnimatePresence>
+            {requestCreator && (
+              <RequestCreatorModal
+                creatorId={requestCreator.creator_id}
+                onClose={() => setRequestCreator(null)}
+              />
+            )}
           </AnimatePresence>
         </main>
       </div>

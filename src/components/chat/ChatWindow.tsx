@@ -213,7 +213,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       </div>
 
       {/* Messages — scrollable */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 relative">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-1 relative">
         {/* Aurora background */}
         <div className="absolute inset-0 opacity-10 pointer-events-none">
           <Aurora colorStops={['#5227FF', '#7cff67', '#5227FF']} amplitude={0.8} blend={0.6} speed={0.5} />
