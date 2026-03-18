@@ -634,7 +634,7 @@ const Onboarding = () => {
                             crop={avatarCrop}
                             zoom={avatarZoom}
                             aspect={1}
-                            cropShape="round"
+                            cropShape="rect"
                             showGrid={false}
                             objectFit="contain"
                             onCropChange={setAvatarCrop}
@@ -691,7 +691,9 @@ const Onboarding = () => {
                         <button
                           type="button"
                           onClick={() => avatarInputRef.current?.click()}
-                          className="relative w-20 h-20 rounded-full border-2 border-dashed border-exclu-arsenic/70 hover:border-primary/60 transition-colors overflow-hidden group"
+                          className={`relative border-2 border-dashed border-exclu-arsenic/70 hover:border-primary/60 transition-colors overflow-hidden group ${
+                            avatarPreview ? 'w-full aspect-square rounded-2xl' : 'w-20 h-20 rounded-2xl'
+                          }`}
                         >
                           {avatarPreview ? (
                             <img src={avatarPreview} alt="Avatar preview" className="w-full h-full object-cover" />
@@ -761,7 +763,7 @@ const Onboarding = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <p className="text-xs font-medium text-exclu-space">External platforms <span className="text-red-400">(at least 1 required)</span></p>
+                      <p className="text-sm font-semibold text-exclu-cloud">External platforms <span className="text-xs font-normal text-exclu-space/60">(at least 1 required)</span></p>
                       <p className="text-[11px] text-exclu-space/70">
                         Add links to your main platforms. These will appear as small buttons on your public profile and
                         in your dashboard.
@@ -926,8 +928,8 @@ const Onboarding = () => {
                     {/* Exclusive content */}
                     {/* Exclusive content */}
                     <div className="space-y-4 pt-4">
-                      <p className="text-xs font-medium text-exclu-space text-center -mb-2">
-                        Exclusive content
+                      <p className="text-sm font-semibold text-exclu-cloud text-center -mb-2">
+                        Personalize your exclusive content link
                       </p>
 
                       {/* Preview Button */}
@@ -1071,8 +1073,8 @@ const Onboarding = () => {
                               <Loader2 className="w-3.5 h-3.5 text-exclu-space/50 animate-spin" />
                             ) : (
                               <>
-                                <Upload className="w-3.5 h-3.5 text-exclu-space/50" />
-                                <span className="text-[11px] text-exclu-space/60">Upload cover image</span>
+                                <Upload className="w-3.5 h-3.5 text-exclu-cloud/80" />
+                                <span className="text-[11px] font-medium text-exclu-cloud/80">Upload cover image</span>
                               </>
                             )}
                           </button>
