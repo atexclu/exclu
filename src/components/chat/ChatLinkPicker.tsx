@@ -204,9 +204,11 @@ export function ChatLinkPicker({ profileId, onSelect, onClose }: ChatLinkPickerP
                           />
                         )
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-muted-foreground/30" />
-                        </div>
+                        <img
+                          src="/og-link-default.png"
+                          className="w-full h-full object-cover"
+                          alt=""
+                        />
                       )}
                     </div>
 
