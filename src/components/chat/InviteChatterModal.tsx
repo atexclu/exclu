@@ -78,9 +78,9 @@ export function InviteChatterModal({ profileId, onClose, onInvited }: InviteChat
         >
           <div className="flex items-center justify-between mb-5">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Inviter un chatter</h2>
+              <h2 className="text-base font-semibold text-foreground">Invite a chatter</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                La personne recevra un email avec un lien d'activation
+                The person will receive an email with an activation link
               </p>
             </div>
             <button

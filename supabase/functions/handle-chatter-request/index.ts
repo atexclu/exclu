@@ -172,13 +172,20 @@ serve(async (req: Request) => {
       }
 
       // Check creator exists and is seeking chatters
-      const { data: creator } = await supabaseAdmin
+      console.log('[handle-chatter-request] Looking for creator_id:', creator_id);
+      const { data: creator, error: creatorError } = await supabaseAdmin
         .from('profiles')
-        .select('id, display_name, handle, email, seeking_chatters')
+        .select('id, display_name, handle, seeking_chatters')
         .eq('id', creator_id)
         .single();
 
+      console.log('[handle-chatter-request] Creator query result:', { creator, error: creatorError });
+
       if (!creator || !creator.seeking_chatters) {
+        console.log('[handle-chatter-request] Creator not found or not seeking chatters:', {
+          found: !!creator,
+          seeking_chatters: creator?.seeking_chatters,
+        });
         return new Response(JSON.stringify({ error: 'Creator not found or not seeking chatters' }), {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -227,12 +234,12 @@ serve(async (req: Request) => {
       // Get chatter info for the email
       const { data: chatterProfile } = await supabaseAdmin
         .from('profiles')
-        .select('display_name, email')
+        .select('display_name')
         .eq('id', user.id)
         .single();
 
       const chatterName = chatterProfile?.display_name || user.email || 'A chatter';
-      const chatterEmail = chatterProfile?.email || user.email || '';
+      const chatterEmail = user.email || '';
 
       // Get creator email from auth
       const { data: { user: creatorAuth } } = await supabaseAdmin.auth.admin.getUserById(creator_id);

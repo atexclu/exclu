@@ -49,12 +49,14 @@ interface MassMessageRecord {
 
 interface BroadcastPanelProps {
   profileId?: string;
+  profileIds?: string[];
   senderType?: 'creator' | 'chatter';
 }
 
-export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator' }: BroadcastPanelProps) {
+export function BroadcastPanel({ profileId: propProfileId, profileIds: propProfileIds, senderType = 'creator' }: BroadcastPanelProps) {
   const { activeProfile } = useProfiles();
   const resolvedProfileId = propProfileId ?? activeProfile?.id ?? null;
+  const resolvedProfileIds = propProfileIds && propProfileIds.length > 0 ? propProfileIds : (resolvedProfileId ? [resolvedProfileId] : []);
 
   const [content, setContent] = useState('');
   const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>('all');
@@ -67,14 +69,14 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
   const [showHistory, setShowHistory] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  // ── Chargement des tags disponibles ─────────────────────────────────────
+  // ── Load available tags ─────────────────────────────────────
   useEffect(() => {
-    if (!resolvedProfileId) return;
+    if (resolvedProfileIds.length === 0) return;
     const loadTags = async () => {
       const { data } = await supabase
         .from('fan_tags')
         .select('tag, color')
-        .eq('profile_id', resolvedProfileId);
+        .in('profile_id', resolvedProfileIds);
 
       if (!data) return;
       const tagMap = new Map<string, { color: string; count: number }>();
@@ -90,17 +92,17 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
       );
     };
     loadTags();
-  }, [resolvedProfileId]);
+  }, [resolvedProfileIds.join(',')]);
 
-  // ── Calcul du nombre de destinataires ───────────────────────────────────
+  // ── Compute recipient count ───────────────────────────────────
   const computeRecipientCount = useCallback(async () => {
-    if (!resolvedProfileId) return;
+    if (resolvedProfileIds.length === 0) return;
     setIsLoadingCount(true);
     try {
       let query = supabase
         .from('conversations')
         .select('id', { count: 'exact', head: true })
-        .eq('profile_id', resolvedProfileId);
+        .in('profile_id', resolvedProfileIds);
 
       if (audienceFilter === 'active') {
         query = query.eq('status', 'active');
@@ -110,7 +112,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
         const { data: taggedFans } = await supabase
           .from('fan_tags')
           .select('fan_id')
-          .eq('profile_id', resolvedProfileId)
+          .in('profile_id', resolvedProfileIds)
           .eq('tag', selectedTag);
         const fanIds = (taggedFans ?? []).map((f: any) => f.fan_id);
         if (fanIds.length === 0) {
@@ -125,20 +127,23 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
 
       const { count } = await query;
       setRecipientCount(count ?? 0);
+    } catch (err) {
+      console.error('Error computing recipient count:', err);
+      setRecipientCount(0);
     } finally {
       setIsLoadingCount(false);
     }
-  }, [resolvedProfileId, audienceFilter, selectedTag]);
+  }, [resolvedProfileIds.join(','), audienceFilter, selectedTag]);
 
   useEffect(() => {
     computeRecipientCount();
   }, [computeRecipientCount]);
 
-  // ── Envoi du mass message ────────────────────────────────────────────────
+  // ── Send mass message ────────────────────────────────────────────────
   const handleSend = async () => {
-    if (!resolvedProfileId || !content.trim()) return;
+    if (resolvedProfileIds.length === 0 || !content.trim()) return;
     if (!recipientCount || recipientCount === 0) {
-      toast.error('Aucun destinataire correspondant');
+      toast.error('No matching recipients');
       return;
     }
 
@@ -147,11 +152,11 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
       const currentUser = await supabase.auth.getUser();
       if (!currentUser.data.user) throw new Error('Not authenticated');
 
-      // Insérer l'entrée mass_messages
+      // Create mass_message record (use first profile for attribution)
       const { data: massMsg, error: mmError } = await supabase
         .from('mass_messages')
         .insert({
-          profile_id: resolvedProfileId,
+          profile_id: resolvedProfileIds[0],
           sent_by: currentUser.data.user.id,
           content: content.trim(),
           target_filter: {
@@ -165,11 +170,11 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
 
       if (mmError || !massMsg) throw mmError ?? new Error('Failed to create mass message');
 
-      // Récupérer les conversation_ids ciblées
+      // Fetch target conversations
       let convQuery = supabase
         .from('conversations')
         .select('id, fan_id')
-        .eq('profile_id', resolvedProfileId);
+        .in('profile_id', resolvedProfileIds);
 
       if (audienceFilter === 'active') {
         convQuery = convQuery.eq('status', 'active');
@@ -179,7 +184,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
         const { data: taggedFans } = await supabase
           .from('fan_tags')
           .select('fan_id')
-          .eq('profile_id', resolvedProfileId)
+          .in('profile_id', resolvedProfileIds)
           .eq('tag', selectedTag);
         const fanIds = (taggedFans ?? []).map((f: any) => f.fan_id);
         convQuery = convQuery.in('fan_id', fanIds).neq('status', 'archived');
@@ -211,29 +216,29 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
           .eq('id', massMsg.id);
       }
 
-      toast.success(`Message envoyé à ${conversations?.length ?? 0} fans`);
+      toast.success(`Message sent to ${conversations?.length ?? 0} conversation${(conversations?.length ?? 0) > 1 ? 's' : ''}`);
       setContent('');
       await loadHistory();
     } catch (err: any) {
-      toast.error(err?.message || 'Erreur lors de l\'envoi');
+      toast.error(err?.message || 'Error sending message');
     } finally {
       setIsSending(false);
     }
   };
 
-  // ── Historique ──────────────────────────────────────────────────────────
+  // ── History ──────────────────────────────────────────────────────────
   const loadHistory = useCallback(async () => {
-    if (!resolvedProfileId) return;
+    if (resolvedProfileIds.length === 0) return;
     setIsLoadingHistory(true);
     const { data } = await supabase
       .from('mass_messages')
       .select('id, content, target_filter, recipient_count, created_at, status')
-      .eq('profile_id', resolvedProfileId)
+      .in('profile_id', resolvedProfileIds)
       .order('created_at', { ascending: false })
       .limit(20);
     setHistory((data as MassMessageRecord[]) ?? []);
     setIsLoadingHistory(false);
-  }, [resolvedProfileId]);
+  }, [resolvedProfileIds.join(',')]);
 
   useEffect(() => {
     if (showHistory) loadHistory();
@@ -246,9 +251,9 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
 
         {/* Header */}
         <div>
-          <h1 className="text-xl font-bold text-foreground">Message en masse</h1>
+          <h1 className="text-xl font-bold text-foreground">Mass Message</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Envoie un message à un groupe de fans en une seule action
+            Send a message to all your conversations in one action
           </p>
         </div>
 
@@ -263,10 +268,10 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
             </label>
             <div className="flex flex-wrap gap-2">
               {([
-                { key: 'all',      label: 'Tous les fans' },
-                { key: 'active',   label: 'Conversations actives' },
-                { key: 'unclaimed', label: 'En attente' },
-                { key: 'tagged',   label: 'Par tag' },
+                { key: 'all',      label: 'All conversations' },
+                { key: 'active',   label: 'Active conversations' },
+                { key: 'unclaimed', label: 'Unclaimed' },
+                { key: 'tagged',   label: 'By tag' },
               ] as const).map(({ key, label }) => (
                 <button
                   key={key}
@@ -287,7 +292,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
             {audienceFilter === 'tagged' && (
               <div className="mt-2">
                 {availableTags.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/60 italic">Aucun tag créé</p>
+                  <p className="text-xs text-muted-foreground/60 italic">No tags created</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {availableTags.map((t) => (
@@ -318,7 +323,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
               <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
             ) : (
               <span className="text-sm text-foreground font-medium">
-                {recipientCount ?? 0} destinataire{(recipientCount ?? 0) !== 1 ? 's' : ''}
+                {recipientCount ?? 0} conversation{(recipientCount ?? 0) !== 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -332,7 +337,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Tape ton message ici…"
+              placeholder="Type your message here…"
               rows={4}
               maxLength={2000}
               className="w-full rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
@@ -349,13 +354,13 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
-                Envoyer
+                Send
               </Button>
             </div>
           </div>
         </div>
 
-        {/* Historique */}
+        {/* History */}
         <div className="rounded-2xl border border-border bg-card overflow-hidden">
           <button
             type="button"
@@ -364,7 +369,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
           >
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <History className="w-4 h-4 text-muted-foreground" />
-              Historique
+              History
             </div>
             <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
           </button>
@@ -385,7 +390,7 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
                   )}
                   {!isLoadingHistory && history.length === 0 && (
                     <p className="text-xs text-muted-foreground/50 text-center py-4">
-                      Aucun message envoyé
+                      No messages sent
                     </p>
                   )}
                   {!isLoadingHistory && history.map((msg) => (
@@ -397,9 +402,9 @@ export function BroadcastPanel({ profileId: propProfileId, senderType = 'creator
                       <div className="flex-1 min-w-0">
                         <p className="text-xs text-foreground truncate">{msg.content}</p>
                         <p className="text-[10px] text-muted-foreground/50 mt-0.5">
-                          {msg.recipient_count} envoyé{msg.recipient_count !== 1 ? 's' : ''} ·{' '}
+                          {msg.recipient_count} sent ·{' '}
                           {msg.target_filter?.audience === 'tagged' && msg.target_filter?.tag ? `tag: ${msg.target_filter.tag}` : (msg.target_filter?.audience ?? 'all')} ·{' '}
-                          {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(msg.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </div>

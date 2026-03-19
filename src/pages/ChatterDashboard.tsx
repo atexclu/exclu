@@ -19,9 +19,11 @@ import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
   DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
+  Lock, Mail, Settings, ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useConversations } from '@/hooks/useConversations';
 import { ConversationListItem } from '@/components/chat/ConversationListItem';
@@ -51,7 +53,7 @@ interface ChatterClient {
 }
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
-type MainView = 'chat' | 'dashboard' | 'contracts';
+type MainView = 'chat' | 'dashboard' | 'contracts' | 'account';
 
 interface ChatterMetrics {
   totalRevenueCents: number;
@@ -77,7 +79,11 @@ export default function ChatterDashboard() {
   const [profiles, setProfiles] = useState<ChatterProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [accountSection, setAccountSection] = useState<'profile' | 'security'>('profile');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [chatterEmail, setChatterEmail] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
 
   // Derived: profiles for the active client
@@ -123,6 +129,7 @@ export default function ChatterDashboard() {
         return;
       }
       setCurrentUserId(user.id);
+      setChatterEmail(user.email ?? '');
 
       // Fetch chatter's own display name & avatar
       const { data: ownProfile } = await supabase
@@ -138,19 +145,23 @@ export default function ChatterDashboard() {
       }
 
       // 1. Get invited profile IDs
-      const { data: invitations } = await supabase
+      const { data: invitations, error: invError } = await supabase
         .from('chatter_invitations')
         .select('profile_id')
         .eq('chatter_id', user.id)
         .eq('status', 'accepted');
 
+      console.log('[ChatterDashboard] Invitations query:', { invitations, error: invError, chatter_id: user.id });
+
       if (!invitations || invitations.length === 0) {
+        console.log('[ChatterDashboard] No accepted invitations found');
         setIsAuthorized(false);
         setIsLoading(false);
         return;
       }
 
       const invitedProfileIds = invitations.map((i: any) => i.profile_id);
+      console.log('[ChatterDashboard] Invited profile IDs:', invitedProfileIds);
 
       // 2. Get the user_id (creator account) for each invited profile
       const { data: invitedProfiles } = await supabase
@@ -377,6 +388,40 @@ export default function ChatterDashboard() {
     navigate('/');
   };
 
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+    setIsChangingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      toast.error(error.message || 'Failed to change password.');
+    } else {
+      toast.success('Password changed successfully!');
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+    setIsChangingPassword(false);
+  };
+
+  const handleSaveDisplayName = async () => {
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ display_name: chatterDisplayName?.trim() || null })
+      .eq('id', currentUserId);
+    if (error) {
+      toast.error('Failed to save display name.');
+    } else {
+      toast.success('Display name saved!');
+    }
+  };
+
   const handleChatterAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUserId) return;
@@ -540,32 +585,57 @@ export default function ChatterDashboard() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Client avatar + switcher (multiple creator clients OR multiple profiles) */}
+            {/* Client avatar + name + switcher */}
             <div className="relative">
               <motion.button
                 type="button"
-                onClick={() => (clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? setShowProfilePicker((v) => !v) : undefined}
-                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (clients.length > 0) {
+                    setShowProfilePicker((prev) => !prev);
+                  }
+                }}
+                className={`flex items-center gap-2 px-2 sm:px-2.5 py-1.5 rounded-full border border-border/60 bg-background transition-all ${
                   showProfilePicker
-                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
-                    : 'border-border/60 hover:border-primary/50'
-                } ${(clients.length <= 1 && (!activeClient || activeClient.profiles.length <= 1)) ? 'cursor-default' : 'cursor-pointer'}`}
-                whileHover={(clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? { scale: 1.08 } : {}}
-                whileTap={(clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) ? { scale: 0.95 } : {}}
+                    ? 'border-primary/60 shadow-[0_0_8px_rgba(var(--primary),0.15)]'
+                    : 'hover:bg-muted/50'
+                } cursor-pointer`}
+                whileTap={{ scale: 0.97 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               >
-                {activeClient?.avatar_url ? (
-                  <img src={activeClient.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showProfilePicker ? 'rotate-180' : ''}`} />
+                <div className="hidden sm:block text-right max-w-[120px]">
+                  <p className="text-xs font-medium truncate text-foreground">
+                    {activeClient?.display_name || 'Creator'}
+                  </p>
+                  {clients.length > 1 ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      {clients.length} creators
+                    </p>
+                  ) : activeClient && activeClient.profiles.length > 1 ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      {activeClient.profiles.length} profiles
+                    </p>
+                  ) : null}
+                </div>
+                <div className={`relative w-8 h-8 rounded-full overflow-hidden border-2 transition-all ${
+                  showProfilePicker
+                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                    : 'border-border/60'
+                }`}>
+                  {activeClient?.avatar_url ? (
+                    <img src={activeClient.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
               </motion.button>
 
               {/* Client/Profile switcher dropdown */}
               <AnimatePresence>
-                {showProfilePicker && (clients.length > 1 || (activeClient && activeClient.profiles.length > 1)) && (
+                {showProfilePicker && clients.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -573,12 +643,10 @@ export default function ChatterDashboard() {
                     transition={{ duration: 0.15 }}
                     className="absolute top-full mt-1 right-0 w-56 bg-card border border-border rounded-xl shadow-xl z-50 py-1 overflow-hidden"
                   >
-                    {clients.length > 1 && (
-                      <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                        Your clients
-                      </div>
-                    )}
-                    {clients.length > 1 && clients.map((client) => (
+                    <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Creators under management
+                    </div>
+                    {clients.map((client) => (
                       <button
                         key={client.user_id}
                         type="button"
@@ -607,132 +675,49 @@ export default function ChatterDashboard() {
                         {client.user_id === activeClientUserId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
                       </button>
                     ))}
-                    
-                    {/* Show profiles when single client with multiple profiles */}
-                    {clients.length === 1 && activeClient && activeClient.profiles.length > 1 && (
-                      <>
-                        <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-t border-border/40 mt-1 pt-2">
-                          Profiles
-                        </div>
-                        {activeClient.profiles.map((profile) => (
-                          <button
-                            key={profile.id}
-                            type="button"
-                            onClick={() => {
-                              setActiveProfileId(profile.id);
-                              setSelectedConversation(null);
-                              setShowMobileList(true);
-                              setShowProfilePicker(false);
-                            }}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors ${
-                              profile.id === activeProfileId ? 'bg-muted/40' : ''
-                            }`}
-                          >
-                            {profile.avatar_url ? (
-                              <img src={profile.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover flex-shrink-0 border border-border/40" />
-                            ) : (
-                              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                                {(profile.display_name ?? profile.username ?? '?').charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0 text-left">
-                              <p className="text-xs font-medium truncate">{profile.display_name || profile.username || 'Profile'}</p>
-                              <p className="text-[10px] text-muted-foreground">@{profile.username || profile.id.slice(0, 8)}</p>
-                            </div>
-                            {profile.id === activeProfileId && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
-                          </button>
-                        ))}
-                      </>
-                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            {/* Chatter account menu */}
-            <div className="relative">
-              <motion.button
-                type="button"
-                onClick={() => setShowAccountMenu((v) => !v)}
-                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
-                  showAccountMenu
-                    ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
-                    : 'border-border/60 hover:border-primary/50'
-                }`}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              >
-                {chatterAvatarUrl ? (
-                  <img src={chatterAvatarUrl} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                )}
-              </motion.button>
+            {/* Theme toggle */}
+            <motion.button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Toggle theme"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              {resolvedTheme === 'dark' ? (
+                <Sun className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <Moon className="w-4 h-4 text-muted-foreground" />
+              )}
+            </motion.button>
 
-              <AnimatePresence>
-                {showAccountMenu && (
-                  <>
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="fixed inset-0 z-40"
-                      onClick={() => setShowAccountMenu(false)}
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                      className="absolute top-full right-0 mt-2 w-56 z-50 rounded-xl border border-border/60 bg-card shadow-xl overflow-hidden"
-                    >
-                      <div className="p-2 border-b border-border/40">
-                        <p className="text-xs font-medium text-muted-foreground px-2 py-1">My Account</p>
-                      </div>
-                      <div className="p-1.5">
-                        {/* Upload photo */}
-                        <label className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors cursor-pointer">
-                          <Camera className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm">{chatterAvatarUrl ? 'Change photo' : 'Upload photo'}</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => { handleChatterAvatarUpload(e); setShowAccountMenu(false); }}
-                          />
-                        </label>
-                        {/* Theme toggle */}
-                        <button
-                          type="button"
-                          onClick={() => { setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'); setShowAccountMenu(false); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors"
-                        >
-                          {resolvedTheme === 'dark' ? (
-                            <Sun className="w-4 h-4 text-muted-foreground" />
-                          ) : (
-                            <Moon className="w-4 h-4 text-muted-foreground" />
-                          )}
-                          <span className="text-sm">{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-                        </button>
-                      </div>
-                      <div className="p-1.5 border-t border-border/40">
-                        <button
-                          type="button"
-                          onClick={() => { setShowAccountMenu(false); handleSignOut(); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors text-red-500"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span className="text-sm">Sign out</span>
-                        </button>
-                      </div>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
+            {/* Chatter avatar — navigates to account */}
+            <motion.button
+              type="button"
+              onClick={() => setMainView('account')}
+              className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${
+                mainView === 'account'
+                  ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
+                  : 'border-border/60 hover:border-primary/50'
+              }`}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              {chatterAvatarUrl ? (
+                <img src={chatterAvatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <User className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+            </motion.button>
           </div>
         </div>
       </header>
@@ -1158,6 +1143,219 @@ export default function ChatterDashboard() {
         </div>
       )}
 
+      {/* ── Account view (matches creator Profile.tsx) ──────────────── */}
+      {mainView === 'account' && (
+        <div className="pt-16 sm:pt-20 flex-1 overflow-y-auto">
+          <div className="px-4 pb-16 max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="mt-4 sm:mt-6"
+            >
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground mb-6">My Account</h1>
+
+              <div className="flex flex-col lg:flex-row gap-6">
+                {/* Sidebar menu */}
+                <aside className="lg:w-56 flex-shrink-0">
+                  <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
+                    {([
+                      { id: 'profile' as const, label: 'Profile', icon: User },
+                      { id: 'security' as const, label: 'Security', icon: Lock },
+                    ]).map((item) => {
+                      const Icon = item.icon;
+                      const isActive = accountSection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => setAccountSection(item.id)}
+                          className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${isActive
+                            ? 'bg-primary/10 text-primary border border-primary/30'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-transparent'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 flex-shrink-0" />
+                          <span>{item.label}</span>
+                          <ChevronRight className={`w-4 h-4 ml-auto hidden lg:block ${isActive ? 'text-primary' : 'text-muted-foreground/30'}`} />
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </aside>
+
+                {/* Main content */}
+                <div className="flex-1 min-w-0">
+                  {/* Profile Section */}
+                  {accountSection === 'profile' && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="space-y-6"
+                    >
+                      {/* Avatar Card */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-6">
+                        <div className="flex items-center gap-6">
+                          <label className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-border/50 bg-muted cursor-pointer group flex-shrink-0">
+                            {chatterAvatarUrl ? (
+                              <img src={chatterAvatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <User className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground/60" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Camera className="w-5 h-5 text-white" />
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleChatterAvatarUpload}
+                            />
+                          </label>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold text-foreground truncate">
+                              {chatterDisplayName || 'Your Name'}
+                            </h3>
+                            <p className="text-sm text-muted-foreground truncate">{chatterEmail}</p>
+                            <label className="mt-2 inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors cursor-pointer">
+                              <Camera className="w-3.5 h-3.5" />
+                              Upload new photo
+                              <input type="file" accept="image/*" className="hidden" onChange={handleChatterAvatarUpload} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Display Name */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Display Name</h2>
+                        <div className="space-y-4 max-w-md">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Name</label>
+                            <Input
+                              value={chatterDisplayName ?? ''}
+                              onChange={(e) => setChatterDisplayName(e.target.value)}
+                              placeholder="Your display name"
+                              className="h-10 bg-muted/30 border-border/60"
+                            />
+                          </div>
+                          <Button
+                            onClick={handleSaveDisplayName}
+                            variant="outline"
+                            className="rounded-full border-border/60"
+                          >
+                            <Check className="w-4 h-4 mr-2" />
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Security Section */}
+                  {accountSection === 'security' && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="space-y-6"
+                    >
+                      {/* Email Card */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Email Address</h2>
+                        <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/10 border border-border">
+                          <Mail className="w-5 h-5 text-muted-foreground" />
+                          <span className="text-sm text-foreground">{chatterEmail}</span>
+                          <span className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-400 font-medium">
+                            <Check className="w-3 h-3" />
+                            Verified
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Password Card */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Change Password</h2>
+                        <div className="space-y-4 max-w-md">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">New Password</label>
+                            <Input
+                              type="password"
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="Enter new password"
+                              className="h-10 bg-muted/30 border-border/60"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Confirm New Password</label>
+                            <Input
+                              type="password"
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="Confirm new password"
+                              className="h-10 bg-muted/30 border-border/60"
+                            />
+                          </div>
+                          <Button
+                            onClick={handleChangePassword}
+                            variant="outline"
+                            disabled={isChangingPassword || !newPassword || !confirmPassword}
+                            className="rounded-full border-border/60"
+                          >
+                            <Lock className="w-4 h-4 mr-2" />
+                            {isChangingPassword ? 'Changing...' : 'Change password'}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Support Card */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Need help?</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Contact our support team on Telegram</p>
+                          </div>
+                          <a
+                            href="https://telegram.me/exclu_support"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-sm font-medium transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Contact
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Sign out */}
+                      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-red-400">Sign out</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">You will be redirected to the home page</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSignOut}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium transition-colors"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            Sign out
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      )}
+
       {/* ── Broadcast modal overlay ────────────────────────────────── */}
       <AnimatePresence>
         {showBroadcast && (activeProfileId || allProfileIds.length > 0) && (
@@ -1184,7 +1382,8 @@ export default function ChatterDashboard() {
                 <X className="w-4 h-4" />
               </button>
               <BroadcastPanel
-                profileId={activeProfileId ?? allProfileIds[0]}
+                profileId={activeProfileId ?? undefined}
+                profileIds={!activeProfileId ? allProfileIds : undefined}
                 senderType="chatter"
               />
             </motion.div>

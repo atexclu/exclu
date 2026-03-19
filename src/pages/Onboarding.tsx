@@ -84,7 +84,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 
 const Onboarding = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'wishlist' | 'chatting' | 'instagram'>('profile');
+  const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'chatting' | 'instagram'>('profile');
   const [seekingChatters, setSeekingChatters] = useState(false);
   const [seekingChattersDescription, setSeekingChattersDescription] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -527,6 +527,48 @@ const Onboarding = () => {
         throw new Error('Unable to save your profile. Please try again.');
       }
 
+      // Also create/update creator_profiles so data appears in configurator
+      // First, try to get existing profile
+      const { data: existingProfile } = await supabase
+        .from('creator_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingProfile) {
+        // Update existing profile
+        const { error: updateError } = await supabase
+          .from('creator_profiles')
+          .update({
+            username: trimmedHandle,
+            display_name: displayName.trim(),
+            bio: bio.trim() || null,
+            avatar_url: finalAvatarUrl,
+            aurora_gradient: auroraGradient,
+          })
+          .eq('user_id', user.id);
+
+        if (updateError) {
+          console.error('Error updating creator profile:', updateError);
+        }
+      } else {
+        // Insert new profile
+        const { error: insertError } = await supabase
+          .from('creator_profiles')
+          .insert({
+            user_id: user.id,
+            username: trimmedHandle,
+            display_name: displayName.trim(),
+            bio: bio.trim() || null,
+            avatar_url: finalAvatarUrl,
+            aurora_gradient: auroraGradient,
+          });
+
+        if (insertError) {
+          console.error('Error creating creator profile:', insertError);
+        }
+      }
+
       toast.success('Profile saved! Now choose your design.');
       setStep('design');
     } catch (err: any) {
@@ -614,8 +656,8 @@ const Onboarding = () => {
         .insert({ id: assetId, creator_id: currentUser.id, title: contentTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: true });
       if (insertError) throw insertError;
 
-      toast.success('Public content added!');
-      setStep('wishlist');
+      toast.success('Content added!');
+      setStep('chatting');
     } catch (err) {
       console.error('Error creating content', err);
       toast.error('Failed to upload content. Please try again.');
@@ -686,7 +728,7 @@ const Onboarding = () => {
 
         {/* Step indicator */}
         <div className="absolute top-28 sm:top-24 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          {(['profile', 'design', 'link', 'content', 'wishlist', 'chatting', 'instagram'] as const).map((s) => (
+          {(['profile', 'design', 'link', 'content', 'chatting', 'instagram'] as const).map((s) => (
             <div key={s} className={`w-2 h-2 rounded-full transition-colors ${step === s ? 'bg-primary' : 'bg-exclu-arsenic'}`} />
           ))}
         </div>
@@ -1326,10 +1368,6 @@ const Onboarding = () => {
             className="w-full max-w-lg space-y-6"
           >
             <div className="text-center space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
-                <FileText className="h-3.5 w-3.5" />
-                <span>Step 3 of 6</span>
-              </div>
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
                 Create your first link
               </h1>
@@ -1486,10 +1524,6 @@ const Onboarding = () => {
             className="w-full max-w-lg space-y-6"
           >
             <div className="text-center space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
-                <ImageIcon className="h-3.5 w-3.5" />
-                <span>Step 4 of 6</span>
-              </div>
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
                 Add public content
               </h1>
@@ -1588,227 +1622,6 @@ const Onboarding = () => {
 
             <button
               type="button"
-              onClick={() => setStep('wishlist')}
-              className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
-            >
-              Skip for now
-            </button>
-          </motion.div>
-        )}
-
-        {/* STEP 5: Wishlist */}
-        {step === 'wishlist' && (
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="w-full max-w-lg space-y-6"
-          >
-            <div className="text-center space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
-                <Gift className="h-3.5 w-3.5" />
-                <span>Step 5 of 6</span>
-              </div>
-              <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-exclu-cloud">
-                Create a wishlist item
-              </h1>
-              <p className="text-exclu-space text-[13px] sm:text-sm max-w-md mx-auto">
-                Let your fans gift you something special. Add your first wishlist item.
-              </p>
-            </div>
-
-            <Card className="bg-exclu-ink/95 border border-exclu-arsenic/70 shadow-lg shadow-black/30 rounded-2xl backdrop-blur-xl">
-              <CardContent className="px-5 py-5 space-y-4">
-                {/* Emoji picker row */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-exclu-space/80">Choose an emoji</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['🎁', '💻', '👠', '📱', '🎧', '✈️', '💄', '🎮', '📸', '💎'].map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => setWishlistEmoji(emoji)}
-                        className={`w-10 h-10 rounded-xl text-lg flex items-center justify-center transition-all ${
-                          wishlistEmoji === emoji
-                            ? 'bg-primary/20 ring-2 ring-primary scale-110'
-                            : 'bg-exclu-ink/60 hover:bg-exclu-arsenic/40 ring-1 ring-exclu-arsenic/30'
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Name */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Item name</label>
-                  <Input
-                    value={wishlistName}
-                    onChange={(e) => setWishlistName(e.target.value)}
-                    placeholder="e.g. New MacBook, Louboutin..."
-                    maxLength={100}
-                    className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
-                  />
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Description (optional)</label>
-                  <Textarea
-                    value={wishlistDescription}
-                    onChange={(e) => setWishlistDescription(e.target.value)}
-                    placeholder="Optional short description..."
-                    rows={2}
-                    maxLength={500}
-                    className="min-h-[64px] bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
-                  />
-                </div>
-
-                {/* Price */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Price (USD)</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="number"
-                      min="1"
-                      step="0.01"
-                      value={wishlistPrice}
-                      onChange={(e) => setWishlistPrice(e.target.value)}
-                      placeholder="25.00"
-                      className="h-11 pl-8 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
-                    />
-                  </div>
-                </div>
-
-                {/* Photo upload */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Photo (optional)</label>
-                  <p className="text-xs text-muted-foreground mb-1">Upload a photo or leave empty to use the emoji.</p>
-                  {wishlistImagePreview ? (
-                    <div className="relative w-full h-32 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink">
-                      <img src={wishlistImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => { 
-                          setWishlistImageFile(null); 
-                          setWishlistImagePreview(null);
-                          if (wishlistImagePreview) URL.revokeObjectURL(wishlistImagePreview);
-                        }}
-                        className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/80 transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed border-border bg-muted/50 cursor-pointer hover:border-primary/50 transition-colors">
-                      <Upload className="w-5 h-5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Click to upload</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          if (f.size > 10 * 1024 * 1024) { toast.error('Image must be under 10 MB'); return; }
-                          const converted = await maybeConvertHeic(f);
-                          setWishlistImageFile(converted);
-                          setWishlistImagePreview(URL.createObjectURL(converted));
-                        }}
-                      />
-                    </label>
-                  )}
-                </div>
-
-                {/* Gift URL */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Gift link (optional)</label>
-                  <div className="relative">
-                    <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      value={wishlistGiftUrl}
-                      onChange={(e) => setWishlistGiftUrl(e.target.value)}
-                      placeholder="https://amazon.com/..."
-                      className="h-11 pl-9 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">Informational link shown to fans (e.g. Amazon, brand website)</p>
-                </div>
-
-                {/* Quantity */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-2 block">Max quantity</label>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <div
-                        onClick={() => setWishlistUnlimited(true)}
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
-                          wishlistUnlimited ? 'border-primary bg-primary' : 'border-exclu-arsenic'
-                        }`}
-                      >
-                        {wishlistUnlimited && <Check className="w-3 h-3 text-black" />}
-                      </div>
-                      <span className="text-sm text-exclu-cloud">Unlimited</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <div
-                        onClick={() => setWishlistUnlimited(false)}
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${
-                          !wishlistUnlimited ? 'border-primary bg-primary' : 'border-exclu-arsenic'
-                        }`}
-                      >
-                        {!wishlistUnlimited && <Check className="w-3 h-3 text-black" />}
-                      </div>
-                      <span className="text-sm text-exclu-cloud">Limited</span>
-                    </label>
-                    {!wishlistUnlimited && (
-                      <Input
-                        value={wishlistMaxQty}
-                        onChange={(e) => setWishlistMaxQty(e.target.value)}
-                        type="number"
-                        min="1"
-                        className="w-20 h-11 bg-primary/10 border-border text-foreground text-sm"
-                        placeholder="1"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-3 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 rounded-full border-exclu-arsenic/70"
-                    onClick={() => setStep('content')}
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="hero"
-                    className="flex-1 rounded-full"
-                    onClick={handleCreateWishlistItem}
-                    disabled={isCreatingWishlist || !wishlistName.trim()}
-                  >
-                    {isCreatingWishlist ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add to wishlist
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <button
-              type="button"
               onClick={() => setStep('chatting')}
               className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors"
             >
@@ -1817,7 +1630,7 @@ const Onboarding = () => {
           </motion.div>
         )}
 
-        {/* STEP 6: Chat Management */}
+        {/* STEP 5: Chat Management */}
         {step === 'chatting' && (
           <motion.div
             initial={{ opacity: 0, y: 24 }}
@@ -1896,7 +1709,7 @@ const Onboarding = () => {
                       placeholder="e.g. I'm looking for an experienced chatting team that can engage with my fans, send personalized content, and maximize sales. Available to start immediately."
                       rows={4}
                       maxLength={1000}
-                      className="w-full rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/80 px-4 py-3 text-xs text-exclu-cloud placeholder:text-exclu-space/40 focus:outline-none focus:ring-2 focus:ring-primary/60 resize-none"
+                      className="w-full rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none transition-shadow"
                     />
                     <p className="text-[10px] text-exclu-space/50">{seekingChattersDescription.length}/1000 characters</p>
 
@@ -1916,7 +1729,7 @@ const Onboarding = () => {
                 variant="outline"
                 size="lg"
                 className="rounded-full px-6 border-exclu-arsenic/70"
-                onClick={() => setStep('wishlist')}
+                onClick={() => setStep('content')}
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
                 Back

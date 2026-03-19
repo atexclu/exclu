@@ -26,6 +26,7 @@ interface CreatorContract {
   aurora_gradient: string | null;
   description: string | null;
   has_pending: boolean;
+  is_managing: boolean;
 }
 
 const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
@@ -71,6 +72,12 @@ export default function ChatterContracts() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
+
+      console.log('[ChatterContracts] Sending request for creator:', {
+        creator_id: selectedCreator.creator_id,
+        display_name: selectedCreator.display_name,
+        handle: selectedCreator.handle,
+      });
 
       const resp = await fetch(`${SUPABASE_FUNCTIONS_URL}/handle-chatter-request`, {
         method: 'POST',
@@ -177,7 +184,14 @@ export default function ChatterContracts() {
               )}
 
               {/* Request form */}
-              {selectedCreator.has_pending ? (
+              {selectedCreator.is_managing ? (
+                <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 flex items-center gap-3">
+                  <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
+                  <p className="text-sm text-foreground">
+                    You're already managing this creator's conversations.
+                  </p>
+                </div>
+              ) : selectedCreator.has_pending ? (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center gap-3">
                   <Check className="w-5 h-5 text-primary flex-shrink-0" />
                   <p className="text-sm text-foreground">

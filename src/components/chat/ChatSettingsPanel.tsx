@@ -367,6 +367,11 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                     <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
                       Chatters ({chatters.filter((c) => c.status === 'accepted').length})
                     </p>
+                    {chatterRequests.filter((r) => r.status === 'pending').length > 0 && (
+                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                        {chatterRequests.filter((r) => r.status === 'pending').length}
+                      </span>
+                    )}
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
@@ -377,7 +382,7 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                           <Info className="w-3.5 h-3.5" />
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-80 p-4 bg-card border-border" align="start">
+                      <PopoverContent className="w-80 max-h-[80vh] overflow-y-auto p-4 bg-card border-border" align="start">
                         <div className="space-y-3">
                           <div>
                             <h4 className="text-sm font-semibold text-foreground mb-1">À quoi servent les chatters ?</h4>
@@ -387,9 +392,9 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                           </div>
                           
                           <div>
-                            <h4 className="text-sm font-semibold text-foreground mb-1.5">Comment inviter un chatter</h4>
+                            <h4 className="text-sm font-semibold text-foreground mb-1.5">How to invite a chatter</h4>
                             <p className="text-xs text-muted-foreground leading-relaxed">
-                              Cliquez sur "Inviter", entrez l'email du chatter et ajoutez un message personnalisé avec vos guidelines (ton à adopter, règles de conversation, etc.). Le chatter recevra un email d'invitation.
+                              Click "Invite", enter the chatter's email and add a personalized message with your guidelines (tone to adopt, conversation rules, etc.). The chatter will receive an invitation email.
                             </p>
                           </div>
 
@@ -410,7 +415,11 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                               </li>
                               <li className="flex items-start gap-1.5">
                                 <span className="text-primary mt-0.5">•</span>
-                                <span>Accéder à votre bibliothèque de contenu</span>
+                                <span>Accéder à votre bibliothèque de contenu (public et privé)</span>
+                              </li>
+                              <li className="flex items-start gap-1.5">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>Créer des liens payants à partir de contenu non-publique</span>
                               </li>
                             </ul>
                           </div>
@@ -450,14 +459,14 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                     onClick={() => setShowInviteModal(true)}
                   >
                     <UserPlus className="w-3 h-3" />
-                    Inviter
+                    Invite
                   </Button>
                 </div>
 
                 {chatters.length === 0 && (
                   <div className="rounded-xl border border-dashed border-border/60 p-6 text-center">
                     <p className="text-xs text-muted-foreground/60">
-                      Aucun chatter. Invites-en un pour déléguer les réponses.
+                      No chatters. Invite one to delegate responses.
                     </p>
                   </div>
                 )}
