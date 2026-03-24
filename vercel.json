@@ -86,26 +86,6 @@
       "destination": "/api/rss"
     },
     {
-      "source": "/blog",
-      "destination": "/api/blog-ssr"
-    },
-    {
-      "source": "/blog/category/:slug",
-      "destination": "/api/blog-ssr"
-    },
-    {
-      "source": "/blog/:slug",
-      "destination": "/api/blog-ssr"
-    },
-    {
-      "source": "/directory/agencies/:slug",
-      "destination": "/api/directory-ssr"
-    },
-    {
-      "source": "/directory/tools/:slug",
-      "destination": "/api/directory-ssr"
-    },
-    {
       "source": "/directory/:path*",
       "destination": "/index.html"
     },
