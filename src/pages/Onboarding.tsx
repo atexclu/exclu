@@ -17,6 +17,7 @@ import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
 import { User } from '@supabase/supabase-js';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 type PlatformKey =
   | 'instagram'
@@ -84,6 +85,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
 
 const Onboarding = () => {
   const navigate = useNavigate();
+  const { activeProfile } = useProfiles();
   const [step, setStep] = useState<'profile' | 'design' | 'link' | 'content' | 'chatting' | 'instagram'>('profile');
   const [seekingChatters, setSeekingChatters] = useState(false);
   const [seekingChattersDescription, setSeekingChattersDescription] = useState('');
@@ -587,45 +589,67 @@ const Onboarding = () => {
     setIsCreatingLink(true);
     try {
       const converted = await maybeConvertHeic(linkFile);
-      const assetId = crypto.randomUUID();
       const ext = converted.name.split('.').pop() ?? 'bin';
-      const storagePath = `${currentUser.id}/assets/${assetId}/original/content.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('paid-content')
-        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
-      if (uploadError) throw new Error('Upload failed');
-
-      // Create asset
-      const { error: assetError } = await supabase
-        .from('assets')
-        .insert({ 
-          id: assetId, 
-          creator_id: currentUser.id, 
-          title: linkTitle.trim() || null, 
-          storage_path: storagePath, 
-          mime_type: converted.type || null, 
-          is_public: false 
-        });
-      if (assetError) throw assetError;
-
-      // Create link
-      const priceCents = Math.max(0, Math.round((parseFloat(linkPrice) || 5) * 100));
+      const priceCents = Math.max(500, Math.round((parseFloat(linkPrice) || 5) * 100));
       const slug = `${handle}-${crypto.randomUUID().slice(0, 8)}`;
-      const { error: linkError } = await supabase
+
+      // 1. Create link as draft first to get the ID (same as CreateLink)
+      const { data: insertedLinks, error: linkError } = await supabase
         .from('links')
         .insert({
           creator_id: currentUser.id,
+          profile_id: activeProfile?.id ?? null, // Add profile_id support
           title: linkTitle.trim() || 'My first link',
           description: linkDescription.trim() || null,
           slug,
           price_cents: priceCents,
           currency: 'USD',
-          status: 'published',
+          status: 'draft',
           show_on_profile: linkShowOnProfile,
           is_public: priceCents === 0,
+        })
+        .select();
+      if (linkError || !insertedLinks?.[0]) throw linkError || new Error('Failed to create link');
+      const linkId = insertedLinks[0].id as string;
+
+      // 2. Upload file to storage (same path format as CreateLink)
+      const storagePath = `paid-content/${currentUser.id}/${linkId}/original/content.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('paid-content')
+        .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
+      if (uploadError) {
+        await supabase.from('links').delete().eq('id', linkId);
+        throw new Error('Upload failed');
+      }
+
+      // 3. Update link with storage_path and publish
+      const { error: updateError } = await supabase
+        .from('links')
+        .update({ storage_path: storagePath, status: 'published' })
+        .eq('id', linkId);
+      if (updateError) throw updateError;
+
+      // 4. Create asset record
+      const assetId = crypto.randomUUID();
+      const { error: assetError } = await supabase
+        .from('assets')
+        .insert({
+          id: assetId,
+          creator_id: currentUser.id,
+          title: linkTitle.trim() || null,
+          storage_path: storagePath,
+          mime_type: converted.type || null,
+          is_public: false,
         });
-      if (linkError) throw linkError;
+
+      // 5. Connect asset to link via link_media
+      if (!assetError) {
+        await supabase.from('link_media').insert({
+          link_id: linkId,
+          asset_id: assetId,
+          position: 0,
+        });
+      }
 
       toast.success('Link created!');
       setStep('content');

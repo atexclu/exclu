@@ -214,8 +214,21 @@ export default function ChatterDashboard() {
           setActiveProfileId(null);
         }
       } else {
-        setActiveClientUserId(creatorUserIds[0]);
-        setActiveProfileId(null);
+        // Multiple clients - check if one was selected from selector
+        const selectedClient = sessionStorage.getItem('chatter_selected_client');
+        if (selectedClient && loadedClients.some(c => c.user_id === selectedClient)) {
+          setActiveClientUserId(selectedClient);
+          const clientProfilesList = loadedClients.find(c => c.user_id === selectedClient)?.profiles ?? [];
+          if (clientProfilesList.length === 1) {
+            setActiveProfileId(clientProfilesList[0].id);
+          } else {
+            setActiveProfileId(null);
+          }
+        } else {
+          // No selection - redirect to selector
+          navigate('/app/chatter/select');
+          return;
+        }
       }
 
       setIsAuthorized(true);
@@ -651,6 +664,7 @@ export default function ChatterDashboard() {
                         key={client.user_id}
                         type="button"
                         onClick={() => {
+                          sessionStorage.setItem('chatter_selected_client', client.user_id);
                           setActiveClientUserId(client.user_id);
                           setActiveProfileId(client.profiles.length === 1 ? client.profiles[0].id : null);
                           setSelectedConversation(null);
@@ -695,6 +709,22 @@ export default function ChatterDashboard() {
               ) : (
                 <Moon className="w-4 h-4 text-muted-foreground" />
               )}
+            </motion.button>
+
+            {/* Logout button */}
+            <motion.button
+              type="button"
+              onClick={async () => {
+                await supabase.auth.signOut();
+                navigate('/', { replace: true });
+              }}
+              className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Log out"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              <LogOut className="w-4 h-4 text-muted-foreground" />
             </motion.button>
 
             {/* Chatter avatar — navigates to account */}
@@ -1250,6 +1280,88 @@ export default function ChatterDashboard() {
                             Save
                           </Button>
                         </div>
+                      </div>
+
+                      {/* Managed Creators */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-lg font-semibold text-foreground">Managed Creators</h2>
+                          <span className="text-xs text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full">
+                            {clients.length} {clients.length === 1 ? 'creator' : 'creators'}
+                          </span>
+                        </div>
+                        
+                        {clients.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                            <p className="text-sm">You're not managing any creators yet</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {clients.map((client) => (
+                              <motion.div
+                                key={client.user_id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center gap-4 p-4 rounded-xl border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors group"
+                              >
+                                <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-border/50 flex-shrink-0">
+                                  {client.avatar_url ? (
+                                    <img src={client.avatar_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                                      <User className="w-6 h-6 text-muted-foreground/60" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-foreground truncate">
+                                    {client.display_name || 'Creator'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {client.profiles.length} {client.profiles.length === 1 ? 'profile' : 'profiles'}
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!confirm(`Remove access to ${client.display_name || 'this creator'}? They will be notified by email.`)) {
+                                      return;
+                                    }
+                                    
+                                    try {
+                                      const { error } = await supabase.functions.invoke('remove-chatter-access', {
+                                        body: { creator_user_id: client.user_id }
+                                      });
+                                      
+                                      if (error) throw error;
+                                      
+                                      toast.success('Access removed successfully');
+                                      
+                                      // Remove from local state
+                                      setClients((prev) => prev.filter((c) => c.user_id !== client.user_id));
+                                      
+                                      // If this was the active client, clear selection
+                                      if (activeClientUserId === client.user_id) {
+                                        setActiveClientUserId(null);
+                                        setActiveProfileId(null);
+                                        setSelectedConversation(null);
+                                      }
+                                    } catch (err) {
+                                      console.error('Error removing access:', err);
+                                      toast.error('Failed to remove access');
+                                    }
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                >
+                                  <X className="w-4 h-4 mr-1" />
+                                  Remove
+                                </Button>
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}

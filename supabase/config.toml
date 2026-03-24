@@ -45,3 +45,57 @@ verify_jwt = false
 
 [functions.send-auth-email]
 verify_jwt = false
+
+[functions.admin-blog-manage]
+verify_jwt = false
+
+[functions.admin-delete-user]
+verify_jwt = false
+
+[functions.admin-update-user-visibility]
+verify_jwt = false
+
+[functions.admin-impersonate-user]
+verify_jwt = false
+
+[functions.admin-manage-agencies]
+verify_jwt = false
+
+[functions.admin-manage-tools]
+verify_jwt = false
+
+[functions.check-fan-email]
+verify_jwt = false
+
+[functions.claim-tip]
+verify_jwt = false
+
+[functions.create-gift-checkout]
+verify_jwt = false
+
+[functions.create-request-checkout]
+verify_jwt = false
+
+[functions.handle-chatter-request]
+verify_jwt = false
+
+[functions.manage-request]
+verify_jwt = false
+
+[functions.remove-chatter-access]
+verify_jwt = false
+
+[functions.request-affiliate-payout]
+verify_jwt = false
+
+[functions.send-agency-contact]
+verify_jwt = false
+
+[functions.send-chatter-invitation]
+verify_jwt = false
+
+[functions.verify-checkout-session]
+verify_jwt = false
+
+[functions.verify-instagram]
+verify_jwt = false

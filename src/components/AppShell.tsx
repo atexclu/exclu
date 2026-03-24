@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2 } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2, FileText, Wrench } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -19,10 +19,11 @@ interface AppShellProps {
 interface NavItem {
   path: string;
   label: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   adminOnly?: boolean;
   agencyOnly?: boolean;
   mobileHidden?: boolean;
+  hidden?: boolean;
 }
 
 const baseNavItems: NavItem[] = [
@@ -91,6 +92,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
   const visibleNavItems = useMemo(
     () => baseNavItems.filter((item) => {
+      if (item.hidden) return false;
       if (item.adminOnly && !isAdmin) return false;
       if (item.agencyOnly && !isAgency) return false;
       return true;

@@ -86,6 +86,7 @@ const SortableItem = ({ media, onRemove, disabled }: SortableItemProps) => {
               className="w-full h-full object-cover"
               muted
               loop
+              autoPlay
               playsInline
             />
           ) : (

@@ -10,9 +10,10 @@ import { toast } from 'sonner';
 
 interface NavbarProps {
   user?: User | null;
+  variant?: 'default' | 'blog';
 }
 
-const Navbar = ({ user }: NavbarProps) => {
+const Navbar = ({ user, variant = 'default' }: NavbarProps) => {
   const { resolvedTheme } = useTheme();
 
   const handleSignOut = async () => {
@@ -23,6 +24,22 @@ const Navbar = ({ user }: NavbarProps) => {
       window.location.href = '/auth';
     }
   };
+
+  const landingLinks = [
+    { href: '/#features', label: 'Features' },
+    { href: '/#how-it-works', label: 'How it works' },
+    { href: '/#pricing', label: 'Pricing' },
+    { href: '/blog', label: 'Blog' },
+  ];
+
+  const blogLinks = [
+    { href: '/blog', label: 'Articles' },
+    { href: '/directory/creators', label: 'Creators' },
+    { href: '/directory/agencies', label: 'Agencies' },
+    { href: '/directory', label: 'Directory' },
+  ];
+
+  const navLinks = variant === 'blog' ? blogLinks : landingLinks;
 
   return (
     <motion.nav
@@ -43,18 +60,18 @@ const Navbar = ({ user }: NavbarProps) => {
             <img src={resolvedTheme === 'light' ? logoBlack : logoWhite} alt="Exclu" className="h-7" />
           </motion.a>
 
-          {/* Navigation Links - Only show if not logged in / not in onboarding mode (implied by user existing) */}
+          {/* Navigation Links */}
           {!user && (
             <div className="hidden md:flex items-center gap-8">
-              <a href="/#features" className="text-exclu-space hover:text-exclu-cloud transition-colors duration-300 text-sm font-medium link-underline">
-                Features
-              </a>
-              <a href="/#how-it-works" className="text-exclu-space hover:text-exclu-cloud transition-colors duration-300 text-sm font-medium link-underline">
-                How it works
-              </a>
-              <a href="/#pricing" className="text-exclu-space hover:text-exclu-cloud transition-colors duration-300 text-sm font-medium link-underline">
-                Pricing
-              </a>
+              {navLinks.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="text-exclu-space hover:text-exclu-cloud transition-colors duration-300 text-sm font-medium link-underline"
+                >
+                  {link.label}
+                </a>
+              ))}
             </div>
           )}
 

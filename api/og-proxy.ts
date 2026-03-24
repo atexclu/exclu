@@ -20,6 +20,7 @@ function getIndexHtml(): string {
 const APP_ROUTES = new Set([
   'auth', 'app', 'admin', 'onboarding', 'help-center',
   'contact', 'privacy', 'terms', 'cookies', 'l', 'api',
+  'blog', 'directory', 'sitemap.xml', 'rss.xml',
 ]);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

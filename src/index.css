@@ -211,7 +211,7 @@
   .link-underline::after {
     content: '';
     @apply absolute w-full h-0.5 bottom-0 left-0 origin-bottom-right transition-transform duration-300 scale-x-0;
-    background: linear-gradient(90deg, hsl(var(--gradient-violet)), hsl(var(--gradient-pink)));
+    background: linear-gradient(90deg, #CFFF16, #a3e635);
   }
 
   .link-underline:hover::after {
@@ -361,6 +361,33 @@
   animation: gradient-shift 8s ease infinite;
 }
 
+/* Carousel animations */
+@keyframes scroll-left {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-100% / 3));
+  }
+}
+
+@keyframes scroll-right {
+  0% {
+    transform: translateX(calc(-100% / 3));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.animate-scroll-left {
+  animation: scroll-left 30s linear infinite;
+}
+
+.animate-scroll-right {
+  animation: scroll-right 40s linear infinite;
+}
+
 /* Hide scrollbar */
 .scrollbar-hide {
   -ms-overflow-style: none;
@@ -369,4 +396,48 @@
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Tiptap Editor */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap:focus {
+  outline: none;
+}
+
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid hsl(var(--border) / 0.3);
+  padding-left: 1rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.tiptap hr {
+  border-color: hsl(var(--border) / 0.2);
+  margin: 1.5rem 0;
+}
+
+.tiptap pre {
+  background: hsl(var(--muted));
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+
+.tiptap code {
+  background: hsl(var(--muted));
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.875em;
 }

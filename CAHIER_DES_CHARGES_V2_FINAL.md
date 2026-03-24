@@ -1022,14 +1022,13 @@ Le pôle SEO d'EXCLU comprend 4 sections distinctes :
 - Liste des agences partenaires
 - Filtres par pays, services proposés
 - Page dédiée par agence avec :
-  - Présentation
-  - Créateurs gérés
+  - Présentation / Logo
+  - Profils Créateurs gérés
   - Contact
+  -> Reprendre l'ui de présentation d'un profil publique créateur, cela doit être ultra esthétique comme page, intégrer des animations reactbits comme sur la page créateur.
 
 #### Gestion
-
-- Upload des agences via interface admin EXCLU
-- Possibilité de lister ou non chaque agence
+- Possibilité de lister ou non chaque agence depuis l'onglet "Blog" dans l'interface admin
 
 ### 9.4 Blog
 
@@ -1040,10 +1039,10 @@ Le pôle SEO d'EXCLU comprend 4 sections distinctes :
 ├── /category/guides          — Tutoriels pour créateurs
 ├── /category/industry-news   — Actualités du marché
 ├── /category/comparisons     — Exclu vs concurrents
-└── /article/{slug}           — Article individuel
+└── /article/{slug}           — Article individuel, attention il faut faire des urls cours et efficaces, ceci est peut êtrer à répenser. Ne doit pas créer de conflits avec les routes actuelles.
 ```
 
-#### CMS Admin
+#### CMS Admin (onglet blog)
 
 **Interface de rédaction** :
 - Éditeur WYSIWYG (type Notion-like)
@@ -1067,6 +1066,9 @@ Le pôle SEO d'EXCLU comprend 4 sections distinctes :
 > - **Option C** : Fichiers Markdown dans le repo + génération statique
 > 
 > **Recommandation** : Option B pour garder tout centralisé, avec interface admin dédiée
+-> Tu peux challenger ce choix, on veut la meilleure ui/ux possible, avec une grande robustesse, et les meilleures pratiques SEO.
+
+UX Ultra poussée et intuitive, pas de surchargement, excellente anticipation des erreurs potentiels d'affichage en fonction de la structure d'article créée. Responsive perfect pixel, s'inpirer des meilleurs blogs au monde pour créer une ui extraordiaire en mobile et web.
 
 ---
 
@@ -1651,7 +1653,7 @@ Le choix est sauvegardé dans `profiles.seeking_chatters` et `profiles.seeking_c
 
 Route : `/app/chatter/contracts`
 
-- **Liste** : grille de cartes créateurs avec photo, nom, handle, badge "Pending" si demande déjà envoyée
+- **Liste** : grille de cartes avec photo, nom, handle, badge "Pending" si demande déjà envoyée
 - **Recherche** : filtre par nom, handle ou description
 - **Détail** : au clic sur un créateur → vue détaillée avec avatar, bio, localisation, description des attentes, lien vers le profil public
 - **Demande d'accès** : formulaire avec message optionnel → appel edge function `handle-chatter-request` (action=send) → email Brevo au créateur

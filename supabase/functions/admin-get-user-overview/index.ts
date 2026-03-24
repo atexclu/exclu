@@ -81,6 +81,7 @@ interface UserOverviewPayload {
   links: Array<{
     id: string;
     title: string | null;
+    description: string | null;
     status: string | null;
     price_cents: number | null;
     created_at: string | null;
@@ -312,7 +313,8 @@ serve(async (req) => {
       .select(`
         id, 
         slug,
-        title, 
+        title,
+        description,
         status, 
         show_on_profile,
         price_cents, 
@@ -341,6 +343,7 @@ serve(async (req) => {
     const links: Array<{
       id: string;
       title: string | null;
+      description: string | null;
       status: string | null;
       price_cents: number | null;
       created_at: string | null;
@@ -417,12 +420,7 @@ serve(async (req) => {
           }
         };
 
-        // 1. Add primary media if it exists
-        if (primaryStoragePath) {
-          await addMedia('primary', primaryStoragePath, link.mime_type, 'Primary Content');
-        }
-
-        // 2. Add additional media from link_media
+        // 1. Add additional media from link_media
         for (const lm of linkMedia) {
           const asset = lm.assets;
           if (asset && asset.storage_path) {
@@ -430,9 +428,15 @@ serve(async (req) => {
           }
         }
 
+        // 2. Fallback: if no link_media but primary storage_path exists (legacy links), add it
+        if (mediaItems.length === 0 && primaryStoragePath) {
+          await addMedia('primary', primaryStoragePath, link.mime_type, 'Primary Content');
+        }
+
         links.push({
           id: link.id as string,
           title: (link.title as string | null) ?? null,
+          description: (link.description as string | null) ?? null,
           status: (link.status as string | null) ?? null,
           price_cents: (link.price_cents as number | null) ?? null,
           created_at: (link.created_at as string | null) ?? null,

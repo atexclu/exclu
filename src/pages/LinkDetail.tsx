@@ -31,6 +31,10 @@ interface PurchaseRow {
   status: string;
   created_at: string;
   access_expires_at: string | null;
+  chat_chatter_id: string | null;
+  chatter_earnings_cents: number | null;
+  creator_net_cents: number | null;
+  platform_fee_cents: number | null;
 }
 
 const LinkDetail = () => {
@@ -46,6 +50,7 @@ const LinkDetail = () => {
   const [isPremium, setIsPremium] = useState(false);
   const [contentPreviewUrl, setContentPreviewUrl] = useState<string | null>(null);
   const [chatterInfo, setChatterInfo] = useState<{ display_name: string | null; email: string | null } | null>(null);
+  const [chatterProfiles, setChatterProfiles] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     let isMounted = true;
@@ -81,7 +86,7 @@ const LinkDetail = () => {
 
         const { data: purchasesData, error: purchasesError } = await supabase
           .from('purchases')
-          .select('id, buyer_email, amount_cents, currency, status, created_at, access_expires_at')
+          .select('id, buyer_email, amount_cents, currency, status, created_at, access_expires_at, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents')
           .eq('link_id', id)
           .order('created_at', { ascending: false });
 
@@ -112,6 +117,23 @@ const LinkDetail = () => {
         setRevenueCents(revenue);
         setPurchases(safePurchases);
         setIsPremium(isPremium);
+
+        // Fetch chatter profiles for purchases made by chatters
+        const chatterIds = [...new Set(safePurchases.filter(p => p.chat_chatter_id).map(p => p.chat_chatter_id!))];
+        if (chatterIds.length > 0) {
+          const { data: chattersData } = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', chatterIds);
+          
+          if (chattersData && isMounted) {
+            const chattersMap = new Map<string, string>();
+            chattersData.forEach((c: any) => {
+              chattersMap.set(c.id, c.display_name || 'Chatter');
+            });
+            setChatterProfiles(chattersMap);
+          }
+        }
 
         // Fetch chatter profile if link was created by a chatter
         if (data.created_by_chatter_id) {
@@ -460,9 +482,19 @@ const LinkDetail = () => {
                   <div className="mt-2 space-y-3 max-h-64 overflow-y-auto pr-1">
                     {purchases.map((purchase, index) => {
                       const emailLabel = purchase.buyer_email || 'Unknown buyer';
-                      const amountLabel = purchase.amount_cents
-                        ? `$${(Math.round(purchase.amount_cents / 1.05 * (1 - (isPremium ? 0 : 0.10))) / 100).toFixed(2)} USD`
+                      const chatterName = purchase.chat_chatter_id ? chatterProfiles.get(purchase.chat_chatter_id) : null;
+                      
+                      // If chatter sale, use creator_net_cents (60%), otherwise calculate from amount_cents
+                      const creatorNetAmount = purchase.chat_chatter_id && purchase.creator_net_cents
+                        ? purchase.creator_net_cents
+                        : purchase.amount_cents
+                        ? Math.round(purchase.amount_cents / 1.05 * (1 - (isPremium ? 0 : 0.10)))
+                        : 0;
+                      
+                      const amountLabel = creatorNetAmount > 0
+                        ? `$${(creatorNetAmount / 100).toFixed(2)} USD`
                         : '—';
+                      
                       const dateLabel = new Date(purchase.created_at).toLocaleString();
                       const isRefunded = purchase.status === 'refunded';
                       const isPending = purchase.status === 'pending';
@@ -488,6 +520,11 @@ const LinkDetail = () => {
                                 {emailLabel}
                               </p>
                               <p className="text-[11px] text-exclu-space/70">{dateLabel}</p>
+                              {chatterName && (
+                                <p className="text-[11px] text-primary/80 mt-0.5">
+                                  💬 Sale by {chatterName}
+                                </p>
+                              )}
                               {purchase.access_expires_at && (
                                 <p className="text-[11px] text-amber-300/80 mt-0.5">
                                   Temporary access until{' '}
@@ -498,6 +535,11 @@ const LinkDetail = () => {
                           </div>
                           <div className="flex flex-col items-end gap-1 flex-shrink-0">
                             <span className="text-xs font-semibold text-exclu-cloud">{amountLabel}</span>
+                            {chatterName && (
+                              <span className="text-[10px] text-primary/60">
+                                (60% net)
+                              </span>
+                            )}
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${
                                 isRefunded

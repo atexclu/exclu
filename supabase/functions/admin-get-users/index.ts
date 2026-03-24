@@ -192,7 +192,7 @@ serve(async (req) => {
 
       // For aggregated sorts, fetch all profiles (override default 1000 row limit)
       if (needsFullFetch) {
-        query = query.range(0, 9999);
+        query = query.range(0, 99999);
       }
 
       // Apply DB-level sorting only for sorts that don't depend on aggregated data
@@ -254,17 +254,22 @@ serve(async (req) => {
         });
       }
 
-      // Additionally search by email via auth users
+      // Additionally search by email via auth users (paginate to get ALL users)
       const matchingEmailUserIds: string[] = [];
       try {
-        const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
-          page: 1,
-          perPage: 1000,
-        });
+        let currentPage = 1;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
+            page: currentPage,
+            perPage: 1000,
+          });
 
-        if (authUsersError) {
-          console.error('Error loading auth users for search in admin-get-users', authUsersError);
-        } else {
+          if (authUsersError) {
+            console.error('Error loading auth users for search in admin-get-users', authUsersError);
+            break;
+          }
+
           const authUsers = authUsersData?.users ?? [];
           for (const au of authUsers) {
             const email = (au.email ?? '').toLowerCase();
@@ -272,6 +277,9 @@ serve(async (req) => {
               matchingEmailUserIds.push(au.id);
             }
           }
+
+          hasMore = authUsers.length === 1000;
+          currentPage++;
         }
       } catch (e) {
         console.error('Unexpected error while listing auth users for search in admin-get-users', e);
@@ -321,18 +329,23 @@ serve(async (req) => {
       });
     }
 
-    // Load auth users to hydrate emails in the summary
+    // Load auth users to hydrate emails in the summary (paginate to get ALL users)
     const emailByUserId = new Map<string, string | null>();
     if (userIds.length > 0) {
       try {
-        const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
-          page: 1,
-          perPage: 1000,
-        });
+        let currentPage = 1;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
+            page: currentPage,
+            perPage: 1000,
+          });
 
-        if (authUsersError) {
-          console.error('Error loading auth users in admin-get-users', authUsersError);
-        } else {
+          if (authUsersError) {
+            console.error('Error loading auth users in admin-get-users', authUsersError);
+            break;
+          }
+
           const authUsers = authUsersData?.users ?? [];
           for (const au of authUsers) {
             // Only keep emails for users we care about
@@ -340,6 +353,9 @@ serve(async (req) => {
               emailByUserId.set(au.id, au.email ?? null);
             }
           }
+
+          hasMore = authUsers.length === 1000;
+          currentPage++;
         }
       } catch (e) {
         console.error('Unexpected error while listing auth users in admin-get-users', e);
@@ -356,7 +372,7 @@ serve(async (req) => {
       if (!needsFullFetch && userIds.length > 0) {
         linksQuery = linksQuery.in('creator_id', userIds);
       }
-      const { data: linksAll, error: linksError } = await linksQuery.range(0, 9999);
+      const { data: linksAll, error: linksError } = await linksQuery.range(0, 99999);
 
       if (linksError) {
         console.error('Error loading links in admin-get-users', linksError);
@@ -378,7 +394,7 @@ serve(async (req) => {
       if (!needsFullFetch && userIds.length > 0) {
         assetsQuery = assetsQuery.in('creator_id', userIds);
       }
-      const { data: assetsAll, error: assetsError } = await assetsQuery.range(0, 9999);
+      const { data: assetsAll, error: assetsError } = await assetsQuery.range(0, 99999);
 
       if (assetsError) {
         console.error('Error loading assets in admin-get-users', assetsError);

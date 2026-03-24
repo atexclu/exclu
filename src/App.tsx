@@ -52,6 +52,17 @@ import AgencyDashboard from './pages/AgencyDashboard';
 import AcceptChatterInvite from './pages/AcceptChatterInvite';
 import ChatterDashboard from './pages/ChatterDashboard';
 import ChatterContracts from './pages/ChatterContracts';
+import ChatterClientSelector from './pages/ChatterClientSelector';
+import DirectoryHub from './pages/DirectoryHub';
+import DirectoryCreators from './pages/DirectoryCreators';
+import DirectoryAgencies from './pages/DirectoryAgencies';
+import DirectoryTools from './pages/DirectoryTools';
+import AgencyDetail from './pages/AgencyDetail';
+import AdminBlogEditor from './pages/AdminBlogEditor';
+import BlogIndex from './pages/BlogIndex';
+import BlogArticle from './pages/BlogArticle';
+import BlogCategory from './pages/BlogCategory';
+import SSRBridge from './components/SSRBridge';
 
 const queryClient = new QueryClient();
 
@@ -241,6 +252,7 @@ const App = () => {
                 <Route path="/l/:slug" element={<PublicLink />} />
                 <Route path="/fan/signup" element={<FanSignup />} />
                 <Route path="/accept-chatter-invite" element={<AcceptChatterInvite />} />
+                <Route path="/app/chatter/select" element={<ChatterClientSelector />} />
                 <Route path="/app/chatter" element={<ChatterDashboard />} />
                 <Route path="/app/chatter/contracts" element={<ChatterContracts />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
@@ -263,10 +275,44 @@ const App = () => {
                     </FanProtectedRoute>
                   }
                 />
+                {/* Directory SPA routes */}
+                <Route path="/directory" element={<DirectoryHub />} />
+                <Route path="/directory/creators" element={<DirectoryCreators />} />
+                <Route path="/directory/agencies" element={<DirectoryAgencies />} />
+                <Route path="/directory/tools" element={<DirectoryTools />} />
+
+                {/* Admin Blog Editor */}
+                <Route
+                  path="/admin/blog/new"
+                  element={
+                    <AdminRoute>
+                      <AdminBlogEditor />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/blog/edit/:id"
+                  element={
+                    <AdminRoute>
+                      <AdminBlogEditor />
+                    </AdminRoute>
+                  }
+                />
+
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/cookies" element={<Cookies />} />
+
+                {/* Blog SPA pages (SSR handled by Vercel on first load for SEO) */}
+                <Route path="/blog" element={<BlogIndex />} />
+                <Route path="/blog/:slug" element={<BlogArticle />} />
+                <Route path="/blog/category/:slug" element={<BlogCategory />} />
+
+                {/* Directory detail pages */}
+                <Route path="/directory/agencies/:slug" element={<AgencyDetail />} />
+                <Route path="/directory/tools/:slug" element={<SSRBridge />} />
+
                 {/* Creator public profile - must be LAST before catch-all since it's a wildcard */}
                 <Route path="/:handle" element={<CreatorPublic />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

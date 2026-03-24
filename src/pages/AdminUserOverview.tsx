@@ -2,7 +2,8 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink } from 'lucide-react';
+import { Download, ExternalLink, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 interface UserProfileOverview {
   id: string;
@@ -12,12 +13,14 @@ interface UserProfileOverview {
   is_creator: boolean | null;
   country: string | null;
   stripe_connect_status: string | null;
+  is_directory_visible: boolean | null;
 }
 
 interface UserLinkOverview {
   id: string;
   slug: string | null;
   title: string | null;
+  description: string | null;
   status: string | null;
   show_on_profile: boolean | null;
   price_cents: number | null;
@@ -88,6 +91,7 @@ const AdminUserOverview = () => {
   const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -274,6 +278,51 @@ const AdminUserOverview = () => {
     }
   };
 
+  const handleDirectoryVisibilityToggle = async (checked: boolean) => {
+    if (!id || !profile) return;
+
+    setIsUpdatingVisibility(true);
+    setError(null);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setError('Please sign in again to update visibility.');
+        setIsUpdatingVisibility(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('admin-update-user-visibility', {
+        body: { 
+          user_id: id, 
+          is_directory_visible: checked 
+        },
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'x-supabase-auth': session.access_token,
+        },
+      });
+
+      if (error) {
+        console.error('Error updating visibility', error);
+        setError('Failed to update visibility. Please try again.');
+        setIsUpdatingVisibility(false);
+        return;
+      }
+
+      // Update local state
+      setProfile(prev => prev ? { ...prev, is_directory_visible: checked } : null);
+    } catch (err) {
+      console.error('Unexpected error updating visibility', err);
+      setError('An unexpected error occurred.');
+    } finally {
+      setIsUpdatingVisibility(false);
+    }
+  };
+
   return (
     <AppShell>
       <main className="px-4 pt-6 pb-8 sm:px-6 lg:px-8">
@@ -290,19 +339,20 @@ const AdminUserOverview = () => {
                 <button
                   type="button"
                   onClick={() => window.open(`/${profile.handle}`, '_blank')}
-                  className="px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-colors flex items-center gap-2"
+                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
+                  title="View public profile"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  View public profile
+                  <ExternalLink className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={!profile || isDeleting}
-                className="px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Delete user"
               >
-                Delete user
+                <Trash2 className="w-4 h-4" />
               </button>
               <button
                 type="button"
@@ -352,6 +402,37 @@ const AdminUserOverview = () => {
                       <span className="text-exclu-cloud/90">{profile.is_creator ? 'Yes' : 'No'}</span>
                     </p>
                   </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
+                  <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Directory Visibility</h2>
+                  
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-exclu-cloud">Show in landing pages</p>
+                      <p className="text-xs text-exclu-space mt-1">
+                        Controls visibility in creator directory, agency listings, and blog carousel
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {profile.is_directory_visible ? (
+                        <Eye className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <EyeOff className="w-4 h-4 text-red-400" />
+                      )}
+                      <Switch
+                        checked={profile.is_directory_visible || false}
+                        onCheckedChange={handleDirectoryVisibilityToggle}
+                        disabled={isUpdatingVisibility}
+                        className="data-[state=checked]:bg-[#CFFF16]"
+                      />
+                    </div>
+                  </div>
+                  
+                  {isUpdatingVisibility && (
+                    <p className="text-xs text-exclu-space/70 mt-2">Updating visibility...</p>
+                  )}
                 </div>
 
                 <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
@@ -598,22 +679,35 @@ const AdminUserOverview = () => {
             className="relative max-w-3xl w-full max-h-[90vh] bg-exclu-ink rounded-2xl border border-exclu-arsenic/70 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-exclu-arsenic/70">
-              <div className="flex flex-col">
+            <div className="px-4 py-3 border-b border-exclu-arsenic/70 space-y-2">
+              <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-exclu-cloud truncate">
                   {selectedLink.title || 'Untitled link'}
                 </span>
-                <span className="text-[11px] text-exclu-space/70 truncate">
-                  {selectedLink.mime_type || 'Unknown type'} · {selectedLink.status}
-                </span>
+                <button
+                  type="button"
+                  className="text-xs text-exclu-space hover:text-exclu-cloud"
+                  onClick={() => setSelectedLink(null)}
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                className="text-xs text-exclu-space hover:text-exclu-cloud"
-                onClick={() => setSelectedLink(null)}
-              >
-                Close
-              </button>
+              {selectedLink.description && (
+                <p className="text-xs text-exclu-space/80 line-clamp-3">{selectedLink.description}</p>
+              )}
+              <div className="flex items-center gap-3 text-[11px] text-exclu-space/70">
+                <span>
+                  {typeof selectedLink.price_cents === 'number'
+                    ? `$${(selectedLink.price_cents / 100).toFixed(2)}`
+                    : 'No price'}
+                </span>
+                <span>·</span>
+                <span className={selectedLink.status === 'published' ? 'text-green-400' : 'text-exclu-space/70'}>
+                  {selectedLink.status || 'Unknown'}
+                </span>
+                <span>·</span>
+                <span>{selectedLink.mime_type || 'Unknown type'}</span>
+              </div>
             </div>
             <div className="bg-black flex flex-col items-center justify-start overflow-y-auto max-h-[80vh] p-4 gap-6">
               {selectedLink.media && selectedLink.media.length > 0 ? (

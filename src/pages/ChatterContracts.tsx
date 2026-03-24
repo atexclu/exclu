@@ -152,6 +152,17 @@ export default function ChatterContracts() {
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
+              {/* View public profile button - top right */}
+              <a
+                href={`/${selectedCreator.handle}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-black/60 backdrop-blur-sm border border-white/20 text-xs text-white hover:bg-black/80 transition-colors shadow-lg"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View public profile
+              </a>
+
               <div className="absolute bottom-4 left-6 right-6">
                 <h1 className="text-2xl font-extrabold text-white drop-shadow-lg">
                   {selectedCreator.display_name}
@@ -227,16 +238,6 @@ export default function ChatterContracts() {
                   </Button>
                 </div>
               )}
-
-              <a
-                href={`/${selectedCreator.handle}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
-              >
-                <ExternalLink className="w-3 h-3" />
-                View public profile
-              </a>
             </div>
           </div>
         </div>

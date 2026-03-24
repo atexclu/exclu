@@ -1,5 +1,8 @@
--- Migration 100: Add is_managing field to get_creators_seeking_chatters RPC
--- This allows the frontend to distinguish between pending requests and accepted invitations
+-- Migration 101: Update get_creators_seeking_chatters to exclude managed creators
+-- Drop the old function signature and recreate with is_managing field
+
+-- Drop old function with 8 return columns (without is_managing)
+DROP FUNCTION IF EXISTS public.get_creators_seeking_chatters();
 
 CREATE OR REPLACE FUNCTION public.get_creators_seeking_chatters()
 RETURNS TABLE (
@@ -59,6 +62,14 @@ BEGIN
       WHERE cr.creator_id = p.id
         AND cr.chatter_id = v_user_id
         AND cr.status = 'rejected'
+    )
+    -- Exclude creators that this chatter is already managing (accepted invitations)
+    AND NOT EXISTS (
+      SELECT 1 FROM chatter_invitations ci
+      JOIN creator_profiles cp ON ci.profile_id = cp.id
+      WHERE cp.user_id = p.id
+        AND ci.chatter_id = v_user_id
+        AND ci.status = 'accepted'
     )
   ORDER BY p.created_at DESC;
 END;
