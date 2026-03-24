@@ -33,7 +33,7 @@ const baseNavItems: NavItem[] = [
   { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
   { path: '/app/chat', label: 'Chat', icon: MessageSquare },
   { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
-  { path: '/admin/users', label: 'Admin', icon: ShieldCheck, adminOnly: true },
+  { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];
 
 const AppShell = ({ children, rightActions }: AppShellProps) => {
