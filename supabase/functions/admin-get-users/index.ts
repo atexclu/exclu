@@ -317,6 +317,20 @@ serve(async (req) => {
 
     let userIds = (users ?? []).map((u: any) => u.id as string).filter(Boolean);
 
+    // Fetch creator_profiles avatars — creators store their real photo there, not in profiles
+    const creatorAvatarByUserId = new Map<string, string | null>();
+    if (userIds.length > 0) {
+      const { data: creatorProfiles } = await supabaseAdmin
+        .from('creator_profiles')
+        .select('user_id, avatar_url')
+        .in('user_id', userIds);
+      for (const cp of creatorProfiles ?? []) {
+        if (cp.user_id && cp.avatar_url) {
+          creatorAvatarByUserId.set(cp.user_id, cp.avatar_url);
+        }
+      }
+    }
+
     // Fetch aggregated metrics from profile_analytics
     const { data: analytics, error: analyticsError } = await supabaseAdmin
       .from('profile_analytics')
@@ -438,7 +452,7 @@ serve(async (req) => {
         display_name: u.display_name ?? null,
         handle: u.handle ?? null,
         email: emailByUserId.get(userId) ?? null,
-        avatar_url: u.avatar_url ?? null,
+        avatar_url: creatorAvatarByUserId.get(userId) ?? u.avatar_url ?? null,
         created_at: u.created_at ?? null,
         is_creator: u.is_creator ?? null,
         is_admin: u.is_admin ?? null,

@@ -127,9 +127,9 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                     className={`relative z-10 ${item.mobileHidden ? 'hidden sm:inline-block' : ''}`}
                   >
                     <motion.div
-                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors duration-200 ${active
-                        ? 'text-black dark:text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
+                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm transition-colors duration-200 ${active
+                        ? 'font-semibold text-black dark:text-foreground'
+                        : 'font-medium text-muted-foreground hover:text-foreground'
                         }`}
                       whileHover={!active ? { scale: 1.04 } : {}}
                       whileTap={{ scale: 0.97 }}

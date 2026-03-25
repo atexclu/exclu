@@ -1064,7 +1064,7 @@ const AdminUsers = () => {
                           value={agencyForm.name}
                           onChange={(e) => setAgencyForm((p) => ({ ...p, name: e.target.value, slug: editingAgencyId ? p.slug : slugify(e.target.value) }))}
                           placeholder="e.g. Elite Models Agency"
-                          className={darkInputClass}
+                          className={authInputClass}
                         />
                       </div>
                       <div>
@@ -1072,7 +1072,7 @@ const AdminUsers = () => {
                         <select
                           value={agencyForm.country}
                           onChange={(e) => setAgencyForm((p) => ({ ...p, country: e.target.value }))}
-                          className={darkSelectClass + ' w-full'}
+                          className={selectClass + ' w-full'}
                         >
                           <option value="">— Select country —</option>
                           {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1080,7 +1080,7 @@ const AdminUsers = () => {
                       </div>
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">City</label>
-                        <Input value={agencyForm.city} onChange={(e) => setAgencyForm((p) => ({ ...p, city: e.target.value }))} placeholder="e.g. Los Angeles" className={darkInputClass} />
+                        <Input value={agencyForm.city} onChange={(e) => setAgencyForm((p) => ({ ...p, city: e.target.value }))} placeholder="e.g. Los Angeles" className={authInputClass} />
                       </div>
                     </div>
 
@@ -1091,7 +1091,7 @@ const AdminUsers = () => {
                         onChange={(e) => setAgencyForm((p) => ({ ...p, description: e.target.value }))}
                         rows={2}
                         placeholder="Brief description of the agency…"
-                        className="w-full px-3 py-2.5 bg-black border border-white rounded-lg text-sm text-white resize-none placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        className="w-full px-3 py-2.5 bg-white dark:bg-black border border-border dark:border-white rounded-lg text-sm text-foreground dark:text-white resize-none placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/30"
                       />
                     </div>
 
@@ -1099,11 +1099,11 @@ const AdminUsers = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Website</label>
-                        <Input value={agencyForm.website_url} onChange={(e) => setAgencyForm((p) => ({ ...p, website_url: e.target.value }))} placeholder="https://…" className={darkInputClass} />
+                        <Input value={agencyForm.website_url} onChange={(e) => setAgencyForm((p) => ({ ...p, website_url: e.target.value }))} placeholder="https://…" className={authInputClass} />
                       </div>
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Contact Email</label>
-                        <Input value={agencyForm.contact_email} onChange={(e) => setAgencyForm((p) => ({ ...p, contact_email: e.target.value }))} placeholder="contact@agency.com" className={darkInputClass} />
+                        <Input value={agencyForm.contact_email} onChange={(e) => setAgencyForm((p) => ({ ...p, contact_email: e.target.value }))} placeholder="contact@agency.com" className={authInputClass} />
                       </div>
                       <div className="sm:col-span-2">
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Agency Logo</label>
@@ -1139,7 +1139,7 @@ const AdminUsers = () => {
                     {editingAgencyId && (
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Slug</label>
-                        <Input value={agencyForm.slug} onChange={(e) => setAgencyForm((p) => ({ ...p, slug: e.target.value }))} className={darkInputClass} />
+                        <Input value={agencyForm.slug} onChange={(e) => setAgencyForm((p) => ({ ...p, slug: e.target.value }))} className={authInputClass} />
                       </div>
                     )}
 
