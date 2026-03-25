@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useForceDark } from '@/contexts/ThemeContext';
 import { motion, useInView } from 'framer-motion';
 import { Search, MapPin, Verified, Users, Loader2, Filter, X, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
@@ -159,6 +160,7 @@ const CategoryFilterDropdown = ({
 const BATCH_SIZE = 20;
 
 const DirectoryCreators = () => {
+  useForceDark();
   const [allCreators, setAllCreators] = useState<CreatorProfile[]>([]);
   const [premiumIds, setPremiumIds] = useState<Set<string>>(new Set());
   const [linksCountMap, setLinksCountMap] = useState<Map<string, number>>(new Map());

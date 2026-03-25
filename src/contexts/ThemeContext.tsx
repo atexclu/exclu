@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -39,9 +39,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const applyTheme = (resolved: ResolvedTheme) => {
     const root = document.documentElement;
     
-    // Force dark mode on landing page and auth page
+    // Force dark mode on public/marketing pages regardless of user theme
     const pathname = window.location.pathname;
-    if (pathname === '/' || pathname === '/auth') {
+    const forceDark =
+      pathname === '/' ||
+      pathname === '/auth' ||
+      pathname === '/blog' ||
+      pathname.startsWith('/directory');
+    if (forceDark) {
       root.classList.add('dark');
       root.classList.remove('light');
       setResolvedTheme('dark');
@@ -171,4 +176,35 @@ export function useTheme() {
     throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
+}
+
+/**
+ * Forces the HTML element to dark mode while the component is mounted.
+ * Restores the user's actual theme preference on unmount.
+ * Use on public/marketing pages (blog, directory) that must always be dark.
+ */
+export function useForceDark() {
+  const { resolvedTheme } = useTheme();
+  const themeRef = useRef(resolvedTheme);
+
+  // Keep the ref up-to-date and re-force dark whenever theme context tries to switch
+  useEffect(() => {
+    themeRef.current = resolvedTheme;
+    document.documentElement.classList.add('dark');
+    document.documentElement.classList.remove('light');
+  }, [resolvedTheme]);
+
+  // Restore user's real theme when navigating away
+  useEffect(() => {
+    return () => {
+      const saved = themeRef.current;
+      if (saved === 'light') {
+        document.documentElement.classList.add('light');
+        document.documentElement.classList.remove('dark');
+      } else {
+        document.documentElement.classList.add('dark');
+        document.documentElement.classList.remove('light');
+      }
+    };
+  }, []);
 }

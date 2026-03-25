@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useForceDark } from '@/contexts/ThemeContext';
 import { motion, useInView } from 'framer-motion';
 import { Search, MapPin, Building2, Users, Star, Filter, X, ChevronDown, Bookmark } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
@@ -132,6 +133,7 @@ const FilterDropdown = ({
 };
 
 const DirectoryAgencies = () => {
+  useForceDark();
   const [agencies, setAgencies] = useState<DirectoryAgency[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useForceDark } from '@/contexts/ThemeContext';
 import { motion } from 'framer-motion';
 import { Users, Building2, Wrench, ArrowRight, FileText } from 'lucide-react';
 import Navbar from '@/components/Navbar';
@@ -41,6 +42,7 @@ const sections = [
 ];
 
 const DirectoryHub = () => {
+  useForceDark();
   return (
     <div className="dark min-h-screen bg-background text-foreground overflow-x-hidden relative">
       <div className="fixed inset-0 z-0 pointer-events-none opacity-30">
