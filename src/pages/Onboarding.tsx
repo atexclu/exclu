@@ -683,7 +683,7 @@ const Onboarding = () => {
 
       const { error: insertError } = await supabase
         .from('assets')
-        .insert({ id: assetId, creator_id: currentUser.id, title: contentTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: true });
+        .insert({ id: assetId, creator_id: currentUser.id, profile_id: activeProfile?.id ?? null, title: contentTitle.trim() || null, storage_path: storagePath, mime_type: converted.type || null, is_public: true });
       if (insertError) throw insertError;
 
       toast.success('Content added!');
