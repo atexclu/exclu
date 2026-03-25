@@ -87,13 +87,13 @@ const AgencyCategorySelector = ({
             return (
               <span
                 key={v}
-                className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-medium bg-[#CFFF16]/10 text-[#CFFF16] border border-[#CFFF16]/25"
+                className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-medium bg-black/5 dark:bg-[#CFFF16]/10 text-foreground dark:text-[#CFFF16] border border-black/15 dark:border-[#CFFF16]/25"
               >
                 {opt?.label ?? v}
                 <button
                   type="button"
                   onClick={() => remove(v)}
-                  className="hover:text-white transition-colors ml-0.5"
+                  className="hover:opacity-60 dark:hover:text-white transition-colors ml-0.5"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -132,7 +132,7 @@ const AgencyCategorySelector = ({
                     onClick={() => toggle(opt.value)}
                     className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between gap-3 ${
                       selected
-                        ? 'bg-[#CFFF16]/10 text-[#CFFF16]'
+                        ? 'bg-black/5 dark:bg-[#CFFF16]/10 text-foreground dark:text-[#CFFF16]'
                         : 'text-exclu-space hover:bg-exclu-arsenic/20 hover:text-exclu-cloud'
                     }`}
                   >

@@ -64,6 +64,7 @@ interface AdminUserSummary {
   display_name: string | null;
   handle: string | null;
   email: string | null;
+  avatar_url: string | null;
   created_at: string | null;
   is_creator: boolean | null;
   is_admin: boolean | null;
@@ -188,7 +189,7 @@ serve(async (req) => {
     if (!normalizedSearch) {
       let query = supabaseAdmin
         .from('profiles')
-        .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
+        .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
 
       // For aggregated sorts, fetch all profiles (override default 1000 row limit)
       if (needsFullFetch) {
@@ -243,7 +244,7 @@ serve(async (req) => {
 
       const { data: matchedProfiles, error: profilesError } = await supabaseAdmin
         .from('profiles')
-        .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count')
+        .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count')
         .or(orFilters);
 
       if (profilesError) {
@@ -292,7 +293,7 @@ serve(async (req) => {
       if (extraIds.length > 0) {
         const { data: extraProfilesData, error: extraProfilesError } = await supabaseAdmin
           .from('profiles')
-          .select('id, display_name, handle, created_at, is_creator, is_admin, profile_view_count')
+          .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count')
           .in('id', extraIds);
 
         if (extraProfilesError) {
@@ -437,6 +438,7 @@ serve(async (req) => {
         display_name: u.display_name ?? null,
         handle: u.handle ?? null,
         email: emailByUserId.get(userId) ?? null,
+        avatar_url: u.avatar_url ?? null,
         created_at: u.created_at ?? null,
         is_creator: u.is_creator ?? null,
         is_admin: u.is_admin ?? null,

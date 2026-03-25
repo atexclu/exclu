@@ -65,6 +65,64 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'delete_avatar') {
+      const { user_id, creator_profile_id } = body
+      if (!user_id && !creator_profile_id) {
+        return new Response(JSON.stringify({ error: 'Missing user_id or creator_profile_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      if (creator_profile_id) {
+        const { error } = await supabaseAdmin.from('creator_profiles').update({ avatar_url: null }).eq('id', creator_profile_id)
+        if (error) throw error
+      } else {
+        const { error } = await supabaseAdmin.from('profiles').update({ avatar_url: null }).eq('id', user_id)
+        if (error) throw error
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'request_photo_change') {
+      const { user_id, profile_display_name } = body
+      if (!user_id) {
+        return new Response(JSON.stringify({ error: 'Missing user_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const brevoApiKey = Deno.env.get('BREVO_API_KEY')
+      const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL')
+      const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu'
+      const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at'
+
+      if (!brevoApiKey || !brevoSenderEmail) {
+        return new Response(JSON.stringify({ error: 'Email configuration missing' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const { data: authUserData, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(user_id)
+      if (authUserError || !authUserData?.user?.email) {
+        return new Response(JSON.stringify({ error: 'Unable to find user email' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const userEmail = authUserData.user.email
+      const profileLabel = profile_display_name ? ` for "${profile_display_name}"` : ''
+
+      const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'api-key': brevoApiKey },
+        body: JSON.stringify({
+          sender: { email: brevoSenderEmail, name: brevoSenderName },
+          to: [{ email: userEmail }],
+          subject: `Action required: please update your profile photo${profileLabel}`,
+          htmlContent: `<p>Hello,</p><p>Our team has reviewed your Exclu profile and is requesting that you update your profile photo${profileLabel}.</p><p>Please log in to <a href="${siteUrl}">${siteUrl}</a> and upload a new profile photo at your earliest convenience.</p><p>If you have any questions, feel free to reply to this email.</p><p>The Exclu team</p>`,
+        }),
+      })
+
+      if (!brevoResponse.ok) {
+        const text = await brevoResponse.text()
+        console.error('Brevo error in request_photo_change:', text)
+        return new Response(JSON.stringify({ error: 'Failed to send email' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ error: 'Invalid action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (error) {

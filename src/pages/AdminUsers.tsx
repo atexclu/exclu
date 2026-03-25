@@ -13,6 +13,7 @@ interface AdminUserSummary {
   display_name: string | null;
   handle: string | null;
   email: string | null;
+  avatar_url: string | null;
   created_at: string | null;
   is_creator: boolean | null;
   is_admin: boolean | null;
@@ -658,14 +659,25 @@ const AdminUsers = () => {
                                 className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80"
                               >
                                 <td className="px-4 py-2 align-middle">
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="font-medium text-exclu-cloud text-xs sm:text-sm">
-                                      {user.display_name || '—'}
-                                    </span>
-                                    {user.email && (
-                                      <span className="text-[11px] text-exclu-space/80 truncate">{user.email}</span>
-                                    )}
-                                    <span className="text-[10px] text-exclu-space/60 truncate">{user.id}</span>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-exclu-arsenic/50 flex items-center justify-center">
+                                      {user.avatar_url ? (
+                                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        <span className="text-[11px] font-bold text-exclu-space/60">
+                                          {(user.display_name || user.handle || '?')[0].toUpperCase()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                      <span className="font-medium text-exclu-cloud text-xs sm:text-sm">
+                                        {user.display_name || '—'}
+                                      </span>
+                                      {user.email && (
+                                        <span className="text-[11px] text-exclu-space/80 truncate">{user.email}</span>
+                                      )}
+                                      <span className="text-[10px] text-exclu-space/60 truncate">{user.id}</span>
+                                    </div>
                                   </div>
                                 </td>
                                 <td className="px-4 py-2 align-middle">

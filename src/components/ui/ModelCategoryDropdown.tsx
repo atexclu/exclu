@@ -60,13 +60,13 @@ export function ModelCategoryDropdown({
           {value.map((cat) => (
             <span
               key={cat}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#CFFF16]/10 text-[#CFFF16] text-[11px] font-medium border border-[#CFFF16]/30"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/5 dark:bg-[#CFFF16]/10 text-foreground dark:text-[#CFFF16] text-[11px] font-medium border border-black/15 dark:border-[#CFFF16]/30"
             >
               {getModelCategoryLabel(cat)}
               <button
                 type="button"
                 onClick={(e) => remove(cat, e)}
-                className="ml-0.5 hover:text-white transition-colors"
+                className="ml-0.5 hover:opacity-60 dark:hover:text-white transition-colors"
                 aria-label={`Remove ${getModelCategoryLabel(cat)}`}
               >
                 <X className="w-2.5 h-2.5" />
@@ -121,7 +121,7 @@ export function ModelCategoryDropdown({
                         onClick={() => toggle(opt.value)}
                         className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center justify-between ${
                           isSelected
-                            ? 'bg-[#CFFF16]/10 text-[#CFFF16]'
+                            ? 'bg-black/5 dark:bg-[#CFFF16]/10 text-foreground dark:text-[#CFFF16]'
                             : 'text-exclu-space hover:bg-exclu-arsenic/30 hover:text-exclu-cloud'
                         }`}
                       >

@@ -2,7 +2,7 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2 } from 'lucide-react';
+import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2, Camera, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
@@ -102,6 +102,9 @@ const AdminUserOverview = () => {
   const [agencyData, setAgencyData] = useState<{ agency_name: string; agency_logo_url: string | null; country: string } | null>(null);
   const [managedProfiles, setManagedProfiles] = useState<Array<{ id: string; username: string; display_name: string | null; is_active: boolean; avatar_url: string | null; model_categories: string[] }>>([]);
   const [selectedManagedProfileId, setSelectedManagedProfileId] = useState<string | null>(null);
+  const [isDeletingAvatar, setIsDeletingAvatar] = useState(false);
+  const [isRequestingPhotoChange, setIsRequestingPhotoChange] = useState(false);
+  const [photoTargetProfileId, setPhotoTargetProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -451,6 +454,56 @@ const AdminUserOverview = () => {
     }
   };
 
+  const handleDeleteAvatar = async () => {
+    if (!id) return;
+    setIsDeletingAvatar(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { toast.error('Session expired'); return; }
+      const body: any = { action: 'delete_avatar' };
+      if (photoTargetProfileId) {
+        body.creator_profile_id = photoTargetProfileId;
+      } else {
+        body.user_id = id;
+      }
+      const { data: resData, error: err } = await supabase.functions.invoke('admin-manage-user-content', {
+        body,
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'x-supabase-auth': session.access_token },
+      });
+      if (err || resData?.error) {
+        toast.error('Failed to delete photo');
+      } else {
+        toast.success('Profile photo deleted');
+        if (photoTargetProfileId) {
+          setManagedProfiles(prev => prev.map(p => p.id === photoTargetProfileId ? { ...p, avatar_url: null } : p));
+        }
+      }
+    } finally {
+      setIsDeletingAvatar(false);
+    }
+  };
+
+  const handleRequestPhotoChange = async () => {
+    if (!id) return;
+    setIsRequestingPhotoChange(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { toast.error('Session expired'); return; }
+      const targetProfile = photoTargetProfileId ? managedProfiles.find(p => p.id === photoTargetProfileId) : null;
+      const { data: resData, error: err } = await supabase.functions.invoke('admin-manage-user-content', {
+        body: { action: 'request_photo_change', user_id: id, profile_display_name: targetProfile?.display_name ?? targetProfile?.username ?? null },
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'x-supabase-auth': session.access_token },
+      });
+      if (err || resData?.error) {
+        toast.error('Failed to send email');
+      } else {
+        toast.success('Photo change request sent by email');
+      }
+    } finally {
+      setIsRequestingPhotoChange(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedManagedProfileId) {
       const p = managedProfiles.find(m => m.id === selectedManagedProfileId);
@@ -574,6 +627,53 @@ const AdminUserOverview = () => {
                     <p className="text-xs text-exclu-space/70 mt-2">Updating visibility...</p>
                   )}
                 </div>
+
+                {/* Photo Management */}
+                {profile.is_creator && (
+                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Camera className="w-4 h-4 text-[#CFFF16]" />
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Photo Management</h2>
+                    </div>
+
+                    {managedProfiles.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1.5">Select profile</p>
+                        <select
+                          value={photoTargetProfileId ?? ''}
+                          onChange={(e) => setPhotoTargetProfileId(e.target.value || null)}
+                          className="h-9 rounded-lg bg-exclu-ink border border-exclu-arsenic/70 text-exclu-cloud text-xs px-3 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40 w-full sm:w-64"
+                        >
+                          <option value="">— Select a managed profile —</option>
+                          {managedProfiles.map((p) => (
+                            <option key={p.id} value={p.id}>{p.display_name || p.username} (@{p.username})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleRequestPhotoChange}
+                        disabled={isRequestingPhotoChange || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-exclu-arsenic/60 text-exclu-cloud text-xs hover:border-exclu-cloud/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isRequestingPhotoChange ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                        Request photo change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteAvatar}
+                        disabled={isDeletingAvatar || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-xs hover:border-red-400/60 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isDeletingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                        Delete current photo
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Agency Information */}
                 {agencyData && (
