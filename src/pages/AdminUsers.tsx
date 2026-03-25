@@ -132,8 +132,10 @@ const statusConfig: Record<ArticleStatus, { label: string; color: string; icon: 
   archived: { label: 'Archived', color: 'text-exclu-graphite bg-exclu-graphite/10', icon: Archive },
 };
 
-const authInputClass = 'h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm';
-const selectClass = 'h-11 rounded-md bg-black border border-white text-white text-sm px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 cursor-pointer';
+const authInputClass = 'h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm';
+const selectClass = 'h-11 rounded-md bg-white dark:bg-black border border-border dark:border-white text-foreground dark:text-white text-sm px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 cursor-pointer';
+const darkInputClass = 'h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm';
+const darkSelectClass = 'h-11 rounded-md bg-black border border-white text-white text-sm px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 cursor-pointer';
 
 const AdminUsers = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -569,8 +571,8 @@ const AdminUsers = () => {
                   onClick={() => switchTab(tab)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
                     activeTab === tab
-                      ? 'bg-[#CFFF16]/10 text-[#CFFF16] border border-[#CFFF16]/20'
-                      : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-arsenic/20'
+                      ? 'bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20'
+                      : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
                   }`}
                 >
                   {tab === 'users' ? 'Users' : tab === 'blog' ? 'Blog' : 'Agencies'}
@@ -1050,7 +1052,7 @@ const AdminUsers = () => {
                           value={agencyForm.name}
                           onChange={(e) => setAgencyForm((p) => ({ ...p, name: e.target.value, slug: editingAgencyId ? p.slug : slugify(e.target.value) }))}
                           placeholder="e.g. Elite Models Agency"
-                          className={authInputClass}
+                          className={darkInputClass}
                         />
                       </div>
                       <div>
@@ -1058,7 +1060,7 @@ const AdminUsers = () => {
                         <select
                           value={agencyForm.country}
                           onChange={(e) => setAgencyForm((p) => ({ ...p, country: e.target.value }))}
-                          className={selectClass + ' w-full'}
+                          className={darkSelectClass + ' w-full'}
                         >
                           <option value="">— Select country —</option>
                           {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1066,7 +1068,7 @@ const AdminUsers = () => {
                       </div>
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">City</label>
-                        <Input value={agencyForm.city} onChange={(e) => setAgencyForm((p) => ({ ...p, city: e.target.value }))} placeholder="e.g. Los Angeles" className={authInputClass} />
+                        <Input value={agencyForm.city} onChange={(e) => setAgencyForm((p) => ({ ...p, city: e.target.value }))} placeholder="e.g. Los Angeles" className={darkInputClass} />
                       </div>
                     </div>
 
@@ -1085,11 +1087,11 @@ const AdminUsers = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Website</label>
-                        <Input value={agencyForm.website_url} onChange={(e) => setAgencyForm((p) => ({ ...p, website_url: e.target.value }))} placeholder="https://…" className={authInputClass} />
+                        <Input value={agencyForm.website_url} onChange={(e) => setAgencyForm((p) => ({ ...p, website_url: e.target.value }))} placeholder="https://…" className={darkInputClass} />
                       </div>
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Contact Email</label>
-                        <Input value={agencyForm.contact_email} onChange={(e) => setAgencyForm((p) => ({ ...p, contact_email: e.target.value }))} placeholder="contact@agency.com" className={authInputClass} />
+                        <Input value={agencyForm.contact_email} onChange={(e) => setAgencyForm((p) => ({ ...p, contact_email: e.target.value }))} placeholder="contact@agency.com" className={darkInputClass} />
                       </div>
                       <div className="sm:col-span-2">
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Agency Logo</label>
@@ -1125,7 +1127,7 @@ const AdminUsers = () => {
                     {editingAgencyId && (
                       <div>
                         <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Slug</label>
-                        <Input value={agencyForm.slug} onChange={(e) => setAgencyForm((p) => ({ ...p, slug: e.target.value }))} className={authInputClass} />
+                        <Input value={agencyForm.slug} onChange={(e) => setAgencyForm((p) => ({ ...p, slug: e.target.value }))} className={darkInputClass} />
                       </div>
                     )}
 

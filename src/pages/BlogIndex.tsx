@@ -214,7 +214,7 @@ const BlogIndex = () => {
 
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground overflow-x-hidden relative">
+    <div className="dark min-h-screen bg-[#020617] text-foreground overflow-x-hidden relative">
       {/* Aurora background */}
       <div className="fixed inset-0 z-0 pointer-events-none opacity-30">
         <Aurora colorStops={['#CFFF16', '#a3e635', '#CFFF16']} blend={0.5} amplitude={0.7} speed={0.6} />

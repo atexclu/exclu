@@ -879,7 +879,7 @@ const AdminBlogEditor = () => {
               onChange={(e) => setArticle((prev) => ({ ...prev, excerpt: e.target.value }))}
               placeholder="Brief summary of the article..."
               maxLength={500}
-              className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+              className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
             />
 
             {/* Editor */}
@@ -927,7 +927,7 @@ const AdminBlogEditor = () => {
               <select
                 value={article.category_id}
                 onChange={(e) => setArticle((prev) => ({ ...prev, category_id: e.target.value }))}
-                className="w-full h-11 rounded-md bg-black border border-white text-white text-sm px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 cursor-pointer"
+                className="w-full h-11 rounded-md bg-white dark:bg-black border border-border dark:border-white text-foreground dark:text-white text-sm px-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 cursor-pointer"
               >
                 <option value="">No category</option>
                 {categories.map((c) => (
@@ -943,7 +943,7 @@ const AdminBlogEditor = () => {
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
                 placeholder="tag1, tag2, tag3..."
-                className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
               />
               <p className="text-[10px] text-exclu-space mt-1">Comma-separated</p>
             </div>
@@ -955,7 +955,7 @@ const AdminBlogEditor = () => {
                 value={article.author_name}
                 onChange={(e) => setArticle((prev) => ({ ...prev, author_name: e.target.value }))}
                 placeholder="Author name"
-                className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
               />
             </div>
 
@@ -969,7 +969,7 @@ const AdminBlogEditor = () => {
                   <Input
                     value={article.slug}
                     onChange={(e) => { setSlugManual(true); setArticle((prev) => ({ ...prev, slug: slugify(e.target.value) })); }}
-                    className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                    className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                   />
                 </div>
                 <div>
@@ -979,7 +979,7 @@ const AdminBlogEditor = () => {
                     onChange={(e) => setArticle((prev) => ({ ...prev, meta_description: e.target.value }))}
                     placeholder={article.excerpt || 'Meta description...'}
                     maxLength={170}
-                    className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
+                    className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                   />
                   <p className="text-[10px] text-exclu-space/60 mt-0.5">{article.meta_description.length}/170</p>
                 </div>

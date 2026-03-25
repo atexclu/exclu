@@ -2,6 +2,21 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { Search, MapPin, Building2, Users, Star, Filter, X, ChevronDown, Bookmark } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+
+const COUNTRY_NAMES: Record<string, string> = {
+  AF: 'Afghanistan', AL: 'Albania', DZ: 'Algeria', AR: 'Argentina', AU: 'Australia',
+  AT: 'Austria', BE: 'Belgium', BR: 'Brazil', CA: 'Canada', CL: 'Chile',
+  CN: 'China', CO: 'Colombia', HR: 'Croatia', CZ: 'Czech Republic', DK: 'Denmark',
+  EG: 'Egypt', FI: 'Finland', FR: 'France', DE: 'Germany', GH: 'Ghana',
+  GR: 'Greece', HU: 'Hungary', IN: 'India', ID: 'Indonesia', IE: 'Ireland',
+  IL: 'Israel', IT: 'Italy', JP: 'Japan', KE: 'Kenya', KR: 'South Korea',
+  MX: 'Mexico', MA: 'Morocco', NL: 'Netherlands', NZ: 'New Zealand', NG: 'Nigeria',
+  NO: 'Norway', PK: 'Pakistan', PE: 'Peru', PH: 'Philippines', PL: 'Poland',
+  PT: 'Portugal', RO: 'Romania', RU: 'Russia', SA: 'Saudi Arabia', ZA: 'South Africa',
+  ES: 'Spain', SE: 'Sweden', CH: 'Switzerland', TH: 'Thailand', TR: 'Turkey',
+  UA: 'Ukraine', GB: 'United Kingdom', US: 'United States', VE: 'Venezuela',
+  VN: 'Vietnam',
+};
 import { Input } from '@/components/ui/input';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -314,7 +329,7 @@ const DirectoryAgencies = () => {
                   >
                     <option value="">All countries</option>
                     {countries.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>{COUNTRY_NAMES[c] ?? c}</option>
                     ))}
                   </select>
                 )}
