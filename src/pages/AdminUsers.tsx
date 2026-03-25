@@ -53,12 +53,18 @@ interface DirectoryAgency {
 
 interface ClaimRequest {
   id: string;
-  agency_id: string;
+  agency_id: string | null;
+  profile_agency_id: string | null;
+  agency_name: string | null;
   requester_email: string;
   requester_name: string | null;
   requester_company: string | null;
+  requester_whatsapp: string | null;
+  requester_telegram: string | null;
+  requester_monthly_revenue: string | null;
   requester_message: string | null;
-  status: 'pending' | 'processed';
+  is_creator_agency: boolean;
+  status: 'pending' | 'approved' | 'rejected' | 'processed';
   created_at: string;
   directory_agencies?: { name: string } | null;
 }
@@ -424,6 +430,30 @@ const AdminUsers = () => {
       .eq('id', claimId);
     if (updateErr) { toast.error('Failed to update claim'); return; }
     toast.success('Marked as processed');
+    fetchDirAgencies();
+  };
+
+  const handleApproveContact = async (claimId: string) => {
+    const res = await supabase.functions.invoke('admin-approve-agency-contact', {
+      body: { contactId: claimId, action: 'approve' },
+    });
+    if (res.error || res.data?.error) {
+      toast.error(res.data?.error || 'Failed to approve request');
+      return;
+    }
+    toast.success('Request approved — email forwarded to the agency');
+    fetchDirAgencies();
+  };
+
+  const handleRejectContact = async (claimId: string) => {
+    const res = await supabase.functions.invoke('admin-approve-agency-contact', {
+      body: { contactId: claimId, action: 'reject' },
+    });
+    if (res.error || res.data?.error) {
+      toast.error(res.data?.error || 'Failed to reject request');
+      return;
+    }
+    toast.success('Request rejected');
     fetchDirAgencies();
   };
 
@@ -903,59 +933,95 @@ const AdminUsers = () => {
                   </div>
 
                   {(() => {
-                    const isProcessed = (s: string) => s !== 'pending';
+                    const isHandled = (s: string) => s !== 'pending';
                     const filtered = claimRequests.filter((c) =>
                       claimFilter === 'all' ? true :
                       claimFilter === 'pending' ? c.status === 'pending' :
-                      isProcessed(c.status)
+                      isHandled(c.status)
                     );
                     if (filtered.length === 0) {
                       return (
                         <div className="px-4 py-8 text-center text-sm text-exclu-space">
                           <Inbox className="w-6 h-6 mx-auto mb-2 opacity-40" />
-                          {claimFilter === 'pending' ? 'No pending requests.' : claimFilter === 'processed' ? 'No processed requests yet.' : 'No claim requests yet.'}
+                          {claimFilter === 'pending' ? 'No pending requests.' : claimFilter === 'processed' ? 'No handled requests yet.' : 'No contact requests yet.'}
                         </div>
                       );
                     }
                     return (
                       <div className="divide-y divide-exclu-arsenic/40">
-                        {filtered.map((claim) => (
-                          <div key={claim.id} className="px-4 py-3 flex items-start justify-between gap-4">
-                            <div className="min-w-0 space-y-0.5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-semibold text-exclu-cloud">
-                                  {claim.directory_agencies?.name || 'Unknown agency'}
+                        {filtered.map((claim) => {
+                          const agencyDisplayName = claim.agency_name || claim.directory_agencies?.name || 'Unknown agency';
+                          const statusBadge = {
+                            pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                            approved: 'bg-green-500/10 text-green-400 border-green-500/20',
+                            rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
+                            processed: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+                          }[claim.status] ?? 'bg-white/5 text-exclu-space border-white/10';
+                          const statusLabel = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', processed: 'Processed' }[claim.status] ?? claim.status;
+
+                          return (
+                            <div key={claim.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-semibold text-exclu-cloud">{agencyDisplayName}</p>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${statusBadge}`}>
+                                    {statusLabel}
+                                  </span>
+                                  {claim.is_creator_agency && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                      Creator agency
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-exclu-space">
+                                  {claim.requester_email}
+                                  {claim.requester_name && ` · ${claim.requester_name}`}
+                                  {claim.requester_company && ` · ${claim.requester_company}`}
                                 </p>
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                                  claim.status === 'pending'
-                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                    : 'bg-green-500/10 text-green-400 border border-green-500/20'
-                                }`}>
-                                  {claim.status === 'pending' ? 'Pending' : 'Processed'}
-                                </span>
+                                {(claim.requester_whatsapp || claim.requester_telegram || claim.requester_monthly_revenue) && (
+                                  <p className="text-xs text-exclu-steel">
+                                    {claim.requester_whatsapp && `WhatsApp: ${claim.requester_whatsapp}`}
+                                    {claim.requester_telegram && `${claim.requester_whatsapp ? ' · ' : ''}Telegram: ${claim.requester_telegram}`}
+                                    {claim.requester_monthly_revenue && `${(claim.requester_whatsapp || claim.requester_telegram) ? ' · ' : ''}Revenue: ${claim.requester_monthly_revenue}`}
+                                  </p>
+                                )}
+                                {claim.requester_message && (
+                                  <p className="text-xs text-exclu-steel italic">"{claim.requester_message}"</p>
+                                )}
+                                <p className="text-[10px] text-exclu-graphite">
+                                  {new Date(claim.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </p>
                               </div>
-                              <p className="text-xs text-exclu-space">
-                                {claim.requester_email}
-                                {claim.requester_name && ` · ${claim.requester_name}`}
-                                {claim.requester_company && ` · ${claim.requester_company}`}
-                              </p>
-                              {claim.requester_message && (
-                                <p className="text-xs text-exclu-steel italic">"{claim.requester_message}"</p>
+                              {claim.status === 'pending' && (
+                                <div className="flex-shrink-0 flex flex-col gap-1.5">
+                                  {claim.is_creator_agency ? (
+                                    <>
+                                      <button
+                                        onClick={() => handleApproveContact(claim.id)}
+                                        className="px-3 py-1.5 rounded-full text-xs font-medium bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition-colors"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectContact(claim.id)}
+                                        className="px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors"
+                                      >
+                                        Reject
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleMarkClaimProcessed(claim.id)}
+                                      className="px-3 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-exclu-cloud hover:bg-white/10 transition-colors"
+                                    >
+                                      Mark as processed
+                                    </button>
+                                  )}
+                                </div>
                               )}
-                              <p className="text-[10px] text-exclu-graphite">
-                                {new Date(claim.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              </p>
                             </div>
-                            {claim.status === 'pending' && (
-                              <button
-                                onClick={() => handleMarkClaimProcessed(claim.id)}
-                                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-exclu-cloud hover:bg-white/10 transition-colors"
-                              >
-                                Mark as processed
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   })()}

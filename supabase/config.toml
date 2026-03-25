@@ -103,6 +103,9 @@ verify_jwt = false
 [functions.verify-instagram]
 verify_jwt = false
 
+[functions.admin-approve-agency-contact]
+verify_jwt = false
+
 [functions.admin-manage-user-content]
 enabled = true
 verify_jwt = true
