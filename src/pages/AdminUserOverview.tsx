@@ -49,6 +49,7 @@ interface UserAssetOverview {
   is_public?: boolean | null;
   profile_id?: string | null;
   preview_url: string | null;
+  storage_path?: string | null;
 }
 
 interface UserSaleOverview {
@@ -454,6 +455,21 @@ const AdminUserOverview = () => {
     }
   };
 
+  const handleDeleteAsset = async (assetId: string, storagePath: string | null | undefined) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) { toast.error('Session expired'); return; }
+    const { data: resData, error: err } = await supabase.functions.invoke('admin-manage-user-content', {
+      body: { action: 'delete_asset', asset_id: assetId, storage_path: storagePath ?? null },
+      headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'x-supabase-auth': session.access_token },
+    });
+    if (err || resData?.error) {
+      toast.error('Failed to delete content');
+    } else {
+      setAssets((prev) => prev.filter((a) => a.id !== assetId));
+      toast.success('Content deleted');
+    }
+  };
+
   const handleDeleteAvatar = async () => {
     if (!id) return;
     setIsDeletingAvatar(true);
@@ -631,46 +647,45 @@ const AdminUserOverview = () => {
                 {/* Photo Management */}
                 {profile.is_creator && (
                   <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Camera className="w-4 h-4 text-[#CFFF16]" />
-                      <h2 className="text-sm font-semibold text-exclu-cloud">Photo Management</h2>
-                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Camera className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Photo Management</h2>
+                      </div>
 
-                    {managedProfiles.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1.5">Select profile</p>
+                      {managedProfiles.length > 0 && (
                         <select
                           value={photoTargetProfileId ?? ''}
                           onChange={(e) => setPhotoTargetProfileId(e.target.value || null)}
-                          className="h-9 rounded-lg bg-exclu-ink border border-exclu-arsenic/70 text-exclu-cloud text-xs px-3 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40 w-full sm:w-64"
+                          className="h-8 rounded-lg bg-exclu-ink border border-exclu-arsenic/70 text-exclu-cloud text-xs px-3 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40 w-full sm:w-56"
                         >
                           <option value="">— Select a managed profile —</option>
                           {managedProfiles.map((p) => (
                             <option key={p.id} value={p.id}>{p.display_name || p.username} (@{p.username})</option>
                           ))}
                         </select>
-                      </div>
-                    )}
+                      )}
 
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={handleRequestPhotoChange}
-                        disabled={isRequestingPhotoChange || (managedProfiles.length > 0 && !photoTargetProfileId)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-exclu-arsenic/60 text-exclu-cloud text-xs hover:border-exclu-cloud/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {isRequestingPhotoChange ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                        Request photo change
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDeleteAvatar}
-                        disabled={isDeletingAvatar || (managedProfiles.length > 0 && !photoTargetProfileId)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-xs hover:border-red-400/60 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {isDeletingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                        Delete current photo
-                      </button>
+                      <div className="flex items-center gap-2 sm:ml-auto">
+                        <button
+                          type="button"
+                          onClick={handleRequestPhotoChange}
+                          disabled={isRequestingPhotoChange || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-exclu-arsenic/60 text-exclu-cloud text-xs hover:border-exclu-cloud/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isRequestingPhotoChange ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                          Request change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteAvatar}
+                          disabled={isDeletingAvatar || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-xs hover:border-red-400/60 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isDeletingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Delete photo
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -971,9 +986,19 @@ const AdminUserOverview = () => {
                                 {asset.is_public ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
                                 {asset.is_public ? 'Public' : 'Private'}
                               </button>
-                              <span className="text-[10px] text-exclu-space/70">
-                                {asset.created_at ? new Date(asset.created_at).toLocaleDateString() : '—'}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm('Delete this content permanently?')) {
+                                    handleDeleteAsset(asset.id, asset.storage_path);
+                                  }
+                                }}
+                                className="p-0.5 rounded text-exclu-space/50 hover:text-red-400 transition-colors"
+                                title="Delete content"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
                             </div>
                           </div>
                         </div>

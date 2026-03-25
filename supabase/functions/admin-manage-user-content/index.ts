@@ -4,6 +4,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const supabaseAnonKey = Deno.env.get('VITE_SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+const brevoApiKey = Deno.env.get('BREVO_API_KEY')
+const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL')
+const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu'
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +15,44 @@ const corsHeaders = {
 }
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey)
+
+function buildPhotoRequestEmail(profileLabel: string): string {
+  const label = profileLabel ? ` for <strong>${profileLabel}</strong>` : ''
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile photo update request</title>
+<style>
+  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; }
+  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
+  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
+  .header h1 { font-size:22px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
+  .content { padding:26px 28px 30px 28px; }
+  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
+  .content strong { color:#ffffff; font-weight:600; }
+  .button { display:inline-block; background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%); color:#020617 !important; text-decoration:none; padding:14px 32px; border-radius:999px; font-weight:600; font-size:15px; margin:20px 0; box-shadow:0 6px 18px rgba(190,242,100,0.4); }
+  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
+  .footer a { color:#a3e635; text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header"><h1>Profile photo update requested</h1></div>
+  <div class="content">
+    <p>Hello,</p>
+    <p>Our team has reviewed your Exclu profile and is requesting that you update your profile photo${label}.</p>
+    <p>Please log in and upload a new photo at your earliest convenience.</p>
+    <p><a href="${siteUrl}/dashboard" class="button">Update my photo</a></p>
+    <p>If you have any questions, feel free to reply to this email.</p>
+    <p>The Exclu team</p>
+  </div>
+  <div class="footer"><a href="${siteUrl}">${siteUrl}</a></div>
+</div>
+</body>
+</html>`
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -27,7 +69,7 @@ serve(async (req) => {
 
     const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey)
     const { data: { user }, error: authError } = await supabaseAuthClient.auth.getUser(token)
-    
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid authentication' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -65,6 +107,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'delete_asset') {
+      const { asset_id, storage_path } = body
+      if (!asset_id) {
+        return new Response(JSON.stringify({ error: 'Missing asset_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      // Delete from storage first if path provided
+      if (storage_path) {
+        await supabaseAdmin.storage.from('creator-content').remove([storage_path])
+      }
+      const { error } = await supabaseAdmin.from('assets').delete().eq('id', asset_id)
+      if (error) throw error
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'delete_avatar') {
       const { user_id, creator_profile_id } = body
       if (!user_id && !creator_profile_id) {
@@ -85,12 +141,6 @@ serve(async (req) => {
       if (!user_id) {
         return new Response(JSON.stringify({ error: 'Missing user_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
-
-      const brevoApiKey = Deno.env.get('BREVO_API_KEY')
-      const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL')
-      const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu'
-      const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at'
-
       if (!brevoApiKey || !brevoSenderEmail) {
         return new Response(JSON.stringify({ error: 'Email configuration missing' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
@@ -101,7 +151,8 @@ serve(async (req) => {
       }
 
       const userEmail = authUserData.user.email
-      const profileLabel = profile_display_name ? ` for "${profile_display_name}"` : ''
+      const profileLabel = profile_display_name ?? ''
+      const subjectLabel = profileLabel ? ` for "${profileLabel}"` : ''
 
       const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
@@ -109,8 +160,8 @@ serve(async (req) => {
         body: JSON.stringify({
           sender: { email: brevoSenderEmail, name: brevoSenderName },
           to: [{ email: userEmail }],
-          subject: `Action required: please update your profile photo${profileLabel}`,
-          htmlContent: `<p>Hello,</p><p>Our team has reviewed your Exclu profile and is requesting that you update your profile photo${profileLabel}.</p><p>Please log in to <a href="${siteUrl}">${siteUrl}</a> and upload a new profile photo at your earliest convenience.</p><p>If you have any questions, feel free to reply to this email.</p><p>The Exclu team</p>`,
+          subject: `Action required: please update your profile photo${subjectLabel}`,
+          htmlContent: buildPhotoRequestEmail(profileLabel),
         }),
       })
 
