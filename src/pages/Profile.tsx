@@ -27,9 +27,12 @@ import {
   Upload,
   Building2,
   Trash2,
+  Loader2,
+  Tag,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 import { useProfiles } from '@/contexts/ProfileContext';
+import { AgencyCategoryConfig, EMPTY_AGENCY_CATEGORIES, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
 
 const Profile = () => {
   const { activeProfile, refreshProfiles, isAgency, profiles: creatorProfiles, setActiveProfileId } = useProfiles();
@@ -58,6 +61,11 @@ const Profile = () => {
   const [agencyName, setAgencyName] = useState('');
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [isSavingAgency, setIsSavingAgency] = useState(false);
+
+  // Agency directory categories
+  const [directoryAgencyId, setDirectoryAgencyId] = useState<string | null>(null);
+  const [agencyCats, setAgencyCats] = useState<AgencyCategoryData>(EMPTY_AGENCY_CATEGORIES);
+  const [isSavingAgencyCategories, setIsSavingAgencyCategories] = useState(false);
 
   // Handle hash navigation to open specific section
   useEffect(() => {
@@ -112,12 +120,20 @@ const Profile = () => {
       try {
         const { data: agencyData } = await supabase
           .from('profiles')
-          .select('agency_name, agency_logo_url')
+          .select('agency_name, agency_logo_url, agency_pricing, agency_target_market, agency_services_offered, agency_platform_focus, agency_growth_strategy, model_categories')
           .eq('id', user.id)
           .maybeSingle();
         if (agencyData) {
           setAgencyName(agencyData.agency_name || '');
           setAgencyLogoUrl(agencyData.agency_logo_url || null);
+          setAgencyCats({
+            pricing: agencyData.agency_pricing || '',
+            targetMarket: agencyData.agency_target_market || [],
+            services: agencyData.agency_services_offered || [],
+            platform: agencyData.agency_platform_focus || [],
+            growthStrategy: agencyData.agency_growth_strategy || [],
+            modelTypes: agencyData.model_categories || [],
+          });
         }
       } catch {
         // Migration 070 not yet applied
@@ -174,11 +190,31 @@ const Profile = () => {
         }
       }
 
+      // Load linked directory agency categories for agency users
+      if (isAgency && user.id) {
+        const { data: dirAgency } = await supabase
+          .from('directory_agencies')
+          .select('id, pricing_structure, target_market, services_offered, platform_focus, geography, growth_strategy, model_categories')
+          .eq('claimed_by_user_id', user.id)
+          .maybeSingle();
+
+        if (dirAgency) {
+          setDirectoryAgencyId(dirAgency.id);
+          setAgencyPricing(dirAgency.pricing_structure || '');
+          setAgencyTargetMarket(dirAgency.target_market || []);
+          setAgencyServicesOffered(dirAgency.services_offered || []);
+          setAgencyPlatformFocus(dirAgency.platform_focus || []);
+          setAgencyGeography(dirAgency.geography || []);
+          setAgencyGrowthStrategy(dirAgency.growth_strategy || []);
+          setAgencyModelCategories(dirAgency.model_categories || []);
+        }
+      }
+
       setIsLoading(false);
     };
 
     fetchProfile();
-  }, [activeProfile?.id]);
+  }, [activeProfile?.id, isAgency]);
 
   // Load more detailed Stripe Connect requirements (what is missing) when there is a Stripe
   // account but the status is not complete, so we can guide the creator.
@@ -594,6 +630,48 @@ const Profile = () => {
       setAgencyLogoUrl(null);
       toast.success('Logo removed.');
     }
+  };
+
+  // Agency category constants imported from @/lib/categories
+
+  const handleSaveAgencyCategories = async () => {
+    if (!userId) return;
+    setIsSavingAgencyCategories(true);
+
+    // Always save to profiles (works for all agency accounts)
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        agency_pricing: agencyCats.pricing || null,
+        agency_target_market: agencyCats.targetMarket,
+        agency_services_offered: agencyCats.services,
+        agency_platform_focus: agencyCats.platform,
+        agency_growth_strategy: agencyCats.growthStrategy,
+        model_categories: agencyCats.modelTypes,
+      })
+      .eq('id', userId);
+
+    // If also linked to a directory listing, sync there too
+    if (!profileError && directoryAgencyId) {
+      await supabase
+        .from('directory_agencies')
+        .update({
+          pricing_structure: agencyCats.pricing || null,
+          target_market: agencyCats.targetMarket,
+          services_offered: agencyCats.services,
+          platform_focus: agencyCats.platform,
+          growth_strategy: agencyCats.growthStrategy,
+          model_categories: agencyCats.modelTypes,
+        })
+        .eq('id', directoryAgencyId);
+    }
+
+    if (profileError) {
+      toast.error('Failed to save categories.');
+    } else {
+      toast.success('Agency categories saved!');
+    }
+    setIsSavingAgencyCategories(false);
   };
 
   const handleSocialLinkChange = (platform: string, value: string) => {
@@ -1321,6 +1399,37 @@ const Profile = () => {
                         >
                           {isSavingAgency ? 'Saving...' : 'Save branding'}
                         </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Agency Categories — visible for all agency accounts */}
+                  {isAgency && (
+                    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                      <div className="px-6 py-5 border-b border-border/40 bg-gradient-to-r from-primary/5 to-transparent">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <Tag className="w-4 h-4 text-primary" />
+                            </div>
+                            <div>
+                              <h2 className="text-lg font-semibold text-exclu-cloud">Agency Categories</h2>
+                              <p className="text-xs text-exclu-space/70">How your agency appears in the directory</p>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={handleSaveAgencyCategories}
+                            variant="hero"
+                            disabled={isSavingAgencyCategories}
+                            className="rounded-full px-5 h-8 text-xs"
+                          >
+                            {isSavingAgencyCategories ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : null}
+                            {isSavingAgencyCategories ? 'Saving…' : 'Save categories'}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <AgencyCategoryConfig value={agencyCats} onChange={setAgencyCats} />
                       </div>
                     </div>
                   )}

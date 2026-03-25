@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Check, ExternalLink, Camera, Loader2, Copy, CheckCircle2, Lock, Upload, ZoomIn, ZoomOut, ArrowUpRight, ChevronLeft, ChevronRight, Plus, Gift, Image as ImageIcon, FileText, DollarSign, Heart, Link as LinkIcon, X } from 'lucide-react';
 import { auroraGradients, getAuroraGradient } from '@/lib/auroraGradients';
+import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
 import { User } from '@supabase/supabase-js';
@@ -154,6 +155,9 @@ const Onboarding = () => {
   const [wishlistUnlimited, setWishlistUnlimited] = useState(true);
   const [wishlistMaxQty, setWishlistMaxQty] = useState('1');
   const [isCreatingWishlist, setIsCreatingWishlist] = useState(false);
+
+  // Model categories
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // Crop state for avatar
   const [rawAvatarUrl, setRawAvatarUrl] = useState<string | null>(null);
@@ -547,6 +551,7 @@ const Onboarding = () => {
             bio: bio.trim() || null,
             avatar_url: finalAvatarUrl,
             aurora_gradient: auroraGradient,
+            model_categories: selectedCategories.length > 0 ? selectedCategories : null,
           })
           .eq('user_id', user.id);
 
@@ -564,6 +569,7 @@ const Onboarding = () => {
             bio: bio.trim() || null,
             avatar_url: finalAvatarUrl,
             aurora_gradient: auroraGradient,
+            model_categories: selectedCategories.length > 0 ? selectedCategories : null,
           });
 
         if (insertError) {
@@ -939,6 +945,18 @@ const Onboarding = () => {
                       <p className="text-[11px] text-exclu-space/70">
                         {bio.length}/500 characters
                       </p>
+                    </div>
+
+                    {/* Model Categories */}
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-exclu-cloud">Categories <span className="text-xs font-normal text-exclu-space/60">(optional)</span></p>
+                      <p className="text-[11px] text-exclu-space/70">
+                        Select categories that describe your content. This helps fans and agencies discover you.
+                      </p>
+                      <ModelCategoryDropdown
+                        value={selectedCategories}
+                        onChange={setSelectedCategories}
+                      />
                     </div>
 
                     <div className="space-y-2">

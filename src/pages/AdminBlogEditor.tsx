@@ -4,7 +4,7 @@ import {
   ArrowLeft, Save, Send, X, Image as ImageIcon, Loader2, Bold, Italic,
   Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Quote, Code,
   Heading1, Heading2, Heading3, Link as LinkIcon, Undo, Redo, AlignLeft,
-  AlignCenter, AlignRight, Minus, Plus, Video, Eye, EyeOff, Type, Upload,
+  AlignCenter, AlignRight, Minus, Plus, Video, Eye, EyeOff, Type, Upload, Clock,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,7 @@ interface ArticleData {
   author_url: string;
   status: string;
   published_at: string | null;
+  scheduled_at: string | null;
 }
 
 const emptyArticle: ArticleData = {
@@ -69,6 +70,7 @@ const emptyArticle: ArticleData = {
   author_url: '',
   status: 'draft',
   published_at: null,
+  scheduled_at: null,
 };
 
 function slugify(text: string): string {
@@ -649,6 +651,7 @@ const AdminBlogEditor = () => {
           author_url: a.author_url || '',
           status: a.status || 'draft',
           published_at: a.published_at,
+          scheduled_at: a.scheduled_at || null,
         });
         setTagsInput((a.tags || []).join(', '));
         setSlugManual(true);
@@ -728,6 +731,14 @@ const AdminBlogEditor = () => {
     if (targetStatus === 'published') {
       payload.status = 'published';
       payload.published_at = new Date().toISOString();
+    } else if (targetStatus === 'scheduled') {
+      if (!article.scheduled_at) {
+        toast.error('Please set a schedule date first');
+        setSaving(false);
+        return;
+      }
+      payload.status = 'scheduled';
+      payload.scheduled_at = article.scheduled_at;
     } else if (targetStatus) {
       payload.status = targetStatus;
     }
@@ -742,8 +753,12 @@ const AdminBlogEditor = () => {
     if (res.error) {
       toast.error('Save failed: ' + (res.error.message || 'Unknown error'));
     } else {
-      toast.success(targetStatus === 'published' ? 'Article published!' : 'Article saved');
-      if (targetStatus === 'published') {
+      toast.success(
+        targetStatus === 'published' ? 'Article published!' :
+        targetStatus === 'scheduled' ? 'Article scheduled!' :
+        'Article saved'
+      );
+      if (targetStatus === 'published' || targetStatus === 'scheduled') {
         navigate('/admin/users?tab=blog');
         return;
       }
@@ -802,6 +817,9 @@ const AdminBlogEditor = () => {
             </button>
             <Button variant="outline" onClick={() => handleSave()} disabled={saving} className="flex-1 sm:flex-initial">
               <Save className="w-4 h-4 mr-1.5" /> Save Draft
+            </Button>
+            <Button variant="outline" onClick={() => handleSave('scheduled')} disabled={saving} className="flex-1 sm:flex-initial">
+              <Clock className="w-4 h-4 mr-1.5" /> Schedule
             </Button>
             <Button onClick={() => handleSave('published')} disabled={saving} className="flex-1 sm:flex-initial">
               <Send className="w-4 h-4 mr-1.5" /> Publish
@@ -879,11 +897,28 @@ const AdminBlogEditor = () => {
               <h3 className="text-xs font-semibold text-exclu-space uppercase tracking-wider mb-2">Status</h3>
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
                 article.status === 'published' ? 'text-green-400 bg-green-400/10' :
+                article.status === 'scheduled' ? 'text-amber-400 bg-amber-400/10' :
                 article.status === 'archived' ? 'text-exclu-space bg-exclu-space/10' :
                 'text-exclu-space bg-exclu-space/10'
               }`}>
+                {article.status === 'scheduled' && <Clock className="w-3 h-3" />}
                 {article.status.charAt(0).toUpperCase() + article.status.slice(1)}
               </span>
+            </div>
+
+            {/* Schedule Date */}
+            <div className="rounded-xl border border-exclu-arsenic/50 bg-exclu-ink/50 p-4">
+              <h3 className="text-xs font-semibold text-exclu-space uppercase tracking-wider mb-2">Schedule Date</h3>
+              <input
+                type="datetime-local"
+                value={article.scheduled_at ? new Date(article.scheduled_at).toISOString().slice(0, 16) : ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setArticle((prev) => ({ ...prev, scheduled_at: val ? new Date(val).toISOString() : null }));
+                }}
+                className="w-full h-9 rounded-lg border border-exclu-arsenic/50 bg-exclu-ink/80 px-3 text-xs text-exclu-cloud focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+              <p className="text-[10px] text-exclu-space/50 mt-1.5">Set a date to auto-publish this article</p>
             </div>
 
             {/* Category */}

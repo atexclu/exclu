@@ -1,8 +1,10 @@
 import AppShell from '@/components/AppShell';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabaseClient';
-import { ExternalLink, LayoutDashboard, Plus, FileText, Eye, Pencil, Archive, Trash2, CheckCircle2, Clock } from 'lucide-react';
-import { useEffect, useState, useCallback } from 'react';
+import { ExternalLink, LayoutDashboard, Plus, FileText, Eye, EyeOff, Pencil, Archive, Trash2, CheckCircle2, Clock, Building2, Loader2, X, Save, ChevronDown, ImagePlus, Inbox } from 'lucide-react';
+import { AgencyCategoryConfig, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -24,6 +26,84 @@ interface AdminUserSummary {
 
 type RoleFilter = 'all' | 'creator' | 'fan' | 'agency';
 type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'archived';
+type AdminTab = 'users' | 'blog' | 'agencies';
+
+interface DirectoryAgency {
+  id: string;
+  slug: string;
+  name: string;
+  logo_url: string | null;
+  description: string | null;
+  website_url: string | null;
+  contact_email: string | null;
+  country: string;
+  city: string | null;
+  services: string[];
+  creator_profile_ids: string[];
+  is_visible: boolean;
+  is_featured: boolean;
+  sort_order: number;
+  pricing_structure: string | null;
+  target_market: string[];
+  services_offered: string[];
+  platform_focus: string[];
+  geography: string[];
+  growth_strategy: string[];
+}
+
+interface ClaimRequest {
+  id: string;
+  agency_id: string;
+  requester_email: string;
+  requester_name: string | null;
+  requester_company: string | null;
+  requester_message: string | null;
+  status: 'pending' | 'processed';
+  created_at: string;
+  directory_agencies?: { name: string } | null;
+}
+
+const PRICING_OPTIONS = [
+  { value: 'high_commission', label: 'High Commission (50%+)' },
+  { value: 'mid_commission', label: 'Mid Commission (30–50%)' },
+  { value: 'low_commission', label: 'Low Commission (<30%)' },
+  { value: 'fixed_fee', label: 'Fixed Fee (Flat)' },
+];
+
+const TARGET_MARKET_OPTIONS = [
+  'beginner_models', 'mid_tier_creators', 'top_creators', 'niche_models', 'ai_models',
+];
+
+const SERVICES_OPTIONS = ['full_management', 'chatting', 'marketing'];
+
+const PLATFORM_OPTIONS = ['onlyfans', 'multi_platform', 'exclu'];
+
+const GROWTH_STRATEGY_OPTIONS = [
+  'paid_traffic', 'reddit', 'twitter', 'snapchat', 'organic', 'ai', 'viral_insta_tiktok', 'adult_traffic', 'sfs',
+];
+
+const COUNTRIES = [
+  'Afghanistan','Albania','Algeria','Argentina','Australia','Austria','Bangladesh','Belgium',
+  'Bolivia','Brazil','Bulgaria','Canada','Chile','China','Colombia','Croatia','Czech Republic',
+  'Denmark','Ecuador','Egypt','Ethiopia','Finland','France','Germany','Ghana','Greece',
+  'Hungary','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Japan','Jordan',
+  'Kenya','Lebanon','Malaysia','Mexico','Morocco','Netherlands','New Zealand','Nigeria',
+  'Norway','Pakistan','Peru','Philippines','Poland','Portugal','Romania','Russia','Saudi Arabia',
+  'Senegal','Serbia','Singapore','South Africa','South Korea','Spain','Sudan','Sweden',
+  'Switzerland','Thailand','Tunisia','Turkey','UAE','UK','US','Ukraine','Venezuela','Vietnam',
+];
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 200);
+}
+
+const emptyAgencyForm = {
+  slug: '', name: '', logo_url: '', description: '', website_url: '', contact_email: '',
+  country: '', city: '', services: [] as string[], pricing_structure: '' as string,
+  target_market: [] as string[], services_offered: [] as string[], platform_focus: [] as string[],
+  geography: [] as string[], growth_strategy: [] as string[], model_categories: [] as string[],
+  is_visible: true, is_featured: false, sort_order: 0,
+};
 
 interface BlogArticle {
   id: string;
@@ -53,13 +133,13 @@ const AdminUsers = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const initialTab = (searchParams.get('tab') || 'users') as 'users' | 'blog';
+  const initialTab = (searchParams.get('tab') || 'users') as AdminTab;
   const initialPage = parseInt(searchParams.get('page') || '1', 10);
   const initialSearch = searchParams.get('search') || '';
   const initialSort = (searchParams.get('sort') || 'created_desc') as string;
   const initialRole = (searchParams.get('role') || 'all') as RoleFilter;
 
-  const [activeTab, setActiveTab] = useState<'users' | 'blog'>(initialTab);
+  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
 
   // ── Users state ──
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
@@ -78,6 +158,21 @@ const AdminUsers = () => {
   const [blogLoading, setBlogLoading] = useState(false);
   const [blogSearch, setBlogSearch] = useState('');
   const [blogStatusFilter, setBlogStatusFilter] = useState<ArticleStatus | 'all'>('all');
+
+  // ── Agencies state ──
+  const [dirAgencies, setDirAgencies] = useState<DirectoryAgency[]>([]);
+  const [agenciesLoading, setAgenciesLoading] = useState(false);
+  const [agencySearch, setAgencySearch] = useState('');
+  const [showAgencyForm, setShowAgencyForm] = useState(false);
+  const [editingAgencyId, setEditingAgencyId] = useState<string | null>(null);
+  const [agencyForm, setAgencyForm] = useState(emptyAgencyForm);
+  const [savingAgency, setSavingAgency] = useState(false);
+  const [claimRequests, setClaimRequests] = useState<ClaimRequest[]>([]);
+  const [showClaimRequests, setShowClaimRequests] = useState(false);
+  const [claimFilter, setClaimFilter] = useState<'pending' | 'processed' | 'all'>('pending');
+  const [showAdvancedAgency, setShowAdvancedAgency] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch agency user IDs once
   useEffect(() => {
@@ -158,6 +253,188 @@ const AdminUsers = () => {
   useEffect(() => {
     if (activeTab === 'blog') fetchArticles();
   }, [activeTab, fetchArticles]);
+
+  // Load directory agencies + profile-based agencies
+  const fetchDirAgencies = useCallback(async () => {
+    setAgenciesLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setAgenciesLoading(false); return; }
+
+    // Fetch directory agencies via edge function
+    const res = await supabase.functions.invoke('admin-manage-agencies', {
+      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      body: { action: 'list' },
+    });
+    const directoryAgencies: DirectoryAgency[] = (res.data?.agencies ?? []).map((a: DirectoryAgency) => ({
+      ...a,
+      _source: 'directory',
+    }));
+
+    // Also fetch profile-based agencies (profiles with agency_name)
+    const { data: profileAgencies } = await supabase
+      .from('profiles')
+      .select('id, agency_name, agency_logo_url, country')
+      .not('agency_name', 'is', null);
+
+    const profileBased: DirectoryAgency[] = (profileAgencies ?? [])
+      .filter((p: any) => p.agency_name?.trim())
+      .map((p: any) => ({
+        id: `profile-${p.id}`,
+        slug: (p.agency_name || '').toLowerCase().replace(/\s+/g, '-'),
+        name: p.agency_name || '',
+        logo_url: p.agency_logo_url || null,
+        description: null,
+        website_url: null,
+        contact_email: null,
+        country: p.country || '',
+        city: null,
+        services: [],
+        creator_profile_ids: [],
+        is_visible: true,
+        is_featured: false,
+        sort_order: 999,
+        pricing_structure: null,
+        target_market: [],
+        services_offered: [],
+        platform_focus: [],
+        geography: [],
+        growth_strategy: [],
+        _source: 'profile',
+      }));
+
+    // Merge: directory agencies first, then profile-based
+    setDirAgencies([...directoryAgencies, ...profileBased]);
+
+    // Fetch all claim requests (pending first)
+    const { data: claims } = await supabase
+      .from('agency_claim_requests')
+      .select('*, directory_agencies(name)')
+      .order('status', { ascending: true })   // 'pending' < 'processed' alphabetically
+      .order('created_at', { ascending: false });
+    if (claims) setClaimRequests(claims as ClaimRequest[]);
+
+    setAgenciesLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'agencies') fetchDirAgencies();
+  }, [activeTab, fetchDirAgencies]);
+
+  const handleAdminLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoUploading(true);
+    const fileExt = file.name.split('.').pop() ?? 'png';
+    const filePath = `agency-logos/${agencyForm.slug || slugify(agencyForm.name) || 'new'}/logo.${fileExt}`;
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { cacheControl: '3600', upsert: true });
+    if (uploadError) {
+      toast.error('Upload failed');
+      setLogoUploading(false);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    setAgencyForm((p) => ({ ...p, logo_url: `${urlData.publicUrl}?t=${Date.now()}` }));
+    setLogoUploading(false);
+    toast.success('Logo uploaded');
+  };
+
+  const handleSaveAgency = async () => {
+    if (!agencyForm.name.trim() || !agencyForm.country.trim()) {
+      toast.error('Name and country are required');
+      return;
+    }
+    setSavingAgency(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setSavingAgency(false); return; }
+
+    const payload = {
+      action: editingAgencyId ? 'update' : 'create',
+      ...(editingAgencyId && { id: editingAgencyId }),
+      ...agencyForm,
+      slug: agencyForm.slug || slugify(agencyForm.name),
+      logo_url: agencyForm.logo_url || null,
+      description: agencyForm.description || null,
+      website_url: agencyForm.website_url || null,
+      contact_email: agencyForm.contact_email || null,
+      city: agencyForm.city || null,
+      pricing_structure: agencyForm.pricing_structure || null,
+    };
+
+    const res = await supabase.functions.invoke('admin-manage-agencies', {
+      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      body: payload,
+    });
+    if (res.error) {
+      toast.error('Save failed');
+    } else {
+      toast.success(editingAgencyId ? 'Agency updated' : 'Agency created');
+      setShowAgencyForm(false);
+      setEditingAgencyId(null);
+      setAgencyForm(emptyAgencyForm);
+      fetchDirAgencies();
+    }
+    setSavingAgency(false);
+  };
+
+  const handleToggleAgencyVisibility = async (agency: DirectoryAgency) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await supabase.functions.invoke('admin-manage-agencies', {
+      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      body: { action: 'update', id: agency.id, is_visible: !agency.is_visible },
+    });
+    if (!res.error) {
+      toast.success(agency.is_visible ? 'Agency hidden' : 'Agency visible');
+      fetchDirAgencies();
+    }
+  };
+
+  const handleDeleteAgency = async (id: string) => {
+    if (!confirm('Delete this agency permanently?')) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await supabase.functions.invoke('admin-manage-agencies', {
+      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      body: { action: 'delete', id },
+    });
+    if (!res.error) { toast.success('Agency deleted'); fetchDirAgencies(); }
+  };
+
+  const startEditAgency = (agency: DirectoryAgency) => {
+    setEditingAgencyId(agency.id);
+    setAgencyForm({
+      slug: agency.slug, name: agency.name, logo_url: agency.logo_url || '',
+      description: agency.description || '', website_url: agency.website_url || '',
+      contact_email: agency.contact_email || '', country: agency.country, city: agency.city || '',
+      services: agency.services || [], pricing_structure: agency.pricing_structure || '',
+      target_market: agency.target_market || [], services_offered: agency.services_offered || [],
+      platform_focus: agency.platform_focus || [], geography: agency.geography || [],
+      growth_strategy: agency.growth_strategy || [], model_categories: (agency as any).model_categories || [],
+      is_visible: agency.is_visible, is_featured: agency.is_featured, sort_order: agency.sort_order,
+    });
+    setShowAgencyForm(true);
+  };
+
+  const handleMarkClaimProcessed = async (claimId: string) => {
+    const { error: updateErr } = await supabase
+      .from('agency_claim_requests')
+      .update({ status: 'processed', reviewed_at: new Date().toISOString() })
+      .eq('id', claimId);
+    if (updateErr) { toast.error('Failed to update claim'); return; }
+    toast.success('Marked as processed');
+    fetchDirAgencies();
+  };
+
+  const filteredDirAgencies = dirAgencies.filter((a) => {
+    if (!agencySearch) return true;
+    const q = agencySearch.toLowerCase();
+    return a.name.toLowerCase().includes(q) || a.country.toLowerCase().includes(q);
+  });
+
+  const toggleArrayItem = (arr: string[], item: string) =>
+    arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item];
 
   const handleArchive = async (id: string) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -241,7 +518,7 @@ const AdminUsers = () => {
     archived: articles.filter((a) => a.status === 'archived').length,
   };
 
-  const switchTab = (tab: 'users' | 'blog') => {
+  const switchTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setSearchParams({ tab });
   };
@@ -254,21 +531,26 @@ const AdminUsers = () => {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
-              <p className="text-xs sm:text-sm text-exclu-space mt-1">
-                Internal dashboard. Only visible to Exclu admins.
-              </p>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => switchTab('blog')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
-                  activeTab === 'blog'
-                    ? 'bg-[#CFFF16]/10 text-[#CFFF16] border border-[#CFFF16]/20'
-                    : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-arsenic/20'
-                }`}
-              >
-                Blog
-              </button>
+              {(['users', 'blog', 'agencies'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => switchTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
+                    activeTab === tab
+                      ? 'bg-[#CFFF16]/10 text-[#CFFF16] border border-[#CFFF16]/20'
+                      : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-arsenic/20'
+                  }`}
+                >
+                  {tab === 'users' ? 'Users' : tab === 'blog' ? 'Blog' : 'Agencies'}
+                  {tab === 'agencies' && claimRequests.filter((c) => c.status === 'pending').length > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
+                      {claimRequests.filter((c) => c.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -432,8 +714,8 @@ const AdminUsers = () => {
           {/* ═══ BLOG TAB ═══ */}
           {activeTab === 'blog' && (
             <>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
                   <Input
                     type="text"
                     value={blogSearch}
@@ -441,30 +723,26 @@ const AdminUsers = () => {
                     placeholder="Rechercher par titre ou slug…"
                     className={`w-full sm:w-64 ${authInputClass}`}
                   />
+                  {/* Status pills - inline on desktop, separate on mobile */}
+                  <div className="flex items-center gap-1 overflow-x-auto sm:flex-nowrap">
+                    {(['all', 'published', 'draft', 'scheduled', 'archived'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setBlogStatusFilter(s)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                          blogStatusFilter === s
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/80 border border-exclu-arsenic/70'
+                        }`}
+                      >
+                        {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)} ({blogCounts[s]})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <button
-                  onClick={() => navigate('/admin/blog/new')}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> New Article
-                </button>
-              </div>
-
-              {/* Status pills */}
-              <div className="flex items-center gap-1 overflow-x-auto">
-                {(['all', 'published', 'draft', 'scheduled', 'archived'] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setBlogStatusFilter(s)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                      blogStatusFilter === s
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/80 border border-exclu-arsenic/70'
-                    }`}
-                  >
-                    {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)} ({blogCounts[s]})
-                  </button>
-                ))}
+                <Button onClick={() => navigate('/admin/blog/new')} variant="hero" size="sm" className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> New Article
+                </Button>
               </div>
 
               {/* Articles list */}
@@ -554,6 +832,380 @@ const AdminUsers = () => {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ═══ AGENCIES TAB ═══ */}
+          {activeTab === 'agencies' && (
+            <>
+              {/* Header + buttons */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Input
+                    type="text"
+                    value={agencySearch}
+                    onChange={(e) => setAgencySearch(e.target.value)}
+                    placeholder="Search agencies…"
+                    className={`w-full sm:w-64 ${authInputClass}`}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowClaimRequests((v) => !v)}
+                    className={`relative inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                      showClaimRequests
+                        ? 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/20'
+                        : 'text-exclu-space border-exclu-arsenic/70 hover:text-exclu-cloud hover:bg-exclu-arsenic/20'
+                    }`}
+                  >
+                    <Inbox className="w-4 h-4" />
+                    Claims
+                    {claimRequests.filter((c) => c.status === 'pending').length > 0 && (
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
+                        {claimRequests.filter((c) => c.status === 'pending').length}
+                      </span>
+                    )}
+                  </button>
+                  <Button onClick={() => { setShowAgencyForm(true); setEditingAgencyId(null); setAgencyForm(emptyAgencyForm); }} variant="hero" size="sm" className="flex items-center gap-2">
+                    <Plus className="w-4 h-4" /> Add Agency
+                  </Button>
+                </div>
+              </div>
+
+              {/* Claim requests panel */}
+              {showClaimRequests && (
+                <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-exclu-arsenic/70 flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-exclu-space uppercase tracking-wide">Claim Requests</span>
+                    <div className="flex items-center gap-1">
+                      {(['pending', 'processed', 'all'] as const).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setClaimFilter(f)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
+                            claimFilter === f
+                              ? 'bg-[#CFFF16]/10 text-[#CFFF16]'
+                              : 'text-exclu-space hover:text-exclu-cloud'
+                          }`}
+                        >
+                          {f === 'all' ? 'All' : f === 'pending' ? 'Pending' : 'Processed'}
+                          {f === 'pending' && claimRequests.filter((c) => c.status === 'pending').length > 0 && (
+                            <span className="ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-500 text-[8px] text-white font-bold">
+                              {claimRequests.filter((c) => c.status === 'pending').length}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const isProcessed = (s: string) => s !== 'pending';
+                    const filtered = claimRequests.filter((c) =>
+                      claimFilter === 'all' ? true :
+                      claimFilter === 'pending' ? c.status === 'pending' :
+                      isProcessed(c.status)
+                    );
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="px-4 py-8 text-center text-sm text-exclu-space">
+                          <Inbox className="w-6 h-6 mx-auto mb-2 opacity-40" />
+                          {claimFilter === 'pending' ? 'No pending requests.' : claimFilter === 'processed' ? 'No processed requests yet.' : 'No claim requests yet.'}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="divide-y divide-exclu-arsenic/40">
+                        {filtered.map((claim) => (
+                          <div key={claim.id} className="px-4 py-3 flex items-start justify-between gap-4">
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-semibold text-exclu-cloud">
+                                  {claim.directory_agencies?.name || 'Unknown agency'}
+                                </p>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                  claim.status === 'pending'
+                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                    : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                }`}>
+                                  {claim.status === 'pending' ? 'Pending' : 'Processed'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-exclu-space">
+                                {claim.requester_email}
+                                {claim.requester_name && ` · ${claim.requester_name}`}
+                                {claim.requester_company && ` · ${claim.requester_company}`}
+                              </p>
+                              {claim.requester_message && (
+                                <p className="text-xs text-exclu-steel italic">"{claim.requester_message}"</p>
+                              )}
+                              <p className="text-[10px] text-exclu-graphite">
+                                {new Date(claim.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+                            {claim.status === 'pending' && (
+                              <button
+                                onClick={() => handleMarkClaimProcessed(claim.id)}
+                                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-exclu-cloud hover:bg-white/10 transition-colors"
+                              >
+                                Mark as processed
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Agency Form */}
+              {showAgencyForm && (
+                <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 sm:px-5 py-3 border-b border-exclu-arsenic/70 flex items-center justify-between">
+                    <h2 className="font-semibold text-sm text-exclu-cloud">
+                      {editingAgencyId ? 'Edit Agency' : 'New Agency'}
+                    </h2>
+                    <button onClick={() => { setShowAgencyForm(false); setEditingAgencyId(null); setShowAdvancedAgency(false); }} className="text-exclu-space hover:text-exclu-cloud">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="px-4 sm:px-5 py-4 space-y-4">
+                    {/* Essential fields */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Agency Name *</label>
+                        <Input
+                          value={agencyForm.name}
+                          onChange={(e) => setAgencyForm((p) => ({ ...p, name: e.target.value, slug: editingAgencyId ? p.slug : slugify(e.target.value) }))}
+                          placeholder="e.g. Elite Models Agency"
+                          className={authInputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Country *</label>
+                        <select
+                          value={agencyForm.country}
+                          onChange={(e) => setAgencyForm((p) => ({ ...p, country: e.target.value }))}
+                          className={selectClass + ' w-full'}
+                        >
+                          <option value="">— Select country —</option>
+                          {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">City</label>
+                        <Input value={agencyForm.city} onChange={(e) => setAgencyForm((p) => ({ ...p, city: e.target.value }))} placeholder="e.g. Los Angeles" className={authInputClass} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Description</label>
+                      <textarea
+                        value={agencyForm.description}
+                        onChange={(e) => setAgencyForm((p) => ({ ...p, description: e.target.value }))}
+                        rows={2}
+                        placeholder="Brief description of the agency…"
+                        className="w-full px-3 py-2.5 bg-black border border-white rounded-lg text-sm text-white resize-none placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+
+                    {/* Contact & branding */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Website</label>
+                        <Input value={agencyForm.website_url} onChange={(e) => setAgencyForm((p) => ({ ...p, website_url: e.target.value }))} placeholder="https://…" className={authInputClass} />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Contact Email</label>
+                        <Input value={agencyForm.contact_email} onChange={(e) => setAgencyForm((p) => ({ ...p, contact_email: e.target.value }))} placeholder="contact@agency.com" className={authInputClass} />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Agency Logo</label>
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={logoUploading}
+                          className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-dashed border-exclu-arsenic/50 hover:border-exclu-arsenic/80 transition-colors cursor-pointer text-left disabled:opacity-50"
+                        >
+                          {agencyForm.logo_url ? (
+                            <img src={agencyForm.logo_url} alt="logo" className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-14 h-14 rounded-xl bg-exclu-arsenic/30 flex items-center justify-center flex-shrink-0">
+                              {logoUploading ? (
+                                <Loader2 className="w-5 h-5 animate-spin text-exclu-space" />
+                              ) : (
+                                <ImagePlus className="w-5 h-5 text-exclu-space/60" />
+                              )}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm font-medium text-exclu-cloud">
+                              {logoUploading ? 'Uploading…' : agencyForm.logo_url ? 'Change photo' : 'Upload logo'}
+                            </p>
+                            <p className="text-xs text-exclu-space mt-0.5">PNG, JPG, WEBP — click to browse</p>
+                          </div>
+                        </button>
+                        <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleAdminLogoUpload} />
+                      </div>
+                    </div>
+
+                    {/* Slug (show only when editing) */}
+                    {editingAgencyId && (
+                      <div>
+                        <label className="text-[11px] text-exclu-space uppercase tracking-wide block mb-1">Slug</label>
+                        <Input value={agencyForm.slug} onChange={(e) => setAgencyForm((p) => ({ ...p, slug: e.target.value }))} className={authInputClass} />
+                      </div>
+                    )}
+
+                    {/* Collapsible advanced section */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedAgency((v) => !v)}
+                      className="w-full flex items-center justify-between py-2 text-xs text-exclu-space hover:text-exclu-cloud transition-colors"
+                    >
+                      <span className="font-medium uppercase tracking-wide">Advanced details</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showAdvancedAgency ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showAdvancedAgency && (
+                      <div className="pt-1">
+                        <AgencyCategoryConfig
+                          value={{
+                            pricing: agencyForm.pricing_structure,
+                            targetMarket: agencyForm.target_market,
+                            services: agencyForm.services_offered,
+                            platform: agencyForm.platform_focus,
+                            growthStrategy: agencyForm.growth_strategy,
+                            modelTypes: agencyForm.model_categories,
+                          }}
+                          onChange={(data: AgencyCategoryData) => setAgencyForm((p) => ({
+                            ...p,
+                            pricing_structure: data.pricing,
+                            target_market: data.targetMarket,
+                            services_offered: data.services,
+                            platform_focus: data.platform,
+                            growth_strategy: data.growthStrategy,
+                            model_categories: data.modelTypes,
+                          }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer actions */}
+                  <div className="px-4 sm:px-5 py-3 border-t border-exclu-arsenic/70 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                    <button
+                      onClick={() => { setShowAgencyForm(false); setEditingAgencyId(null); setShowAdvancedAgency(false); }}
+                      className="px-4 py-2 rounded-full text-xs font-medium text-exclu-space hover:text-exclu-cloud border border-exclu-arsenic/70 transition-colors text-center"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveAgency}
+                      disabled={savingAgency}
+                      className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-full bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    >
+                      {savingAgency ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      {editingAgencyId ? 'Update Agency' : 'Create Agency'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Agencies list */}
+              <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
+                <div className="px-4 py-3 border-b border-exclu-arsenic/70">
+                  <span className="text-xs font-medium text-exclu-space uppercase tracking-wide">
+                    Directory Agencies ({filteredDirAgencies.length})
+                  </span>
+                </div>
+
+                {agenciesLoading ? (
+                  <div className="px-4 py-6 text-sm text-exclu-space">Loading agencies…</div>
+                ) : filteredDirAgencies.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-exclu-space text-center">
+                    <Building2 className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p>{agencySearch ? 'No agencies match your search.' : 'No agencies yet. Add one above.'}</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-exclu-arsenic/40">
+                    {filteredDirAgencies.map((agency) => (
+                      <div
+                        key={agency.id}
+                        className="group px-4 py-3 flex items-center justify-between gap-4 hover:bg-exclu-ink/80 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {agency.logo_url ? (
+                            <img src={agency.logo_url} alt={agency.name} className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-exclu-arsenic/30 flex items-center justify-center text-xs font-bold text-exclu-space flex-shrink-0">
+                              {agency.name[0]}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm text-exclu-cloud truncate">{agency.name}</p>
+                              {(agency as any)._source === 'profile' && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">account</span>
+                              )}
+                              {!agency.is_visible && (agency as any)._source !== 'profile' && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400">hidden</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-exclu-space">
+                              {agency.country}{agency.city ? `, ${agency.city}` : ''}
+                              {agency.services_offered?.length > 0 && ` · ${agency.services_offered.map((s) => s.replace(/_/g, ' ')).join(', ')}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                          {(agency as any)._source === 'profile' ? (
+                            <button
+                              onClick={() => navigate(`/admin/users/${agency.id.replace('profile-', '')}?returnTo=/admin/users`)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium border border-exclu-arsenic/70 text-exclu-space hover:text-exclu-cloud transition-colors"
+                              title="View user account"
+                            >
+                              <ExternalLink className="w-3 h-3" /> View account
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => startEditAgency(agency)}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/70 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleToggleAgencyVisibility(agency)}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/70 text-exclu-space hover:text-exclu-cloud transition-colors"
+                                title={agency.is_visible ? 'Hide' : 'Show'}
+                              >
+                                {agency.is_visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <a href={`/directory/agencies/${agency.slug}`} target="_blank" rel="noopener noreferrer">
+                                <button className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/70 text-exclu-space hover:text-exclu-cloud transition-colors" title="View">
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+                              </a>
+                              <button
+                                onClick={() => handleDeleteAgency(agency.id)}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/70 text-exclu-space hover:text-red-400 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

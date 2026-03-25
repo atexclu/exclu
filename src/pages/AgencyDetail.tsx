@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, MapPin, Globe, Users, Star, Mail, Loader2, Send, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Globe, Users, Star, Loader2, CheckCircle2, Building2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +11,14 @@ import Footer from '@/components/Footer';
 import Aurora from '@/components/ui/Aurora';
 import GradualBlur from '@/components/ui/GradualBlur';
 import { toast } from 'sonner';
+import {
+  AGENCY_PRICING_OPTIONS,
+  AGENCY_TARGET_MARKET_OPTIONS,
+  AGENCY_SERVICES_OPTIONS,
+  AGENCY_PLATFORM_OPTIONS,
+  AGENCY_GROWTH_OPTIONS,
+  AGENCY_MODEL_TYPES_OPTIONS,
+} from '@/lib/categories';
 
 interface AgencyData {
   id: string;
@@ -25,6 +33,13 @@ interface AgencyData {
   services: string[];
   creator_profile_ids: string[];
   is_featured: boolean;
+  // Categories
+  pricing_structure?: string | null;
+  target_market?: string[];
+  services_offered?: string[];
+  platform_focus?: string[];
+  growth_strategy?: string[];
+  model_categories?: string[];
 }
 
 interface ManagedCreator {
@@ -43,12 +58,14 @@ const AgencyDetail = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  // Contact form state
-  const [contactName, setContactName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactMessage, setContactMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  // Claim form state
+  const [claimEmail, setClaimEmail] = useState('');
+  const [claimFirstName, setClaimFirstName] = useState('');
+  const [claimLastName, setClaimLastName] = useState('');
+  const [claimRequestType, setClaimRequestType] = useState('');
+  const [claimMessage, setClaimMessage] = useState('');
+  const [claimSending, setClaimSending] = useState(false);
+  const [claimSent, setClaimSent] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -81,7 +98,7 @@ const AgencyDetail = () => {
         // Fallback: check profile-based agencies
         const { data: profileAgencies } = await supabase
           .from('profiles')
-          .select('id, agency_name, agency_logo_url, country')
+          .select('id, agency_name, agency_logo_url, country, agency_pricing, agency_target_market, agency_services_offered, agency_platform_focus, agency_growth_strategy, model_categories')
           .not('agency_name', 'is', null);
 
         let foundProfile: typeof profileAgencies extends (infer T)[] | null ? T : never = null as any;
@@ -116,6 +133,12 @@ const AgencyDetail = () => {
             services: [],
             creator_profile_ids: (managedProfiles || []).map((p) => p.id),
             is_featured: false,
+            pricing_structure: foundProfile.agency_pricing || null,
+            target_market: foundProfile.agency_target_market || [],
+            services_offered: foundProfile.agency_services_offered || [],
+            platform_focus: foundProfile.agency_platform_focus || [],
+            growth_strategy: foundProfile.agency_growth_strategy || [],
+            model_categories: foundProfile.model_categories || [],
           });
 
           if (managedProfiles) setCreators(managedProfiles);
@@ -130,43 +153,35 @@ const AgencyDetail = () => {
     fetchAgency();
   }, [slug]);
 
-  const handleContact = async (e: React.FormEvent) => {
+  const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!claimEmail.trim()) { toast.error('Email is required'); return; }
+    if (!claimEmail.includes('@')) { toast.error('Please enter a valid email'); return; }
+    if (!agency) return;
 
-    if (!contactName.trim() || !contactEmail.trim() || !contactMessage.trim()) {
-      toast.error('All fields are required');
-      return;
-    }
-
-    if (!contactEmail.includes('@')) {
-      toast.error('Please enter a valid email');
-      return;
-    }
-
-    setSending(true);
-
+    setClaimSending(true);
     try {
-      const res = await supabase.functions.invoke('send-agency-contact', {
+      const fullName = [claimFirstName.trim(), claimLastName.trim()].filter(Boolean).join(' ');
+      const res = await supabase.functions.invoke('submit-agency-claim', {
         body: {
-          agency_slug: slug,
-          sender_name: contactName.trim(),
-          sender_email: contactEmail.trim(),
-          message: contactMessage.trim(),
+          agencyId: agency.id,
+          requesterEmail: claimEmail.trim(),
+          requesterName: fullName || null,
+          requesterCompany: claimRequestType || null,
+          requesterMessage: claimMessage.trim() || null,
         },
       });
 
-      if (res.error) {
-        const errMsg = res.data?.error || res.error.message || 'Failed to send message';
-        toast.error(errMsg);
+      if (res.error || res.data?.error) {
+        toast.error(res.data?.error || 'Failed to submit claim request');
       } else {
-        setSent(true);
-        toast.success('Message sent successfully!');
+        setClaimSent(true);
+        toast.success('Claim request submitted!');
       }
     } catch {
       toast.error('An unexpected error occurred');
     }
-
-    setSending(false);
+    setClaimSending(false);
   };
 
   if (loading) {
@@ -221,46 +236,93 @@ const AgencyDetail = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="flex flex-col sm:flex-row items-start gap-6"
           >
-            {/* Logo */}
-            {agency.logo_url ? (
-              <img
-                src={agency.logo_url}
-                alt={agency.name}
-                className="w-24 h-24 rounded-2xl object-cover border border-white/10 flex-shrink-0"
-              />
-            ) : (
-              <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#CFFF16]/15 to-[#a3e635]/15 flex items-center justify-center text-3xl font-bold text-[#CFFF16] flex-shrink-0 border border-white/10">
-                {agency.name[0]}
+            {/* Top row: photo + name/location (always flex-row) */}
+            <div className="flex items-start gap-5">
+              {/* Logo */}
+              {agency.logo_url ? (
+                <img
+                  src={agency.logo_url}
+                  alt={agency.name}
+                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border border-white/10 flex-shrink-0"
+                />
+              ) : (
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-[#CFFF16]/15 to-[#a3e635]/15 flex items-center justify-center text-3xl font-bold text-[#CFFF16] flex-shrink-0 border border-white/10">
+                  {agency.name[0]}
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0">
+                {/* Name + badges + action buttons on same row (web) */}
+                <div className="flex items-start sm:items-center justify-between gap-x-4 gap-y-1.5 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">{agency.name}</h1>
+                    {agency.is_featured && <Star className="w-4 h-4 sm:w-5 sm:h-5 text-[#CFFF16] fill-[#CFFF16] flex-shrink-0" />}
+                  </div>
+                  {/* Action buttons — desktop inline with name */}
+                  <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+                    {agency.website_url && (
+                      <a
+                        href={agency.website_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm text-exclu-cloud hover:bg-white/10 transition-colors"
+                      >
+                        <Globe className="w-3.5 h-3.5" /> Website
+                      </a>
+                    )}
+                    {agency.id && !agency.id.startsWith('profile-') && (
+                      <button
+                        onClick={() => document.getElementById('claim-form')?.scrollIntoView({ behavior: 'smooth' })}
+                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-exclu-cloud hover:bg-white/10 transition-colors"
+                      >
+                        <Building2 className="w-3.5 h-3.5" /> Claim this agency
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Location */}
+                {(agency.city || agency.country) && (
+                  <p className="text-exclu-space flex items-center gap-1.5 mt-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    {[agency.city, agency.country].filter(Boolean).join(', ')}
+                  </p>
+                )}
               </div>
+            </div>
+
+            {/* Category labels — full width */}
+            {(() => {
+              const allOptions = [
+                ...AGENCY_PRICING_OPTIONS.filter(o => o.value === agency.pricing_structure),
+                ...AGENCY_TARGET_MARKET_OPTIONS.filter(o => (agency.target_market || []).includes(o.value)),
+                ...AGENCY_SERVICES_OPTIONS.filter(o => (agency.services_offered || []).includes(o.value)),
+                ...AGENCY_PLATFORM_OPTIONS.filter(o => (agency.platform_focus || []).includes(o.value)),
+                ...AGENCY_GROWTH_OPTIONS.filter(o => (agency.growth_strategy || []).includes(o.value)),
+                ...AGENCY_MODEL_TYPES_OPTIONS.filter(o => (agency.model_categories || []).includes(o.value)),
+              ];
+              if (allOptions.length === 0) return null;
+              return (
+                <div className="flex flex-wrap gap-1.5 mt-4">
+                  {allOptions.map(opt => (
+                    <span key={opt.value} className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/5 text-exclu-steel border border-white/[0.08]">
+                      {opt.label}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Description — full width */}
+            {agency.description && (
+              <p className="text-exclu-space leading-relaxed mt-4">{agency.description}</p>
             )}
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-2 flex-wrap">
-                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{agency.name}</h1>
-                {agency.is_featured && <Star className="w-5 h-5 text-[#CFFF16] fill-[#CFFF16] flex-shrink-0" />}
-                <button
-                  onClick={() => document.getElementById('contact-form')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#CFFF16] text-exclu-black text-sm font-semibold hover:bg-[#d4ff33] transition-colors"
-                >
-                  <Mail className="w-3.5 h-3.5" /> Contact
-                </button>
-              </div>
-
-              {(agency.city || agency.country) && (
-                <p className="text-exclu-space flex items-center gap-1.5 mb-3">
-                  <MapPin className="w-4 h-4" />
-                  {[agency.city, agency.country].filter(Boolean).join(', ')}
-                </p>
-              )}
-
-              {agency.description && (
-                <p className="text-exclu-space leading-relaxed max-w-2xl">{agency.description}</p>
-              )}
-
-              {agency.website_url && (
-                <div className="flex flex-wrap items-center gap-3 mt-4">
+            {/* Mobile-only action buttons */}
+            {(agency.website_url || (agency.id && !agency.id.startsWith('profile-'))) && (
+              <div className="flex sm:hidden flex-wrap gap-2 mt-4">
+                {agency.website_url && (
                   <a
                     href={agency.website_url}
                     target="_blank"
@@ -269,22 +331,17 @@ const AgencyDetail = () => {
                   >
                     <Globe className="w-3.5 h-3.5" /> Website
                   </a>
-                </div>
-              )}
-
-              {agency.services.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-4">
-                  {agency.services.map((s) => (
-                    <span
-                      key={s}
-                      className="px-3 py-1 rounded-full text-xs font-medium bg-[#CFFF16]/10 text-[#CFFF16] border border-[#CFFF16]/20"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+                )}
+                {agency.id && !agency.id.startsWith('profile-') && (
+                  <button
+                    onClick={() => document.getElementById('claim-form')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-medium text-exclu-cloud hover:bg-white/10 transition-colors"
+                  >
+                    <Building2 className="w-3.5 h-3.5" /> Claim this agency
+                  </button>
+                )}
+              </div>
+            )}
           </motion.div>
         </div>
       </section>
@@ -349,90 +406,118 @@ const AgencyDetail = () => {
         </section>
       )}
 
-      {/* Contact Form */}
-      <section id="contact-form" className="relative z-10 pb-24 px-4 sm:px-6">
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="glass-card rounded-3xl p-6 sm:p-8"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-[#CFFF16]/10 flex items-center justify-center">
-                <Mail className="w-5 h-5 text-[#CFFF16]" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold">Get in touch</h2>
-                <p className="text-sm text-exclu-space">Send a message to {agency.name}</p>
-              </div>
-            </div>
-
-            {sent ? (
-              <div className="text-center py-8">
-                <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-3" />
-                <p className="text-lg font-semibold mb-1">Message sent!</p>
-                <p className="text-sm text-exclu-space">
-                  {agency.name} will receive your message and get back to you.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleContact} className="space-y-4">
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
-                      Your name
-                    </label>
-                    <Input
-                      value={contactName}
-                      onChange={(e) => setContactName(e.target.value)}
-                      placeholder="John Doe"
-                      className="bg-white/5 border-white/10"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
-                      Your email
-                    </label>
-                    <Input
-                      type="email"
-                      value={contactEmail}
-                      onChange={(e) => setContactEmail(e.target.value)}
-                      placeholder="john@example.com"
-                      className="bg-white/5 border-white/10"
-                      required
-                    />
-                  </div>
+      {/* Claim Form */}
+      {agency.id && !agency.id.startsWith('profile-') && (
+        <section id="claim-form" className="relative z-10 pb-24 px-4 sm:px-6">
+          <div className="max-w-4xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              className="glass-card rounded-3xl p-6 sm:p-8"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-purple-400" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
-                    Message
-                  </label>
-                  <Textarea
-                    value={contactMessage}
-                    onChange={(e) => setContactMessage(e.target.value)}
-                    placeholder="Tell them about your project or how you'd like to work together..."
-                    rows={5}
-                    maxLength={2000}
-                    className="bg-white/5 border-white/10 resize-none"
-                    required
-                  />
-                  <p className="text-[11px] text-exclu-space mt-1">{contactMessage.length}/2000</p>
+                  <h2 className="text-lg font-bold">Claim this agency</h2>
+                  <p className="text-sm text-exclu-space">Are you the owner of {agency.name}? Verify your identity to manage this profile.</p>
                 </div>
-                <Button type="submit" disabled={sending} className="gap-2">
-                  {sending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                  {sending ? 'Sending...' : 'Send message'}
-                </Button>
-              </form>
-            )}
-          </motion.div>
-        </div>
-      </section>
+              </div>
+
+              {claimSent ? (
+                <div className="text-center py-8">
+                  <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                  <p className="text-lg font-semibold mb-1">Request submitted!</p>
+                  <p className="text-sm text-exclu-space">
+                    Our team will review your request and get back to you shortly.
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={handleClaim} className="space-y-4">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
+                        Email *
+                      </label>
+                      <Input
+                        type="email"
+                        value={claimEmail}
+                        onChange={(e) => setClaimEmail(e.target.value)}
+                        placeholder="you@youragency.com"
+                        className="bg-white/5 border-white/10"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
+                        Request type
+                      </label>
+                      <select
+                        value={claimRequestType}
+                        onChange={(e) => setClaimRequestType(e.target.value)}
+                        className="w-full px-3 py-2 rounded-md text-sm bg-white/5 border border-white/10 text-exclu-cloud focus:outline-none focus:ring-1 focus:ring-white/20"
+                      >
+                        <option value="" className="bg-exclu-black">Select a type…</option>
+                        <option value="Claim" className="bg-exclu-black">Claim this agency</option>
+                        <option value="Collaboration" className="bg-exclu-black">Collaboration</option>
+                        <option value="Partnership" className="bg-exclu-black">Partnership</option>
+                        <option value="Other" className="bg-exclu-black">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
+                        First name
+                      </label>
+                      <Input
+                        value={claimFirstName}
+                        onChange={(e) => setClaimFirstName(e.target.value)}
+                        placeholder="John"
+                        className="bg-white/5 border-white/10"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
+                        Last name
+                      </label>
+                      <Input
+                        value={claimLastName}
+                        onChange={(e) => setClaimLastName(e.target.value)}
+                        placeholder="Doe"
+                        className="bg-white/5 border-white/10"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-exclu-space uppercase tracking-wider mb-1.5 block">
+                      Message (optional)
+                    </label>
+                    <Textarea
+                      value={claimMessage}
+                      onChange={(e) => setClaimMessage(e.target.value)}
+                      placeholder="Tell us the nature of your request and how we can reach you…"
+                      rows={3}
+                      maxLength={1000}
+                      className="bg-white/5 border-white/10 resize-none"
+                    />
+                  </div>
+                  <Button type="submit" disabled={claimSending} variant="outline" className="gap-2 border-purple-500/30 text-purple-300 hover:bg-purple-500/10">
+                    {claimSending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Building2 className="w-4 h-4" />
+                    )}
+                    {claimSending ? 'Submitting…' : 'Submit request'}
+                  </Button>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       <Footer />
 

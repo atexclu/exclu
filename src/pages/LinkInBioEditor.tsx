@@ -44,6 +44,7 @@ interface LinkInBioData {
   min_tip_amount_cents: number;
   min_custom_request_cents: number;
   show_agency_branding: boolean;
+  model_categories: string[];
 }
 
 interface CreatorLink {
@@ -72,6 +73,7 @@ const LinkInBioEditor = () => {
     theme_color: 'pink',
     aurora_gradient: 'purple_dream',
     social_links: {},
+    model_categories: [],
     show_join_banner: true,
     show_certification: true,
     show_deeplinks: true,
@@ -151,7 +153,7 @@ const LinkInBioEditor = () => {
       if (activeProfile?.id) {
         const { data: cpData, error: cpError } = await supabase
           .from('creator_profiles')
-          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories')
           .eq('id', activeProfile.id)
           .maybeSingle();
 
@@ -221,6 +223,7 @@ const LinkInBioEditor = () => {
           min_tip_amount_cents: profileData.min_tip_amount_cents || 500,
           min_custom_request_cents: profileData.min_custom_request_cents || 2000,
           show_agency_branding: profileData.show_agency_branding !== false,
+          model_categories: profileData.model_categories || [],
         };
 
         setEditorData(dataToLoad);
@@ -322,7 +325,7 @@ const LinkInBioEditor = () => {
 
       // Write to creator_profiles (source of truth for per-profile data)
       if (activeProfile?.id) {
-        const cpPayload = { ...profilePayload, handle: undefined, username: debouncedData.handle };
+        const cpPayload = { ...profilePayload, handle: undefined, username: debouncedData.handle, model_categories: debouncedData.model_categories };
         const { error: cpError } = await supabase
           .from('creator_profiles')
           .update(cpPayload)
@@ -696,7 +699,9 @@ const LinkInBioEditor = () => {
                           handle={editorData.handle}
                           bio={editorData.bio}
                           location={editorData.location}
+                          modelCategories={editorData.model_categories}
                           onUpdate={updateEditorData}
+                          onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
                         />
                       </div>
                     )}

@@ -13,7 +13,11 @@ import {
   ExternalLink,
   Palette,
   ArrowRight,
+  Tag,
+  X,
+  Loader2,
 } from 'lucide-react';
+import { AgencyCategoryConfig, EMPTY_AGENCY_CATEGORIES, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
 
 interface ProfileStats {
   id: string;
@@ -37,6 +41,9 @@ export default function AgencyDashboard() {
   const [activeMetric, setActiveMetric] = useState<'profile_views' | 'sales' | 'revenue'>('revenue');
   const [activeRange, setActiveRange] = useState<'7d' | '30d' | '365d'>('30d');
   const [hoveredPoint, setHoveredPoint] = useState<{ label: string; value: number } | null>(null);
+  const [showCategories, setShowCategories] = useState(false);
+  const [agencyCats, setAgencyCats] = useState<AgencyCategoryData>(EMPTY_AGENCY_CATEGORIES);
+  const [isSavingCategories, setIsSavingCategories] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -117,6 +124,23 @@ export default function AgencyDashboard() {
       );
 
       setIsLoading(false);
+
+      // Fetch agency categories from profiles
+      const { data: profileCats } = await supabase
+        .from('profiles')
+        .select('agency_pricing, agency_target_market, agency_services_offered, agency_platform_focus, agency_growth_strategy, model_categories')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profileCats) {
+        setAgencyCats({
+          pricing: profileCats.agency_pricing || '',
+          targetMarket: profileCats.agency_target_market || [],
+          services: profileCats.agency_services_offered || [],
+          platform: profileCats.agency_platform_focus || [],
+          growthStrategy: profileCats.agency_growth_strategy || [],
+          modelTypes: profileCats.model_categories || [],
+        });
+      }
     };
 
     if (profiles.length > 0) {
@@ -125,6 +149,25 @@ export default function AgencyDashboard() {
       setIsLoading(false);
     }
   }, [profiles]);
+
+  const handleSaveCategories = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setIsSavingCategories(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        agency_pricing: agencyCats.pricing || null,
+        agency_target_market: agencyCats.targetMarket,
+        agency_services_offered: agencyCats.services,
+        agency_platform_focus: agencyCats.platform,
+        agency_growth_strategy: agencyCats.growthStrategy,
+        model_categories: agencyCats.modelTypes,
+      })
+      .eq('id', user.id);
+    setIsSavingCategories(false);
+    if (!error) setShowCategories(false);
+  };
 
   const commissionRate = isPremium ? 0 : 0.10;
 
@@ -242,14 +285,61 @@ export default function AgencyDashboard() {
                 {profiles.length} profile{profiles.length !== 1 ? 's' : ''} managed
               </p>
             </div>
-            <Button
-              onClick={() => navigate('/app/profiles/new')}
-              className="gap-2 rounded-xl"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">New Profile</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowCategories(!showCategories)}
+                className="gap-2 rounded-xl border-exclu-arsenic/60"
+              >
+                <Tag className="w-4 h-4" />
+                <span className="hidden sm:inline">Categories</span>
+              </Button>
+              <Button
+                onClick={() => navigate('/app/profiles/new')}
+                className="gap-2 rounded-xl"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">New Profile</span>
+              </Button>
+            </div>
           </div>
+
+          {/* Agency Categories Panel */}
+          {showCategories && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-4 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-semibold text-exclu-cloud">Agency Categories</p>
+                  <p className="text-[11px] text-exclu-space/60">How your agency appears in the directory</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveCategories}
+                    disabled={isSavingCategories}
+                    className="rounded-lg text-xs h-8 px-4"
+                  >
+                    {isSavingCategories ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : null}
+                    {isSavingCategories ? 'Saving…' : 'Save'}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCategories(false)}
+                    className="p-1 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <AgencyCategoryConfig value={agencyCats} onChange={setAgencyCats} />
+            </motion.div>
+          )}
         </section>
 
         {/* Metric cards — identical style to AppDashboard */}

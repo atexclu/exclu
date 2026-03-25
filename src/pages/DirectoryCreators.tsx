@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, useInView } from 'framer-motion';
-import { Search, MapPin, Verified, Users, Loader2 } from 'lucide-react';
+import { Search, MapPin, Verified, Users, Loader2, Filter, X, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Input } from '@/components/ui/input';
 import Navbar from '@/components/Navbar';
@@ -20,7 +20,126 @@ interface CreatorProfile {
   is_directory_visible: boolean;
   user_id: string;
   profile_view_count: number;
+  model_categories: string[];
 }
+
+import { MODEL_CATEGORY_GROUPS } from '@/lib/categories';
+
+/* ─── Filter Dropdown Component ─── */
+const CategoryFilterDropdown = ({
+  label,
+  groups,
+  selected,
+  onToggle,
+  searchStr,
+  onSearchChange,
+}: {
+  label: string;
+  groups: Record<string, { value: string; label: string }[]>;
+  selected: string[];
+  onToggle: (value: string) => void;
+  searchStr: string;
+  onSearchChange: (v: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        onSearchChange('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onSearchChange]);
+
+  const filteredGroups = Object.entries(groups)
+    .map(([groupName, options]) => ({
+      groupName,
+      options: searchStr.trim()
+        ? options.filter(
+            (o) =>
+              o.label.toLowerCase().includes(searchStr.toLowerCase()) ||
+              groupName.toLowerCase().includes(searchStr.toLowerCase())
+          )
+        : options,
+    }))
+    .filter((g) => g.options.length > 0);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(!open);
+          if (!open) onSearchChange('');
+        }}
+        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium transition-all duration-200 border whitespace-nowrap ${
+          selected.length > 0
+            ? 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/30'
+            : 'bg-white/5 text-exclu-cloud border-white/10 hover:bg-white/10 hover:border-white/20'
+        }`}
+      >
+        <Filter className="w-3 h-3" />
+        {label}
+        {selected.length > 0 && (
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#CFFF16]/20 text-[9px] font-bold">
+            {selected.length}
+          </span>
+        )}
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-2 left-0 w-[260px] sm:w-[300px] rounded-xl border border-exclu-arsenic/50 bg-black shadow-xl shadow-black/60 overflow-hidden">
+          <div className="p-2 border-b border-exclu-arsenic/40">
+            <input
+              type="text"
+              value={searchStr}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search categories…"
+              autoFocus
+              className="w-full px-3 py-2 rounded-lg border border-exclu-arsenic/50 bg-exclu-ink/80 text-xs text-exclu-cloud placeholder:text-exclu-space/40 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto overscroll-contain">
+            {filteredGroups.length === 0 ? (
+              <p className="px-3 py-4 text-xs text-exclu-space/50 text-center">No matching categories</p>
+            ) : (
+              filteredGroups.map(({ groupName, options }) => (
+                <div key={groupName}>
+                  <p className="px-3 pt-2.5 pb-1 text-[10px] text-exclu-space/50 uppercase tracking-wider font-semibold">
+                    {groupName}
+                  </p>
+                  {options.map((opt) => {
+                    const isSelected = selected.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => onToggle(opt.value)}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#CFFF16]/10 text-[#CFFF16]'
+                            : 'text-exclu-space hover:bg-exclu-arsenic/30 hover:text-exclu-cloud'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {isSelected && <span className="text-[10px]">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const BATCH_SIZE = 20;
 
@@ -32,6 +151,8 @@ const DirectoryCreators = () => {
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [nicheFilter, setNicheFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [catSearch, setCatSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
 
   const gridRef = useRef(null);
@@ -45,7 +166,7 @@ const DirectoryCreators = () => {
       const [creatorsRes, linksRes] = await Promise.all([
         supabase
           .from('creator_profiles')
-          .select('id, username, display_name, avatar_url, bio, country, city, niche, is_directory_visible, user_id, profile_view_count')
+          .select('id, username, display_name, avatar_url, bio, country, city, niche, is_directory_visible, user_id, profile_view_count, model_categories')
           .eq('is_directory_visible', true)
           .eq('is_active', true)
           .not('avatar_url', 'is', null)
@@ -63,7 +184,10 @@ const DirectoryCreators = () => {
         return;
       }
 
-      const profiles = creatorsRes.data || [];
+      const profiles = (creatorsRes.data || []).map((p: any) => ({
+        ...p,
+        model_categories: p.model_categories || [],
+      }));
 
       // Count paid links per creator user_id
       const linksByCreator = new Map<string, number>();
@@ -76,18 +200,18 @@ const DirectoryCreators = () => {
       setLinksCountMap(linksByCreator);
 
       if (profiles.length > 0) {
-        const userIds = profiles.map((p) => p.user_id);
+        const userIds = profiles.map((p: CreatorProfile) => p.user_id);
         const { data: premiumProfiles } = await supabase
           .from('profiles')
           .select('id')
           .in('id', userIds)
           .eq('is_creator_subscribed', true);
 
-        const premiumSet = new Set((premiumProfiles || []).map((p) => p.id));
+        const premiumSet = new Set((premiumProfiles || []).map((p: any) => p.id));
         setPremiumIds(premiumSet);
 
         // Sort: premium first → then creators with paid links → then by profile views desc
-        const sorted = [...profiles].sort((a, b) => {
+        const sorted = [...profiles].sort((a: CreatorProfile, b: CreatorProfile) => {
           const aP = premiumSet.has(a.user_id) ? 1 : 0;
           const bP = premiumSet.has(b.user_id) ? 1 : 0;
           if (bP !== aP) return bP - aP;
@@ -113,6 +237,10 @@ const DirectoryCreators = () => {
   const countries = [...new Set(allCreators.map((c) => c.country).filter(Boolean))] as string[];
   const niches = [...new Set(allCreators.map((c) => c.niche).filter(Boolean))] as string[];
 
+  const toggleCategoryFilter = (cat: string) => {
+    setCategoryFilter((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]));
+  };
+
   const filtered = allCreators.filter((c) => {
     if (search) {
       const q = search.toLowerCase();
@@ -125,6 +253,10 @@ const DirectoryCreators = () => {
     if (countryFilter && c.country !== countryFilter) return false;
     if (nicheFilter && c.niche !== nicheFilter) return false;
     if (!c.avatar_url) return false;
+
+    // Category filter: match if creator has ANY of the selected categories
+    if (categoryFilter.length > 0 && !categoryFilter.some((cat) => c.model_categories?.includes(cat))) return false;
+
     return true;
   });
 
@@ -134,7 +266,7 @@ const DirectoryCreators = () => {
   // Reset visible count when filters change
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
-  }, [search, countryFilter, nicheFilter]);
+  }, [search, countryFilter, nicheFilter, categoryFilter]);
 
   // IntersectionObserver for infinite scroll
   const loadMore = useCallback(() => {
@@ -202,41 +334,92 @@ const DirectoryCreators = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={gridInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
             transition={{ duration: 0.4, delay: 0.2 }}
-            className="flex flex-col items-center gap-3 mb-10"
+            className="space-y-3 mb-10"
           >
-            <div className="relative w-full max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-exclu-steel" />
-              <Input
-                placeholder="Search creators..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 bg-white/5 border-white/10"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {countries.length > 0 && (
-                <select
-                  value={countryFilter}
-                  onChange={(e) => setCountryFilter(e.target.value)}
-                  className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-exclu-cloud appearance-none cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all duration-300"
-                >
-                  <option value="">All countries</option>
-                  {countries.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              )}
-              {niches.length > 0 && (
-                <select
-                  value={nicheFilter}
-                  onChange={(e) => setNicheFilter(e.target.value)}
-                  className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-exclu-cloud appearance-none cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all duration-300"
-                >
-                  <option value="">All niches</option>
-                  {niches.map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
+            {/* Search */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-exclu-steel" />
+                <Input
+                  placeholder="Search creators..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10 bg-white/5 border-white/10"
+                />
+              </div>
+
+              {/* Filter row */}
+              <div className="flex flex-wrap gap-2 justify-center">
+                {countries.length > 0 && (
+                  <select
+                    value={countryFilter}
+                    onChange={(e) => setCountryFilter(e.target.value)}
+                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-exclu-cloud appearance-none cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+                  >
+                    <option value="">All countries</option>
+                    {countries.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                )}
+                {niches.length > 0 && (
+                  <select
+                    value={nicheFilter}
+                    onChange={(e) => setNicheFilter(e.target.value)}
+                    className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-exclu-cloud appearance-none cursor-pointer hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+                  >
+                    <option value="">All niches</option>
+                    {niches.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Category filter dropdown */}
+                <CategoryFilterDropdown
+                  label="Categories"
+                  groups={MODEL_CATEGORY_GROUPS}
+                  selected={categoryFilter}
+                  onToggle={toggleCategoryFilter}
+                  searchStr={catSearch}
+                  onSearchChange={setCatSearch}
+                />
+
+                {categoryFilter.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCategoryFilter([])}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-full text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Selected category tags */}
+              {categoryFilter.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  {categoryFilter.map((cat) => {
+                    const allOpts = Object.values(MODEL_CATEGORY_GROUPS).flat();
+                    const opt = allOpts.find((o) => o.value === cat);
+                    return (
+                      <span
+                        key={cat}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#CFFF16]/10 text-[#CFFF16] text-[11px] font-medium border border-[#CFFF16]/30"
+                      >
+                        {opt?.label || cat.replace(/_/g, ' ')}
+                        <button
+                          type="button"
+                          onClick={() => toggleCategoryFilter(cat)}
+                          className="ml-0.5 hover:text-white transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </motion.div>
@@ -254,6 +437,15 @@ const DirectoryCreators = () => {
               <Users className="w-12 h-12 mx-auto mb-4 opacity-30" />
               <p className="text-lg font-medium mb-2">No creators found</p>
               <p className="text-sm">Try adjusting your filters or search term.</p>
+              {categoryFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter([])}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium bg-white/5 border border-white/10 text-exclu-cloud hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" /> Clear category filters
+                </button>
+              )}
             </div>
           ) : (
             <>

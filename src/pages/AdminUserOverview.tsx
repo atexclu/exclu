@@ -2,8 +2,10 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
+import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
 
 interface UserProfileOverview {
   id: string;
@@ -23,6 +25,7 @@ interface UserLinkOverview {
   description: string | null;
   status: string | null;
   show_on_profile: boolean | null;
+  profile_id?: string | null;
   price_cents: number | null;
   created_at: string | null;
   published_at: string | null;
@@ -43,6 +46,8 @@ interface UserAssetOverview {
   title: string | null;
   created_at: string | null;
   mime_type: string | null;
+  is_public?: boolean | null;
+  profile_id?: string | null;
   preview_url: string | null;
 }
 
@@ -92,6 +97,11 @@ const AdminUserOverview = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+  const [modelCategories, setModelCategories] = useState<string[]>([]);
+  const [isSavingCategories, setIsSavingCategories] = useState(false);
+  const [agencyData, setAgencyData] = useState<{ agency_name: string; agency_logo_url: string | null; country: string } | null>(null);
+  const [managedProfiles, setManagedProfiles] = useState<Array<{ id: string; username: string; display_name: string | null; is_active: boolean; avatar_url: string | null; model_categories: string[] }>>([]);
+  const [selectedManagedProfileId, setSelectedManagedProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -142,6 +152,42 @@ const AdminUserOverview = () => {
       setAssets(payload.assets ?? []);
       setSales(payload.sales ?? []);
       setStripeDetails(payload.stripe ?? null);
+
+      // Fetch agency data if user is an agency
+      if (id) {
+        const { data: agencyInfo } = await supabase
+          .from('profiles')
+          .select('agency_name, agency_logo_url, country')
+          .eq('id', id)
+          .not('agency_name', 'is', null)
+          .maybeSingle();
+        if (agencyInfo) {
+          setAgencyData(agencyInfo);
+          
+          // Fetch managed profiles for this agency
+          const { data: managed } = await supabase
+            .from('creator_profiles')
+            .select('id, username, display_name, is_active, avatar_url, model_categories')
+            .eq('user_id', id);
+          if (managed) {
+            setManagedProfiles(managed);
+          }
+        }
+      }
+
+      // Fetch model categories for this user's creator profile
+      if (id) {
+        const { data: cpData } = await supabase
+          .from('creator_profiles')
+          .select('model_categories')
+          .eq('user_id', id)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (cpData?.model_categories) {
+          setModelCategories(cpData.model_categories);
+        }
+      }
+      
       setIsLoading(false);
     };
 
@@ -323,6 +369,101 @@ const AdminUserOverview = () => {
     }
   };
 
+  const handleToggleLinkVisibility = async (linkId: string, currentVisible: boolean) => {
+    const newVal = !currentVisible;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) { toast.error('Session expired'); return; }
+
+    const { data: resData, error: updateErr } = await supabase.functions.invoke('admin-manage-user-content', {
+      body: { action: 'update_link_visibility', link_id: linkId, show_on_profile: newVal },
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'x-supabase-auth': session.access_token,
+      },
+    });
+
+    if (updateErr || resData?.error) {
+      toast.error('Failed to update link visibility');
+    } else {
+      setLinks((prev) =>
+        prev.map((l) => (l.id === linkId ? { ...l, show_on_profile: newVal } : l))
+      );
+      toast.success(newVal ? 'Content set to visible' : 'Content hidden from profile');
+    }
+  };
+
+  const handleToggleAssetVisibility = async (assetId: string, currentPublic: boolean) => {
+    const newVal = !currentPublic;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) { toast.error('Session expired'); return; }
+
+    const { data: resData, error: updateErr } = await supabase.functions.invoke('admin-manage-user-content', {
+      body: { action: 'update_asset_visibility', asset_id: assetId, is_public: newVal },
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'x-supabase-auth': session.access_token,
+      },
+    });
+
+    if (updateErr || resData?.error) {
+      toast.error('Failed to update asset visibility');
+    } else {
+      setAssets((prev) =>
+        prev.map((a) => (a.id === assetId ? { ...a, is_public: newVal } : a))
+      );
+      toast.success(newVal ? 'Asset set to public' : 'Asset hidden from public');
+    }
+  };
+
+  const handleSaveCategories = async () => {
+    if (!id) return;
+    setIsSavingCategories(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { toast.error('Session expired'); return; }
+
+      // if managedProfiles.length > 0, we update the selected one, otherwise the base user_id
+      const bodyPayload: any = { model_categories: modelCategories };
+      if (managedProfiles.length > 0 && selectedManagedProfileId) {
+        bodyPayload.profile_id = selectedManagedProfileId;
+      } else {
+        bodyPayload.user_id = id;
+      }
+
+      const { data: resData, error: updateErr } = await supabase.functions.invoke('admin-update-user-visibility', {
+        body: bodyPayload,
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'x-supabase-auth': session.access_token,
+        },
+      });
+      if (updateErr || resData?.error) {
+        toast.error('Failed to save categories');
+      } else {
+        toast.success('Categories updated');
+        // Update local managedProfiles if applicable
+        if (selectedManagedProfileId) {
+          setManagedProfiles(prev => prev.map(p => p.id === selectedManagedProfileId ? { ...p, model_categories: modelCategories } : p));
+        }
+      }
+    } finally {
+      setIsSavingCategories(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedManagedProfileId) {
+      const p = managedProfiles.find(m => m.id === selectedManagedProfileId);
+      if (p && p.model_categories) setModelCategories(p.model_categories);
+      else setModelCategories([]);
+    } else if (managedProfiles.length > 0) {
+      setModelCategories([]);
+    }
+  }, [selectedManagedProfileId, managedProfiles]);
+
+  const displayLinks = selectedManagedProfileId ? links.filter(l => l.profile_id === selectedManagedProfileId) : links;
+  const displayAssets = selectedManagedProfileId ? assets.filter(a => a.profile_id === selectedManagedProfileId) : assets;
+
   return (
     <AppShell>
       <main className="px-4 pt-6 pb-8 sm:px-6 lg:px-8">
@@ -383,21 +524,20 @@ const AdminUserOverview = () => {
                         <span className="text-exclu-space/80"> · @{profile.handle}</span>
                       )}
                     </p>
-                    <p className="text-[11px] text-exclu-space/70 mt-1 break-all">{profile.id}</p>
                   </div>
 
-                  <div className="text-right text-xs text-exclu-space">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-exclu-space mt-2 sm:mt-0 sm:justify-end sm:text-right">
                     <p>
                       Created:{' '}
                       <span className="text-exclu-cloud/90">
-                        {profile.created_at ? new Date(profile.created_at).toLocaleString() : '—'}
+                        {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}
                       </span>
                     </p>
-                    <p className="mt-1">
+                    <p>
                       Country:{' '}
                       <span className="text-exclu-cloud/90">{profile.country || '—'}</span>
                     </p>
-                    <p className="mt-1">
+                    <p>
                       Creator:{' '}
                       <span className="text-exclu-cloud/90">{profile.is_creator ? 'Yes' : 'No'}</span>
                     </p>
@@ -432,6 +572,313 @@ const AdminUserOverview = () => {
                   
                   {isUpdatingVisibility && (
                     <p className="text-xs text-exclu-space/70 mt-2">Updating visibility...</p>
+                  )}
+                </div>
+
+                {/* Agency Information */}
+                {agencyData && (
+                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Building2 className="w-4 h-4 text-[#CFFF16]" />
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Agency Information</h2>
+                    </div>
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 mb-4">
+                      {agencyData.agency_logo_url && (
+                        <div className="flex-shrink-0">
+                          <img 
+                            src={agencyData.agency_logo_url} 
+                            alt="Agency logo" 
+                            className="w-16 h-16 rounded-lg object-cover border border-exclu-arsenic/50"
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 flex-1">
+                        <div>
+                          <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1">Agency Name</p>
+                          <p className="text-sm text-exclu-cloud">{agencyData.agency_name}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1">Country</p>
+                          <p className="text-sm text-exclu-cloud">{agencyData.country}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Managed Profiles */}
+                    {managedProfiles.length > 0 && (
+                      <div>
+                        <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-3">
+                          Managed Profiles ({managedProfiles.length})
+                        </p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                          {managedProfiles.map((profile) => {
+                            const isSelected = profile.id === selectedManagedProfileId;
+                            return (
+                              <button
+                                key={profile.id}
+                                onClick={() => setSelectedManagedProfileId(isSelected ? null : profile.id)}
+                                type="button"
+                                className={`group block relative rounded-2xl overflow-hidden border transition-all duration-300 ${
+                                  isSelected 
+                                    ? 'border-[#CFFF16] shadow-[0_0_15px_rgba(207,255,22,0.15)] scale-[1.03]' 
+                                    : 'border-exclu-arsenic/40 hover:border-white/30 hover:scale-[1.03]'
+                                }`}
+                                title={`${profile.display_name || profile.username} - ${profile.is_active ? 'Active' : 'Inactive'} (Click to filter)`}
+                              >
+                                <div className="aspect-[3/4] relative">
+                                  {profile.avatar_url ? (
+                                    <img
+                                      src={profile.avatar_url}
+                                      alt={profile.display_name || profile.username}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-exclu-arsenic/30 flex items-center justify-center">
+                                      <span className="text-2xl font-bold text-white/20">
+                                        {(profile.display_name || profile.username)?.[0]?.toUpperCase()}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="absolute top-1 right-1">
+                                    <div className={`w-2 h-2 rounded-full ${profile.is_active ? 'bg-green-400' : 'bg-red-400'} border border-black/50`} />
+                                  </div>
+                                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-exclu-black via-exclu-black/90 to-transparent flex flex-col items-start gap-1">
+                                    <p className="text-white font-medium text-xs truncate leading-tight w-full text-left">
+                                      {profile.display_name || profile.username}
+                                    </p>
+                                    <div className="flex items-center justify-between w-full">
+                                      <p className="text-exclu-steel text-[10px] truncate">
+                                        @{profile.username}
+                                      </p>
+                                      <a 
+                                        href={`/${profile.username}`} 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="bg-black/40 hover:bg-black/80 rounded p-1 text-white border border-white/20 z-10"
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Model Categories */}
+                {profile.is_creator && (
+                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Model Categories</h2>
+                        {managedProfiles.length > 0 && !selectedManagedProfileId && (
+                          <span className="text-[10px] text-exclu-space/50 ml-2">(Select a profile above to edit)</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleSaveCategories}
+                        disabled={isSavingCategories || (managedProfiles.length > 0 && !selectedManagedProfileId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CFFF16]/10 text-[#CFFF16] text-[11px] font-medium hover:bg-[#CFFF16]/20 transition-colors disabled:opacity-50"
+                      >
+                        {isSavingCategories ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        Save categories
+                      </button>
+                    </div>
+
+                    <div className={managedProfiles.length > 0 && !selectedManagedProfileId ? "opacity-50 pointer-events-none" : ""}>
+                      <ModelCategoryDropdown
+                        value={modelCategories}
+                        onChange={setModelCategories}
+                      />
+                    </div>
+                </div>
+                )}
+
+                 {/* stripe section moved to bottom */}
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-semibold text-exclu-cloud">Links</h2>
+                    <span className="text-[11px] text-exclu-space/80">{displayLinks.length} links</span>
+                  </div>
+                </div>
+
+                {displayLinks.length === 0 ? (
+                  <p className="text-sm text-exclu-space">This user has no links yet.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/90">
+                    <table className="min-w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
+                        <tr>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Visibility</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
+                          <th className="px-4 py-2 font-medium text-exclu-space/80"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayLinks.map((link) => {
+                          const isVideo = link.mime_type?.startsWith('video/');
+                          return (
+                            <tr
+                              key={link.id}
+                              className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80 cursor-pointer"
+                              onClick={() => setSelectedLink(link)}
+                            >
+                              <td className="px-4 py-2 align-middle">
+                                <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
+                                  {link.previewUrl ? (
+                                    isVideo ? (
+                                      <video
+                                        src={link.previewUrl}
+                                        className="w-full h-full object-cover"
+                                        muted
+                                        playsInline
+                                      />
+                                    ) : (
+                                      <img
+                                        src={link.previewUrl}
+                                        className="w-full h-full object-cover"
+                                        alt={link.title || 'Link content'}
+                                      />
+                                    )
+                                  ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                                  )}
+                                  {link.media && link.media.length > 1 && (
+                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold backdrop-blur-sm border border-white/10">
+                                      {link.media.length} files
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2 align-middle text-exclu-cloud">
+                                {link.title || 'Untitled link'}
+                              </td>
+                              <td className="px-4 py-2 align-middle text-[11px]">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleLinkVisibility(link.id, !!link.show_on_profile);
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium transition-colors ${
+                                    link.status === 'published' && link.show_on_profile
+                                      ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                                      : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/20'
+                                  }`}
+                                  title={link.show_on_profile ? 'Click to hide from profile' : 'Click to make visible'}
+                                >
+                                  {link.show_on_profile ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                  {link.show_on_profile ? 'Public' : 'Hidden'}
+                                </button>
+                              </td>
+                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
+                                {typeof link.price_cents === 'number'
+                                  ? `$${(link.price_cents / 100).toFixed(2)}`
+                                  : '—'}
+                              </td>
+                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
+                                {link.created_at ? new Date(link.created_at).toLocaleDateString() : '—'}
+                              </td>
+                              <td className="px-4 py-2 align-middle">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (link.slug) {
+                                      window.open(`/l/${link.slug}`, '_blank');
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
+                                  title="Open link in new tab"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-semibold text-exclu-cloud">Content library</h2>
+                    <span className="text-[11px] text-exclu-space/80">{displayAssets.length} assets</span>
+                  </div>
+
+                  {displayAssets.length === 0 ? (
+                    <p className="text-sm text-exclu-space">This user has not uploaded any content yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {displayAssets.map((asset) => (
+                        <div
+                          key={asset.id}
+                          className="rounded-xl border border-exclu-arsenic/60 bg-exclu-ink/90 overflow-hidden flex flex-col text-[11px] cursor-pointer hover:border-exclu-cloud/80 transition-colors"
+                          onClick={() => setSelectedAsset(asset)}
+                        >
+                          <div className="relative aspect-[4/3] bg-exclu-void/60 flex items-center justify-center">
+                            {asset.preview_url ? (
+                              asset.mime_type?.startsWith('video/') ? (
+                                <video
+                                  src={asset.preview_url}
+                                  className="w-full h-full object-cover"
+                                  muted
+                                  playsInline
+                                />
+                              ) : (
+                                <img
+                                  src={asset.preview_url}
+                                  alt={asset.title || 'Asset preview'}
+                                  className="w-full h-full object-cover"
+                                />
+                              )
+                            ) : (
+                              <span className="text-exclu-space/70">No preview</span>
+                            )}
+                          </div>
+                          <div className="px-3 py-2 space-y-0.5">
+                            <p className="truncate text-exclu-cloud font-medium text-[11px]">
+                              {asset.title || 'Untitled asset'}
+                            </p>
+                            <div className="flex items-center justify-between gap-2 mt-0.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleAssetVisibility(asset.id, !!asset.is_public);
+                                }}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                  asset.is_public
+                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400'
+                                    : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400'
+                                }`}
+                                title={asset.is_public ? 'Make private' : 'Make public'}
+                              >
+                                {asset.is_public ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                                {asset.is_public ? 'Public' : 'Private'}
+                              </button>
+                              <span className="text-[10px] text-exclu-space/70">
+                                {asset.created_at ? new Date(asset.created_at).toLocaleDateString() : '—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -472,156 +919,6 @@ const AdminUserOverview = () => {
                       )}
                     </div>
                   </div>
-                </div>
-
-                {links.length === 0 ? (
-                  <p className="text-sm text-exclu-space">This user has no links yet.</p>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/90">
-                    <table className="min-w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
-                        <tr>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Visibility</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {links.map((link) => {
-                          const isVideo = link.mime_type?.startsWith('video/');
-                          return (
-                            <tr
-                              key={link.id}
-                              className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80 cursor-pointer"
-                              onClick={() => setSelectedLink(link)}
-                            >
-                              <td className="px-4 py-2 align-middle">
-                                <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
-                                  {link.previewUrl ? (
-                                    isVideo ? (
-                                      <video
-                                        src={link.previewUrl}
-                                        className="w-full h-full object-cover"
-                                        muted
-                                        playsInline
-                                      />
-                                    ) : (
-                                      <img
-                                        src={link.previewUrl}
-                                        className="w-full h-full object-cover"
-                                        alt={link.title || 'Link content'}
-                                      />
-                                    )
-                                  ) : (
-                                    <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                                  )}
-                                  {link.media && link.media.length > 1 && (
-                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold backdrop-blur-sm border border-white/10">
-                                      {link.media.length} files
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-cloud">
-                                {link.title || 'Untitled link'}
-                              </td>
-                              <td className="px-4 py-2 align-middle text-[11px]">
-                                {link.status === 'published' && link.show_on_profile ? (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
-                                    Visible
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-medium">
-                                    Non visible
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
-                                {typeof link.price_cents === 'number'
-                                  ? `$${(link.price_cents / 100).toFixed(2)}`
-                                  : '—'}
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
-                                {link.created_at ? new Date(link.created_at).toLocaleString() : '—'}
-                              </td>
-                              <td className="px-4 py-2 align-middle">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (link.slug) {
-                                      window.open(`/l/${link.slug}`, '_blank');
-                                    }
-                                  }}
-                                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
-                                  title="Open link in new tab"
-                                >
-                                  <ExternalLink className="w-4 h-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-sm font-semibold text-exclu-cloud">Content library</h2>
-                    <span className="text-[11px] text-exclu-space/80">{assets.length} assets</span>
-                  </div>
-
-                  {assets.length === 0 ? (
-                    <p className="text-sm text-exclu-space">This user has not uploaded any content yet.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                      {assets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="rounded-xl border border-exclu-arsenic/60 bg-exclu-ink/90 overflow-hidden flex flex-col text-[11px] cursor-pointer hover:border-exclu-cloud/80 transition-colors"
-                          onClick={() => setSelectedAsset(asset)}
-                        >
-                          <div className="relative aspect-[4/3] bg-exclu-void/60 flex items-center justify-center">
-                            {asset.preview_url ? (
-                              asset.mime_type?.startsWith('video/') ? (
-                                <video
-                                  src={asset.preview_url}
-                                  className="w-full h-full object-cover"
-                                  muted
-                                  playsInline
-                                />
-                              ) : (
-                                <img
-                                  src={asset.preview_url}
-                                  alt={asset.title || 'Asset preview'}
-                                  className="w-full h-full object-cover"
-                                />
-                              )
-                            ) : (
-                              <span className="text-exclu-space/70">No preview</span>
-                            )}
-                          </div>
-                          <div className="px-3 py-2 space-y-0.5">
-                            <p className="truncate text-exclu-cloud font-medium text-[11px]">
-                              {asset.title || 'Untitled asset'}
-                            </p>
-                            <div className="flex items-center justify-between gap-2 text-[10px] text-exclu-space/70">
-                              <span className="truncate">{asset.mime_type || 'Unknown type'}</span>
-                              <span>
-                                {asset.created_at
-                                  ? new Date(asset.created_at).toLocaleDateString()
-                                  : '—'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             )}

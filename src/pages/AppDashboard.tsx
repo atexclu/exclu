@@ -576,8 +576,8 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
-        {/* Notice for creators with existing links but incomplete or limited Stripe Connect */}
-        {!isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
+        {/* Notice for creators with existing links but incomplete or limited Stripe Connect — temporarily hidden */}
+        {false && !isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
           <section className="mb-4 max-w-2xl">
             <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px]">
               <div className="flex items-start gap-3">

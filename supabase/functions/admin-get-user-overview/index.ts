@@ -77,6 +77,7 @@ interface UserOverviewPayload {
     is_creator: boolean | null;
     country: string | null;
     stripe_connect_status: string | null;
+    is_directory_visible: boolean | null;
   } | null;
   links: Array<{
     id: string;
@@ -321,6 +322,7 @@ serve(async (req) => {
         created_at, 
         storage_path, 
         mime_type,
+        profile_id,
         link_media(
           asset_id,
           position,
@@ -350,6 +352,7 @@ serve(async (req) => {
       published_at: string | null;
       storage_path: string | null;
       mime_type: string | null;
+      profile_id?: string | null;
       previewUrl?: string | null;
       media: Array<{
         id: string;
@@ -443,6 +446,7 @@ serve(async (req) => {
           published_at: (link.published_at as string | null) ?? null,
           storage_path: primaryStoragePath,
           mime_type: (link.mime_type as string | null) ?? mediaItems[0]?.mime_type ?? null,
+          profile_id: (link.profile_id as string | null) ?? null,
           previewUrl: mediaItems[0]?.preview_url ?? null,
           media: mediaItems,
         });
@@ -452,7 +456,7 @@ serve(async (req) => {
     // Load a subset of the target user's content library assets with signed preview URLs.
     const { data: assets, error: assetsError } = await supabaseAdmin
       .from('assets')
-      .select('id, title, created_at, storage_path, mime_type')
+      .select('id, title, created_at, storage_path, mime_type, is_public, profile_id')
       .eq('creator_id', targetUserId)
       .order('created_at', { ascending: false })
       .limit(30);
@@ -466,6 +470,8 @@ serve(async (req) => {
       title: string | null;
       created_at: string | null;
       mime_type: string | null;
+      is_public?: boolean | null;
+      profile_id?: string | null;
       preview_url: string | null;
     }[] = [];
 
@@ -493,6 +499,8 @@ serve(async (req) => {
           title: (asset.title as string | null) ?? null,
           created_at: (asset.created_at as string | null) ?? null,
           mime_type: (asset.mime_type as string | null) ?? null,
+          is_public: (asset.is_public as boolean | null) ?? false,
+          profile_id: (asset.profile_id as string | null) ?? null,
           preview_url: previewUrl,
         });
       }
@@ -622,6 +630,20 @@ serve(async (req) => {
       };
     }
 
+    // Fetch is_directory_visible from creator_profiles
+    let isDirectoryVisible: boolean | null = true;
+    {
+      const { data: cpVis } = await supabaseAdmin
+        .from('creator_profiles')
+        .select('is_directory_visible')
+        .eq('user_id', targetUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (cpVis) {
+        isDirectoryVisible = cpVis.is_directory_visible ?? true;
+      }
+    }
+
     const payload: UserOverviewPayload = {
       profile: profile
         ? {
@@ -632,6 +654,7 @@ serve(async (req) => {
           is_creator: profile.is_creator ?? null,
           country: profile.country ?? null,
           stripe_connect_status: profile.stripe_connect_status ?? null,
+          is_directory_visible: isDirectoryVisible,
         }
         : null,
       links: links,

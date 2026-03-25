@@ -1,21 +1,24 @@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { MapPin } from 'lucide-react';
+import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
 
 interface InfoSectionProps {
   displayName: string;
   handle: string;
   bio: string;
   location: string | null;
+  modelCategories: string[];
   onUpdate: (updates: {
     display_name?: string;
     handle?: string;
     bio?: string;
     location?: string | null;
   }) => void;
+  onModelCategoriesChange: (categories: string[]) => void;
 }
 
-export function InfoSection({ displayName, handle, bio, location, onUpdate }: InfoSectionProps) {
+export function InfoSection({ displayName, handle, bio, location, modelCategories, onUpdate, onModelCategoriesChange }: InfoSectionProps) {
   const bioLength = bio.length;
   const bioMaxLength = 300;
 
@@ -99,6 +102,21 @@ export function InfoSection({ displayName, handle, bio, location, onUpdate }: In
           placeholder="e.g., Paris, France"
           maxLength={50}
           className="h-12 bg-muted/50 border-border text-foreground text-base"
+        />
+      </div>
+
+      {/* Model Categories */}
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-foreground">
+          Categories
+          <span className="text-xs font-normal text-muted-foreground ml-1">(Optional)</span>
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Select categories that describe your content. This helps fans and agencies discover you in the directory.
+        </p>
+        <ModelCategoryDropdown
+          value={modelCategories}
+          onChange={onModelCategoriesChange}
         />
       </div>
 

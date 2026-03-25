@@ -164,6 +164,7 @@ const BlogIndex = () => {
           .from('creator_profiles')
           .select('id, username, display_name, avatar_url, bio, niche, user_id, profile_view_count, is_directory_visible')
           .eq('is_active', true)
+          .eq('is_directory_visible', true)
           .not('avatar_url', 'is', null)
           .order('profile_view_count', { ascending: false })
           .limit(50),
@@ -349,13 +350,13 @@ const BlogIndex = () => {
       {!search && !categoryFilter && (
         <motion.section 
           ref={creatorsRef} 
-          className="relative z-10 py-20 overflow-hidden"
+          className="relative z-10 py-6 overflow-hidden"
           initial={{ opacity: 1, height: 'auto' }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.3, ease: 'easeInOut' }}
         >
-          <div className="text-center mb-12 px-6">
+          <div className="text-center mb-5 px-6">
             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-exclu-cloud mb-4">
               They sell with <span className="text-[#CFFF16]">Exclu</span>
             </h2>
@@ -404,7 +405,7 @@ const BlogIndex = () => {
       )}
 
       {/* ═══ ARTICLES SECTION ═══ */}
-      <section ref={articlesRef} className="relative z-10 py-20 px-4 sm:px-6">
+      <section ref={articlesRef} className="relative z-10 py-6 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto relative z-10">
           {loading ? (
             <div className="space-y-16">
