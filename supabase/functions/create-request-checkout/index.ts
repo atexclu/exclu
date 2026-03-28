@@ -1,36 +1,53 @@
-import Stripe from 'npm:stripe';
+/**
+ * create-request-checkout — UGPayments QuickPay version with pre-auth.
+ *
+ * Same request body, same validations, same guest account creation logic.
+ * Returns { fields, request_id } for QuickPay form (pre-auth configured server-side).
+ *
+ * Pre-auth note: UGPayments has configured our account for pre-auth mode.
+ * The ConfirmURL callback will receive TransactionState='Authorize' (not 'Sale').
+ * The funds are held (not captured) until the creator accepts via manage-request.
+ *
+ * Request body: { creator_id, profile_id?, description, proposed_amount_cents, fan_email?, fan_password? }
+ * Auth: Optional (guests provide email + password to create account)
+ */
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
+const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
+const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
-if (!stripeSecretKeyLive) throw new Error('Missing STRIPE_SECRET_KEY');
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-if (!siteUrl) throw new Error('Missing PUBLIC_SITE_URL');
+if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const normalizedSiteOrigin = siteUrl;
 
 const allowedOrigins = [
   normalizedSiteOrigin,
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:8083',
-  'http://localhost:8084',
-  'http://localhost:5173',
+  'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
+  'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
 ];
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+  const allowed = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
   };
+}
+
+function jsonOk(data: Record<string, unknown>, cors: Record<string, string>) {
+  return new Response(JSON.stringify(data), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
+function jsonError(msg: string, status: number, cors: Record<string, string>) {
+  return new Response(JSON.stringify({ error: msg }), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 }
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -39,31 +56,25 @@ const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
-  const existing = ipHits.get(ip);
-  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+  const e = ipHits.get(ip);
+  if (!e || now - e.windowStart > RATE_LIMIT_WINDOW_MS) {
     ipHits.set(ip, { count: 1, windowStart: now });
     return false;
   }
-  existing.count += 1;
-  return existing.count > RATE_LIMIT_MAX;
-}
-
-function jsonError(msg: string, status: number, cors: Record<string, string>) {
-  return new Response(JSON.stringify({ error: msg }), {
-    status,
-    headers: { ...cors, 'Content-Type': 'application/json' },
-  });
+  e.count++;
+  return e.count > RATE_LIMIT_MAX;
 }
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('cf-connecting-ip') ?? 'unknown';
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+             req.headers.get('cf-connecting-ip') ?? 'unknown';
   if (isRateLimited(ip)) return jsonError('Too many requests', 429, corsHeaders);
 
   try {
-    // ── 1. Auth (optional) ──────────────────────────────────────────────
+    // ── 1. Auth (optional — guests provide email) ─────────────────────
     const authHeader = req.headers.get('authorization') ?? '';
     const token = authHeader.replace('Bearer ', '').trim();
     let authenticatedUserId: string | null = null;
@@ -72,7 +83,7 @@ serve(async (req) => {
       if (user) authenticatedUserId = user.id;
     }
 
-    // ── 2. Parse & validate body ────────────────────────────────────────
+    // ── 2. Parse & validate body ──────────────────────────────────────
     const body = await req.json();
     const creatorId = body?.creator_id as string | undefined;
     const profileId = body?.profile_id as string | undefined;
@@ -88,24 +99,20 @@ serve(async (req) => {
       return jsonError('Minimum amount is $20.00', 400, corsHeaders);
     }
     if (proposedAmountCents > 100000) return jsonError('Maximum amount is $1,000.00', 400, corsHeaders);
-
-    // Guest must provide email
     if (!authenticatedUserId && !fanEmail) return jsonError('Email is required', 400, corsHeaders);
 
-    // ── 3. Resolve fan identity ─────────────────────────────────────────
+    // ── 3. Resolve fan identity (same logic as Stripe version) ────────
     let fanUserId: string;
     let isNewAccount = false;
 
     if (authenticatedUserId) {
       fanUserId = authenticatedUserId;
     } else {
-      // Check if email belongs to existing user
       const { data: existingUserId } = await supabase.rpc('get_user_id_by_email', { input_email: fanEmail! });
 
       if (existingUserId) {
         fanUserId = existingUserId;
       } else {
-        // New account — password required
         if (!fanPassword || fanPassword.length < 6) {
           return jsonError('Password is required (min 6 characters) to create your account', 400, corsHeaders);
         }
@@ -118,43 +125,36 @@ serve(async (req) => {
         });
 
         if (createErr || !newUser?.user) {
-          console.error('Error creating fan account', createErr);
+          console.error('Error creating fan account:', createErr);
           return jsonError('Failed to create your account. The email may already be in use.', 400, corsHeaders);
         }
 
         fanUserId = newUser.user.id;
         isNewAccount = true;
 
-        // Create a fan profile row
-        await supabase.from('profiles').upsert({
-          id: fanUserId,
-          is_creator: false,
-        }, { onConflict: 'id' });
+        await supabase.from('profiles').upsert({ id: fanUserId, is_creator: false }, { onConflict: 'id' });
       }
     }
 
-    // Prevent self-requests
     if (fanUserId === creatorId) return jsonError('You cannot send a request to yourself', 400, corsHeaders);
 
-    // ── 4. Validate creator ─────────────────────────────────────────────
+    // ── 4. Validate creator ───────────────────────────────────────────
     const { data: creator, error: creatorErr } = await supabase
       .from('profiles')
-      .select('id, handle, display_name, custom_requests_enabled, min_custom_request_cents, stripe_account_id, stripe_connect_status, is_creator_subscribed')
+      .select('id, handle, display_name, custom_requests_enabled, min_custom_request_cents, payout_setup_complete, is_creator_subscribed')
       .eq('id', creatorId)
       .single();
 
     if (creatorErr || !creator) return jsonError('Creator not found', 404, corsHeaders);
     if (!creator.custom_requests_enabled) return jsonError('This creator does not accept custom requests', 400, corsHeaders);
-    if (!creator.stripe_account_id || creator.stripe_connect_status !== 'complete') {
-      return jsonError('Creator is not ready to receive payments yet', 400, corsHeaders);
-    }
+    if (!creator.payout_setup_complete) return jsonError('Creator is not ready to receive payments yet', 400, corsHeaders);
 
     const minAmount = creator.min_custom_request_cents || 2000;
     if (proposedAmountCents < minAmount) {
       return jsonError(`Minimum amount is $${(minAmount / 100).toFixed(2)}`, 400, corsHeaders);
     }
 
-    // Rate limit: max 1 pending request per fan per creator
+    // Max 1 pending request per fan per creator
     const { data: existingPending } = await supabase
       .from('custom_requests')
       .select('id')
@@ -167,7 +167,7 @@ serve(async (req) => {
       return jsonError('You already have a pending request with this creator', 400, corsHeaders);
     }
 
-    // ── 5. Create request row (pending_payment) ─────────────────────────
+    // ── 5. Create request record (pending_payment) ────────────────────
     const expiresAt = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: requestRecord, error: insertErr } = await supabase
@@ -188,93 +188,55 @@ serve(async (req) => {
       .single();
 
     if (insertErr || !requestRecord) {
-      console.error('Error inserting custom request', insertErr);
+      console.error('Error inserting custom request:', insertErr);
       return jsonError('Failed to create request', 500, corsHeaders);
     }
 
-    // ── 6. Create Stripe Checkout (manual capture) ──────────────────────
-    const stripe = new Stripe(stripeSecretKeyLive!, { apiVersion: '2023-10-16' });
-
+    // ── 6. Build QuickPay form fields (pre-auth active server-side) ───
     const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.05);
     const totalFanPaysCents = proposedAmountCents + fanProcessingFeeCents;
+    const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
-    const isSubscribed = creator.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.1;
-    const platformCommissionCents = Math.round(proposedAmountCents * commissionRate);
-    const applicationFeeAmount = platformCommissionCents + fanProcessingFeeCents;
-
+    const merchantReference = `req_${requestRecord.id}`;
     const creatorHandle = creator.handle || creatorId;
+
     const successParams = new URLSearchParams({
       status: 'success',
       creator: creatorHandle,
       amount: String(proposedAmountCents),
-      ...(isNewAccount ? { new_account: '1' } : {}),
-      ...(!authenticatedUserId && !isNewAccount ? { existing_account: '1' } : {}),
     });
-    const successUrl = `${normalizedSiteOrigin}/request-success?${successParams.toString()}`;
-    const cancelUrl = `${normalizedSiteOrigin}/request-success?status=cancelled&creator=${encodeURIComponent(creatorHandle)}`;
+    if (isNewAccount) successParams.set('new_account', '1');
+    if (!authenticatedUserId && !isNewAccount) successParams.set('existing_account', '1');
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            unit_amount: totalFanPaysCents,
-            product_data: {
-              name: `Custom request for ${creator.display_name || creatorHandle}`,
-              description: 'Custom content request on Exclu (includes 5% processing fee). Your card will only be charged if the creator accepts.',
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      payment_intent_data: {
-        capture_method: 'manual',
-        application_fee_amount: applicationFeeAmount,
-        transfer_data: {
-          destination: creator.stripe_account_id,
-        },
-      },
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        type: 'request',
-        request_id: requestRecord.id,
-        fan_id: fanUserId,
-        creator_id: creatorId,
-        profile_id: profileId || '',
-        is_new_account: isNewAccount ? '1' : '0',
-        fan_email: fanEmail || '',
-      },
-    });
+    const fields: Record<string, string> = {
+      QuickPayToken: quickPayToken!,
+      SiteID: siteId,
+      AmountTotal: amountDecimal,
+      CurrencyID: 'USD',
+      'ItemName[0]': `Custom request for ${(creator.display_name || creatorHandle).slice(0, 200)}`,
+      'ItemQuantity[0]': '1',
+      'ItemAmount[0]': amountDecimal,
+      'ItemDesc[0]': 'Custom content request on Exclu (includes 5% processing fee). Your card will only be charged if the creator accepts.',
+      AmountShipping: '0.00',
+      ShippingRequired: 'false',
+      MembershipRequired: 'false',
+      ApprovedURL: `${siteUrl}/request-success?${successParams.toString()}`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      DeclinedURL: `${siteUrl}/request-success?status=cancelled&creator=${encodeURIComponent(creatorHandle)}`,
+      MerchantReference: merchantReference,
+    };
 
-    // Store Stripe session ID on the request
-    await supabase
-      .from('custom_requests')
-      .update({ stripe_session_id: session.id })
-      .eq('id', requestRecord.id);
+    if (fanEmail) fields.Email = fanEmail;
 
-    return new Response(JSON.stringify({ url: session.url, request_id: requestRecord.id }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    // Store merchant ref on request
+    await supabase.from('custom_requests').update({
+      ugp_merchant_reference: merchantReference,
+    }).eq('id', requestRecord.id);
+
+    return jsonOk({ fields, request_id: requestRecord.id }, corsHeaders);
+
   } catch (error) {
-    const stripeError = error as any;
-    console.error('Error in create-request-checkout', {
-      message: stripeError?.message,
-      type: stripeError?.raw?.type,
-      code: stripeError?.raw?.code,
-    });
-
-    if (stripeError?.raw?.type === 'invalid_request_error') {
-      const msg: string = stripeError?.raw?.message ?? '';
-      if (msg.includes('cannot currently make live charges') || msg.includes('charges_enabled')) {
-        return jsonError('The creator is still completing their payout setup.', 400, corsHeaders);
-      }
-    }
-
+    console.error('Error in create-request-checkout:', error);
     return jsonError('Unable to start request checkout', 500, corsHeaders);
   }
 });

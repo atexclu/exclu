@@ -1,12 +1,24 @@
-import Stripe from 'npm:stripe';
+/**
+ * manage-request — UGPayments version.
+ *
+ * Handles creator accept (capture) and decline (void) for custom requests.
+ * Replaces Stripe PaymentIntent capture/cancel with UGPayments REST API.
+ *
+ * Actions:
+ *   'capture' — Creator accepts, content uploaded → capture pre-auth → credit wallet
+ *   'cancel'  — Creator declines or request expired → void pre-auth → release hold
+ *
+ * Request body: { action: 'capture'|'cancel', request_id, delivery_link_id?, creator_response?, reason? }
+ * Auth: Required (creator who received the request)
+ */
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { ugpCapture, ugpVoid, UgpApiError } from '../_shared/ugp-api.ts';
 
-const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 
-if (!stripeSecretKeyLive) throw new Error('Missing STRIPE_SECRET_KEY');
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
@@ -15,12 +27,8 @@ const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
 const normalizedSiteOrigin = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:8083',
-  'http://localhost:8084',
-  'http://localhost:5173',
+  'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
+  'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
 ];
 
 function getCorsHeaders(req: Request) {
@@ -71,20 +79,18 @@ serve(async (req) => {
     // Fetch the request — creator must own it
     const { data: request, error: reqErr } = await supabase
       .from('custom_requests')
-      .select('id, creator_id, fan_id, status, stripe_payment_intent_id, proposed_amount_cents, delivery_link_id')
+      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id')
       .eq('id', requestId)
       .single();
 
     if (reqErr || !request) return jsonError('Request not found', 404, corsHeaders);
     if (request.creator_id !== user.id) return jsonError('Unauthorized', 403, corsHeaders);
     if (request.status !== 'pending') return jsonError(`Request is not pending (current: ${request.status})`, 400, corsHeaders);
-    if (!request.stripe_payment_intent_id) return jsonError('No payment intent found for this request', 400, corsHeaders);
-
-    const stripe = new Stripe(stripeSecretKeyLive!, { apiVersion: '2023-10-16' });
+    if (!request.ugp_transaction_id) return jsonError('No payment transaction found for this request', 400, corsHeaders);
 
     // ── CAPTURE (creator accepts + delivered content) ────────────────────
     if (action === 'capture') {
-      // Verify content was uploaded — delivery_link_id must be set before calling capture
+      // Verify content was uploaded — delivery_link_id must be set
       const linkId = deliveryLinkId || request.delivery_link_id;
       if (!linkId) return jsonError('You must upload content before accepting the request', 400, corsHeaders);
 
@@ -95,7 +101,6 @@ serve(async (req) => {
         .eq('id', linkId)
         .single();
 
-      // Also check link_media for library attachments
       const { data: linkMedia } = await supabase
         .from('link_media')
         .select('id')
@@ -105,22 +110,30 @@ serve(async (req) => {
       const hasContent = !!(link?.storage_path) || (linkMedia && linkMedia.length > 0);
       if (!hasContent) return jsonError('The content link must have at least one photo or video attached', 400, corsHeaders);
 
-      // Capture the payment
+      // Capture the pre-authorized payment via UGPayments API
+      const amountCents = request.proposed_amount_cents;
+      const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+      const totalFanPaysCents = amountCents + fanProcessingFeeCents;
+      const captureAmountDecimal = totalFanPaysCents / 100;
+
       try {
-        await stripe.paymentIntents.capture(request.stripe_payment_intent_id);
-      } catch (captureErr: any) {
-        console.error('Stripe capture error:', captureErr?.message);
-        // If already captured or cancelled, handle gracefully
-        if (captureErr?.raw?.code === 'payment_intent_unexpected_state') {
-          return jsonError('Payment has already been processed or expired', 400, corsHeaders);
+        await ugpCapture(request.ugp_transaction_id, captureAmountDecimal);
+        console.log('UGP capture success for request:', requestId);
+      } catch (captureErr) {
+        const ugpErr = captureErr as UgpApiError;
+        console.error('UGP capture error:', ugpErr.message);
+
+        if (ugpErr.isAlreadyProcessed) {
+          // Already captured — continue with status update (idempotent)
+          console.log('Transaction already captured, continuing...');
+        } else if (ugpErr.isExpired) {
+          return jsonError('Payment authorization has expired (6-day limit). The hold has been released.', 400, corsHeaders);
+        } else {
+          return jsonError('Failed to capture payment. The authorization may have expired.', 500, corsHeaders);
         }
-        return jsonError('Failed to capture payment. The authorization may have expired.', 500, corsHeaders);
       }
 
       // Calculate commission
-      const amountCents = request.proposed_amount_cents;
-      const fanProcessingFeeCents = Math.round(amountCents * 0.05);
-
       const { data: creatorProfile } = await supabase
         .from('profiles')
         .select('is_creator_subscribed')
@@ -131,6 +144,19 @@ serve(async (req) => {
       const platformCommissionCents = Math.round(amountCents * commissionRate);
       const creatorNetCents = amountCents - platformCommissionCents;
       const totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
+
+      // Credit the creator's wallet
+      try {
+        await supabase.rpc('credit_creator_wallet', {
+          p_creator_id: user.id,
+          p_amount_cents: creatorNetCents,
+        });
+        console.log('Creator wallet credited:', user.id, '+', creatorNetCents, 'cents');
+      } catch (walletErr) {
+        console.error('Error crediting wallet after capture:', walletErr);
+        // Payment captured but wallet credit failed — log but continue
+        // The payment_events table has the record for manual reconciliation
+      }
 
       // Update request to delivered
       const { error: updateErr } = await supabase
@@ -158,12 +184,18 @@ serve(async (req) => {
     if (action === 'cancel') {
       const newStatus = body?.reason === 'expired' ? 'expired' : 'refused';
 
+      // Void the pre-authorized payment
       try {
-        await stripe.paymentIntents.cancel(request.stripe_payment_intent_id);
-      } catch (cancelErr: any) {
-        console.error('Stripe cancel error:', cancelErr?.message);
-        // If already cancelled/captured, proceed with status update anyway
-        if (cancelErr?.raw?.code !== 'payment_intent_unexpected_state') {
+        await ugpVoid(request.ugp_transaction_id);
+        console.log('UGP void success for request:', requestId);
+      } catch (voidErr) {
+        const ugpErr = voidErr as UgpApiError;
+        console.error('UGP void error:', ugpErr.message);
+
+        if (ugpErr.isAlreadyProcessed) {
+          // Already voided or captured — continue with status update
+          console.log('Transaction already voided/captured, continuing...');
+        } else {
           return jsonError('Failed to cancel payment authorization', 500, corsHeaders);
         }
       }

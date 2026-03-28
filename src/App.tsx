@@ -36,7 +36,6 @@ import AdminUsers from "./pages/AdminUsers";
 import AdminUserOverview from "./pages/AdminUserOverview";
 import LinkInBioEditor from "./pages/LinkInBioEditor";
 import ReferralDashboard from "./pages/ReferralDashboard";
-import StripeValidation from "./pages/StripeValidation";
 import FanSignup from "./pages/FanSignup";
 import AuthCallback from "./pages/AuthCallback";
 import CreatorTipsRequests from './pages/CreatorTipsRequests';
@@ -209,14 +208,7 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="/app/stripe-validation"
-                  element={
-                    <ProtectedRoute>
-                      <StripeValidation />
-                    </ProtectedRoute>
-                  }
-                />
+                {/* StripeValidation route removed — replaced by inline IBAN setup */}
                 <Route
                   path="/app/chat"
                   element={

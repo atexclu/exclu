@@ -42,6 +42,7 @@ interface CreatorProfileData {
   exclusive_content_url?: string | null;
   exclusive_content_image_url?: string | null;
   stripe_connect_status?: string | null;
+  payout_setup_complete?: boolean | null;
   tips_enabled?: boolean | null;
   custom_requests_enabled?: boolean | null;
   min_tip_amount_cents?: number | null;
@@ -223,7 +224,7 @@ const CreatorPublic = () => {
           // Load account-level data (premium status, Stripe) from parent profiles row
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('is_creator_subscribed, stripe_connect_status, stripe_account_id')
+            .select('is_creator_subscribed, stripe_connect_status, stripe_account_id, payout_setup_complete')
             .eq('id', cpData.user_id)
             .maybeSingle();
 
@@ -267,6 +268,7 @@ const CreatorPublic = () => {
             show_deeplinks: cpData.show_deeplinks,
             show_available_now: cpData.show_available_now,
             stripe_connect_status: parentProfile?.stripe_connect_status ?? cpData.stripe_connect_status,
+            payout_setup_complete: parentProfile?.payout_setup_complete ?? false,
             exclusive_content_text: cpData.exclusive_content_text,
             exclusive_content_link_id: cpData.exclusive_content_link_id,
             exclusive_content_url: cpData.exclusive_content_url,
@@ -468,13 +470,25 @@ const CreatorPublic = () => {
           is_anonymous: giftAnonymous,
         },
       });
-      if (error || !data?.url) {
+      if (error || !data?.fields) {
         throw new Error(data?.error || 'Unable to start checkout');
       }
-      window.location.href = data.url;
+      // Submit QuickPay form
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://quickpay.ugpayments.ch/';
+      form.style.display = 'none';
+      Object.entries(data.fields as Record<string, string>).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to process gift');
-    } finally {
       setIsGiftSubmitting(false);
     }
   };
@@ -583,11 +597,25 @@ const CreatorPublic = () => {
         headers,
       });
 
-      if (error || !data?.url) {
+      if (error || !data?.fields) {
         throw new Error(data?.error || 'Unable to start checkout');
       }
 
-      window.location.href = data.url;
+      // Submit QuickPay form
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://quickpay.ugpayments.ch/';
+      form.style.display = 'none';
+      Object.entries(data.fields as Record<string, string>).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+      return; // Page is navigating away
     } catch (err: any) {
       toast.error(err?.message || 'Failed to process tip');
     } finally {
@@ -650,11 +678,25 @@ const CreatorPublic = () => {
         headers,
       });
 
-      if (error || !data?.url) {
+      if (error || !data?.fields) {
         throw new Error(data?.error || 'Unable to start checkout');
       }
 
-      window.location.href = data.url;
+      // Submit QuickPay form (pre-auth: funds held, not charged)
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://quickpay.ugpayments.ch/';
+      form.style.display = 'none';
+      Object.entries(data.fields as Record<string, string>).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+      return; // Page is navigating away
     } catch (err: any) {
       toast.error(err?.message || 'Failed to process request');
     } finally {
@@ -669,8 +711,8 @@ const CreatorPublic = () => {
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
   const shouldShowJoinBanner = !isPremium || (isPremium && profile?.show_join_banner !== false);
-  const isStripeReady = profile?.stripe_connect_status === 'complete';
-  const showTipsCta = profile?.tips_enabled === true && isStripeReady;
+  const isPayoutReady = profile?.payout_setup_complete === true || profile?.stripe_connect_status === 'complete';
+  const showTipsCta = profile?.tips_enabled === true && isPayoutReady;
   const showRequestsCta = profile?.custom_requests_enabled === true;
   const showChatCta = profile?.chat_enabled === true;
   const tipPresets = [500, 1000, 2500, 5000];

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2 } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -85,7 +85,7 @@ const AppDashboard = () => {
         // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at')
+          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents')
           .eq('id', user.id)
           .single();
 
@@ -165,7 +165,11 @@ const AppDashboard = () => {
         const totalPayoutsCents = safePayouts
           .filter((p: any) => p.status !== 'failed')
           .reduce((sum: number, p: any) => sum + (p.amount_cents ?? 0), 0);
-        const walletBalance = revenueSum + tipsSum - totalPayoutsCents;
+        // Use DB wallet as source of truth (if available), else fallback to frontend calc
+        const dbWallet = profile?.wallet_balance_cents;
+        const walletBalance = typeof dbWallet === 'number' && dbWallet > 0
+          ? dbWallet
+          : revenueSum + tipsSum - totalPayoutsCents;
 
         if (!isMounted) return;
 
@@ -234,22 +238,10 @@ const AppDashboard = () => {
             }));
           }
 
-          // --- SELF-HEALING: INTERCEPT INCOMPLETE STRIPE STATUS ---
-          // If the profile says it's not complete, we trigger a background check 
-          // to ensure the DB and Stripe are in sync without waiting for a webhook.
-          if (profile.stripe_connect_status !== 'complete' && profile.stripe_connect_status !== 'no_account') {
-            supabase.functions.invoke('stripe-connect-status', {}).then(({ data }) => {
-              if (data?.status && data.status !== profile.stripe_connect_status) {
-                console.log('[Dashboard] Auto-synced Stripe status:', data.status);
-                setStripeConnectStatus(data.status);
-              }
-            }).catch(console.error);
-          }
-
-          // Show Stripe modal if not connected (only once per session)
-          const stripeModalDismissed = sessionStorage.getItem('stripeModalDismissed');
-          if (profile.stripe_connect_status !== 'complete' && !stripeModalDismissed) {
-            setShowStripeModal(true);
+          // Show bank setup modal if payout not configured (only once per session)
+          const bankModalDismissed = sessionStorage.getItem('bankModalDismissed');
+          if (!profile.payout_setup_complete && profile.stripe_connect_status !== 'complete' && !bankModalDismissed) {
+            setShowStripeModal(true); // Reusing same state name for the modal
           }
         }
       } catch (err) {
@@ -322,7 +314,7 @@ const AppDashboard = () => {
   };
 
   const handleDismissStripeModal = () => {
-    sessionStorage.setItem('stripeModalDismissed', 'true');
+    sessionStorage.setItem('bankModalDismissed', 'true');
     setShowStripeModal(false);
   };
 
@@ -442,16 +434,14 @@ const AppDashboard = () => {
               </button>
 
               <div className="text-center mb-6">
-                <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-[#635BFF] to-[#A259FF] flex items-center justify-center mb-4">
-                  <span className="text-sm font-semibold tracking-tight text-white">Stripe</span>
+                <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500/30 to-lime-500/30 flex items-center justify-center mb-4">
+                  <Landmark className="w-6 h-6 text-emerald-400" />
                 </div>
                 <h2 className="text-xl font-bold text-exclu-cloud mb-2">
-                  Connect Stripe to get paid
+                  Set up your bank details to get paid
                 </h2>
                 <p className="text-sm text-exclu-space/80">
-                  Exclu does not hold a wallet for you: every payment from your fans is paid out directly to your
-                  Stripe account. On the Premium plan you keep 100% of your sales; on the Free plan Exclu only takes a
-                  10% creator commission.
+                  Add your bank account (IBAN) to receive payouts. Money from fans goes into your Exclu wallet, and you can withdraw anytime.
                 </p>
               </div>
 
@@ -460,19 +450,19 @@ const AppDashboard = () => {
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Instant payouts to your bank</span>
+                  <span className="text-exclu-space">Withdraw to your bank account anytime</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Secure & trusted worldwide</span>
+                  <span className="text-exclu-space">Secure & encrypted storage</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Takes only 2 minutes</span>
+                  <span className="text-exclu-space">Takes only 1 minute</span>
                 </div>
               </div>
 
@@ -481,22 +471,13 @@ const AppDashboard = () => {
                   variant="hero"
                   size="lg"
                   className="w-full rounded-full"
-                  onClick={handleStripeConnect}
-                  disabled={isConnectingStripe}
+                  onClick={() => {
+                    handleDismissStripeModal();
+                    window.location.href = '/app/settings#payments';
+                  }}
                 >
-                  {isConnectingStripe ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span className="text-xs sm:text-sm text-exclu-cloud/90">
-                        {stripeConnectPhases[connectPhaseIndex]}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <ExternalLink className="w-4 h-4" />
-                      Connect with Stripe
-                    </span>
-                  )}
+                  <Landmark className="w-4 h-4 mr-2" />
+                  Set up bank details
                 </Button>
                 <button
                   type="button"

@@ -126,41 +126,31 @@ const themeColors: Record<string, { gradient: string; glow: string }> = {
   },
 };
 
-// Verify purchase via Edge Function which checks Stripe directly and inserts if missing.
-// This is the primary verification path — reliable regardless of webhook delivery.
-async function verifyAndEnsurePurchase(
-  linkId: string,
-  stripeSessionId: string,
+// Verify purchase by polling the DB for the pre-created record to be marked as succeeded.
+// The ConfirmURL callback (ugp-confirm) updates the status before the fan is redirected.
+async function verifyPurchase(
+  purchaseId: string,
   signal: AbortSignal,
 ): Promise<PurchaseData | null> {
-  // Fast path: check DB first (webhook may have already processed it)
-  const { data: existing } = await supabaseAnon
-    .from('purchases')
-    .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count')
-    .eq('link_id', linkId)
-    .eq('stripe_session_id', stripeSessionId)
-    .maybeSingle();
+  const MAX_POLLS = 15;
+  const POLL_INTERVAL_MS = 2000;
 
-  if (existing) return existing as PurchaseData;
-  if (signal.aborted) return null;
-
-  // Slow path: verify directly with Stripe via Edge Function (handles webhook delays/failures)
-  const RETRY_DELAYS_MS = [1500, 3000, 6000];
-  for (const delay of RETRY_DELAYS_MS) {
-    if (signal.aborted) return null;
-    await new Promise((r) => setTimeout(r, delay));
+  for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
     if (signal.aborted) return null;
 
-    try {
-      const { data, error } = await supabase.functions.invoke('verify-checkout-session', {
-        body: { session_id: stripeSessionId, link_id: linkId },
-      });
+    const { data: purchase } = await supabaseAnon
+      .from('purchases')
+      .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
+      .eq('id', purchaseId)
+      .maybeSingle();
 
-      if (!error && data?.purchase) {
-        return data.purchase as PurchaseData;
-      }
-    } catch (err) {
-      console.warn('[verifyAndEnsurePurchase] attempt failed:', err);
+    if (purchase?.status === 'succeeded') {
+      return purchase as PurchaseData;
+    }
+
+    // Wait before next poll (except on first attempt — check immediately)
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
   }
   return null;
@@ -211,7 +201,10 @@ interface PurchaseData {
 const PublicLink = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('session_id');
+  const legacySessionId = searchParams.get('session_id'); // Legacy Stripe param
+  const paymentRef = searchParams.get('ref'); // UGPayments: ref=link_<uuid>
+  const paymentSuccess = searchParams.get('payment_success') === 'true';
+  const paymentFailed = searchParams.get('payment_failed') === 'true';
   const fromConversationId = searchParams.get('from_conversation');
   const chatterRef = searchParams.get('chtref');
   
@@ -234,6 +227,11 @@ const PublicLink = () => {
     const abortController = new AbortController();
     const signal = abortController.signal;
     
+    // Show toast if payment was declined on QuickPay
+    if (paymentFailed) {
+      toast.error('Payment was not completed. Please try again.');
+    }
+
     const fetchLink = async () => {
       if (!slug) return;
       setIsLoading(true);
@@ -304,15 +302,20 @@ const PublicLink = () => {
         }
       }
 
-      // Check if user has purchased this link (via session_id in URL)
+      // Check if user has purchased this link
+      // Supports both new UGPayments flow (?payment_success=true&ref=link_<uuid>)
+      // and legacy Stripe flow (?session_id=...)
       let hasPurchased = false;
-      if (sessionId) {
-        // Show verifying state immediately — verifyAndEnsurePurchase checks DB first,
-        // then falls back to direct Stripe API verification + purchase insertion.
+
+      // Extract purchase ID from ref param (format: link_<uuid>)
+      const purchaseIdFromRef = paymentRef?.startsWith('link_') ? paymentRef.slice(5) : null;
+
+      if (paymentSuccess && purchaseIdFromRef) {
+        // UGPayments flow: poll DB for the purchase to be confirmed
         setIsVerifyingPayment(true);
         setIsLoading(false);
 
-        const verifiedPurchase = await verifyAndEnsurePurchase(data.id, sessionId, signal);
+        const verifiedPurchase = await verifyPurchase(purchaseIdFromRef, signal);
 
         if (signal.aborted) return;
 
@@ -325,6 +328,22 @@ const PublicLink = () => {
           setPaymentNotFound(true);
         }
         setIsVerifyingPayment(false);
+      } else if (legacySessionId) {
+        // Legacy Stripe flow: check by stripe_session_id (for old purchases)
+        const { data: existing } = await supabaseAnon
+          .from('purchases')
+          .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
+          .eq('link_id', data.id)
+          .eq('stripe_session_id', legacySessionId)
+          .eq('status', 'succeeded')
+          .maybeSingle();
+
+        if (existing) {
+          hasPurchased = true;
+          setIsUnlocked(true);
+          setAccessExpiresAt(existing.access_expires_at ?? null);
+          setPurchaseData(existing as PurchaseData);
+        }
       }
 
       // Fetch attached media from link_media
@@ -364,8 +383,9 @@ const PublicLink = () => {
       setContentItems(items);
 
       // Generate signed URLs only if purchased (via Edge Function with service_role_key)
-      if (hasPurchased && sessionId) {
-        const unlocked = await generateSignedUrls(data.id, sessionId, items);
+      const verificationId = purchaseIdFromRef || legacySessionId;
+      if (hasPurchased && verificationId) {
+        const unlocked = await generateSignedUrls(data.id, verificationId, items);
         setUnlockedContent(unlocked);
       }
 
@@ -397,34 +417,46 @@ const PublicLink = () => {
     return () => {
       abortController.abort();
     };
-  }, [slug, sessionId]);
+  }, [slug, paymentRef, paymentSuccess, legacySessionId]);
 
   const handleUnlockClick = async () => {
     if (!slug || !link) return;
 
     setIsUnlocking(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-link-checkout-session', {
+      const { data, error } = await supabase.functions.invoke('create-link-checkout', {
         body: { slug, buyerEmail: buyerEmail || null, conversation_id: fromConversationId || null, chtref: chatterRef || null },
       });
 
-      if (error || !(data as any)?.url) {
-        console.error('Error invoking create-link-checkout-session', error, data);
+      if (error || !(data as any)?.fields) {
+        console.error('Error invoking create-link-checkout', error, data);
         const serverMsg = (data as any)?.error;
         throw new Error(
           serverMsg || 'Unable to start checkout. Please try again later.',
         );
       }
 
-      const url = (data as any).url as string;
-
-      window.location.href = url;
+      // Submit the QuickPay form (redirects to hosted payment page)
+      const fields = (data as any).fields as Record<string, string>;
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://quickpay.ugpayments.ch/';
+      form.style.display = 'none';
+      Object.entries(fields).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
     } catch (err: any) {
       console.error('Error during unlock checkout', err);
       toast.error(err?.message || 'Unable to start checkout at the moment.');
-    } finally {
       setIsUnlocking(false);
     }
+    // Note: don't setIsUnlocking(false) on success — the page is navigating away
   };
 
   const priceLabel = link

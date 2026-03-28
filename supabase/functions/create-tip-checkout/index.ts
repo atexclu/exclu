@@ -1,86 +1,82 @@
-import Stripe from 'npm:stripe';
+/**
+ * create-tip-checkout — UGPayments QuickPay version.
+ *
+ * Same request body and validations as the previous Stripe version.
+ * Returns { fields } for the QuickPay HTML form POST instead of { url }.
+ *
+ * Request body: { creator_id, profile_id?, amount_cents, message?, is_anonymous?, fan_name? }
+ * Auth: Optional (guests can tip)
+ */
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
+const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
+const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
-if (!stripeSecretKeyLive) {
-  throw new Error('Missing STRIPE_SECRET_KEY environment variable');
-}
-
-if (!supabaseUrl || !supabaseServiceRoleKey) {
-  throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
-}
-
-if (!siteUrl) {
-  throw new Error('Missing PUBLIC_SITE_URL environment variable');
-}
+if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
+if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+// ── CORS (same pattern as all existing functions) ────────────────────────
+
+const normalizedSiteOrigin = siteUrl;
 const allowedOrigins = [
   normalizedSiteOrigin,
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:8083',
-  'http://localhost:8084',
-  'http://localhost:5173',
+  'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
+  'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
 ];
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
-
+  const allowed = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
   };
 }
 
+function jsonOk(data: Record<string, unknown>, cors: Record<string, string>) {
+  return new Response(JSON.stringify(data), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
+function jsonError(msg: string, status: number, cors: Record<string, string>) {
+  return new Response(JSON.stringify({ error: msg }), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
+// ── Rate limiting (10 req/min/IP) ────────────────────────────────────────
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_REQUESTS = 10;
+const RATE_LIMIT_MAX = 10;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
-  const existing = ipHits.get(ip);
-
-  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+  const e = ipHits.get(ip);
+  if (!e || now - e.windowStart > RATE_LIMIT_WINDOW_MS) {
     ipHits.set(ip, { count: 1, windowStart: now });
     return false;
   }
-
-  existing.count += 1;
-  ipHits.set(ip, existing);
-  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+  e.count++;
+  return e.count > RATE_LIMIT_MAX;
 }
+
+// ── Main handler ─────────────────────────────────────────────────────────
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('cf-connecting-ip') ??
-    'unknown';
-
-  if (isRateLimited(ip)) {
-    return new Response(JSON.stringify({ error: 'Too many requests' }), {
-      status: 429,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+             req.headers.get('cf-connecting-ip') ?? 'unknown';
+  if (isRateLimited(ip)) return jsonError('Too many requests', 429, corsHeaders);
 
   try {
-    // Auth is optional — authenticated fans are tracked, guests tip anonymously
+    // Auth optional — guests can tip
     const authHeader = req.headers.get('authorization') ?? '';
     const token = authHeader.replace('Bearer ', '').trim();
     let fanUserId: string | null = null;
@@ -97,77 +93,28 @@ serve(async (req) => {
     const isAnonymous = body?.is_anonymous === true;
     const fanName = typeof body?.fan_name === 'string' ? body.fan_name.trim().slice(0, 100) : null;
 
-    if (!creatorId || typeof creatorId !== 'string') {
-      return new Response(JSON.stringify({ error: 'Missing creator_id' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // ── Validation ────────────────────────────────────────────────────
+    if (!creatorId || typeof creatorId !== 'string') return jsonError('Missing creator_id', 400, corsHeaders);
+    if (fanUserId && fanUserId === creatorId) return jsonError('You cannot tip yourself', 400, corsHeaders);
+    if (!amountCents || typeof amountCents !== 'number' || amountCents < 100) return jsonError('Invalid amount (minimum $1.00)', 400, corsHeaders);
+    if (amountCents > 50000) return jsonError('Maximum tip is $500.00', 400, corsHeaders);
 
-    // Prevent a logged-in creator from tipping themselves
-    if (fanUserId && fanUserId === creatorId) {
-      return new Response(JSON.stringify({ error: 'You cannot tip yourself' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!amountCents || typeof amountCents !== 'number' || amountCents < 100) {
-      return new Response(JSON.stringify({ error: 'Invalid amount (minimum $1.00)' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (amountCents > 50000) {
-      return new Response(JSON.stringify({ error: 'Maximum tip is $500.00' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Fetch creator profile
+    // ── Fetch creator ─────────────────────────────────────────────────
     const { data: creator, error: creatorError } = await supabase
       .from('profiles')
-      .select('id, handle, stripe_account_id, stripe_connect_status, is_creator_subscribed, tips_enabled, min_tip_amount_cents, display_name')
+      .select('id, handle, is_creator_subscribed, payout_setup_complete, tips_enabled, min_tip_amount_cents, display_name')
       .eq('id', creatorId)
       .single();
 
-    if (creatorError || !creator) {
-      return new Response(JSON.stringify({ error: 'Creator not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!creator.tips_enabled) {
-      return new Response(JSON.stringify({ error: 'This creator does not accept tips' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (creatorError || !creator) return jsonError('Creator not found', 404, corsHeaders);
+    if (!creator.tips_enabled) return jsonError('This creator does not accept tips', 400, corsHeaders);
 
     const minTip = creator.min_tip_amount_cents || 500;
-    if (amountCents < minTip) {
-      return new Response(JSON.stringify({ error: `Minimum tip is $${(minTip / 100).toFixed(2)}` }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (amountCents < minTip) return jsonError(`Minimum tip is $${(minTip / 100).toFixed(2)}`, 400, corsHeaders);
+    if (!creator.payout_setup_complete) return jsonError('Creator is not ready to receive payments yet', 400, corsHeaders);
 
-    if (!creator.stripe_account_id || creator.stripe_connect_status !== 'complete') {
-      return new Response(JSON.stringify({ error: 'Creator is not ready to receive payments yet' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Tips always use live Stripe keys — Connect transfers require the live account.
-    // Test mode Connect accounts are separate and not stored on profiles.
-    const stripe = new Stripe(stripeSecretKeyLive!, { apiVersion: '2023-10-16' });
-
-    // Create tip record in DB (pending) — fan_id is null for guest tippers
-    const { data: tipRecord, error: tipInsertError } = await supabase
+    // ── Create tip record (pending) ───────────────────────────────────
+    const { data: tipRecord, error: tipErr } = await supabase
       .from('tips')
       .insert({
         fan_id: fanUserId ?? null,
@@ -183,26 +130,20 @@ serve(async (req) => {
       .select('id')
       .single();
 
-    if (tipInsertError || !tipRecord) {
-      console.error('Error inserting tip record', tipInsertError);
-      return new Response(JSON.stringify({ error: 'Failed to create tip' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (tipErr || !tipRecord) {
+      console.error('Error inserting tip:', tipErr);
+      return jsonError('Failed to create tip', 500, corsHeaders);
     }
 
-    // Calculate pricing (same logic as link checkout)
-    // Fan pays +5% processing fee
+    // ── Calculate total (base + 5% processing fee) ────────────────────
     const fanProcessingFeeCents = Math.round(amountCents * 0.05);
     const totalFanPaysCents = amountCents + fanProcessingFeeCents;
+    const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
-    // Platform commission: 10% free plan, 0% premium
-    const isSubscribed = creator.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.1;
-    const platformCommissionCents = Math.round(amountCents * commissionRate);
-    const applicationFeeAmount = platformCommissionCents + fanProcessingFeeCents;
-
+    const merchantReference = `tip_${tipRecord.id}`;
     const creatorHandle = creator.handle || creatorId;
+
+    // Build success URL (same params format for frontend compatibility)
     const successParams = new URLSearchParams({
       creator: creatorHandle,
       amount: String(amountCents),
@@ -210,83 +151,35 @@ serve(async (req) => {
     });
     if (message) successParams.set('message', message);
     if (!fanUserId) successParams.set('guest', '1');
-    const successUrl = `${normalizedSiteOrigin}/tip-success?${successParams.toString()}`;
-    const cancelUrl = `${normalizedSiteOrigin}/${encodeURIComponent(creatorHandle)}`;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            unit_amount: totalFanPaysCents,
-            product_data: {
-              name: `Tip for ${creator.display_name || creatorHandle}`,
-              description: 'One-time tip on Exclu (includes 5% processing fee)',
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        type: 'tip',
-        tip_id: tipRecord.id,
-        fan_id: fanUserId ?? '',
-        creator_id: creatorId,
-        profile_id: profileId ?? '',
-        fan_name: fanName ?? '',
-      },
-      payment_intent_data: {
-        application_fee_amount: applicationFeeAmount,
-        transfer_data: {
-          destination: creator.stripe_account_id,
-        },
-      },
-    });
+    // ── Build QuickPay form fields ────────────────────────────────────
+    const fields: Record<string, string> = {
+      QuickPayToken: quickPayToken!,
+      SiteID: siteId,
+      AmountTotal: amountDecimal,
+      CurrencyID: 'USD',
+      'ItemName[0]': `Tip for ${(creator.display_name || creatorHandle).slice(0, 200)}`,
+      'ItemQuantity[0]': '1',
+      'ItemAmount[0]': amountDecimal,
+      'ItemDesc[0]': 'One-time tip on Exclu (includes 5% processing fee)',
+      AmountShipping: '0.00',
+      ShippingRequired: 'false',
+      MembershipRequired: 'false',
+      ApprovedURL: `${siteUrl}/tip-success?${successParams.toString()}`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?tip_failed=true`,
+      MerchantReference: merchantReference,
+    };
 
-    // Store session ID on the tip record
-    await supabase
-      .from('tips')
-      .update({ stripe_session_id: session.id })
-      .eq('id', tipRecord.id);
+    // Store merchant ref on tip record for reconciliation
+    await supabase.from('tips').update({
+      ugp_merchant_reference: merchantReference,
+    }).eq('id', tipRecord.id);
 
-    return new Response(JSON.stringify({ url: session.url }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonOk({ fields }, corsHeaders);
+
   } catch (error) {
-    const stripeError = error as any;
-    const raw = stripeError?.raw;
-    console.error('Error in create-tip-checkout', {
-      message: stripeError?.message,
-      type: raw?.type,
-      code: raw?.code,
-      detail: raw?.message,
-    });
-
-    if (raw?.type === 'invalid_request_error') {
-      const msg: string = raw?.message ?? '';
-      if (
-        raw?.param === 'payment_intent_data[transfer_data][destination]' ||
-        msg.includes('cannot currently make live charges') ||
-        msg.includes('charges_enabled') ||
-        msg.includes('completing their') ||
-        msg.includes('payout')
-      ) {
-        return new Response(
-          JSON.stringify({ error: 'The creator is still completing their payout setup.' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
-    }
-
-    console.error('Unhandled Stripe error:', stripeError?.message);
-    return new Response(JSON.stringify({ error: 'Unable to start tip checkout' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('Error in create-tip-checkout:', error);
+    return jsonError('Unable to start checkout', 500, corsHeaders);
   }
 });

@@ -1,85 +1,79 @@
-import Stripe from 'npm:stripe';
+/**
+ * create-gift-checkout — UGPayments QuickPay version.
+ *
+ * Request body: { wishlist_item_id, profile_id?, message?, is_anonymous? }
+ * Auth: Required (fan must be logged in)
+ * Returns: { fields } for QuickPay HTML form POST
+ */
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const stripeSecretKeyLive = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const siteUrl = Deno.env.get('PUBLIC_SITE_URL');
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
+const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
+const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
-if (!stripeSecretKeyLive) throw new Error('Missing STRIPE_SECRET_KEY environment variable');
-if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
-if (!siteUrl) throw new Error('Missing PUBLIC_SITE_URL environment variable');
+if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
+if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
+const normalizedSiteOrigin = siteUrl;
 const allowedOrigins = [
   normalizedSiteOrigin,
-  'http://localhost:8080',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:8083',
-  'http://localhost:8084',
-  'http://localhost:5173',
+  'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
+  'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
 ];
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+  const allowed = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
   };
 }
 
+function jsonOk(data: Record<string, unknown>, cors: Record<string, string>) {
+  return new Response(JSON.stringify(data), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
+function jsonError(msg: string, status: number, cors: Record<string, string>) {
+  return new Response(JSON.stringify({ error: msg }), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_REQUESTS = 10;
+const RATE_LIMIT_MAX = 10;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
-  const existing = ipHits.get(ip);
-  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+  const e = ipHits.get(ip);
+  if (!e || now - e.windowStart > RATE_LIMIT_WINDOW_MS) {
     ipHits.set(ip, { count: 1, windowStart: now });
     return false;
   }
-  existing.count += 1;
-  ipHits.set(ip, existing);
-  return existing.count > RATE_LIMIT_MAX_REQUESTS;
+  e.count++;
+  return e.count > RATE_LIMIT_MAX;
 }
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('cf-connecting-ip') ??
-    'unknown';
-
-  if (isRateLimited(ip)) {
-    return new Response(JSON.stringify({ error: 'Too many requests' }), {
-      status: 429,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+             req.headers.get('cf-connecting-ip') ?? 'unknown';
+  if (isRateLimited(ip)) return jsonError('Too many requests', 429, corsHeaders);
 
   try {
-    // Authenticate fan
+    // ── Auth required ─────────────────────────────────────────────────
     const authHeader = req.headers.get('authorization') ?? '';
     const token = authHeader.replace('Bearer ', '');
     const { data: { user: fanUser }, error: authError } = await supabase.auth.getUser(token);
 
-    if (authError || !fanUser) {
-      return new Response(JSON.stringify({ error: 'Authentication required' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (authError || !fanUser) return jsonError('Authentication required', 401, corsHeaders);
 
     const body = await req.json();
     const wishlistItemId = body?.wishlist_item_id as string | undefined;
@@ -88,89 +82,38 @@ serve(async (req) => {
     const isAnonymous = body?.is_anonymous === true;
 
     if (!wishlistItemId || typeof wishlistItemId !== 'string') {
-      return new Response(JSON.stringify({ error: 'Missing wishlist_item_id' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonError('Missing wishlist_item_id', 400, corsHeaders);
     }
 
-    // Fetch wishlist item + creator profile in one query via join
+    // ── Fetch wishlist item + creator ─────────────────────────────────
     const { data: wishlistItem, error: itemError } = await supabase
       .from('wishlist_items')
       .select(`
-        id,
-        name,
-        price_cents,
-        currency,
-        max_quantity,
-        gifted_count,
-        is_visible,
-        creator_id,
+        id, name, price_cents, currency, max_quantity, gifted_count, is_visible, creator_id,
         profiles!wishlist_items_creator_id_fkey (
-          id,
-          handle,
-          display_name,
-          stripe_account_id,
-          stripe_connect_status,
-          is_creator_subscribed
+          id, handle, display_name, is_creator_subscribed, payout_setup_complete
         )
       `)
       .eq('id', wishlistItemId)
       .single();
 
-    if (itemError || !wishlistItem) {
-      return new Response(JSON.stringify({ error: 'Wishlist item not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (itemError || !wishlistItem) return jsonError('Wishlist item not found', 404, corsHeaders);
+    if (!wishlistItem.is_visible) return jsonError('This item is no longer available', 400, corsHeaders);
+
+    if (wishlistItem.max_quantity !== null && wishlistItem.gifted_count >= wishlistItem.max_quantity) {
+      return jsonError('This item has already been gifted the maximum number of times', 400, corsHeaders);
     }
 
-    if (!wishlistItem.is_visible) {
-      return new Response(JSON.stringify({ error: 'This item is no longer available' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Check quantity limit
-    if (
-      wishlistItem.max_quantity !== null &&
-      wishlistItem.gifted_count >= wishlistItem.max_quantity
-    ) {
-      return new Response(JSON.stringify({ error: 'This item has already been gifted the maximum number of times' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Prevent self-gifting
-    if (wishlistItem.creator_id === fanUser.id) {
-      return new Response(JSON.stringify({ error: 'You cannot gift yourself' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (wishlistItem.creator_id === fanUser.id) return jsonError('You cannot gift yourself', 400, corsHeaders);
 
     const creator = wishlistItem.profiles as any;
-    if (!creator) {
-      return new Response(JSON.stringify({ error: 'Creator not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!creator.stripe_account_id || creator.stripe_connect_status !== 'complete') {
-      return new Response(JSON.stringify({ error: 'This creator is not ready to receive payments yet' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (!creator) return jsonError('Creator not found', 404, corsHeaders);
+    if (!creator.payout_setup_complete) return jsonError('This creator is not ready to receive payments yet', 400, corsHeaders);
 
     const amountCents = wishlistItem.price_cents;
-    const stripe = new Stripe(stripeSecretKeyLive!, { apiVersion: '2023-10-16' });
 
-    // Create gift_purchases row (pending)
-    const { data: giftRecord, error: giftInsertError } = await supabase
+    // ── Create gift_purchases record (pending) ────────────────────────
+    const { data: giftRecord, error: giftErr } = await supabase
       .from('gift_purchases')
       .insert({
         fan_id: fanUser.id,
@@ -178,7 +121,7 @@ serve(async (req) => {
         profile_id: profileId || null,
         wishlist_item_id: wishlistItemId,
         amount_cents: amountCents,
-        currency: wishlistItem.currency || 'USD',
+        currency: 'USD',
         message,
         is_anonymous: isAnonymous,
         status: 'pending',
@@ -186,101 +129,48 @@ serve(async (req) => {
       .select('id')
       .single();
 
-    if (giftInsertError || !giftRecord) {
-      console.error('Error inserting gift_purchase record', giftInsertError);
-      return new Response(JSON.stringify({ error: 'Failed to create gift record' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (giftErr || !giftRecord) {
+      console.error('Error inserting gift_purchase:', giftErr);
+      return jsonError('Failed to create gift record', 500, corsHeaders);
     }
 
-    // Pricing: fan pays +5% processing fee on top of gift price
+    // ── Calculate total ───────────────────────────────────────────────
     const fanProcessingFeeCents = Math.round(amountCents * 0.05);
     const totalFanPaysCents = amountCents + fanProcessingFeeCents;
+    const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
-    // Platform commission: 10% free, 0% premium
-    const isSubscribed = creator.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.1;
-    const platformCommissionCents = Math.round(amountCents * commissionRate);
-    const applicationFeeAmount = platformCommissionCents + fanProcessingFeeCents;
-
+    const merchantReference = `gift_${giftRecord.id}`;
     const creatorHandle = creator.handle || wishlistItem.creator_id;
-    const successUrl = `${normalizedSiteOrigin}/gift-success?item=${encodeURIComponent(wishlistItem.name)}&creator=${encodeURIComponent(creatorHandle)}`;
-    const cancelUrl = `${normalizedSiteOrigin}/${encodeURIComponent(creatorHandle)}`;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: (wishlistItem.currency || 'USD').toLowerCase(),
-            unit_amount: totalFanPaysCents,
-            product_data: {
-              name: `Gift: ${wishlistItem.name}`,
-              description: `Gift for ${creator.display_name || creatorHandle} (includes 5% processing fee)`,
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        type: 'gift',
-        gift_purchase_id: giftRecord.id,
-        wishlist_item_id: wishlistItemId,
-        fan_id: fanUser.id,
-        creator_id: wishlistItem.creator_id,
-        profile_id: profileId ?? '',
-      },
-      payment_intent_data: {
-        application_fee_amount: applicationFeeAmount,
-        transfer_data: {
-          destination: creator.stripe_account_id,
-        },
-      },
-    });
+    // ── Build QuickPay form fields ────────────────────────────────────
+    const fields: Record<string, string> = {
+      QuickPayToken: quickPayToken!,
+      SiteID: siteId,
+      AmountTotal: amountDecimal,
+      CurrencyID: 'USD',
+      'ItemName[0]': `Gift: ${(wishlistItem.name || 'Wishlist item').slice(0, 200)}`,
+      'ItemQuantity[0]': '1',
+      'ItemAmount[0]': amountDecimal,
+      'ItemDesc[0]': `Gift for ${(creator.display_name || creatorHandle).slice(0, 200)} (includes 5% processing fee)`,
+      AmountShipping: '0.00',
+      ShippingRequired: 'false',
+      MembershipRequired: 'false',
+      ApprovedURL: `${siteUrl}/gift-success?item=${encodeURIComponent(wishlistItem.name)}&creator=${encodeURIComponent(creatorHandle)}`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?gift_failed=true`,
+      MerchantReference: merchantReference,
+      Email: fanUser.email || '',
+    };
 
-    // Store session ID on gift record
-    await supabase
-      .from('gift_purchases')
-      .update({ stripe_session_id: session.id })
-      .eq('id', giftRecord.id);
+    // Store merchant ref
+    await supabase.from('gift_purchases').update({
+      ugp_merchant_reference: merchantReference,
+    }).eq('id', giftRecord.id);
 
-    return new Response(JSON.stringify({ url: session.url }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonOk({ fields }, corsHeaders);
+
   } catch (error) {
-    const stripeError = error as any;
-    const raw = stripeError?.raw;
-    console.error('Error in create-gift-checkout', {
-      message: stripeError?.message,
-      type: raw?.type,
-      code: raw?.code,
-      detail: raw?.message,
-    });
-
-    if (raw?.type === 'invalid_request_error') {
-      const msg: string = raw?.message ?? '';
-      if (
-        raw?.param === 'payment_intent_data[transfer_data][destination]' ||
-        msg.includes('cannot currently make live charges') ||
-        msg.includes('charges_enabled') ||
-        msg.includes('completing their') ||
-        msg.includes('payout')
-      ) {
-        return new Response(
-          JSON.stringify({ error: 'The creator is still completing their payout setup.' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
-    }
-
-    return new Response(JSON.stringify({ error: 'Unable to start gift checkout' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('Error in create-gift-checkout:', error);
+    return jsonError('Unable to start gift checkout', 500, corsHeaders);
   }
 });

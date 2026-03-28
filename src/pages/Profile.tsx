@@ -29,6 +29,7 @@ import {
   Trash2,
   Loader2,
   Tag,
+  Landmark,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -46,6 +47,8 @@ const Profile = () => {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
   const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
+  const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
+  const [profileData, setProfileData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string } | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const [stripeMissingInfo, setStripeMissingInfo] = useState<string[]>([]);
   const [isStripeDetailsLoading, setIsStripeDetailsLoading] = useState(false);
@@ -105,7 +108,7 @@ const Profile = () => {
       // Always load account-level data from profiles
       const { data: mainProfile } = await supabase
         .from('profiles')
-        .select('is_creator_subscribed, stripe_account_id, stripe_connect_status, country')
+        .select('is_creator_subscribed, stripe_account_id, stripe_connect_status, country, payout_setup_complete, bank_iban, bank_holder_name, bank_bic')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -114,6 +117,12 @@ const Profile = () => {
         setStripeAccountId(mainProfile.stripe_account_id || null);
         setStripeConnectStatus(mainProfile.stripe_connect_status || null);
         setCountry(mainProfile.country || null);
+        setPayoutSetupComplete(mainProfile.payout_setup_complete === true);
+        setProfileData({
+          bank_iban: mainProfile.bank_iban || undefined,
+          bank_holder_name: mainProfile.bank_holder_name || undefined,
+          bank_bic: mainProfile.bank_bic || undefined,
+        });
       }
 
       // Load agency branding separately (migration 070 columns)
@@ -399,40 +408,37 @@ const Profile = () => {
     }
   };
 
-  const handleStripeConnect = async () => {
-    setIsStripeLoading(true);
+  // Bank details state for payout setup
+  const [bankIban, setBankIban] = useState('');
+  const [bankHolderName, setBankHolderName] = useState('');
+  const [bankBic, setBankBic] = useState('');
+  const [isSavingBank, setIsSavingBank] = useState(false);
+  const [isEditingBank, setIsEditingBank] = useState(false);
+
+  const handleSaveBankDetails = async () => {
+    setIsSavingBank(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        toast.error('Please sign in again to connect Stripe.');
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-        headers: {
-          Authorization: '',
-          'x-supabase-auth': session.access_token,
+      const { data, error } = await supabase.functions.invoke('save-bank-details', {
+        body: {
+          iban: bankIban,
+          holder_name: bankHolderName,
+          bic: bankBic || undefined,
         },
       });
 
-      if (error) {
-        console.error('Error starting Stripe Connect', error);
-        throw new Error('Unable to start Stripe Connect onboarding.');
+      if (error || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to save bank details');
       }
 
-      const url = (data as any)?.url;
-      if (!url) {
-        throw new Error('Stripe Connect URL not available.');
-      }
-
-      window.location.href = url;
+      toast.success('Bank details saved successfully');
+      setIsEditingBank(false);
+      // Refresh profile data
+      window.location.reload();
     } catch (err: any) {
       console.error('Error during Stripe Connect', err);
-      toast.error(err?.message || 'Unable to connect Stripe. Please try again.');
-      setIsStripeLoading(false);
+      toast.error(err?.message || 'Unable to save bank details. Please try again.');
+    } finally {
+      setIsSavingBank(false);
     }
   };
 
@@ -445,30 +451,77 @@ const Profile = () => {
         return;
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-creator-subscription`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({}),
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('create-creator-subscription', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
-      const data = await response.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.error(data.error || 'Unable to start subscription checkout.');
+      if (error) {
+        throw new Error((data as any)?.error || 'Unable to start subscription checkout.');
       }
-    } catch (err) {
+
+      // If already subscribed, the function returns { manage: true }
+      if ((data as any)?.manage) {
+        // Already subscribed — no action needed, UI already shows manage options
+        toast.success('You are already subscribed to Premium.');
+        return;
+      }
+
+      // New subscription: submit QuickPay form
+      if ((data as any)?.fields) {
+        const fields = (data as any).fields as Record<string, string>;
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'https://quickpay.ugpayments.ch/';
+        form.style.display = 'none';
+        Object.entries(fields).forEach(([name, value]) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        return;
+      }
+
+      toast.error('Unable to start subscription checkout.');
+    } catch (err: any) {
       console.error('Error starting subscription checkout', err);
-      toast.error('Unable to upgrade. Please try again.');
+      toast.error(err?.message || 'Unable to upgrade. Please try again.');
     } finally {
       setIsStripeLoading(false);
     }
+  };
+
+  const handleCancelSubscription = () => {
+    if (!confirm('Are you sure you want to cancel your Premium subscription? You will lose 0% commission and premium features.')) return;
+
+    const quickPayToken = import.meta.env.VITE_QUICKPAY_TOKEN;
+    const siteId = import.meta.env.VITE_QUICKPAY_SITE_ID || '98845';
+
+    // Cancel must be an HTML form POST to QuickPay (server-to-server not supported)
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'https://quickpay.ugpayments.ch/Cancel';
+    form.style.display = 'none';
+
+    const fields: Record<string, string> = {
+      QuickpayToken: quickPayToken,
+      username: userId, // subscription_ugp_username = user.id
+      SiteID: siteId,
+    };
+
+    Object.entries(fields).forEach(([name, value]) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
   };
 
   const handleChangePassword = async () => {
@@ -1051,158 +1104,142 @@ const Profile = () => {
                       )}
                       {isCreatorSubscribed && (
                         <Button
-                          onClick={handleUpgradeToPremium}
+                          onClick={handleCancelSubscription}
                           variant="outline"
-                          disabled={isStripeLoading}
-                          className="rounded-full border-exclu-arsenic/60"
+                          className="rounded-full border-red-500/30 text-red-400 hover:bg-red-500/10"
                         >
-                          {isStripeLoading ? 'Loading...' : 'Manage subscription'}
+                          Cancel subscription
                         </Button>
                       )}
                     </div>
                   </div>
 
-                  {/* Stripe Connect Card */}
+                  {/* Payout Account Card (IBAN) */}
                   <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                    <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Payment Account</h2>
+                    <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Payout Account</h2>
 
-                    <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stripeConnectStatus === 'complete' ? 'bg-emerald-500/15' : 'bg-exclu-phantom/30'}`}>
-                        <CreditCard className={`w-6 h-6 ${stripeConnectStatus === 'complete' ? 'text-emerald-400' : 'text-exclu-space'}`} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base font-semibold text-exclu-cloud">Stripe Connect</h3>
-                          {stripeConnectStatus === 'complete' && (
+                    {payoutSetupComplete && !isEditingBank ? (
+                      /* ── Connected state ── */
+                      <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-500/15">
+                          <Landmark className="w-6 h-6 text-emerald-400" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-semibold text-exclu-cloud">Bank Account</h3>
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 font-medium">
                               <Check className="w-3 h-3" />
                               Connected
                             </span>
-                          )}
-                          {stripeConnectStatus === 'pending' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-[10px] text-amber-300 font-medium">
-                              Pending
-                            </span>
-                          )}
-                          {stripeConnectStatus === 'restricted' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/15 text-[10px] text-red-300 font-medium">
-                              <AlertTriangle className="w-3 h-3" />
-                              Action required
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-exclu-space/80 mt-1">
-                          {stripeAccountId
-                            ? stripeConnectStatus === 'complete'
-                              ? 'Your Stripe account is connected. You can receive payments from fans.'
-                              : stripeConnectStatus === 'restricted'
-                                ? 'Your Stripe account is limited. Stripe needs additional information or verification. Click below to review and fix it.'
-                                : 'Stripe is still waiting for you to complete some steps or validate your details. Click below to finish your payout setup.'
-                            : 'Connect your Stripe account to receive payments from your fans.'}
-                        </p>
-                        {stripeAccountId && (
-                          <>
-                            <p className="text-[11px] text-exclu-space/60 mt-1">
-                              Stripe account email:
-                              <span className="ml-1 font-medium text-exclu-cloud/90">{email}</span>
-                              {country && (
-                                <span className="ml-1">
-                                  · Payout country: <span className="font-medium">{country}</span>
-                                </span>
-                              )}
-                            </p>
-                            {stripeConnectStatus !== 'complete' && (
-                              <div className="mt-2 text-[11px] text-exclu-space/70">
-                                <p className="font-medium text-exclu-space/80 mb-1">
-                                  {isStripeDetailsLoading
-                                    ? 'Checking with Stripe what is still required…'
-                                    : 'Stripe still needs the following information:'}
-                                </p>
-                                {!isStripeDetailsLoading && stripeMissingInfo.length > 0 && (
-                                  <ul className="list-disc list-inside space-y-0.5">
-                                    {stripeMissingInfo.map((item, idx) => (
-                                      <li key={idx}>{item}</li>
-                                    ))}
-                                  </ul>
-                                )}
-                                {!isStripeDetailsLoading && stripeMissingInfo.length === 0 && (
-                                  <p className="text-[11px] text-exclu-space/60">
-                                    Open Stripe to review your details. Any remaining checks will be shown directly in your
-                                    Stripe dashboard.
-                                  </p>
-                                )}
+                          </div>
+                          <p className="text-sm text-exclu-space/80 mt-1">
+                            Your bank account is set up. You can receive payouts from your wallet.
+                          </p>
+                          <div className="mt-2 space-y-1 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-exclu-space/60">IBAN</span>
+                              <span className="text-exclu-cloud font-mono text-xs">
+                                {profileData?.bank_iban
+                                  ? `${profileData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profileData.bank_iban.slice(-4)}`
+                                  : '••••'}
+                              </span>
+                            </div>
+                            {profileData?.bank_holder_name && (
+                              <div className="flex justify-between">
+                                <span className="text-exclu-space/60">Holder</span>
+                                <span className="text-exclu-cloud">{profileData.bank_holder_name}</span>
                               </div>
                             )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-col sm:flex-row gap-4 sm:items-end">
-                      {!stripeAccountId && (
-                        <>
-                          <div className="flex-1 max-w-xs space-y-1.5">
-                            <label className="text-xs font-medium text-exclu-cloud ml-1">
-                              Payout Country
-                            </label>
-                            <select
-                              value={country || 'US'}
-                              onChange={(e) => {
-                                setCountry(e.target.value);
-                                // Auto-save the country when changed here so the user doesn't have to click "Save" elsewhere
-                                void supabase
-                                  .from('profiles')
-                                  .update({ country: e.target.value })
-                                  .eq('id', userId);
-                              }}
-                              className="h-10 w-full rounded-full border border-border bg-primary/10 px-3 text-sm text-foreground focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-                            >
-                              <option value="US">United States 🇺🇸</option>
-                              <option value="GB">United Kingdom 🇬🇧</option>
-                              <option value="CA">Canada 🇨🇦</option>
-                              <option value="AU">Australia 🇦🇺</option>
-                              <option value="FR">France 🇫🇷</option>
-                              <option value="DE">Germany 🇩🇪</option>
-                              <option value="ES">Spain 🇪🇸</option>
-                              <option value="IT">Italy 🇮🇹</option>
-                              <option value="NL">Netherlands 🇳🇱</option>
-                              <option value="BE">Belgium 🇧🇪</option>
-                              <option value="CH">Switzerland 🇨🇭</option>
-                              <option value="AT">Austria 🇦🇹</option>
-                              <option value="IE">Ireland 🇮🇪</option>
-                              <option value="PT">Portugal 🇵🇹</option>
-                              <option value="PL">Poland 🇵🇱</option>
-                              <option value="CZ">Czech Republic 🇨🇿</option>
-                              <option value="DK">Denmark 🇩🇰</option>
-                              <option value="FI">Finland 🇫🇮</option>
-                              <option value="NO">Norway 🇳🇴</option>
-                              <option value="SE">Sweden 🇸🇪</option>
-                              <option value="BR">Brazil 🇧🇷</option>
-                              <option value="MX">Mexico 🇲🇽</option>
-                            </select>
                           </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── Setup / Edit state ── */
+                      <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-exclu-phantom/30">
+                          <Landmark className="w-6 h-6 text-exclu-space" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-base font-semibold text-exclu-cloud">
+                            {isEditingBank ? 'Edit Bank Details' : 'Set Up Payouts'}
+                          </h3>
+                          <p className="text-sm text-exclu-space/80 mt-1">
+                            Add your bank account details to receive payouts from your earnings.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* IBAN Form (shown when not set up, or editing) */}
+                    {(!payoutSetupComplete || isEditingBank) && (
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">IBAN</label>
+                          <Input
+                            value={bankIban}
+                            onChange={(e) => setBankIban(e.target.value.toUpperCase())}
+                            placeholder="FR76 1234 5678 9012 3456 7890 123"
+                            className="bg-primary/10 border-border text-foreground"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">Account holder name</label>
+                          <Input
+                            value={bankHolderName}
+                            onChange={(e) => setBankHolderName(e.target.value)}
+                            placeholder="Jean Dupont"
+                            className="bg-primary/10 border-border text-foreground"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">BIC / SWIFT (optional)</label>
+                          <Input
+                            value={bankBic}
+                            onChange={(e) => setBankBic(e.target.value.toUpperCase())}
+                            placeholder="BNPAFRPP"
+                            className="bg-primary/10 border-border text-foreground"
+                          />
+                        </div>
+                        <div className="flex gap-2 pt-1">
                           <Button
-                            onClick={handleStripeConnect}
+                            onClick={handleSaveBankDetails}
                             variant="hero"
-                            disabled={isStripeLoading}
+                            disabled={!bankIban || !bankHolderName || isSavingBank}
                             className="rounded-full"
                           >
-                            <CreditCard className="w-4 h-4 mr-2" />
-                            {isStripeLoading ? 'Loading...' : 'Connect Stripe'}
+                            <Landmark className="w-4 h-4 mr-2" />
+                            {isSavingBank ? 'Saving...' : 'Save bank details'}
                           </Button>
-                        </>
-                      )}
-                      {stripeAccountId && stripeConnectStatus !== 'complete' && (
+                          {isEditingBank && (
+                            <Button
+                              onClick={() => setIsEditingBank(false)}
+                              variant="outline"
+                              className="rounded-full border-exclu-arsenic/60"
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Edit button when connected */}
+                    {payoutSetupComplete && !isEditingBank && (
+                      <div className="mt-4">
                         <Button
-                          onClick={handleStripeConnect}
-                          variant="hero"
-                          disabled={isStripeLoading}
-                          className="rounded-full"
+                          onClick={() => {
+                            setIsEditingBank(true);
+                            setBankIban(profileData?.bank_iban || '');
+                            setBankHolderName(profileData?.bank_holder_name || '');
+                            setBankBic(profileData?.bank_bic || '');
+                          }}
+                          variant="outline"
+                          className="rounded-full border-exclu-arsenic/60"
                         >
-                          {isStripeLoading ? 'Loading...' : 'Review Stripe setup'}
+                          Edit bank details
                         </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -1568,33 +1605,7 @@ const Profile = () => {
         </motion.div>
       </main>
 
-      {isStripeLoading && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md"
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="relative w-full max-w-sm mx-4 rounded-2xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/40 to-exclu-ink p-6 shadow-2xl shadow-black/60"
-          >
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-12 h-12 rounded-full border border-exclu-arsenic/60 bg-black/40 flex items-center justify-center mb-1">
-                <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-exclu-cloud">Opening Stripe in a secure window…</p>
-                <p className="mt-1 text-xs text-exclu-space/70">
-                  This can take a few seconds. Please do not close this tab while we prepare your Stripe page.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
+      {/* Loading overlay removed — IBAN setup is inline, no external redirect needed */}
     </AppShell>
   );
 };

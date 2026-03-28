@@ -1,0 +1,2 @@
+[functions.ugp-confirm]
+verify_jwt = false

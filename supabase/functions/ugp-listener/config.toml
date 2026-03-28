@@ -1,0 +1,2 @@
+[functions.ugp-listener]
+verify_jwt = false

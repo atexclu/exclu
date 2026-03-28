@@ -66,11 +66,32 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
         headers,
       });
 
-      if (error || !data?.url) {
+      if (error || !data?.fields) {
         throw new Error(data?.error || 'Unable to start checkout');
       }
 
-      window.open(data.url, '_blank');
+      // Open QuickPay in new window (chat stays open)
+      const fields = data.fields as Record<string, string>;
+      const win = window.open('about:blank', '_blank');
+      if (win) {
+        const doc = win.document;
+        doc.open();
+        doc.write('<!DOCTYPE html><html><body><form id="qp" method="POST" action="https://quickpay.ugpayments.ch/">');
+        Object.entries(fields).forEach(([name, value]) => {
+          const escaped = value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          doc.write(`<input type="hidden" name="${name}" value="${escaped}" />`);
+        });
+        doc.write('</form><script>document.getElementById("qp").submit();</script></body></html>');
+        doc.close();
+      } else {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'https://quickpay.ugpayments.ch/';
+        form.style.display = 'none';
+        Object.entries(fields).forEach(([n, v]) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = v; form.appendChild(i); });
+        document.body.appendChild(form);
+        form.submit();
+      }
       onClose();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to process request');
