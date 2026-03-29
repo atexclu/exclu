@@ -147,7 +147,7 @@ serve(async (req) => {
 
     if (creatorErr || !creator) return jsonError('Creator not found', 404, corsHeaders);
     if (!creator.custom_requests_enabled) return jsonError('This creator does not accept custom requests', 400, corsHeaders);
-    if (!creator.payout_setup_complete) return jsonError('Creator is not ready to receive payments yet', 400, corsHeaders);
+    // Payout setup NOT required to receive requests — earnings go to wallet
 
     const minAmount = creator.min_custom_request_cents || 2000;
     if (proposedAmountCents < minAmount) {

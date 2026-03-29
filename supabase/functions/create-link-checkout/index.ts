@@ -144,10 +144,8 @@ serve(async (req) => {
       return jsonError('Creator profile not found', 400, corsHeaders);
     }
 
-    // Check payout setup (replaces stripe_connect_status check)
-    if (!creatorProfile.payout_setup_complete) {
-      return jsonError('Creator is still setting up their payout account. Please try again later.', 400, corsHeaders);
-    }
+    // Payout setup is NOT required to sell — earnings go to the internal wallet.
+    // IBAN is only needed when the creator wants to withdraw.
 
     // ── Resolve chatter tracking ──────────────────────────────────────
     let resolvedChatterId: string | null = null;

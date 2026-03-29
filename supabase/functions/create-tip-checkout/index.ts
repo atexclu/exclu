@@ -111,7 +111,7 @@ serve(async (req) => {
 
     const minTip = creator.min_tip_amount_cents || 500;
     if (amountCents < minTip) return jsonError(`Minimum tip is $${(minTip / 100).toFixed(2)}`, 400, corsHeaders);
-    if (!creator.payout_setup_complete) return jsonError('Creator is not ready to receive payments yet', 400, corsHeaders);
+    // Payout setup NOT required to receive tips — earnings go to wallet
 
     // ── Create tip record (pending) ───────────────────────────────────
     const { data: tipRecord, error: tipErr } = await supabase

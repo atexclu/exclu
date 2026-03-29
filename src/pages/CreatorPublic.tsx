@@ -711,8 +711,9 @@ const CreatorPublic = () => {
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
   const shouldShowJoinBanner = !isPremium || (isPremium && profile?.show_join_banner !== false);
-  const isPayoutReady = profile?.payout_setup_complete === true || profile?.stripe_connect_status === 'complete';
-  const showTipsCta = profile?.tips_enabled === true && isPayoutReady;
+  // Payout setup is NOT required to sell/receive — earnings go to wallet.
+  // Tips/gifts/requests are always available if the creator has enabled them.
+  const showTipsCta = profile?.tips_enabled === true;
   const showRequestsCta = profile?.custom_requests_enabled === true;
   const showChatCta = profile?.chat_enabled === true;
   const tipPresets = [500, 1000, 2500, 5000];

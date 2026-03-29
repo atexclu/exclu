@@ -108,7 +108,7 @@ serve(async (req) => {
 
     const creator = wishlistItem.profiles as any;
     if (!creator) return jsonError('Creator not found', 404, corsHeaders);
-    if (!creator.payout_setup_complete) return jsonError('This creator is not ready to receive payments yet', 400, corsHeaders);
+    // Payout setup NOT required to receive gifts — earnings go to wallet
 
     const amountCents = wishlistItem.price_cents;
 
