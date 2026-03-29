@@ -194,6 +194,7 @@ serve(async (req) => {
         amount_cents: totalFanPaysCents,
         currency: 'USD',
         status: 'pending',
+        access_token: crypto.randomUUID(),
         buyer_email: buyerEmail || null,
         creator_net_cents: creatorNetCents,
         platform_fee_cents: platformFeeCents,
