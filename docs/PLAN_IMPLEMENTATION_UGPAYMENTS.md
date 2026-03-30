@@ -2586,3 +2586,269 @@ ETAPE 11 : Nettoyage (Phase 8)
 - [ ] Les referral commissions sont creditees a chaque renouvellement
 - [ ] Aucune mention de "Stripe" visible nulle part dans l'app
 - [ ] Les pages admin affichent les bonnes infos bancaires
+
+---
+
+## 20. PLAN DE TESTS — VALIDATION COMPLETE
+
+> **Carte test** : `4242 4242 4242 4242` — Exp `12/29` — CVV `123`
+> **Carte decline** : CVV `555`
+> **Prerequis** : UGPayments a configure le Listener URL et Member Postback URL
+
+### 20.1 Test 1 — Achat de lien (flux principal)
+
+**Page** : Profil public d'un createur → cliquer sur un lien payant
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 1.1 | Cliquer "Unlock" sur un lien paye ($5) | Edge function `create-link-checkout` appelee, formulaire QuickPay soumis, redirect vers page QuickPay | [ ] |
+| 1.2 | Entrer carte test `4242...`, exp `12/29`, CVV `123` | Paiement accepte | [ ] |
+| 1.3 | Redirect vers `exclu.at/l/{slug}?payment_success=true&ref=link_{uuid}` | Page affiche "Verifying your payment..." | [ ] |
+| 1.4 | Attendre 2-5 secondes (polling) | Le ConfirmURL est appele par UGPayments, purchase passe a `succeeded` | [ ] |
+| 1.5 | Le contenu se debloqu | Media (images/videos) affiches avec signed URLs | [ ] |
+| 1.6 | Verifier en DB : `purchases` | `status='succeeded'`, `ugp_transaction_id` renseigne, `access_token` present | [ ] |
+| 1.7 | Verifier en DB : `profiles.wallet_balance_cents` du createur | Credite de `creator_net_cents` (prix base - commission) | [ ] |
+| 1.8 | Verifier en DB : `payment_events` | Un enregistrement avec le bon `transaction_id` et `processed=true` | [ ] |
+| 1.9 | Verifier email Brevo | Le fan recoit un email avec le lien d'acces au contenu | [ ] |
+
+### 20.2 Test 2 — Achat de lien avec paiement refuse
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 2.1 | Cliquer "Unlock" sur un lien paye | Redirect vers QuickPay | [ ] |
+| 2.2 | Entrer carte test avec CVV `555` | Paiement refuse | [ ] |
+| 2.3 | Redirect vers `exclu.at/l/{slug}?payment_failed=true` | Toast "Payment was not completed. Please try again." | [ ] |
+| 2.4 | Verifier en DB : `purchases` | Record reste en `status='pending'` (pas de double-creation) | [ ] |
+
+### 20.3 Test 3 — Tip depuis le profil public
+
+**Page** : Profil public → bouton "Send a Tip"
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 3.1 | Cliquer "Send a Tip", choisir $10 | Modal tip s'ouvre avec presets | [ ] |
+| 3.2 | Optionnel : ajouter un message, cocher anonyme | Champs fonctionnels | [ ] |
+| 3.3 | Cliquer "Send tip" | Edge function `create-tip-checkout` appelee, formulaire QuickPay soumis | [ ] |
+| 3.4 | Payer avec carte test | Paiement accepte | [ ] |
+| 3.5 | Redirect vers `/tip-success?creator={handle}&amount=1000&tip_id={uuid}` | Page de succes avec confettis | [ ] |
+| 3.6 | Verifier en DB : `tips` | `status='succeeded'`, `ugp_transaction_id` renseigne | [ ] |
+| 3.7 | Verifier wallet createur | Credite du montant tip (moins commission si free plan) | [ ] |
+| 3.8 | Verifier email createur | Notification tip recue via Brevo | [ ] |
+
+### 20.4 Test 4 — Tip depuis le chat
+
+**Page** : Conversation chat → icone tip
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 4.1 | Ouvrir le modal tip depuis le chat | Modal `ChatTipForm` s'affiche | [ ] |
+| 4.2 | Entrer montant, cliquer envoyer | Nouvelle fenetre s'ouvre sur QuickPay (chat reste ouvert) | [ ] |
+| 4.3 | Payer dans la nouvelle fenetre | Paiement accepte, fenetre redirige vers tip-success | [ ] |
+| 4.4 | Verifier DB et wallet | Meme verifications que test 3 | [ ] |
+
+### 20.5 Test 5 — Gift wishlist
+
+**Page** : Profil public → section Wishlist
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 5.1 | Etre connecte en tant que fan | Login requis | [ ] |
+| 5.2 | Cliquer sur un item de la wishlist | Modal gift s'ouvre | [ ] |
+| 5.3 | Optionnel : ajouter message, cocher anonyme | Champs fonctionnels | [ ] |
+| 5.4 | Cliquer "Gift" | Formulaire QuickPay soumis | [ ] |
+| 5.5 | Payer avec carte test | Paiement accepte | [ ] |
+| 5.6 | Redirect vers `/gift-success?item={name}&creator={handle}` | Page de succes | [ ] |
+| 5.7 | Verifier en DB : `gift_purchases` | `status='succeeded'` | [ ] |
+| 5.8 | Verifier en DB : `wishlist_items.gifted_count` | Incremente de 1 | [ ] |
+| 5.9 | Verifier wallet createur | Credite | [ ] |
+
+### 20.6 Test 6 — Custom request (pre-auth + capture)
+
+**Page** : Profil public → "Send a Request"
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 6.1 | Ouvrir le modal custom request | Modal s'affiche avec description + montant | [ ] |
+| 6.2 | Entrer description (>10 chars), montant $25 | Validation OK | [ ] |
+| 6.3 | Cliquer "Send request" | Formulaire QuickPay soumis (pre-auth) | [ ] |
+| 6.4 | Payer avec carte test | Paiement pre-autorise (fonds bloques, pas debites) | [ ] |
+| 6.5 | Redirect vers `/request-success?status=success` | Page affiche "$25 on hold" | [ ] |
+| 6.6 | Verifier en DB : `custom_requests` | `status='pending'`, `ugp_transaction_id` renseigne | [ ] |
+| 6.7 | Verifier que wallet createur n'a PAS ete credite | `wallet_balance_cents` inchange (fonds seulement bloques) | [ ] |
+| 6.8 | **Cote createur** : aller dans Tips & Requests | La request apparait en "pending" | [ ] |
+| 6.9 | Createur uploade du contenu + clique "Accept" | `manage-request` appele avec action='capture' | [ ] |
+| 6.10 | Verifier en DB : `custom_requests` | `status='delivered'`, `delivery_link_id` renseigne | [ ] |
+| 6.11 | Verifier wallet createur | Credite de `creator_net_cents` | [ ] |
+
+### 20.7 Test 7 — Custom request (decline/void)
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 7.1 | Soumettre une custom request + payer | Pre-auth OK, status='pending' | [ ] |
+| 7.2 | Createur clique "Decline" | `manage-request` avec action='cancel' | [ ] |
+| 7.3 | Verifier en DB : `custom_requests` | `status='refused'` | [ ] |
+| 7.4 | Verifier que le wallet n'a PAS ete credite | Inchange | [ ] |
+| 7.5 | Verifier cote fan | Fonds relaches (pas de debit sur la carte) | [ ] |
+
+### 20.8 Test 8 — Abonnement Premium
+
+**Page** : Settings → Subscription → "Upgrade to Premium"
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 8.1 | Cliquer "Upgrade to Premium — $39/mo" | Edge function retourne les fields QuickPay subscription | [ ] |
+| 8.2 | Formulaire QuickPay soumis | Redirect vers QuickPay avec MembershipRequired=true | [ ] |
+| 8.3 | Payer avec carte test | Subscription creee | [ ] |
+| 8.4 | Redirect vers `/app?subscription=success` | Dashboard affiche | [ ] |
+| 8.5 | Verifier en DB : `profiles.is_creator_subscribed` | `true` | [ ] |
+| 8.6 | Verifier en DB : `subscription_ugp_member_id` | Renseigne | [ ] |
+| 8.7 | Verifier les flags premium | `show_certification=true`, `show_deeplinks=true`, `show_available_now=true` | [ ] |
+| 8.8 | Commission : un achat de lien ne devrait plus avoir de 10% commission | `creator_net_cents = prix base` (0% commission) | [ ] |
+
+### 20.9 Test 9 — Annulation abonnement
+
+**Page** : Settings → Subscription → "Cancel subscription"
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 9.1 | Cliquer "Cancel subscription" | Confirmation dialog | [ ] |
+| 9.2 | Confirmer | Formulaire HTML POST vers QuickPay Cancel | [ ] |
+| 9.3 | Verifier que UGPayments envoie un postback Cancel | `ugp-membership-confirm` recoit Action='Cancel' | [ ] |
+| 9.4 | Verifier en DB : `profiles.is_creator_subscribed` | `false` | [ ] |
+| 9.5 | Verifier flags | `show_certification=false`, etc. | [ ] |
+
+### 20.10 Test 10 — Saisie IBAN (onboarding payout)
+
+**Page** : Settings → Subscription → section "Payout Account"
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 10.1 | Aller dans Settings > Subscription | Section "Payout Account" visible avec formulaire IBAN | [ ] |
+| 10.2 | Saisir un IBAN valide (ex: `FR7630006000011234567890189`) | Champ accepte le format | [ ] |
+| 10.3 | Saisir le nom du titulaire | Champ fonctionne | [ ] |
+| 10.4 | Cliquer "Save bank details" | Edge function `save-bank-details` appelee | [ ] |
+| 10.5 | Toast "Bank details saved successfully" | Succes | [ ] |
+| 10.6 | Verifier en DB : `profiles` | `bank_iban`, `bank_holder_name` renseignes, `payout_setup_complete=true` | [ ] |
+| 10.7 | IBAN affiche masque | `FR76 •••• •••• 0189` | [ ] |
+
+### 20.11 Test 11 — Retrait (withdrawal)
+
+**Prerequis** : Le createur a un solde wallet > $50 et un IBAN configure
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 11.1 | Dashboard → wallet → "Withdraw" | Modal de retrait | [ ] |
+| 11.2 | Entrer montant ($50 minimum) | Validation du minimum | [ ] |
+| 11.3 | Confirmer | Edge function `request-withdrawal` appelee | [ ] |
+| 11.4 | Verifier en DB : `payouts` | Nouveau record status='pending', `bank_iban` snapshot | [ ] |
+| 11.5 | Verifier wallet | `wallet_balance_cents` debite du montant | [ ] |
+| 11.6 | Verifier email admin | Notification recue a `atexclu@gmail.com` | [ ] |
+| 11.7 | Verifier email createur | Confirmation de la demande de retrait | [ ] |
+| 11.8 | Tenter un 2e retrait pendant le 1er est pending | Erreur "You already have a pending withdrawal" | [ ] |
+
+### 20.12 Test 12 — Achat lien via chat (attribution chatter)
+
+**Prerequis** : Un chatter a partage un lien paye dans une conversation
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 12.1 | Fan clique un lien paye dans le chat (contient `?chtref=xxx`) | URL du lien inclut le chatter_ref | [ ] |
+| 12.2 | Fan achete le lien via QuickPay | Paiement reussi | [ ] |
+| 12.3 | Verifier en DB : `purchases` | `chat_chatter_id` renseigne, `chatter_earnings_cents` = 25% du prix | [ ] |
+| 12.4 | Verifier `profiles.chatter_earnings_cents` du chatter | Incremente de 25% | [ ] |
+| 12.5 | Verifier `profiles.wallet_balance_cents` du createur | Credite de 60% (pas 90%) | [ ] |
+| 12.6 | Verifier `conversations.total_revenue_cents` | Incremente | [ ] |
+
+### 20.13 Test 13 — Referral commission
+
+**Prerequis** : Un createur A a ete refere par un createur B
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 13.1 | Createur A s'abonne Premium | Subscription OK | [ ] |
+| 13.2 | Verifier en DB : `referrals` | `commission_earned_cents += 1365` (35% de $39) | [ ] |
+| 13.3 | Verifier `profiles.affiliate_earnings_cents` du referrer B | Incremente de 1365 | [ ] |
+| 13.4 | A chaque renouvellement (postback Rebill) | Commission re-creditee | [ ] |
+
+### 20.14 Test 14 — Dashboard metriques
+
+**Page** : `/app` (Dashboard createur)
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 14.1 | Verifier card "Revenue" | Affiche le total gagne | [ ] |
+| 14.2 | Verifier card "Sales" | Nombre correct de ventes succeeded | [ ] |
+| 14.3 | Verifier card "Profile Views" | Inchange | [ ] |
+| 14.4 | Verifier wallet balance | Correspond a `profiles.wallet_balance_cents` | [ ] |
+| 14.5 | Modal IBAN (si pas configure) | S'affiche au premier chargement avec bouton "Set up bank details" | [ ] |
+| 14.6 | Dismiss modal | `sessionStorage.bankModalDismissed = true`, ne reapparait plus | [ ] |
+
+### 20.15 Test 15 — ugp-listener (refund/chargeback)
+
+**Prerequis** : Listener URL configure par UGPayments
+
+| Etape | Action | Resultat attendu | Verifie |
+|-------|--------|-------------------|---------|
+| 15.1 | Simuler un POST de refund vers `ugp-listener` | Status du record passe a 'refunded' | [ ] |
+| 15.2 | Wallet createur debite | `wallet_balance_cents` diminue de `creator_net_cents` | [ ] |
+| 15.3 | Email admin | Notification de refund | [ ] |
+| 15.4 | Simuler un chargeback | Meme logique + alerte email urgente | [ ] |
+
+### 20.16 Test 16 — Securite
+
+| Test | Action | Resultat attendu | Verifie |
+|------|--------|-------------------|---------|
+| 16.1 | POST `ugp-confirm` sans Key | 401 Unauthorized | [ ] |
+| 16.2 | POST `ugp-confirm` avec mauvais Key | 401 Unauthorized | [ ] |
+| 16.3 | POST `ugp-confirm` avec bon Key + TransactionID deja traite | 200 OK (idempotent, pas de double-credit) | [ ] |
+| 16.4 | Modifier le montant dans le formulaire QuickPay (tamper) | ugp-confirm detecte le mismatch (log warning), traite quand meme | [ ] |
+| 16.5 | `request-withdrawal` sans auth | 401 | [ ] |
+| 16.6 | `request-withdrawal` avec solde insuffisant | Erreur "Insufficient balance" | [ ] |
+| 16.7 | `save-bank-details` avec IBAN invalide | Erreur "Invalid IBAN format" | [ ] |
+
+### 20.17 Ordre de test recommande
+
+```
+1. Test 1  — Achat de lien (le plus critique, valide tout le flux)
+2. Test 2  — Paiement refuse (verifie la gestion d'erreur)
+3. Test 10 — Saisie IBAN (pas bloquant pour les ventes, mais necesaire pour les retraits)
+4. Test 3  — Tip depuis profil (deuxieme flux le plus utilise)
+5. Test 5  — Gift wishlist
+6. Test 6  — Custom request (pre-auth + capture)
+7. Test 7  — Custom request (decline)
+8. Test 4  — Tip depuis chat
+9. Test 12 — Achat avec attribution chatter
+10. Test 11 — Retrait (necessite un solde)
+11. Test 8  — Abonnement Premium
+12. Test 9  — Annulation abonnement
+13. Test 14 — Dashboard metriques
+14. Test 13 — Referral (necessite 2 comptes)
+15. Test 15 — Listener (simuler avec curl)
+16. Test 16 — Tests de securite (curl)
+```
+
+### 20.18 Commandes curl utiles pour les tests manuels
+
+```bash
+# Simuler un callback ugp-confirm (pour tester sans passer par QuickPay)
+curl -X POST "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/ugp-confirm?apikey=<ANON_KEY>" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "TransactionID=TEST_$(date +%s)&MerchantReference=link_<PURCHASE_ID>&Amount=5.25&TransactionState=Sale&Key=GSibxqsSpjOXMDYMuBxxenYkCfKOIOKC&CustomerEmail=test@test.com&SiteID=98845"
+
+# Simuler un refund via ugp-listener
+curl -X POST "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/ugp-listener?apikey=<ANON_KEY>" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "TransactionID=<ORIGINAL_TXN_ID>&TransactionState=Refund&Amount=5.25&Key=GSibxqsSpjOXMDYMuBxxenYkCfKOIOKC&MerchantReference=link_<PURCHASE_ID>"
+
+# Verifier l'etat d'un purchase
+curl -s -H "apikey: <ANON_KEY>" \
+  "https://qexnwezetjlbwltyccks.supabase.co/rest/v1/purchases?select=id,status,ugp_transaction_id,amount_cents,creator_net_cents&id=eq.<PURCHASE_ID>"
+
+# Verifier le wallet d'un createur
+curl -s -H "apikey: <ANON_KEY>" \
+  "https://qexnwezetjlbwltyccks.supabase.co/rest/v1/profiles?select=wallet_balance_cents,total_earned_cents&id=eq.<CREATOR_ID>"
+
+# Verifier les payment_events (necessite service_role key)
+# → Utiliser le SQL Editor dans le dashboard Supabase :
+# SELECT * FROM payment_events ORDER BY created_at DESC LIMIT 10;
+```
