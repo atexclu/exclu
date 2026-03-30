@@ -98,7 +98,7 @@ serve(async (req) => {
       'ItemAmount[0]': '0.00',
       'ItemDesc[0]': 'Monthly subscription — 0% commission on all sales ($39/month)',
       ApprovedURL: `${siteUrl}/app?subscription=success`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm?apikey=${Deno.env.get('SUPABASE_ANON_KEY') || ''}`,
       DeclinedURL: `${siteUrl}/app?subscription=failed`,
       MerchantReference: merchantReference,
       Email: user.email || '',
