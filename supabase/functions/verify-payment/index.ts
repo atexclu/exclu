@@ -131,13 +131,24 @@ serve(async (req) => {
       }
     }
 
-    // Send email
+    // Send email with proper access URL and template
     if (purchase.buyer_email && link?.slug) {
-      const accessUrl = `${siteUrl}/l/${encodeURIComponent(link.slug)}?ref=link_${purchaseId}`;
+      const accessUrl = `${siteUrl}/l/${encodeURIComponent(link.slug)}?payment_success=true&ref=link_${purchaseId}`;
+      const linkTitle = link.title || 'exclusive content';
       await sendBrevoEmail({
         to: purchase.buyer_email,
-        subject: `Your access to "${link.title || 'exclusive content'}" on Exclu`,
-        htmlContent: `<p>Your content is unlocked. <a href="${accessUrl}">Click here to access it</a>.</p>`,
+        subject: `Your access to "${linkTitle}" on Exclu`,
+        htmlContent: `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;overflow:hidden}.header{padding:28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff}.button{display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635,#bbf7d0);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.link-box{background-color:#020617;border-radius:10px;padding:14px 18px;margin:4px 0 20px;border:1px solid #1e293b;word-break:break-all}.link-box a{font-size:13px;color:#a3e635;text-decoration:none;font-family:monospace}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b}.footer a{color:#a3e635;text-decoration:none}</style></head>
+<body><div class="container"><div class="header"><h1>Your exclusive content is unlocked</h1></div>
+<div class="content"><p>Thank you for your purchase on <strong>Exclu</strong>. Your premium content is now available.</p>
+<p>Click the button below to access it instantly:</p>
+<a href="${accessUrl}" class="button">Open my content</a>
+<p style="font-size:13px;color:#94a3b8;margin-bottom:8px;">Or copy this link in your browser:</p>
+<div class="link-box"><a href="${accessUrl}">${accessUrl}</a></div>
+<p style="margin-top:20px;font-size:13px;color:#94a3b8;">If you didn't make this purchase, you can safely ignore this email.</p></div>
+<div class="footer">&copy; 2026 Exclu &mdash; All rights reserved<br><a href="${siteUrl}">exclu</a></div></div></body></html>`,
       });
       await supabase.from('purchases').update({ email_sent: true }).eq('id', purchaseId);
     }

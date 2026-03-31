@@ -51,13 +51,34 @@ serve(async (req: Request) => {
       });
     }
 
-    // Verify the purchase exists for this session_id + link_id
-    const { data: purchase, error: purchaseError } = await supabase
+    // Verify the purchase exists — supports both:
+    // - Direct purchase ID (UGPayments flow: session_id = purchase UUID)
+    // - Legacy Stripe session ID (stripe_session_id field)
+    let purchase: { id: string } | null = null;
+    let purchaseError: any = null;
+
+    // Try by purchase ID first (UGPayments flow)
+    const { data: byId, error: byIdErr } = await supabase
       .from('purchases')
       .select('id')
-      .eq('stripe_session_id', session_id)
+      .eq('id', session_id)
       .eq('link_id', link_id)
+      .eq('status', 'succeeded')
       .maybeSingle();
+
+    if (byId) {
+      purchase = byId;
+    } else {
+      // Fallback: try by stripe_session_id (legacy Stripe flow)
+      const { data: byStripe, error: byStripeErr } = await supabase
+        .from('purchases')
+        .select('id')
+        .eq('stripe_session_id', session_id)
+        .eq('link_id', link_id)
+        .maybeSingle();
+      purchase = byStripe;
+      purchaseError = byStripeErr;
+    }
 
     if (purchaseError || !purchase) {
       return new Response(JSON.stringify({ error: 'Purchase not found', detail: purchaseError?.message }), {

@@ -311,7 +311,7 @@ const PublicLink = () => {
       // Extract purchase ID from ref param (format: link_<uuid>)
       const purchaseIdFromRef = paymentRef?.startsWith('link_') ? paymentRef.slice(5) : null;
 
-      if (paymentSuccess && purchaseIdFromRef) {
+      if (purchaseIdFromRef) {
         // UGPayments flow: poll DB for the purchase to be confirmed by ConfirmURL callback
         setIsVerifyingPayment(true);
         setIsLoading(false);
