@@ -205,6 +205,7 @@ const PublicLink = () => {
   const paymentRef = searchParams.get('ref'); // UGPayments: ref=link_<uuid>
   const paymentSuccess = searchParams.get('payment_success') === 'true';
   const paymentFailed = searchParams.get('payment_failed') === 'true';
+  const ugpTransactionId = searchParams.get('TransactionID'); // Added by UGPayments to ApprovedURL
   const fromConversationId = searchParams.get('from_conversation');
   const chatterRef = searchParams.get('chtref');
   
@@ -311,11 +312,35 @@ const PublicLink = () => {
       const purchaseIdFromRef = paymentRef?.startsWith('link_') ? paymentRef.slice(5) : null;
 
       if (paymentSuccess && purchaseIdFromRef) {
-        // UGPayments flow: poll DB for the purchase to be confirmed
+        // UGPayments flow: poll DB for the purchase to be confirmed by ConfirmURL callback
         setIsVerifyingPayment(true);
         setIsLoading(false);
 
-        const verifiedPurchase = await verifyPurchase(purchaseIdFromRef, signal);
+        let verifiedPurchase = await verifyPurchase(purchaseIdFromRef, signal);
+
+        // Fallback: if ConfirmURL callback hasn't fired but we have a TransactionID
+        // from the redirect URL, verify and finalize the purchase ourselves
+        if (!verifiedPurchase && ugpTransactionId && !signal.aborted) {
+          try {
+            const { data: verifyData } = await supabase.functions.invoke('verify-payment', {
+              body: { purchase_id: purchaseIdFromRef, transaction_id: ugpTransactionId },
+            });
+            if (verifyData?.verified) {
+              // Re-fetch the purchase now that it's been confirmed
+              const { data: confirmedPurchase } = await supabaseAnon
+                .from('purchases')
+                .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
+                .eq('id', purchaseIdFromRef)
+                .eq('status', 'succeeded')
+                .maybeSingle();
+              if (confirmedPurchase) {
+                verifiedPurchase = confirmedPurchase as PurchaseData;
+              }
+            }
+          } catch (fallbackErr) {
+            console.warn('verify-payment fallback failed:', fallbackErr);
+          }
+        }
 
         if (signal.aborted) return;
 
