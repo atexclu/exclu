@@ -229,7 +229,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/l/${encodeURIComponent(slug)}?payment_success=true&ref=${merchantReference}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/l/${encodeURIComponent(slug)}?payment_failed=true`,
       MerchantReference: merchantReference,
     };

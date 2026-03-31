@@ -6,6 +6,18 @@
   },
   "rewrites": [
     {
+      "source": "/api/ugp-confirm",
+      "destination": "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/ugp-confirm"
+    },
+    {
+      "source": "/api/ugp-listener",
+      "destination": "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/ugp-listener"
+    },
+    {
+      "source": "/api/ugp-membership-confirm",
+      "destination": "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/ugp-membership-confirm"
+    },
+    {
       "source": "/@:handle",
       "destination": "/api/og-proxy"
     },

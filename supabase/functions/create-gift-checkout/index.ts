@@ -156,7 +156,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/gift-success?item=${encodeURIComponent(wishlistItem.name)}&creator=${encodeURIComponent(creatorHandle)}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?gift_failed=true`,
       MerchantReference: merchantReference,
       Email: fanUser.email || '',

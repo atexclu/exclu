@@ -221,7 +221,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/request-success?${successParams.toString()}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/request-success?status=cancelled&creator=${encodeURIComponent(creatorHandle)}`,
       MerchantReference: merchantReference,
     };

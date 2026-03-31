@@ -166,7 +166,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/tip-success?${successParams.toString()}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
+      ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?tip_failed=true`,
       MerchantReference: merchantReference,
     };
