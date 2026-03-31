@@ -172,16 +172,32 @@ async function generateSignedUrls(
       return items.map((item) => ({ ...item, previewUrl: undefined }));
     }
 
+    const signedUrls = data.signedUrls as { path: string; url: string | null; type: string }[];
+
+    // If items have storagePaths, match them to signed URLs
     const urlMap = new Map<string, { url: string | null; type: string }>();
-    for (const entry of data.signedUrls) {
+    for (const entry of signedUrls) {
       urlMap.set(entry.path, { url: entry.url, type: entry.type });
     }
 
-    return items.map((item) => {
+    const matched = items.map((item) => {
       if (!item.storagePath) return item;
       const match = urlMap.get(item.storagePath);
       return match ? { ...item, previewUrl: match.url ?? undefined, type: match.type as 'image' | 'video' } : item;
     });
+
+    // If items were empty/placeholder but we got signed URLs, create items from them
+    const hasRealContent = matched.some((m) => m.previewUrl);
+    if (!hasRealContent && signedUrls.length > 0) {
+      return signedUrls.map((entry, idx) => ({
+        id: `signed-${idx}`,
+        type: (entry.type as 'image' | 'video') || 'image',
+        previewUrl: entry.url ?? undefined,
+        storagePath: entry.path,
+      }));
+    }
+
+    return matched;
   } catch (err) {
     console.error('[generateSignedUrls] Unexpected error:', err);
     return items.map((item) => ({ ...item, previewUrl: undefined }));
@@ -312,21 +328,30 @@ const PublicLink = () => {
       const purchaseIdFromRef = paymentRef?.startsWith('link_') ? paymentRef.slice(5) : null;
 
       if (purchaseIdFromRef) {
-        // UGPayments flow: poll DB for the purchase to be confirmed by ConfirmURL callback
         setIsVerifyingPayment(true);
         setIsLoading(false);
 
-        let verifiedPurchase = await verifyPurchase(purchaseIdFromRef, signal);
+        let verifiedPurchase: PurchaseData | null = null;
 
-        // Fallback: if ConfirmURL callback hasn't fired but we have a TransactionID
-        // from the redirect URL, verify and finalize the purchase ourselves
+        // Quick check: is the purchase already confirmed? (ConfirmURL may have fired)
+        const { data: quickCheck } = await supabaseAnon
+          .from('purchases')
+          .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
+          .eq('id', purchaseIdFromRef)
+          .eq('status', 'succeeded')
+          .maybeSingle();
+
+        if (quickCheck) {
+          verifiedPurchase = quickCheck as PurchaseData;
+        }
+
+        // If not yet confirmed and we have a TransactionID, verify it ourselves
         if (!verifiedPurchase && ugpTransactionId && !signal.aborted) {
           try {
             const { data: verifyData } = await supabase.functions.invoke('verify-payment', {
               body: { purchase_id: purchaseIdFromRef, transaction_id: ugpTransactionId },
             });
             if (verifyData?.verified) {
-              // Re-fetch the purchase now that it's been confirmed
               const { data: confirmedPurchase } = await supabaseAnon
                 .from('purchases')
                 .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
@@ -340,6 +365,11 @@ const PublicLink = () => {
           } catch (fallbackErr) {
             console.warn('verify-payment fallback failed:', fallbackErr);
           }
+        }
+
+        // Last resort: if no TransactionID but payment_success=true, short poll
+        if (!verifiedPurchase && paymentSuccess && !signal.aborted) {
+          verifiedPurchase = await verifyPurchase(purchaseIdFromRef, signal);
         }
 
         if (signal.aborted) return;
