@@ -221,7 +221,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/request-success?${successParams.toString()}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm?apikey=${Deno.env.get('SUPABASE_ANON_KEY') || ''}`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm?apikey=${Deno.env.get('ANON_KEY') || ''}`,
       DeclinedURL: `${siteUrl}/request-success?status=cancelled&creator=${encodeURIComponent(creatorHandle)}`,
       MerchantReference: merchantReference,
     };
