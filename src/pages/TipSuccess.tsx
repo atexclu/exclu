@@ -189,6 +189,8 @@ const TipSuccess = () => {
   const message = searchParams.get('message');
   const tipId = searchParams.get('tip_id');
   const isGuest = searchParams.get('guest') === '1';
+  const ugpTransactionId = searchParams.get('TransactionID');
+  const merchantRef = searchParams.get('MerchantReference');
   const amountDollars = amountCents > 0 ? (amountCents / 100).toFixed(2) : null;
 
   // Auth state for guest claim flow
@@ -203,6 +205,14 @@ const TipSuccess = () => {
 
   useEffect(() => {
     const load = async () => {
+      // Verify payment in background (fallback if ConfirmURL didn't fire)
+      if (ugpTransactionId && (merchantRef || tipId)) {
+        const ref = merchantRef || (tipId ? `tip_${tipId}` : '');
+        supabase.functions.invoke('verify-payment', {
+          body: { merchant_reference: ref, transaction_id: ugpTransactionId },
+        }).catch(() => {});
+      }
+
       if (handle) {
         const { data } = await supabase
           .from('profiles')

@@ -65,6 +65,16 @@ const AppDashboard = () => {
   useEffect(() => {
     let isMounted = true;
 
+    // Verify subscription payment if returning from QuickPay
+    const subSuccess = searchParams.get('subscription');
+    const ugpTxnId = searchParams.get('TransactionID');
+    const ugpMerchRef = searchParams.get('MerchantReference');
+    if (subSuccess === 'success' && ugpTxnId && ugpMerchRef) {
+      supabase.functions.invoke('verify-payment', {
+        body: { merchant_reference: ugpMerchRef, transaction_id: ugpTxnId },
+      }).catch(() => {});
+    }
+
     const fetchMetrics = async () => {
       setIsLoading(true);
       setError(null);

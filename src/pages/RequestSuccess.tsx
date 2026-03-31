@@ -25,11 +25,20 @@ const RequestSuccess = () => {
   const amountCents = parseInt(searchParams.get('amount') || '0', 10);
   const isNewAccount = searchParams.get('new_account') === '1';
   const isExistingAccount = searchParams.get('existing_account') === '1';
+  const ugpTransactionId = searchParams.get('TransactionID');
+  const merchantRef = searchParams.get('MerchantReference');
   const isSuccess = status === 'success';
   const amountDollars = amountCents > 0 ? (amountCents / 100).toFixed(2) : null;
 
   useEffect(() => {
     const load = async () => {
+      // Verify payment in background (fallback if ConfirmURL didn't fire)
+      if (ugpTransactionId && merchantRef) {
+        supabase.functions.invoke('verify-payment', {
+          body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
+        }).catch(() => {});
+      }
+
       if (handle) {
         const { data } = await supabase
           .from('profiles')

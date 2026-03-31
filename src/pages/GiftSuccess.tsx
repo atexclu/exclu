@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabaseClient';
 
 const GiftSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -9,10 +10,18 @@ const GiftSuccess = () => {
 
   const itemName = searchParams.get('item') ?? 'a gift';
   const creatorHandle = searchParams.get('creator');
+  const ugpTransactionId = searchParams.get('TransactionID');
+  const merchantRef = searchParams.get('MerchantReference');
 
   useEffect(() => {
-    // Scroll to top
     window.scrollTo(0, 0);
+
+    // Verify payment in background (fallback if ConfirmURL didn't fire)
+    if (ugpTransactionId && merchantRef) {
+      supabase.functions.invoke('verify-payment', {
+        body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
+      }).catch(() => {});
+    }
   }, []);
 
   return (
