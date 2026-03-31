@@ -221,7 +221,7 @@ serve(async (req) => {
       ShippingRequired: 'false',
       MembershipRequired: 'false',
       ApprovedURL: `${siteUrl}/request-success?${successParams.toString()}`,
-      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleG53ZXpldGpsYndsdHljY2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyOTcyNjcsImV4cCI6MjA4Mzg3MzI2N30.BwE47MEU7KVm3NWXbX7hK1osCc00dQ0s8Y0Qudh5eyE`,
+      ConfirmURL: `${supabaseUrl}/functions/v1/ugp-confirm`,
       DeclinedURL: `${siteUrl}/request-success?status=cancelled&creator=${encodeURIComponent(creatorHandle)}`,
       MerchantReference: merchantReference,
     };
