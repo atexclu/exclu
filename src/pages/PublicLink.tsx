@@ -1101,8 +1101,9 @@ const PublicLink = () => {
                     )}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center py-20">
-                    <p className="text-sm text-white/40">No media attached to this content yet.</p>
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <Loader2 className="w-6 h-6 text-white/30 animate-spin" />
+                    <p className="text-sm text-white/40">Loading content...</p>
                   </div>
                 )}
               </motion.div>
