@@ -225,51 +225,7 @@ const Profile = () => {
     fetchProfile();
   }, [activeProfile?.id, isAgency]);
 
-  // Load more detailed Stripe Connect requirements (what is missing) when there is a Stripe
-  // account but the status is not complete, so we can guide the creator.
-  useEffect(() => {
-    const loadStripeStatusDetails = async () => {
-      if (!stripeAccountId || stripeConnectStatus === 'complete') {
-        setStripeMissingInfo([]);
-        return;
-      }
-
-      setIsStripeDetailsLoading(true);
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!session?.access_token) {
-          setStripeMissingInfo([]);
-          return;
-        }
-
-        const { data, error } = await supabase.functions.invoke('stripe-connect-status', {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-
-        if (error) {
-          console.error('Error invoking stripe-connect-status', error);
-          setStripeMissingInfo([]);
-          return;
-        }
-
-        const payload = data as any;
-        const friendly = Array.isArray(payload?.friendly_messages) ? payload.friendly_messages : [];
-        setStripeMissingInfo(friendly);
-      } catch (err) {
-        console.error('Error loading Stripe Connect status details', err);
-        setStripeMissingInfo([]);
-      } finally {
-        setIsStripeDetailsLoading(false);
-      }
-    };
-
-    loadStripeStatusDetails();
-  }, [stripeAccountId, stripeConnectStatus]);
+  // Stripe Connect status check removed — replaced by IBAN-based payout setup
 
   const handleAvatarClick = () => {
     avatarInputRef.current?.click();
@@ -1188,15 +1144,6 @@ const Profile = () => {
                             value={bankHolderName}
                             onChange={(e) => setBankHolderName(e.target.value)}
                             placeholder="Jean Dupont"
-                            className="bg-primary/10 border-border text-foreground"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">BIC / SWIFT (optional)</label>
-                          <Input
-                            value={bankBic}
-                            onChange={(e) => setBankBic(e.target.value.toUpperCase())}
-                            placeholder="BNPAFRPP"
                             className="bg-primary/10 border-border text-foreground"
                           />
                         </div>

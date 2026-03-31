@@ -283,44 +283,9 @@ const AppDashboard = () => {
   // We removed the stripe_onboarding=return effect here
   // because the user is now redirected to /app/stripe-validation.
 
+  // handleStripeConnect removed — replaced by IBAN setup in Profile.tsx
   const handleStripeConnect = async () => {
-    setIsConnectingStripe(true);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        toast.error('Please sign in again to connect Stripe.');
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-        headers: {
-          // Prevent the Functions gateway from trying to validate the user JWT
-          // in the Authorization header; we pass it explicitly via x-supabase-auth.
-          Authorization: '',
-          'x-supabase-auth': session.access_token,
-        },
-      });
-
-      if (error) {
-        console.error('Error invoking stripe-connect-onboard', error);
-        throw new Error('Unable to start Stripe onboarding.');
-      }
-
-      const url = (data as any)?.url;
-      if (!url) {
-        throw new Error('Stripe onboarding URL not available.');
-      }
-
-      window.location.href = url;
-    } catch (err: any) {
-      console.error('Error during Stripe Connect', err);
-      toast.error(err?.message || 'Unable to connect Stripe.');
-    } finally {
-      setIsConnectingStripe(false);
-    }
+    window.location.href = '/app/settings#payments';
   };
 
   const handleDismissStripeModal = () => {
