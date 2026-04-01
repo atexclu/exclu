@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ const GiftSuccess = () => {
   const creatorHandle = searchParams.get('creator');
   const ugpTransactionId = searchParams.get('TransactionID');
   const merchantRef = searchParams.get('MerchantReference');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -22,6 +23,10 @@ const GiftSuccess = () => {
         body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
       }).catch(() => {});
     }
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) setIsLoggedIn(true);
+    });
   }, []);
 
   return (
@@ -78,13 +83,23 @@ const GiftSuccess = () => {
               Back to profile
             </Button>
           )}
-          <Button
-            onClick={() => navigate('/')}
-            variant="outline"
-            className="flex-1 border-white/20 text-white hover:bg-white/10 rounded-full h-12"
-          >
-            Explore Exclu
-          </Button>
+          {isLoggedIn ? (
+            <Button
+              onClick={() => navigate('/fan?tab=tips')}
+              variant="outline"
+              className="flex-1 border-white/20 text-white hover:bg-white/10 rounded-full h-12"
+            >
+              My Tips & Gifts
+            </Button>
+          ) : (
+            <Button
+              onClick={() => navigate('/')}
+              variant="outline"
+              className="flex-1 border-white/20 text-white hover:bg-white/10 rounded-full h-12"
+            >
+              Explore Exclu
+            </Button>
+          )}
         </motion.div>
       </motion.div>
     </div>

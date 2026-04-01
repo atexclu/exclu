@@ -21,13 +21,14 @@ interface MessageBubbleProps {
   teamSenderInfo?: { display_name: string | null; avatar_url: string | null } | null;
   conversationId?: string;
   viewerRole?: 'fan' | 'creator' | 'chatter';
+  onDeliver?: (requestId: string) => void;
 }
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId, viewerRole = 'fan' }: MessageBubbleProps) {
+export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId, viewerRole = 'fan', onDeliver }: MessageBubbleProps) {
   const rightAligned = isTeam ?? isOwn;
 
   // Custom request rich card
@@ -38,6 +39,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
           requestId={message.custom_request_id}
           viewerRole={viewerRole}
           fallbackContent={message.content}
+          onDeliver={onDeliver}
         />
       </div>
     );

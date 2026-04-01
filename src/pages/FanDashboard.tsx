@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -129,6 +129,8 @@ const FanDashboard = () => {
   const [fanDisplayName, setFanDisplayName] = useState<string | null>(null);
   const [fanAvatarUrl, setFanAvatarUrl] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Messages tab
   const [fanConversations, setFanConversations] = useState<Conversation[]>([]);
@@ -318,6 +320,47 @@ const FanDashboard = () => {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/');
+  };
+
+  const handleFanAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !userId) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const fileExt = file.name.split('.').pop() ?? 'jpg';
+      const filePath = `avatars/${userId}/fan-avatar.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+      if (uploadError) {
+        toast.error('Failed to upload avatar.');
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', userId);
+
+      if (updateError) {
+        toast.error('Failed to save avatar.');
+        return;
+      }
+
+      setFanAvatarUrl(newAvatarUrl);
+      toast.success('Profile photo updated!');
+    } catch {
+      toast.error('Failed to upload avatar.');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -1139,7 +1182,19 @@ const FanDashboard = () => {
 
                 {/* Profile card */}
                 <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border/60 bg-muted flex-shrink-0">
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFanAvatarUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={isUploadingAvatar}
+                    className="relative w-16 h-16 rounded-2xl overflow-hidden border border-border/60 bg-muted flex-shrink-0 group cursor-pointer"
+                  >
                     {fanAvatarUrl ? (
                       <img src={fanAvatarUrl} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
@@ -1147,12 +1202,21 @@ const FanDashboard = () => {
                         <User className="w-7 h-7 text-muted-foreground" />
                       </div>
                     )}
-                  </div>
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera className="w-5 h-5 text-white" />
+                    </div>
+                    {isUploadingAvatar && (
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      </div>
+                    )}
+                  </button>
                   <div className="flex-1 min-w-0">
                     <p className="text-base font-semibold text-foreground truncate">
                       {fanDisplayName || userEmail?.split('@')[0] || 'Fan'}
                     </p>
                     <p className="text-sm text-muted-foreground truncate">{userEmail}</p>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">Click photo to change</p>
                   </div>
                 </div>
 

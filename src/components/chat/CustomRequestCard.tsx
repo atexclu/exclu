@@ -15,6 +15,7 @@ interface CustomRequestCardProps {
   requestId: string;
   viewerRole: 'fan' | 'creator' | 'chatter';
   fallbackContent: string | null;
+  onDeliver?: (requestId: string) => void;
 }
 
 interface RequestData {
@@ -36,7 +37,7 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   cancelled: { label: 'Cancelled', color: 'text-gray-400 bg-gray-500/15' },
 };
 
-export function CustomRequestCard({ requestId, viewerRole, fallbackContent }: CustomRequestCardProps) {
+export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDeliver }: CustomRequestCardProps) {
   const [request, setRequest] = useState<RequestData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActing, setIsActing] = useState(false);
@@ -54,12 +55,9 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent }: Cu
       });
   }, [requestId]);
 
-  const handleAccept = async () => {
-    if (!request) return;
-
-    // Creator must first upload content — redirect to link creation
-    // For now, show a toast explaining the flow
-    toast.info('To accept, create a content link first, then come back to deliver it.', { duration: 5000 });
+  const handleDeliver = () => {
+    if (!request || !onDeliver) return;
+    onDeliver(request.id);
   };
 
   const handleRefuse = async () => {
@@ -167,8 +165,8 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent }: Cu
             </button>
             <button
               type="button"
-              onClick={handleAccept}
-              disabled={isActing}
+              onClick={handleDeliver}
+              disabled={isActing || !onDeliver}
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25 transition-all disabled:opacity-40"
             >
               <Upload className="w-3 h-3" />
@@ -176,6 +174,19 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent }: Cu
             </button>
           </div>
         </div>
+      )}
+
+      {/* Fan view — delivered content link */}
+      {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
+        <a
+          href={`/unlock/${request.delivery_link_id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25 transition-all"
+        >
+          <DollarSign className="w-3 h-3" />
+          View content
+        </a>
       )}
 
       {/* Fan view — status info */}

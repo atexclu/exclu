@@ -20,6 +20,7 @@ import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCreateLink } from './ChatCreateLink';
 import { ChatCustomRequest } from './ChatCustomRequest';
 import { ChatTipForm } from './ChatTipForm';
+import { ChatRequestDelivery } from './ChatRequestDelivery';
 import { FanTagsRow } from './FanTagsRow';
 import type { Conversation } from '@/types/chat';
 
@@ -43,6 +44,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [showCreateLink, setShowCreateLink] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [showTipForm, setShowTipForm] = useState(false);
+  const [deliveryRequestId, setDeliveryRequestId] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -79,7 +81,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         setCreatorInfo({
           location: data.location,
           show_available_now: data.show_available_now === true,
-          tips_enabled: data.tips_enabled === true && parent?.stripe_connect_status === 'complete',
+          tips_enabled: data.tips_enabled === true,
           custom_requests_enabled: data.custom_requests_enabled === true,
           display_name: data.display_name,
           is_premium: parent?.is_creator_subscribed === true,
@@ -253,12 +255,14 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
-          {senderType !== 'fan' && conversation.total_revenue_cents > 0 && (
-            <p className="text-[11px] text-green-400/70">
-              ${(conversation.total_revenue_cents / 100).toFixed(2)} earned
-            </p>
-          )}
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
+            {senderType !== 'fan' && conversation.total_revenue_cents > 0 && (
+              <span className="text-[11px] text-green-400/70 flex-shrink-0">
+                ${(conversation.total_revenue_cents / 100).toFixed(2)}
+              </span>
+            )}
+          </div>
           {/* Creator info for fan view: location + available now */}
           {senderType === 'fan' && creatorInfo && (creatorInfo.location || (creatorInfo.show_available_now && creatorInfo.is_premium)) && (
             <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -397,6 +401,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               teamSenderInfo={teamSenderInfo}
               conversationId={senderType === 'fan' ? conversation.id : undefined}
               viewerRole={senderType}
+              onDeliver={senderType !== 'fan' ? (reqId) => setDeliveryRequestId(reqId) : undefined}
             />
           );
         })}
@@ -496,6 +501,22 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             profileId={conversation.profile_id}
             creatorName={fanName}
             onClose={() => setShowTipForm(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Request delivery panel (creator/chatter only) */}
+      <AnimatePresence>
+        {deliveryRequestId && (
+          <ChatRequestDelivery
+            profileId={conversation.profile_id}
+            requestId={deliveryRequestId}
+            onDelivered={() => {
+              setDeliveryRequestId(null);
+              // Refresh messages to show the delivery update
+              window.location.reload();
+            }}
+            onClose={() => setDeliveryRequestId(null)}
           />
         )}
       </AnimatePresence>

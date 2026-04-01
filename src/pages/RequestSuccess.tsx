@@ -283,7 +283,7 @@ const RequestSuccess = () => {
                 <Button
                   type="button"
                   className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
-                  onClick={() => navigate('/fan')}
+                  onClick={() => navigate('/fan?tab=requests')}
                 >
                   <MessageSquare className="w-4 h-4" />
                   View my requests

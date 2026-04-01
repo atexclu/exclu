@@ -230,7 +230,7 @@ async function verifyGift(recordId: string, transactionId: string, cors: Record<
 async function verifyRequest(recordId: string, transactionId: string, cors: Record<string, string>) {
   const { data: request } = await supabase
     .from('custom_requests')
-    .select('id, status, creator_id, proposed_amount_cents, description, fan_email, is_new_account')
+    .select('id, status, creator_id, fan_id, profile_id, proposed_amount_cents, description, fan_email, is_new_account')
     .eq('id', recordId)
     .single();
 
@@ -259,10 +259,61 @@ async function verifyRequest(recordId: string, transactionId: string, cors: Reco
           <h2>New paid request</h2>
           <p>A fan sent you a custom request with <strong style="color:#a3e635;">${amtFmt}</strong> on hold.</p>
           <p style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;color:#f1f5f9;font-style:italic;">"${escapeHtml(trimDesc)}"</p>
-          <p style="color:#94a3b8;font-size:13px;">You have 6 days to accept or decline. Go to your dashboard to respond.</p>
-          <a href="${siteUrl}/app/tips-requests?tab=requests" style="display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635);color:#020617;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;margin-top:12px;">Review request</a>
+          <p style="color:#94a3b8;font-size:13px;">You have 6 days to accept or decline. Go to your chat to respond.</p>
+          <a href="${siteUrl}/app/chat" style="display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635);color:#020617;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;margin-top:12px;">Review request in chat</a>
         </div>`,
       });
+    }
+  }
+
+  // Create conversation notification with rich custom_request message
+  if (request.fan_id && request.profile_id) {
+    try {
+      const amtFmt = formatUSD(request.proposed_amount_cents);
+      const trimDesc = (request.description || '').slice(0, 80);
+
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('fan_id', request.fan_id)
+        .eq('profile_id', request.profile_id)
+        .maybeSingle();
+
+      let conversationId = conv?.id;
+      const msgContent = `📩 Custom request for ${amtFmt}: "${trimDesc}"`;
+
+      if (!conversationId) {
+        const { data: newConv } = await supabase
+          .from('conversations')
+          .insert({
+            fan_id: request.fan_id,
+            profile_id: request.profile_id,
+            status: 'active',
+            last_message_at: new Date().toISOString(),
+            last_message_preview: msgContent.slice(0, 100),
+          })
+          .select('id')
+          .single();
+        conversationId = newConv?.id;
+      }
+
+      if (conversationId) {
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          sender_type: 'system',
+          sender_id: request.creator_id,
+          content: msgContent,
+          content_type: 'custom_request',
+          custom_request_id: recordId,
+        });
+
+        await supabase.from('conversations').update({
+          last_message_at: new Date().toISOString(),
+          last_message_preview: msgContent.slice(0, 100),
+        }).eq('id', conversationId);
+      }
+    } catch (err) {
+      console.error('verify-payment: Error creating conversation notification (non-fatal):', err);
     }
   }
 
