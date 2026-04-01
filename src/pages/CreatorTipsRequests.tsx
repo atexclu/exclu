@@ -474,7 +474,7 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
 ───────────────────────────────────────────────────────────────────────────── */
 
 const CreatorTipsRequests = () => {
-  const [activeTab, setActiveTab] = useState<'conversations' | 'requests'>('conversations');
+  const [activeTab, setActiveTab] = useState<'conversations' | 'requests'>('requests');
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -602,43 +602,22 @@ const CreatorTipsRequests = () => {
     }
   };
 
-  const tabs = [
-    { key: 'conversations' as const, label: 'Conversations', icon: MessagesSquare, badge: 0 },
-    { key: 'requests' as const, label: 'Requests', icon: MessageSquare, badge: pendingRequests },
-  ];
-
   return (
     <AppShell>
       <main className="px-4 pb-16 max-w-6xl mx-auto">
         <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Chat</h1>
-            <p className="text-exclu-space text-xs sm:text-sm max-w-xl">Manage conversations and custom content requests from your fans</p>
-          </div>
-        </section>
-
-        {/* Tab toggle */}
-        <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 mb-6">
-          {tabs.map(({ key, label, badge }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-medium transition-all ${
-                activeTab === key
-                  ? 'bg-primary text-white dark:text-black shadow-sm'
-                  : 'hover:text-exclu-cloud text-exclu-space/80'
-              }`}
-            >
-              {label}
-              {badge > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-primary-foreground/20 text-[10px] font-bold min-w-[18px] text-center">
-                  {badge}
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Custom Requests</h1>
+            <p className="text-exclu-space text-xs sm:text-sm max-w-xl">
+              Manage paid content requests from your fans.
+              {pendingRequests > 0 && (
+                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-semibold">
+                  {pendingRequests} pending
                 </span>
               )}
-            </button>
-          ))}
-        </div>
+            </p>
+          </div>
+        </section>
 
         {/* Loading */}
         {isLoading && (
@@ -648,26 +627,8 @@ const CreatorTipsRequests = () => {
         )}
 
         {/* Conversations Tab — coming soon */}
-        {!isLoading && activeTab === 'conversations' && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center py-24 gap-4 text-center"
-          >
-            <div className="w-16 h-16 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 flex items-center justify-center">
-              <Clock className="w-7 h-7 text-exclu-space/50" />
-            </div>
-            <div className="space-y-1.5">
-              <p className="text-base font-semibold text-exclu-cloud">Conversations — Coming soon</p>
-              <p className="text-sm text-exclu-space/60 max-w-xs">
-                Direct messaging with your fans is on the way. Stay tuned.
-              </p>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Requests Tab */}
-        {!isLoading && activeTab === 'requests' && (
+        {/* Requests */}
+        {!isLoading && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
