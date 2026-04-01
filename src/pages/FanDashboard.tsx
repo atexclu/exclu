@@ -234,7 +234,7 @@ const FanDashboard = () => {
     // Fetch custom requests with delivery link slug (exclude incomplete checkouts)
     const { data: reqData } = await supabase
       .from('custom_requests')
-      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, delivery_link:links!custom_requests_delivery_link_id_fkey(slug), creator:profiles!custom_requests_creator_id_fkey(display_name, handle, avatar_url)')
+      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, delivery_link:links!custom_requests_delivery_link_id_fkey(slug), creator:profiles!creator_id(display_name, handle, avatar_url)')
       .eq('fan_id', uid)
       .neq('status', 'pending_payment')
       .order('created_at', { ascending: false })

@@ -157,7 +157,7 @@ const AppDashboard = () => {
         // Tips revenue — fetch full details for the Tips tab display
         const tipsQuery = supabase
           .from('tips')
-          .select('id, amount_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)')
+          .select('id, amount_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!fan_id(display_name, avatar_url)')
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
         const { data: tipsData } = activeProfile?.id

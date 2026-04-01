@@ -525,12 +525,12 @@ const CreatorTipsRequests = () => {
     const profileFilter = activeProfile?.id;
 
     const tipsQuery = profileFilter
-      ? supabase.from('tips').select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)').eq('profile_id', profileFilter).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100)
-      : supabase.from('tips').select('*, fan:profiles!tips_fan_id_fkey(display_name, avatar_url)').eq('creator_id', uid).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100);
+      ? supabase.from('tips').select('*, fan:profiles!fan_id(display_name, avatar_url)').eq('profile_id', profileFilter).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100)
+      : supabase.from('tips').select('*, fan:profiles!fan_id(display_name, avatar_url)').eq('creator_id', uid).eq('status', 'succeeded').order('created_at', { ascending: false }).limit(100);
 
     const requestsQuery = profileFilter
-      ? supabase.from('custom_requests').select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('profile_id', profileFilter).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100)
-      : supabase.from('custom_requests').select('*, fan:profiles!custom_requests_fan_id_fkey(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('creator_id', uid).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100);
+      ? supabase.from('custom_requests').select('*, fan:profiles!fan_id(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('profile_id', profileFilter).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100)
+      : supabase.from('custom_requests').select('*, fan:profiles!fan_id(display_name, avatar_url), delivery_link:links!custom_requests_delivery_link_id_fkey(id, slug)').eq('creator_id', uid).neq('status', 'pending_payment').order('created_at', { ascending: false }).limit(100);
 
     const [tipsResult, requestsResult] = await Promise.all([tipsQuery, requestsQuery]);
 
