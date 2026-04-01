@@ -515,7 +515,7 @@ const CreatorPublic = () => {
         .maybeSingle();
 
       if (prof?.is_creator) {
-        toast.error('Connecte-toi avec un compte fan pour envoyer un message.');
+        navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
         return;
       }
 
