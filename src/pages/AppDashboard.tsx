@@ -69,10 +69,25 @@ const AppDashboard = () => {
     const subSuccess = searchParams.get('subscription');
     const ugpTxnId = searchParams.get('TransactionID');
     const ugpMerchRef = searchParams.get('MerchantReference');
-    if (subSuccess === 'success' && ugpTxnId && ugpMerchRef) {
-      supabase.functions.invoke('verify-payment', {
-        body: { merchant_reference: ugpMerchRef, transaction_id: ugpTxnId },
-      }).catch(() => {});
+    if (subSuccess === 'success') {
+      if (ugpTxnId && ugpMerchRef) {
+        supabase.functions.invoke('verify-payment', {
+          body: { merchant_reference: ugpMerchRef, transaction_id: ugpTxnId },
+        }).catch(() => {});
+      }
+      toast.success('Premium subscription activated! You now keep 100% of your revenue.');
+      // Clean URL params
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('subscription');
+      newParams.delete('TransactionID');
+      newParams.delete('MerchantReference');
+      setSearchParams(newParams, { replace: true });
+    }
+    if (searchParams.get('subscription') === 'failed') {
+      toast.error('Subscription payment was not completed. Please try again.');
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('subscription');
+      setSearchParams(newParams, { replace: true });
     }
 
     const fetchMetrics = async () => {
