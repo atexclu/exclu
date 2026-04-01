@@ -139,10 +139,11 @@ const FanDashboard = () => {
   // Request from favorites
   const [requestCreator, setRequestCreator] = useState<FavoriteCreator | null>(null);
 
-  // Creator discovery (shown when no favorites)
-  const [discoveryCreators, setDiscoveryCreators] = useState<{ id: string; username: string; display_name: string | null; avatar_url: string | null; model_categories: string[] | null; }[]>([]);
+  // Creator discovery
+  const [discoveryCreators, setDiscoveryCreators] = useState<{ id: string; user_id: string; username: string; display_name: string | null; avatar_url: string | null; model_categories: string[] | null; }[]>([]);
   const [discoveryFilter, setDiscoveryFilter] = useState<string | null>(null);
   const [discoverySearch, setDiscoverySearch] = useState('');
+  const [showDiscovery, setShowDiscovery] = useState(false);
 
   // Auto-favorite creator from signup redirect
   const creatorFromSignup = searchParams.get('creator');
@@ -246,17 +247,14 @@ const FanDashboard = () => {
       })));
     }
 
-    // Fetch active creators for discovery directory
-    if (!favData || favData.length === 0) {
-      const { data: creatorsData } = await supabase
-        .from('creator_profiles')
-        .select('id, username, display_name, avatar_url, model_categories')
-        .eq('is_active', true)
-        .not('avatar_url', 'is', null)
-        .order('profile_view_count', { ascending: false })
-        .limit(50);
-      if (creatorsData) setDiscoveryCreators(creatorsData);
-    }
+    // Fetch ALL active creators for discovery directory
+    const { data: creatorsData } = await supabase
+      .from('creator_profiles')
+      .select('id, user_id, username, display_name, avatar_url, model_categories')
+      .eq('is_active', true)
+      .not('avatar_url', 'is', null)
+      .order('profile_view_count', { ascending: false });
+    if (creatorsData) setDiscoveryCreators(creatorsData);
 
     // Fetch tips
     const { data: tipsData } = await supabase
@@ -532,27 +530,28 @@ const FanDashboard = () => {
                   </p>
                 </div>
 
-                {favorites.length === 0 ? (
+                {(favorites.length === 0 || showDiscovery) ? (
                   <div>
-                    {/* Discovery header */}
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Compass className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Discover Creators</p>
-                        <p className="text-xs text-muted-foreground">Browse and find creators to follow</p>
-                      </div>
-                    </div>
+                    {/* Back to favorites button (when coming from "Add more") */}
+                    {favorites.length > 0 && showDiscovery && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowDiscovery(false); setDiscoverySearch(''); setDiscoveryFilter(null); }}
+                        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        Back to my creators
+                      </button>
+                    )}
 
-                    {/* Search */}
+                    {/* Tag search */}
                     <div className="relative mb-4">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                       <input
                         type="text"
                         value={discoverySearch}
                         onChange={(e) => setDiscoverySearch(e.target.value)}
-                        placeholder="Search by name…"
+                        placeholder="Search by tag…"
                         className="w-full h-10 pl-9 pr-4 rounded-xl border border-border bg-muted/50 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50"
                       />
                     </div>
@@ -592,11 +591,12 @@ const FanDashboard = () => {
 
                     {/* Creator grid */}
                     {(() => {
+                      const favoriteUserIds = new Set(favorites.map(f => f.creator_id));
                       const filtered = discoveryCreators.filter((c) => {
                         if (discoveryFilter && !(c.model_categories || []).includes(discoveryFilter)) return false;
                         if (discoverySearch.trim()) {
                           const q = discoverySearch.toLowerCase();
-                          return (c.display_name || '').toLowerCase().includes(q) || c.username.toLowerCase().includes(q);
+                          return (c.model_categories || []).some(tag => tag.toLowerCase().includes(q));
                         }
                         return true;
                       });
@@ -608,47 +608,101 @@ const FanDashboard = () => {
                       );
                       return (
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                          {filtered.map((c, i) => (
-                            <motion.div
-                              key={c.id}
-                              initial={{ opacity: 0, scale: 0.92 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              transition={{ duration: 0.3, delay: i * 0.03 }}
-                              className="group relative rounded-2xl overflow-hidden cursor-pointer bg-card border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg"
-                              onClick={() => navigate(`/${c.username}`)}
-                            >
-                              <div className="relative aspect-[3/4] overflow-hidden">
-                                {c.avatar_url ? (
-                                  <motion.img
-                                    src={c.avatar_url}
-                                    alt={c.display_name || c.username}
-                                    className="w-full h-full object-cover"
-                                    whileHover={{ scale: 1.07 }}
-                                    transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
-                                  />
-                                ) : (
-                                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                                    <span className="text-4xl font-bold text-muted-foreground/30">
-                                      {(c.display_name || c.username).charAt(0).toUpperCase()}
-                                    </span>
+                          {filtered.map((c, i) => {
+                            const isFav = favoriteUserIds.has(c.user_id);
+                            return (
+                              <motion.div
+                                key={c.id}
+                                initial={{ opacity: 0, scale: 0.92 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ duration: 0.3, delay: i * 0.03 }}
+                                className="group relative rounded-2xl overflow-hidden cursor-pointer bg-card border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg"
+                                onClick={() => navigate(`/${c.username}`)}
+                              >
+                                <div className="relative aspect-[3/4] overflow-hidden">
+                                  {c.avatar_url ? (
+                                    <motion.img
+                                      src={c.avatar_url}
+                                      alt={c.display_name || c.username}
+                                      className="w-full h-full object-cover"
+                                      whileHover={{ scale: 1.07 }}
+                                      transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-muted flex items-center justify-center">
+                                      <span className="text-4xl font-bold text-muted-foreground/30">
+                                        {(c.display_name || c.username).charAt(0).toUpperCase()}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+
+                                  {/* Heart / favorite button */}
+                                  <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!userId) return;
+                                      if (isFav) {
+                                        const fav = favorites.find(f => f.creator_id === c.user_id);
+                                        if (fav) await handleRemoveFavorite(fav.id);
+                                      } else {
+                                        const { data: inserted, error } = await supabase
+                                          .from('fan_favorites')
+                                          .insert({ fan_id: userId, creator_id: c.user_id })
+                                          .select('id, creator_id')
+                                          .single();
+                                        if (!error && inserted) {
+                                          setFavorites(prev => [...prev, {
+                                            id: inserted.id,
+                                            creator_id: c.user_id,
+                                            creator: { id: c.id, display_name: c.display_name, avatar_url: c.avatar_url, handle: c.username, tips_enabled: false, custom_requests_enabled: false },
+                                          }]);
+                                          toast.success('Added to favorites');
+                                        } else if (error && error.code !== '23505') {
+                                          toast.error('Failed to add favorite');
+                                        }
+                                      }
+                                    }}
+                                    className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center transition-all z-10 ${
+                                      isFav
+                                        ? 'bg-red-500/90 text-white shadow-lg'
+                                        : 'bg-black/50 backdrop-blur-sm text-white/70 hover:text-red-400 hover:bg-black/70 opacity-0 group-hover:opacity-100'
+                                    }`}
+                                  >
+                                    <Heart className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
+                                  </button>
+
+                                  <div className="absolute bottom-0 inset-x-0 p-3">
+                                    <p className="text-sm font-semibold text-white leading-tight truncate">
+                                      {c.display_name || c.username}
+                                    </p>
+                                    <p className="text-[11px] text-white/60 truncate">@{c.username}</p>
                                   </div>
-                                )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
-                                <div className="absolute bottom-0 inset-x-0 p-3">
-                                  <p className="text-sm font-semibold text-white leading-tight truncate">
-                                    {c.display_name || c.username}
-                                  </p>
-                                  <p className="text-[11px] text-white/60 truncate">@{c.username}</p>
                                 </div>
-                              </div>
-                            </motion.div>
-                          ))}
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       );
                     })()}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div>
+                    {/* Add more button */}
+                    <div className="flex justify-end mb-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl gap-1.5 text-xs border-border/60"
+                        onClick={() => setShowDiscovery(true)}
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        Add more
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {favorites.map((fav, i) => (
                       <motion.div
                         key={fav.id}
@@ -725,6 +779,7 @@ const FanDashboard = () => {
                         </div>
                       </motion.div>
                     ))}
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -739,13 +794,12 @@ const FanDashboard = () => {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
               >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold text-foreground">Tips & Gifts</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">Your support history</p>
-                </div>
-
-                {/* Sub-tab toggle */}
-                <div className="flex gap-1 p-1 rounded-xl bg-muted/50 dark:bg-muted/30 mb-6 w-fit">
+                <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">Tips & Gifts</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Your support history</p>
+                  </div>
+                  <div className="flex gap-1 p-1 rounded-xl bg-muted/50 dark:bg-muted/30 w-fit">
                   <button
                     type="button"
                     onClick={() => setTipsSubTab('tips')}
@@ -772,6 +826,7 @@ const FanDashboard = () => {
                     Gifts
                     {gifts.length > 0 && <span className="text-[10px] ml-0.5 opacity-60">({gifts.length})</span>}
                   </button>
+                  </div>
                 </div>
 
                 {/* Tips sub-tab */}

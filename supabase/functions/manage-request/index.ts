@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { ugpCapture, ugpVoid, UgpApiError } from '../_shared/ugp-api.ts';
+import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -79,7 +80,7 @@ serve(async (req) => {
     // Fetch the request — creator must own it
     const { data: request, error: reqErr } = await supabase
       .from('custom_requests')
-      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id')
+      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id')
       .eq('id', requestId)
       .single();
 
@@ -177,6 +178,12 @@ serve(async (req) => {
         return jsonError('Payment captured but request update failed', 500, corsHeaders);
       }
 
+      // Notify fan via email
+      await notifyFanRequestUpdate(request, 'delivered', creatorResponse);
+
+      // Post status update in chat
+      await postRequestStatusInChat(request, 'delivered', user.id);
+
       return jsonOk({ success: true, status: 'delivered', creator_net_cents: creatorNetCents }, corsHeaders);
     }
 
@@ -214,6 +221,12 @@ serve(async (req) => {
         return jsonError('Payment voided but request update failed', 500, corsHeaders);
       }
 
+      // Notify fan via email
+      await notifyFanRequestUpdate(request, newStatus, creatorResponse);
+
+      // Post status update in chat
+      await postRequestStatusInChat(request, newStatus, user.id);
+
       return jsonOk({ success: true, status: newStatus }, corsHeaders);
     }
 
@@ -223,3 +236,114 @@ serve(async (req) => {
     return jsonError('Internal server error', 500, corsHeaders);
   }
 });
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+async function notifyFanRequestUpdate(
+  request: Record<string, any>,
+  newStatus: string,
+  creatorResponse: string | null,
+) {
+  if (!request.fan_id) return;
+  try {
+    const { data: fanAuth } = await supabase.auth.admin.getUserById(request.fan_id);
+    const fanEmail = fanAuth?.user?.email;
+    if (!fanEmail) return;
+
+    const amount = formatUSD(request.proposed_amount_cents);
+    const desc = (request.description || '').slice(0, 100);
+
+    if (newStatus === 'delivered') {
+      await sendBrevoEmail({
+        to: fanEmail,
+        subject: `Your custom request (${amount}) has been delivered!`,
+        htmlContent: buildFanRequestEmailHtml(
+          'delivered',
+          amount,
+          desc,
+          creatorResponse,
+        ),
+      });
+    } else if (newStatus === 'refused') {
+      await sendBrevoEmail({
+        to: fanEmail,
+        subject: `Your custom request (${amount}) was declined`,
+        htmlContent: buildFanRequestEmailHtml(
+          'refused',
+          amount,
+          desc,
+          creatorResponse,
+        ),
+      });
+    }
+  } catch (err) {
+    console.error('Error notifying fan (non-fatal):', err);
+  }
+}
+
+async function postRequestStatusInChat(
+  request: Record<string, any>,
+  newStatus: string,
+  creatorId: string,
+) {
+  if (!request.fan_id || !request.profile_id) return;
+  try {
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('fan_id', request.fan_id)
+      .eq('profile_id', request.profile_id)
+      .maybeSingle();
+
+    if (!conv?.id) return;
+
+    const amount = formatUSD(request.proposed_amount_cents);
+    const emoji = newStatus === 'delivered' ? '\u2705' : newStatus === 'refused' ? '\u274C' : '\u2139\uFE0F';
+    const label = newStatus === 'delivered' ? 'accepted & delivered' : newStatus;
+    const preview = `${emoji} Request ${label} (${amount})`;
+
+    await supabase.from('messages').insert({
+      conversation_id: conv.id,
+      sender_type: 'system',
+      sender_id: creatorId,
+      content: preview,
+      content_type: 'system',
+    });
+
+    await supabase.from('conversations').update({
+      last_message_at: new Date().toISOString(),
+      last_message_preview: preview.slice(0, 100),
+    }).eq('id', conv.id);
+  } catch (err) {
+    console.error('Error posting request status in chat (non-fatal):', err);
+  }
+}
+
+function buildFanRequestEmailHtml(
+  status: 'delivered' | 'refused',
+  amount: string,
+  description: string,
+  creatorResponse: string | null,
+): string {
+  const isDelivered = status === 'delivered';
+  const heading = isDelivered
+    ? 'Your request has been delivered \u2705'
+    : 'Your request was declined \u274C';
+  const bodyText = isDelivered
+    ? `Great news! The creator has accepted your custom request for <strong>${amount}</strong> and delivered your content.`
+    : `The creator has declined your custom request for <strong>${amount}</strong>. The hold on your payment has been released — you will not be charged.`;
+  const responseBlock = creatorResponse
+    ? `<p style="background:#020617;border:1px solid #1e293b;border-radius:10px;padding:14px 18px;color:#f1f5f9;font-style:italic;">&ldquo;${escapeHtml(creatorResponse)}&rdquo;</p>`
+    : '';
+  const ctaText = isDelivered ? 'View in chat' : 'Back to Exclu';
+  const normalizedSite = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;overflow:hidden}.header{padding:28px 28px 18px;border-bottom:1px solid #1e293b}.header h1{font-size:22px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff;font-weight:600}.button{display:inline-block;background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b}.footer a{color:#a3e635;text-decoration:none}</style></head>
+<body><div class="container"><div class="header"><h1>${heading}</h1></div>
+<div class="content"><p>${bodyText}</p>
+<p style="font-size:13px;color:#94a3b8;">Request: &ldquo;${escapeHtml(description)}&rdquo;</p>
+${responseBlock}
+<a href="${normalizedSite}/fan?tab=messages" class="button">${ctaText}</a></div>
+<div class="footer">&copy; 2026 Exclu<br><a href="${normalizedSite}">exclu</a></div></div></body></html>`;
+}

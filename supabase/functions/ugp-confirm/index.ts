@@ -545,7 +545,7 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
     }
   }
 
-  // Create conversation notification
+  // Create conversation notification with rich custom_request message
   if (request.fan_id) {
     const amtFmt = formatUSD(request.proposed_amount_cents);
     const trimDesc = (request.description || '').slice(0, 80);
@@ -554,6 +554,8 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
       creatorId: request.creator_id,
       profileId: request.profile_id,
       messageContent: `📩 Custom request for ${amtFmt}: "${trimDesc}"`,
+      contentType: 'custom_request',
+      customRequestId: requestId,
     });
   }
 
@@ -726,9 +728,11 @@ async function ensureConversationAndNotify(params: {
   creatorId: string;
   profileId: string | null;
   messageContent: string;
+  contentType?: string;
+  customRequestId?: string;
 }) {
   try {
-    const { fanId, creatorId, profileId, messageContent } = params;
+    const { fanId, creatorId, profileId, messageContent, contentType, customRequestId } = params;
 
     if (!profileId) return;
 
@@ -758,13 +762,16 @@ async function ensureConversationAndNotify(params: {
     }
 
     if (conversationId) {
-      await supabase.from('messages').insert({
+      const msgPayload: Record<string, unknown> = {
         conversation_id: conversationId,
         sender_type: 'system',
         sender_id: creatorId,
         content: messageContent,
-        content_type: 'system',
-      });
+        content_type: contentType || 'system',
+      };
+      if (customRequestId) msgPayload.custom_request_id = customRequestId;
+
+      await supabase.from('messages').insert(msgPayload);
 
       await supabase.from('conversations').update({
         last_message_at: new Date().toISOString(),

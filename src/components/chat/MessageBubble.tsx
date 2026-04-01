@@ -10,6 +10,7 @@
 import { ExternalLink, UserCircle } from 'lucide-react';
 import type { Message } from '@/types/chat';
 import StarBorder from '@/components/ui/StarBorder';
+import { CustomRequestCard } from './CustomRequestCard';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,14 +20,29 @@ interface MessageBubbleProps {
   /** Avatar/name for team messages not sent by the current user */
   teamSenderInfo?: { display_name: string | null; avatar_url: string | null } | null;
   conversationId?: string;
+  viewerRole?: 'fan' | 'creator' | 'chatter';
 }
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId }: MessageBubbleProps) {
+export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId, viewerRole = 'fan' }: MessageBubbleProps) {
   const rightAligned = isTeam ?? isOwn;
+
+  // Custom request rich card
+  if (message.content_type === 'custom_request' && message.custom_request_id) {
+    return (
+      <div className="flex justify-center my-3">
+        <CustomRequestCard
+          requestId={message.custom_request_id}
+          viewerRole={viewerRole}
+          fallbackContent={message.content}
+        />
+      </div>
+    );
+  }
+
   if (message.content_type === 'system') {
     return (
       <div className="flex justify-center my-2">
@@ -58,7 +74,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
         )}
 
         {/* Bulle principale (text only) */}
-        {message.content_type !== 'image' && message.content && (
+        {message.content_type !== 'image' && message.content_type !== 'custom_request' && message.content && (
           <div
             className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed bg-black text-white border border-white/20 ${
               rightAligned ? 'rounded-br-sm' : 'rounded-bl-sm'

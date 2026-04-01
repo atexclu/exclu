@@ -31,7 +31,8 @@ export type MessageContentType =
   | 'tip_link'
   | 'wishlist_link'
   | 'image'
-  | 'system';
+  | 'system'
+  | 'custom_request';
 
 export type SenderType = 'fan' | 'creator' | 'chatter' | 'system';
 
@@ -46,6 +47,7 @@ export interface Message {
   paid_amount_cents: number | null;
   tip_link_id: string | null;
   wishlist_item_id: string | null;
+  custom_request_id: string | null;
   chatter_ref: string | null;
   is_read: boolean;
   read_at: string | null;

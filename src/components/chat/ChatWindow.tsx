@@ -396,6 +396,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               isTeam={isTeam}
               teamSenderInfo={teamSenderInfo}
               conversationId={senderType === 'fan' ? conversation.id : undefined}
+              viewerRole={senderType}
             />
           );
         })}

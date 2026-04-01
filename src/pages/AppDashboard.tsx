@@ -157,13 +157,28 @@ const AppDashboard = () => {
         // Tips revenue — fetch full details for the Tips tab display
         const tipsQuery = supabase
           .from('tips')
-          .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!fan_id(display_name, avatar_url)')
+          .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_name, fan_id, created_at')
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
         const { data: tipsData } = activeProfile?.id
           ? await tipsQuery.eq('creator_id', user.id).or(`profile_id.eq.${activeProfile.id},profile_id.is.null`)
           : await tipsQuery.eq('creator_id', user.id);
-        const safeTips = tipsData ?? [];
+
+        // Resolve fan profiles separately (tips.fan_id FK → auth.users, not profiles)
+        const rawTips = tipsData ?? [];
+        const fanIds = [...new Set(rawTips.filter((t: any) => t.fan_id).map((t: any) => t.fan_id))];
+        let fanProfiles = new Map<string, { display_name: string | null; avatar_url: string | null }>();
+        if (fanIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', fanIds);
+          (profiles ?? []).forEach((p: any) => fanProfiles.set(p.id, { display_name: p.display_name, avatar_url: p.avatar_url }));
+        }
+        const safeTips = rawTips.map((t: any) => ({
+          ...t,
+          fan: t.fan_id ? fanProfiles.get(t.fan_id) ?? null : null,
+        }));
         const tipsSum = safeTips.reduce((sum: number, t: any) => {
           if (typeof t.creator_net_cents === 'number' && t.creator_net_cents > 0) return sum + t.creator_net_cents;
           return sum + Math.round((t.amount_cents ?? 0) * (1 - rate));
