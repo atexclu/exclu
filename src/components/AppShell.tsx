@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2, FileText, Wrench } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2, FileText, Wrench, DollarSign } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -32,6 +32,7 @@ const baseNavItems: NavItem[] = [
   { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
   { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
   { path: '/app/chat', label: 'Chat', icon: MessageSquare },
+  { path: '/app/tips-requests', label: 'Tips', icon: DollarSign },
   { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
   { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];

@@ -208,17 +208,16 @@ const RequestSuccess = () => {
                   onClick={() => navigate(`/${creator.handle}`)}
                 >
                   {creator.avatar_url && (
-                    <div className="relative h-28 overflow-hidden">
+                    <div className="relative h-16 overflow-hidden">
                       <img
                         src={creator.avatar_url}
                         alt=""
                         className="w-full h-full object-cover object-top"
-                        style={{ filter: 'blur(3px)', transform: 'scale(1.1)' }}
+                        style={{ filter: 'blur(6px)', transform: 'scale(1.2)', opacity: 0.4 }}
                       />
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
                     </div>
                   )}
-                  <div className="flex items-center gap-3 px-4 pb-4 -mt-7 relative">
+                  <div className={`flex items-center gap-3 px-4 pb-4 relative ${creator.avatar_url ? '-mt-5' : 'pt-4'}`}>
                     <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-lime-400/60 flex-shrink-0 shadow-lg shadow-lime-400/20">
                       {creator.avatar_url ? (
                         <img src={creator.avatar_url} alt="" className="w-full h-full object-cover" />
