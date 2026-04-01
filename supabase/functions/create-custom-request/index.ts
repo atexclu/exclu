@@ -336,7 +336,7 @@ serve(async (req) => {
           requestDescription: description,
           proposedAmountFormatted: `$${(proposedAmountCents / 100).toFixed(2)}`,
           expiresAt: expiresDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          dashboardUrl: `${normalizedSiteOrigin}/app/tips`,
+          dashboardUrl: `${normalizedSiteOrigin}/app/tips-requests`,
         });
       }
     } catch (emailErr) {

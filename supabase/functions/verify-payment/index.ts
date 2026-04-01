@@ -260,7 +260,7 @@ async function verifyRequest(recordId: string, transactionId: string, cors: Reco
           <p>A fan sent you a custom request with <strong style="color:#a3e635;">${amtFmt}</strong> on hold.</p>
           <p style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;color:#f1f5f9;font-style:italic;">"${escapeHtml(trimDesc)}"</p>
           <p style="color:#94a3b8;font-size:13px;">You have 6 days to accept or decline. Go to your dashboard to respond.</p>
-          <a href="${siteUrl}/app/tips?tab=requests" style="display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635);color:#020617;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;margin-top:12px;">Review request</a>
+          <a href="${siteUrl}/app/tips-requests?tab=requests" style="display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635);color:#020617;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;margin-top:12px;">Review request</a>
         </div>`,
       });
     }

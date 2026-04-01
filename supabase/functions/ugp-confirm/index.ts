@@ -780,7 +780,7 @@ async function sendCreatorTipEmail(params: {
 <div class="detail-row"><p class="detail-label">Your earnings (after fees)</p><p class="detail-value">${tipNet}</p></div>
 <div class="detail-row"><p class="detail-label">From</p><p class="detail-value">${senderLabel}</p></div></div>
 ${msgBlock}
-<a href="${siteUrl}/app/tips" class="button">View in dashboard</a></div>
+<a href="${siteUrl}/app/tips-requests" class="button">View in dashboard</a></div>
 <div class="footer">© 2026 Exclu — All rights reserved<br><a href="${siteUrl}">exclu</a></div></div></body></html>`,
   });
 }
@@ -827,7 +827,7 @@ function buildRequestNotificationHtml(creatorName: string, amount: string, descr
 <div class="content"><p>Hey <strong>${escapeHtml(creatorName)}</strong>, a fan sent you a custom request with <strong>${amount}</strong> on hold.</p>
 <p style="background:#020617;border:1px solid #1e293b;border-radius:10px;padding:14px 18px;color:#f1f5f9;font-style:italic;">"${escapeHtml(description)}"</p>
 <p style="font-size:13px;color:#94a3b8;">You have 6 days to accept or decline. If you don't respond, the hold will be automatically released.</p>
-<a href="${siteUrl}/app/tips?tab=requests" class="button">Review request</a></div>
+<a href="${siteUrl}/app/tips-requests?tab=requests" class="button">Review request</a></div>
 <div class="footer">© 2026 Exclu<br><a href="${siteUrl}">exclu</a></div></div></body></html>`;
 }
 
