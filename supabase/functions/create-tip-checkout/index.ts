@@ -113,7 +113,16 @@ serve(async (req) => {
     if (amountCents < minTip) return jsonError(`Minimum tip is $${(minTip / 100).toFixed(2)}`, 400, corsHeaders);
     // Payout setup NOT required to receive tips — earnings go to wallet
 
-    // ── Create tip record (pending) ───────────────────────────────────
+    // ── Calculate commission at creation time (locked in) ───────────────
+    const isSubscribed = creator.is_creator_subscribed === true;
+    const commissionRate = isSubscribed ? 0 : 0.10;
+    const platformCommission = Math.round(amountCents * commissionRate);
+    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+    const creatorNetCents = amountCents - platformCommission;
+    const totalPlatformFee = platformCommission + fanProcessingFeeCents;
+    const totalFanPaysCents = amountCents + fanProcessingFeeCents;
+
+    // ── Create tip record (pending, with pre-calculated commission) ───
     const { data: tipRecord, error: tipErr } = await supabase
       .from('tips')
       .insert({
@@ -126,6 +135,8 @@ serve(async (req) => {
         is_anonymous: isAnonymous,
         fan_name: fanName,
         status: 'pending',
+        creator_net_cents: creatorNetCents,
+        platform_fee_cents: totalPlatformFee,
       })
       .select('id')
       .single();
@@ -134,10 +145,6 @@ serve(async (req) => {
       console.error('Error inserting tip:', tipErr);
       return jsonError('Failed to create tip', 500, corsHeaders);
     }
-
-    // ── Calculate total (base + 5% processing fee) ────────────────────
-    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
-    const totalFanPaysCents = amountCents + fanProcessingFeeCents;
     const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
     const merchantReference = `tip_${tipRecord.id}`;

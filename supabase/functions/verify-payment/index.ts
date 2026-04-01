@@ -107,10 +107,10 @@ async function verifyLinkPurchase(recordId: string, transactionId: string, cors:
   if (purchase.status === 'succeeded') return jsonOk({ verified: true, status: 'succeeded' }, cors);
   if (purchase.status !== 'pending') return jsonError('Purchase is not pending', 400, cors);
 
+  // Keep existing access_token from purchase creation — don't regenerate
   await supabase.from('purchases').update({
     status: 'succeeded',
     ugp_transaction_id: transactionId,
-    access_token: crypto.randomUUID(),
   }).eq('id', recordId);
 
   const { data: link } = await supabase.from('links').select('creator_id, title, slug').eq('id', purchase.link_id).single();
@@ -121,8 +121,9 @@ async function verifyLinkPurchase(recordId: string, transactionId: string, cors:
   if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
     try { await supabase.rpc('increment_chatter_earnings', { p_chatter_id: purchase.chat_chatter_id, p_amount_cents: purchase.chatter_earnings_cents }); } catch (e) { console.error('Chatter error:', e); }
   }
-  if (purchase.chat_conversation_id && purchase.amount_cents > 0) {
-    try { await supabase.rpc('increment_conversation_revenue', { p_conversation_id: purchase.chat_conversation_id, p_amount_cents: purchase.amount_cents }); } catch (e) { console.error('Conv revenue error:', e); }
+  const basePriceCents = Math.round(purchase.amount_cents / 1.05);
+  if (purchase.chat_conversation_id && basePriceCents > 0) {
+    try { await supabase.rpc('increment_conversation_revenue', { p_conversation_id: purchase.chat_conversation_id, p_amount_cents: basePriceCents }); } catch (e) { console.error('Conv revenue error:', e); }
   }
 
   if (purchase.buyer_email && link?.slug) {
@@ -145,7 +146,7 @@ async function verifyLinkPurchase(recordId: string, transactionId: string, cors:
 async function verifyTip(recordId: string, transactionId: string, cors: Record<string, string>) {
   const { data: tip } = await supabase
     .from('tips')
-    .select('id, fan_id, creator_id, profile_id, amount_cents, status, message, is_anonymous')
+    .select('id, fan_id, creator_id, profile_id, amount_cents, status, message, is_anonymous, creator_net_cents, platform_fee_cents')
     .eq('id', recordId)
     .single();
 
@@ -153,18 +154,24 @@ async function verifyTip(recordId: string, transactionId: string, cors: Record<s
   if (tip.status === 'succeeded') return jsonOk({ verified: true, status: 'succeeded' }, cors);
   if (tip.status !== 'pending') return jsonError('Tip is not pending', 400, cors);
 
-  const { data: creator } = await supabase.from('profiles').select('id, is_creator_subscribed, display_name').eq('id', tip.creator_id).single();
+  // Use pre-stored commission (locked at checkout time), fallback to recalculation
+  let creatorNet = tip.creator_net_cents || 0;
+  let totalPlatformFee = tip.platform_fee_cents || 0;
 
-  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
-  const platformCommission = Math.round(tip.amount_cents * commissionRate);
-  const fanFee = Math.round(tip.amount_cents * 0.05);
-  const creatorNet = tip.amount_cents - platformCommission;
+  if (!creatorNet && tip.amount_cents > 0) {
+    const { data: creator } = await supabase.from('profiles').select('id, is_creator_subscribed').eq('id', tip.creator_id).single();
+    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+    const platformCommission = Math.round(tip.amount_cents * commissionRate);
+    const fanFee = Math.round(tip.amount_cents * 0.05);
+    creatorNet = tip.amount_cents - platformCommission;
+    totalPlatformFee = platformCommission + fanFee;
+  }
 
   await supabase.from('tips').update({
     status: 'succeeded',
     paid_at: new Date().toISOString(),
     ugp_transaction_id: transactionId,
-    platform_fee_cents: platformCommission + fanFee,
+    platform_fee_cents: totalPlatformFee,
     creator_net_cents: creatorNet,
   }).eq('id', recordId);
 

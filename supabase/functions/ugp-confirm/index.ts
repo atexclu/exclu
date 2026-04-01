@@ -61,6 +61,13 @@ serve(async (req) => {
   const merchantRef = body.MerchantReference || '';
   const amount = body.Amount || '0';
 
+  // ── 1. Verify Key FIRST (before logging to prevent audit log pollution) ──
+  if (confirmKey && body.Key !== confirmKey) {
+    console.error('Invalid Key in ConfirmURL callback. Got:', body.Key?.slice(0, 8) + '...');
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // ── 2. Log raw event (after key validation) ─────────────────────────
   try {
     await supabase.from('payment_events').insert({
       transaction_id: transactionId,
@@ -78,13 +85,6 @@ serve(async (req) => {
       return new Response('OK', { status: 200 });
     }
     console.error('Error logging payment event:', logErr);
-  }
-
-  // ── 2. Verify Key ──────────────────────────────────────────────────
-  if (confirmKey && body.Key !== confirmKey) {
-    console.error('Invalid Key in ConfirmURL callback. Got:', body.Key?.slice(0, 8) + '...');
-    await markEventError(transactionId, 'Invalid Key');
-    return new Response('Unauthorized', { status: 401 });
   }
 
   // ── 3. Parse MerchantReference ─────────────────────────────────────
@@ -176,15 +176,13 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     console.warn(`Amount mismatch for purchase ${purchaseId}: expected ${expectedCents}, received ${receivedCents}`);
   }
 
-  const accessToken = crypto.randomUUID();
   const customerEmail = body.CustomerEmail || purchase.buyer_email || null;
 
-  // Update purchase to succeeded
+  // Update purchase to succeeded (keep existing access_token from creation)
   const { error: updateErr } = await supabase.from('purchases').update({
     status: 'succeeded',
     ugp_transaction_id: body.TransactionID,
     ugp_merchant_reference: body.MerchantReference,
-    access_token: accessToken,
     buyer_email: customerEmail,
   }).eq('id', purchaseId);
 
@@ -233,11 +231,13 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
   }
 
   // Conversation revenue tracking
-  if (purchase.chat_conversation_id && purchase.amount_cents > 0) {
+  // Track conversation revenue using base price (without fan processing fee)
+  const basePriceCents = Math.round(purchase.amount_cents / 1.05);
+  if (purchase.chat_conversation_id && basePriceCents > 0) {
     try {
       await supabase.rpc('increment_conversation_revenue', {
         p_conversation_id: purchase.chat_conversation_id,
-        p_amount_cents: purchase.amount_cents,
+        p_amount_cents: basePriceCents,
       });
     } catch (err) {
       console.error('Error incrementing conversation revenue:', err);
@@ -268,7 +268,7 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
 async function handleTip(tipId: string, body: Record<string, string>) {
   const { data: tip, error: fetchErr } = await supabase
     .from('tips')
-    .select('id, fan_id, creator_id, profile_id, amount_cents, status, message, is_anonymous, fan_name')
+    .select('id, fan_id, creator_id, profile_id, amount_cents, status, message, is_anonymous, fan_name, creator_net_cents, platform_fee_cents')
     .eq('id', tipId)
     .single();
 
@@ -282,18 +282,25 @@ async function handleTip(tipId: string, body: Record<string, string>) {
     return;
   }
 
-  // Calculate commission
+  // Use pre-stored commission from tip creation (locked in at checkout time)
+  // Falls back to recalculation only if values are missing (legacy records)
   const { data: creator } = await supabase
     .from('profiles')
     .select('id, is_creator_subscribed, display_name, handle')
     .eq('id', tip.creator_id)
     .single();
 
-  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
-  const platformCommission = Math.round(tip.amount_cents * commissionRate);
-  const fanFee = Math.round(tip.amount_cents * 0.05);
-  const creatorNet = tip.amount_cents - platformCommission;
-  const totalPlatformFee = platformCommission + fanFee;
+  let creatorNet = tip.creator_net_cents || 0;
+  let totalPlatformFee = tip.platform_fee_cents || 0;
+
+  // Fallback: recalculate if not pre-stored (e.g. legacy records)
+  if (!creatorNet && tip.amount_cents > 0) {
+    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+    const platformCommission = Math.round(tip.amount_cents * commissionRate);
+    const fanFee = Math.round(tip.amount_cents * 0.05);
+    creatorNet = tip.amount_cents - platformCommission;
+    totalPlatformFee = platformCommission + fanFee;
+  }
 
   const customerEmail = body.CustomerEmail || null;
 
@@ -391,20 +398,7 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     creator_net_cents: creatorNet,
   }).eq('id', giftId);
 
-  // Increment wishlist gifted_count
-  await supabase.rpc('increment', {
-    row_id: gift.wishlist_item_id,
-    table_name: 'wishlist_items',
-    column_name: 'gifted_count',
-    amount: 1,
-  }).catch(() => {
-    // Fallback: direct update
-    supabase.from('wishlist_items')
-      .update({ gifted_count: supabase.rpc ? undefined : 1 })
-      .eq('id', gift.wishlist_item_id);
-  });
-
-  // Try simpler increment approach
+  // Increment wishlist gifted_count (read-then-write, single increment)
   const { data: item } = await supabase
     .from('wishlist_items')
     .select('gifted_count')
