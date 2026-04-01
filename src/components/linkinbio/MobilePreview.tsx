@@ -326,7 +326,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                           >
                             <div className="flex items-center gap-2">
                               <Lock className="w-3.5 h-3.5 text-white/60" />
-                              <span className="text-white text-sm font-medium truncate max-w-[140px]">{link.title}</span>
+                              <span className="text-white text-sm font-medium truncate max-w-[110px]">{link.title}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -139,6 +139,11 @@ const FanDashboard = () => {
   // Request from favorites
   const [requestCreator, setRequestCreator] = useState<FavoriteCreator | null>(null);
 
+  // Creator discovery (shown when no favorites)
+  const [discoveryCreators, setDiscoveryCreators] = useState<{ id: string; username: string; display_name: string | null; avatar_url: string | null; model_categories: string[] | null; }[]>([]);
+  const [discoveryFilter, setDiscoveryFilter] = useState<string | null>(null);
+  const [discoverySearch, setDiscoverySearch] = useState('');
+
   // Auto-favorite creator from signup redirect
   const creatorFromSignup = searchParams.get('creator');
   const tabParam = searchParams.get('tab');
@@ -239,6 +244,18 @@ const FanDashboard = () => {
         creator_id: f.creator_id,
         creator: f.creator,
       })));
+    }
+
+    // Fetch active creators for discovery directory
+    if (!favData || favData.length === 0) {
+      const { data: creatorsData } = await supabase
+        .from('creator_profiles')
+        .select('id, username, display_name, avatar_url, model_categories')
+        .eq('is_active', true)
+        .not('avatar_url', 'is', null)
+        .order('profile_view_count', { ascending: false })
+        .limit(50);
+      if (creatorsData) setDiscoveryCreators(creatorsData);
     }
 
     // Fetch tips
@@ -516,16 +533,119 @@ const FanDashboard = () => {
                 </div>
 
                 {favorites.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
-                      <Heart className="w-7 h-7 text-muted-foreground" />
+                  <div>
+                    {/* Discovery header */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <Compass className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Discover Creators</p>
+                        <p className="text-xs text-muted-foreground">Browse and find creators to follow</p>
+                      </div>
                     </div>
-                    <div className="text-center space-y-1">
-                      <p className="text-sm font-medium text-foreground">No creators yet</p>
-                      <p className="text-xs text-muted-foreground max-w-xs">
-                        Visit a creator's profile and interact to add them to your list
-                      </p>
+
+                    {/* Search */}
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        value={discoverySearch}
+                        onChange={(e) => setDiscoverySearch(e.target.value)}
+                        placeholder="Search by name…"
+                        className="w-full h-10 pl-9 pr-4 rounded-xl border border-border bg-muted/50 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
                     </div>
+
+                    {/* Category filters */}
+                    {(() => {
+                      const allCategories = Array.from(new Set(
+                        discoveryCreators.flatMap((c) => c.model_categories || [])
+                      )).sort();
+                      if (allCategories.length === 0) return null;
+                      return (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <button
+                            type="button"
+                            onClick={() => setDiscoveryFilter(null)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                              !discoveryFilter ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            }`}
+                          >
+                            All
+                          </button>
+                          {allCategories.map((cat) => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setDiscoveryFilter(discoveryFilter === cat ? null : cat)}
+                              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors capitalize ${
+                                discoveryFilter === cat ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                              }`}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Creator grid */}
+                    {(() => {
+                      const filtered = discoveryCreators.filter((c) => {
+                        if (discoveryFilter && !(c.model_categories || []).includes(discoveryFilter)) return false;
+                        if (discoverySearch.trim()) {
+                          const q = discoverySearch.toLowerCase();
+                          return (c.display_name || '').toLowerCase().includes(q) || c.username.toLowerCase().includes(q);
+                        }
+                        return true;
+                      });
+                      if (filtered.length === 0) return (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                          <Search className="w-6 h-6 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">No creators found</p>
+                        </div>
+                      );
+                      return (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {filtered.map((c, i) => (
+                            <motion.div
+                              key={c.id}
+                              initial={{ opacity: 0, scale: 0.92 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.3, delay: i * 0.03 }}
+                              className="group relative rounded-2xl overflow-hidden cursor-pointer bg-card border border-border hover:border-primary/50 transition-all duration-300 hover:shadow-lg"
+                              onClick={() => navigate(`/${c.username}`)}
+                            >
+                              <div className="relative aspect-[3/4] overflow-hidden">
+                                {c.avatar_url ? (
+                                  <motion.img
+                                    src={c.avatar_url}
+                                    alt={c.display_name || c.username}
+                                    className="w-full h-full object-cover"
+                                    whileHover={{ scale: 1.07 }}
+                                    transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                                    <span className="text-4xl font-bold text-muted-foreground/30">
+                                      {(c.display_name || c.username).charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+                                <div className="absolute bottom-0 inset-x-0 p-3">
+                                  <p className="text-sm font-semibold text-white leading-tight truncate">
+                                    {c.display_name || c.username}
+                                  </p>
+                                  <p className="text-[11px] text-white/60 truncate">@{c.username}</p>
+                                </div>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">

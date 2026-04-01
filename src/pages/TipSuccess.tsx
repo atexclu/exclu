@@ -670,7 +670,7 @@ const TipSuccess = () => {
                 type="button"
                 variant="ghost"
                 className="w-full rounded-2xl h-11 text-white/40 hover:text-white/70 text-sm gap-2"
-                onClick={() => navigate('/')}
+                onClick={() => navigate(isLoggedIn ? '/fan' : '/')}
               >
                 <ArrowLeft className="w-4 h-4" />
                 Go to home

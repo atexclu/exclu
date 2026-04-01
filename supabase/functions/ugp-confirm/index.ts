@@ -255,6 +255,49 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     }
   }
 
+  // Send creator notification email about the sale
+  if (link.creator_id) {
+    const { data: creator } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .eq('id', link.creator_id)
+      .single();
+
+    if (creator) {
+      const { data: creatorAuth } = await supabase.auth.admin.getUserById(link.creator_id);
+      const creatorEmail = creatorAuth?.user?.email;
+      if (creatorEmail) {
+        await sendCreatorPurchaseEmail({
+          creatorEmail,
+          creatorName: creator.display_name || 'Creator',
+          linkTitle: link.title || 'Untitled link',
+          saleAmount: formatUSD(purchase.amount_cents),
+          saleNet: formatUSD(creatorNet),
+        });
+      }
+    }
+  }
+
+  // Post 'Paid' system message in chat if purchase originated from a conversation
+  if (purchase.chat_conversation_id) {
+    try {
+      const paidMsg = `✅ Paid — "${escapeHtml(link.title || 'Link')}" purchased for ${formatUSD(purchase.amount_cents)}`;
+      await supabase.from('messages').insert({
+        conversation_id: purchase.chat_conversation_id,
+        sender_type: 'system',
+        sender_id: link.creator_id,
+        content: paidMsg,
+        content_type: 'system',
+      });
+      await supabase.from('conversations').update({
+        last_message_at: new Date().toISOString(),
+        last_message_preview: paidMsg.slice(0, 100),
+      }).eq('id', purchase.chat_conversation_id);
+    } catch (err) {
+      console.error('Error posting paid message to conversation (non-fatal):', err);
+    }
+  }
+
   // Check referral bonus ($100 when referred creator reaches $1k net in 90 days)
   await checkReferralBonus(link.creator_id);
 
@@ -753,6 +796,29 @@ async function sendContentAccessEmail(toEmail: string, linkTitle: string, access
   });
 }
 
+async function sendCreatorPurchaseEmail(params: {
+  creatorEmail: string;
+  creatorName: string;
+  linkTitle: string;
+  saleAmount: string;
+  saleNet: string;
+}): Promise<boolean> {
+  const { creatorEmail, creatorName, linkTitle, saleAmount, saleNet } = params;
+  return sendBrevoEmail({
+    to: creatorEmail,
+    subject: `🎉 New sale — "${linkTitle}" on Exclu`,
+    htmlContent: `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>New sale!</title>
+<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;overflow:hidden}.header{padding:28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff}.button{display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635,#bbf7d0);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.details{background-color:#020617;border-radius:10px;border:1px solid #1e293b;overflow:hidden;margin:4px 0 24px}.detail-row{padding:14px 18px;border-bottom:1px solid #1e293b}.detail-row:last-child{border-bottom:none}.detail-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px}.detail-value{font-size:15px;color:#f1f5f9;font-weight:600;margin:0}.amount{font-size:22px;font-weight:800;color:#a3e635}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b;background-color:#020617}.footer a{color:#a3e635;text-decoration:none}</style></head>
+<body><div class="container"><div class="header"><h1>New sale! 🎉</h1></div>
+<div class="content"><p>Hey <strong>${escapeHtml(creatorName)}</strong>, someone just purchased your content on <strong>Exclu</strong>.</p>
+<div class="details"><div class="detail-row"><p class="detail-label">Content</p><p class="detail-value">${escapeHtml(linkTitle)}</p></div>
+<div class="detail-row"><p class="detail-label">Sale amount</p><p class="detail-value amount">${saleAmount}</p></div>
+<div class="detail-row"><p class="detail-label">Your earnings (after fees)</p><p class="detail-value">${saleNet}</p></div></div>
+<a href="${siteUrl}/app" class="button">View in dashboard</a></div>
+<div class="footer">© 2026 Exclu — All rights reserved<br><a href="${siteUrl}">exclu</a></div></div></body></html>`,
+  });
+}
+
 async function sendCreatorTipEmail(params: {
   creatorEmail: string;
   creatorName: string;
@@ -780,7 +846,7 @@ async function sendCreatorTipEmail(params: {
 <div class="detail-row"><p class="detail-label">Your earnings (after fees)</p><p class="detail-value">${tipNet}</p></div>
 <div class="detail-row"><p class="detail-label">From</p><p class="detail-value">${senderLabel}</p></div></div>
 ${msgBlock}
-<a href="${siteUrl}/app/tips-requests" class="button">View in dashboard</a></div>
+<a href="${siteUrl}/app" class="button">View in dashboard</a></div>
 <div class="footer">© 2026 Exclu — All rights reserved<br><a href="${siteUrl}">exclu</a></div></div></body></html>`,
   });
 }
@@ -827,7 +893,7 @@ function buildRequestNotificationHtml(creatorName: string, amount: string, descr
 <div class="content"><p>Hey <strong>${escapeHtml(creatorName)}</strong>, a fan sent you a custom request with <strong>${amount}</strong> on hold.</p>
 <p style="background:#020617;border:1px solid #1e293b;border-radius:10px;padding:14px 18px;color:#f1f5f9;font-style:italic;">"${escapeHtml(description)}"</p>
 <p style="font-size:13px;color:#94a3b8;">You have 6 days to accept or decline. If you don't respond, the hold will be automatically released.</p>
-<a href="${siteUrl}/app/tips-requests?tab=requests" class="button">Review request</a></div>
+<a href="${siteUrl}/app/chat" class="button">Review request in chat</a></div>
 <div class="footer">© 2026 Exclu<br><a href="${siteUrl}">exclu</a></div></div></body></html>`;
 }
 

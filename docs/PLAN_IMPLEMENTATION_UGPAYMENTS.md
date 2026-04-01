@@ -2611,6 +2611,8 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 1.8 | Verifier en DB : `payment_events` | Un enregistrement avec le bon `transaction_id` et `processed=true` | [ ] |
 | 1.9 | Verifier email Brevo | Le fan recoit un email avec le lien d'acces au contenu | [ ] |
 
+VALIDE, tout semble ok
+
 ### 20.2 Test 2 — Achat de lien avec paiement refuse
 
 | Etape | Action | Resultat attendu | Verifie |
@@ -2619,6 +2621,15 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 2.2 | Entrer carte test avec CVV `555` | Paiement refuse | [ ] |
 | 2.3 | Redirect vers `exclu.at/l/{slug}?payment_failed=true` | Toast "Payment was not completed. Please try again." | [ ] |
 | 2.4 | Verifier en DB : `purchases` | Record reste en `status='pending'` (pas de double-creation) | [ ] |
+
+J'obtiens :
+Error
+We apologize, but your payment was unsuccessful. Would you like to try another card?
+If you are still unable to make your payment, please call the
+number on the back of your card.
+Try Again
+
+si je clique sur tryagain, je peux changer la carte, mais par défaut ça ne me redirige pas vers la plateforme.
 
 ### 20.3 Test 3 — Tip depuis le profil public
 
@@ -2635,6 +2646,42 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 3.7 | Verifier wallet createur | Credite du montant tip (moins commission si free plan) | [ ] |
 | 3.8 | Verifier email createur | Notification tip recue via Brevo | [ ] |
 
+Thank You!
+Your payment has been processed.
+Your statement will read: UG*exclu 33745017758
+Please wait while you are redirected to the merchant site to complete your purchase.
+Do not click the back button on your browser. You will automatically be redirected to the merchant website in seconds.
+
+Puis j'ai bien :
+
+Tip sent successfully
+
+$10.00
+sent to your creator
+
+
+
+tbdevpro
+
+@tbdevpro
+
+Your message
+
+"Hey test"
+
+Your support means the world to tbdevpro. Thank you for being part of their journey ✨
+
+Want to stay connected with tbdevpro?
+
+Create an account or log in to track your tips and follow your favorite creators.
+
+Create account
+
+-> Si je tente ensuite de me connecter, j'ai "✓ Tip linked to your account — tbdevpro added to your favorites!"
+Mais ça me connecte pas sur mon compte directement
+au lieu du bouton go to home, faudrait que l'on ai un bouton qui redirige vers l'interface fan vue que je viens de rentrer mail mot de passe je dois être connecté non?
+
+
 ### 20.4 Test 4 — Tip depuis le chat
 
 **Page** : Conversation chat → icone tip
@@ -2645,6 +2692,11 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 4.2 | Entrer montant, cliquer envoyer | Nouvelle fenetre s'ouvre sur QuickPay (chat reste ouvert) | [ ] |
 | 4.3 | Payer dans la nouvelle fenetre | Paiement accepte, fenetre redirige vers tip-success | [ ] |
 | 4.4 | Verifier DB et wallet | Meme verifications que test 3 | [ ] |
+
+
+-> Sur l'interface de chat fan, il y a un problème d'ui où l'on a pas de bordures comme sur le chat du créateur, faut que ce soit la même UI.
+
+-> Je n'ai pas de bouton tip sur l'interface fan chat, je ne peut pas tester de laisser un tip.
 
 ### 20.5 Test 5 — Gift wishlist
 
@@ -2661,6 +2713,9 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 5.7 | Verifier en DB : `gift_purchases` | `status='succeeded'` | [ ] |
 | 5.8 | Verifier en DB : `wishlist_items.gifted_count` | Incremente de 1 | [ ] |
 | 5.9 | Verifier wallet createur | Credite | [ ] |
+
+-> Quand je suis connecté en tant que fan, et que je vais sur le profil publique d'un créateur, je clique sur la wishlist du créateur publique, je clique sur "gift this", je suis directement redirigé vers "https://exclu.at/fan/signup?creator=tbdevpro", alors que je devrais pouvoir payer directement. Une fois que je me connecte il me renvoi vers le profil publique du créateur.
+-> je ne peux pas tester, il faut revoir le processus du gifting pour que cela fonctionne bien, que le createur soit notifié par mail etc, et que ce soit crédité sur sa cagnotte etc.
 
 ### 20.6 Test 6 — Custom request (pre-auth + capture)
 
@@ -2679,6 +2734,24 @@ ETAPE 11 : Nettoyage (Phase 8)
 | 6.9 | Createur uploade du contenu + clique "Accept" | `manage-request` appele avec action='capture' | [ ] |
 | 6.10 | Verifier en DB : `custom_requests` | `status='delivered'`, `delivery_link_id` renseigne | [ ] |
 | 6.11 | Verifier wallet createur | Credite de `creator_net_cents` | [ ] |
+
+-> Quand je fais ma custom request depuis le profil publique du créateur, et que je suis connecté, cela doit préremplir le chammps "your email".
+-> Si je suis déjà connecté, il ne doit pas me demander de mot de passe ducoups. "This email is linked to an existing account. Your request will be associated with it.", ça fonctionne bien.
+
+Une fois que je paye, je suis bien redirigé vers :
+https://exclu.at/request-success?status=success&creator=tbdevpro&amount=2000&TransactionID=26829192&MerchantReference=req_63299db4-6499-4c0a-b2c9-0e52122bd35a
+
+Sur cette page, quand je clique sur view my request, cela doit bien rediriger vers l'onglet "Requests" du fan.
+
+Que se passe-il si l'user créé un compte fan au moment d'envoyer une custom request? Car normalement il est censé confirmé son mail, c'est prevu dans le flow ? Il faut que ce soit bien clair et robuste cette possibilité.
+
+Egalement, je viens de faire cette custom request à un créateur mais il n'a pas été notifié par email de ma custom request.
+
+Vérifie aussi que le paiement est bien pending pendant 6 jours, car je crois moi qu'il a été validé directement, pas mis en pending.
+
+Si une custom request n'est pas réalisée depuis le chat mais depuis le profil créateur, pour le créateur dans son espace, où peux-il l'accepter ou la refuser ?
+
+Quand je retente de faire une custom request, cela se met en erreur, "{"error":"You already have a pending request with this creator"}". Un fan doit pouvoir en faire plusieurs en simultané, peu importe si il y en a déjà une en cours.
 
 ### 20.7 Test 7 — Custom request (decline/void)
 

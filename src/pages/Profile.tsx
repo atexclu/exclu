@@ -386,6 +386,21 @@ const Profile = () => {
   const [isSavingBank, setIsSavingBank] = useState(false);
   const [isEditingBank, setIsEditingBank] = useState(false);
 
+  const validateIban = (iban: string): string | null => {
+    const cleaned = iban.replace(/\s/g, '').toUpperCase();
+    if (!cleaned) return null;
+    if (cleaned.length < 15 || cleaned.length > 34) return 'IBAN must be between 15 and 34 characters';
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: country code + check digits + account number)';
+    // MOD-97 check (ISO 13616)
+    const rearranged = cleaned.slice(4) + cleaned.slice(0, 4);
+    const numStr = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
+    let remainder = numStr.match(/.{1,7}/g)!.reduce((acc, chunk) => String(Number(acc + chunk) % 97), '');
+    if (Number(remainder) !== 1) return 'Invalid IBAN check digits';
+    return null;
+  };
+  const ibanError = validateIban(bankIban);
+  const isIbanValid = bankIban.replace(/\s/g, '').length > 0 && !ibanError;
+
   const handleSaveBankDetails = async () => {
     setIsSavingBank(true);
     try {
@@ -1130,7 +1145,7 @@ const Profile = () => {
                               <p className="text-xs text-muted-foreground">
                                 {payoutSetupComplete
                                   ? `IBAN: ••••${profileData?.bank_iban?.slice(-4) || ''}`
-                                  : 'Set up your bank details in the Subscriptions tab to withdraw funds.'}
+                                  : 'Set up your bank details below to withdraw funds.'}
                               </p>
                             </div>
                           </div>
@@ -1153,6 +1168,132 @@ const Profile = () => {
                             )}
                           </Button>
                         </div>
+                      </div>
+
+                      {/* Payout Account Card (IBAN) */}
+                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Payout Account</h2>
+
+                        {payoutSetupComplete && !isEditingBank ? (
+                          <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-green-500/15">
+                              <Landmark className="w-6 h-6 text-green-400" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-base font-semibold text-foreground">Bank Account</h3>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/20 text-[10px] text-green-400 font-medium">
+                                  <Check className="w-3 h-3" />
+                                  Connected
+                                </span>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                Your bank account is set up. You can receive payouts from your wallet.
+                              </p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">IBAN</span>
+                                  <span className="text-foreground font-mono text-xs">
+                                    {profileData?.bank_iban
+                                      ? `${profileData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profileData.bank_iban.slice(-4)}`
+                                      : '••••'}
+                                  </span>
+                                </div>
+                                {profileData?.bank_holder_name && (
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Holder</span>
+                                    <span className="text-foreground">{profileData.bank_holder_name}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60">
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted">
+                              <Landmark className="w-6 h-6 text-muted-foreground" />
+                            </div>
+                            <div className="flex-1">
+                              <h3 className="text-base font-semibold text-foreground">
+                                {isEditingBank ? 'Edit Bank Details' : 'Set Up Payouts'}
+                              </h3>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                Add your bank account details to receive payouts from your earnings.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {(!payoutSetupComplete || isEditingBank) && (
+                          <div className="mt-4 space-y-3">
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">IBAN</label>
+                              <Input
+                                value={bankIban}
+                                onChange={(e) => setBankIban(e.target.value.toUpperCase())}
+                                placeholder="FR76 1234 5678 9012 3456 7890 123"
+                                className={`bg-muted/50 border-border text-foreground ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                              />
+                              {bankIban && ibanError && (
+                                <p className="text-xs text-red-500 mt-1">{ibanError}</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Account holder name</label>
+                              <Input
+                                value={bankHolderName}
+                                onChange={(e) => setBankHolderName(e.target.value)}
+                                placeholder="Jean Dupont"
+                                className="bg-muted/50 border-border text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">BIC / SWIFT <span className="text-muted-foreground font-normal">(recommended for international transfers)</span></label>
+                              <Input
+                                value={bankBic}
+                                onChange={(e) => setBankBic(e.target.value.toUpperCase())}
+                                placeholder="BNPAFRPP"
+                                className="bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50"
+                              />
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <Button
+                                onClick={handleSaveBankDetails}
+                                disabled={!isIbanValid || !bankHolderName || isSavingBank}
+                                className="rounded-xl gap-2"
+                              >
+                                <Landmark className="w-4 h-4" />
+                                {isSavingBank ? 'Saving...' : 'Save bank details'}
+                              </Button>
+                              {isEditingBank && (
+                                <Button
+                                  onClick={() => setIsEditingBank(false)}
+                                  variant="outline"
+                                  className="rounded-xl"
+                                >
+                                  Cancel
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {payoutSetupComplete && !isEditingBank && (
+                          <div className="mt-4">
+                            <Button
+                              onClick={() => {
+                                setIsEditingBank(true);
+                                setBankIban(profileData?.bank_iban || '');
+                                setBankHolderName(profileData?.bank_holder_name || '');
+                                setBankBic(profileData?.bank_bic || '');
+                              }}
+                              variant="outline"
+                              className="rounded-xl"
+                            >
+                              Edit bank details
+                            </Button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Cashout History */}
@@ -1290,133 +1431,6 @@ const Profile = () => {
                     </div>
                   </div>
 
-                  {/* Payout Account Card (IBAN) */}
-                  <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                    <h2 className="text-lg font-semibold text-exclu-cloud mb-4">Payout Account</h2>
-
-                    {payoutSetupComplete && !isEditingBank ? (
-                      /* ── Connected state ── */
-                      <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-500/15">
-                          <Landmark className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-semibold text-exclu-cloud">Bank Account</h3>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 font-medium">
-                              <Check className="w-3 h-3" />
-                              Connected
-                            </span>
-                          </div>
-                          <p className="text-sm text-exclu-space/80 mt-1">
-                            Your bank account is set up. You can receive payouts from your wallet.
-                          </p>
-                          <div className="mt-2 space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-exclu-space/60">IBAN</span>
-                              <span className="text-exclu-cloud font-mono text-xs">
-                                {profileData?.bank_iban
-                                  ? `${profileData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profileData.bank_iban.slice(-4)}`
-                                  : '••••'}
-                              </span>
-                            </div>
-                            {profileData?.bank_holder_name && (
-                              <div className="flex justify-between">
-                                <span className="text-exclu-space/60">Holder</span>
-                                <span className="text-exclu-cloud">{profileData.bank_holder_name}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* ── Setup / Edit state ── */
-                      <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-exclu-phantom/30">
-                          <Landmark className="w-6 h-6 text-exclu-space" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-base font-semibold text-exclu-cloud">
-                            {isEditingBank ? 'Edit Bank Details' : 'Set Up Payouts'}
-                          </h3>
-                          <p className="text-sm text-exclu-space/80 mt-1">
-                            Add your bank account details to receive payouts from your earnings.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* IBAN Form (shown when not set up, or editing) */}
-                    {(!payoutSetupComplete || isEditingBank) && (
-                      <div className="mt-4 space-y-3">
-                        <div>
-                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">IBAN</label>
-                          <Input
-                            value={bankIban}
-                            onChange={(e) => setBankIban(e.target.value.toUpperCase())}
-                            placeholder="FR76 1234 5678 9012 3456 7890 123"
-                            className="bg-primary/10 border-border text-foreground"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">Account holder name</label>
-                          <Input
-                            value={bankHolderName}
-                            onChange={(e) => setBankHolderName(e.target.value)}
-                            placeholder="Jean Dupont"
-                            className="bg-primary/10 border-border text-foreground"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">BIC / SWIFT <span className="text-exclu-space/50 font-normal">(recommended for international transfers)</span></label>
-                          <Input
-                            value={bankBic}
-                            onChange={(e) => setBankBic(e.target.value.toUpperCase())}
-                            placeholder="BNPAFRPP"
-                            className="bg-primary/10 border-border text-foreground placeholder:text-exclu-space/30"
-                          />
-                        </div>
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            onClick={handleSaveBankDetails}
-                            variant="hero"
-                            disabled={!bankIban || !bankHolderName || isSavingBank}
-                            className="rounded-full"
-                          >
-                            <Landmark className="w-4 h-4 mr-2" />
-                            {isSavingBank ? 'Saving...' : 'Save bank details'}
-                          </Button>
-                          {isEditingBank && (
-                            <Button
-                              onClick={() => setIsEditingBank(false)}
-                              variant="outline"
-                              className="rounded-full border-exclu-arsenic/60"
-                            >
-                              Cancel
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Edit button when connected */}
-                    {payoutSetupComplete && !isEditingBank && (
-                      <div className="mt-4">
-                        <Button
-                          onClick={() => {
-                            setIsEditingBank(true);
-                            setBankIban(profileData?.bank_iban || '');
-                            setBankHolderName(profileData?.bank_holder_name || '');
-                            setBankBic(profileData?.bank_bic || '');
-                          }}
-                          variant="outline"
-                          className="rounded-full border-exclu-arsenic/60"
-                        >
-                          Edit bank details
-                        </Button>
-                      </div>
-                    )}
-                  </div>
                 </motion.div>
               )}
 

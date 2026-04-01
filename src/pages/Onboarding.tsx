@@ -552,6 +552,10 @@ const Onboarding = () => {
             avatar_url: finalAvatarUrl,
             aurora_gradient: auroraGradient,
             model_categories: selectedCategories.length > 0 ? selectedCategories : null,
+            social_links: socialLinksObj,
+            exclusive_content_text: exclusiveContentText.trim() || null,
+            exclusive_content_url: exclusiveContentUrl.trim() || null,
+            exclusive_content_image_url: exclusiveContentImageUrl,
           })
           .eq('user_id', user.id);
 
@@ -570,6 +574,10 @@ const Onboarding = () => {
             avatar_url: finalAvatarUrl,
             aurora_gradient: auroraGradient,
             model_categories: selectedCategories.length > 0 ? selectedCategories : null,
+            social_links: socialLinksObj,
+            exclusive_content_text: exclusiveContentText.trim() || null,
+            exclusive_content_url: exclusiveContentUrl.trim() || null,
+            exclusive_content_image_url: exclusiveContentImageUrl,
           });
 
         if (insertError) {

@@ -240,6 +240,13 @@ const PublicLink = () => {
   const [purchaseData, setPurchaseData] = useState<PurchaseData | null>(null);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
+  // Pre-fill email for logged-in fans
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email) setBuyerEmail(data.user.email);
+    });
+  }, []);
+
   useEffect(() => {
     const abortController = new AbortController();
     const signal = abortController.signal;

@@ -161,7 +161,7 @@ const AppDashboard = () => {
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
         const { data: tipsData } = activeProfile?.id
-          ? await tipsQuery.eq('profile_id', activeProfile.id)
+          ? await tipsQuery.eq('creator_id', user.id).or(`profile_id.eq.${activeProfile.id},profile_id.is.null`)
           : await tipsQuery.eq('creator_id', user.id);
         const safeTips = tipsData ?? [];
         const tipsSum = safeTips.reduce((sum: number, t: any) => {
@@ -895,6 +895,61 @@ const AppDashboard = () => {
                   })()
                 )}
               </div>
+            </section>
+
+            {/* Sales History */}
+            <section className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+              <h2 className="text-lg font-semibold text-foreground mb-4">Sales History</h2>
+              {purchasesRaw.length === 0 && tipsRaw.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No sales yet. Start publishing links and sharing your profile!</p>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {[
+                    ...purchasesRaw.map((p: any) => ({
+                      type: 'purchase' as const,
+                      amount_cents: Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
+                      raw_cents: p.amount_cents,
+                      date: p.created_at,
+                      label: linksRaw.find((l: any) => l.id === p.link_id)?.title || 'Link purchase',
+                    })),
+                    ...tipsRaw.map((t: any) => ({
+                      type: 'tip' as const,
+                      amount_cents: t.creator_net_cents ?? Math.round((t.amount_cents ?? 0) * (1 - commissionRate)),
+                      raw_cents: t.amount_cents,
+                      date: t.created_at,
+                      label: t.is_anonymous ? 'Anonymous tip' : ((t.fan as any)?.display_name || t.fan_name || 'Fan tip'),
+                    })),
+                  ]
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                    .slice(0, 50)
+                    .map((item, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 dark:bg-white/5 px-4 py-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            item.type === 'tip' ? 'bg-pink-500/20' : 'bg-green-500/20'
+                          }`}>
+                            {item.type === 'tip' ? (
+                              <span className="text-pink-400 text-xs">♥</span>
+                            ) : (
+                              <CreditCard className="w-3.5 h-3.5 text-green-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{item.label}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {' · '}
+                              <span className="capitalize">{item.type}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-sm font-semibold text-green-400 flex-shrink-0 ml-3">
+                          +${(item.amount_cents / 100).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
             </section>
           </>
         )}

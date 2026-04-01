@@ -58,13 +58,15 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     custom_requests_enabled: boolean;
     display_name: string | null;
     is_premium: boolean;
+    user_id: string;
+    username: string | null;
   } | null>(null);
 
   useEffect(() => {
     if (senderType !== 'fan') return;
     supabase
       .from('creator_profiles')
-      .select('location, show_available_now, tips_enabled, custom_requests_enabled, display_name, user_id')
+      .select('location, show_available_now, tips_enabled, custom_requests_enabled, display_name, user_id, username')
       .eq('id', conversation.profile_id)
       .single()
       .then(async ({ data }) => {
@@ -81,14 +83,33 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           custom_requests_enabled: data.custom_requests_enabled === true,
           display_name: data.display_name,
           is_premium: parent?.is_creator_subscribed === true,
+          user_id: data.user_id,
+          username: data.username,
         });
       });
   }, [conversation.profile_id, senderType]);
 
-  // Auto-scroll on new messages
+  // Auto-favorite creator when fan opens a conversation
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    if (senderType !== 'fan' || !creatorInfo?.user_id || !currentUserId) return;
+    supabase
+      .from('fan_favorites')
+      .upsert(
+        { fan_id: currentUserId, creator_id: creatorInfo.user_id },
+        { onConflict: 'fan_id,creator_id' }
+      )
+      .then(({ error }) => { if (error) console.error('Auto-favorite failed:', error); });
+  }, [senderType, creatorInfo?.user_id, currentUserId]);
+
+  // Auto-scroll: instant on first load / conversation switch, smooth on new messages
+  const hasScrolledRef = useRef(false);
+  useEffect(() => { hasScrolledRef.current = false; }, [conversation.id]);
+  useEffect(() => {
+    if (!messages.length) return;
+    const behavior = hasScrolledRef.current ? 'smooth' : 'instant';
+    bottomRef.current?.scrollIntoView({ behavior });
+    hasScrolledRef.current = true;
+  }, [messages.length, conversation.id]);
 
   // Fetch profiles for team members (creator/chatter) other than current user
   const otherTeamSenderIds = useMemo(() => {
@@ -219,7 +240,10 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     <div className="flex flex-col h-full min-h-0 overflow-hidden overflow-x-hidden">
       {/* Conversation header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
-        <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
+        <div
+          className={`w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0 ${senderType === 'fan' && creatorInfo?.username ? 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}
+          onClick={() => { if (senderType === 'fan' && creatorInfo?.username) window.open(`/${creatorInfo.username}`, '_blank'); }}
+        >
           {fan?.avatar_url ? (
             <img src={fan.avatar_url} alt={fanName} className="w-full h-full object-cover" />
           ) : (

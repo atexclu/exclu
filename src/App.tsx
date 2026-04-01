@@ -38,7 +38,6 @@ import LinkInBioEditor from "./pages/LinkInBioEditor";
 import ReferralDashboard from "./pages/ReferralDashboard";
 import FanSignup from "./pages/FanSignup";
 import AuthCallback from "./pages/AuthCallback";
-import CreatorTipsRequests from './pages/CreatorTipsRequests';
 import CreatorChat from './pages/CreatorChat';
 import FanDashboard from './pages/FanDashboard';
 import FanProtectedRoute from '@/components/FanProtectedRoute';
@@ -214,14 +213,6 @@ const App = () => {
                   element={
                     <ProtectedRoute>
                       <CreatorChat />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/app/tips-requests"
-                  element={
-                    <ProtectedRoute>
-                      <CreatorTipsRequests />
                     </ProtectedRoute>
                   }
                 />
