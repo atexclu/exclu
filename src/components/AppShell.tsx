@@ -32,7 +32,6 @@ const baseNavItems: NavItem[] = [
   { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
   { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
   { path: '/app/chat', label: 'Chat', icon: MessageSquare },
-  { path: '/app/tips-requests', label: 'Requests', icon: DollarSign, mobileHidden: true },
   { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
   { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
 ];

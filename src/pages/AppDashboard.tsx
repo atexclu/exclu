@@ -157,14 +157,17 @@ const AppDashboard = () => {
         // Tips revenue — fetch full details for the Tips tab display
         const tipsQuery = supabase
           .from('tips')
-          .select('id, amount_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!fan_id(display_name, avatar_url)')
+          .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_name, created_at, fan:profiles!fan_id(display_name, avatar_url)')
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
         const { data: tipsData } = activeProfile?.id
           ? await tipsQuery.eq('profile_id', activeProfile.id)
           : await tipsQuery.eq('creator_id', user.id);
         const safeTips = tipsData ?? [];
-        const tipsSum = safeTips.reduce((sum: number, t: any) => sum + Math.round((t.amount_cents ?? 0) * (1 - rate)), 0);
+        const tipsSum = safeTips.reduce((sum: number, t: any) => {
+          if (typeof t.creator_net_cents === 'number' && t.creator_net_cents > 0) return sum + t.creator_net_cents;
+          return sum + Math.round((t.amount_cents ?? 0) * (1 - rate));
+        }, 0);
         if (isMounted) setTipsRaw(safeTips);
 
         // Profile views history from profile_analytics
@@ -192,7 +195,7 @@ const AppDashboard = () => {
           .reduce((sum: number, p: any) => sum + (p.amount_cents ?? 0), 0);
         // Use DB wallet as source of truth (if available), else fallback to frontend calc
         const dbWallet = profile?.wallet_balance_cents;
-        const walletBalance = typeof dbWallet === 'number' && dbWallet > 0
+        const walletBalance = typeof dbWallet === 'number' && dbWallet >= 0
           ? dbWallet
           : revenueSum + tipsSum - totalPayoutsCents;
 
@@ -1252,7 +1255,9 @@ const AppDashboard = () => {
               {!isLoading && tipsRaw.length > 0 && (
                 <div className="divide-y divide-exclu-arsenic/40">
                   {tipsRaw.map((tip: any) => {
-                    const net = Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
+                    const net = typeof tip.creator_net_cents === 'number' && tip.creator_net_cents > 0
+                      ? tip.creator_net_cents
+                      : Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
                     return (
                       <div key={tip.id} className="px-5 py-4 flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">

@@ -116,6 +116,7 @@ const CreatorPublic = () => {
   const [selectedGiftItem, setSelectedGiftItem] = useState<any | null>(null);
   const [giftMessage, setGiftMessage] = useState('');
   const [giftAnonymous, setGiftAnonymous] = useState(false);
+  const [giftFanName, setGiftFanName] = useState('');
   const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
 
   // Desktop photo collapse on scroll (only when >5 links)
@@ -445,30 +446,36 @@ const CreatorPublic = () => {
   };
 
   const handleGiftCta = (item: any) => {
-    if (!currentFanId) {
-      if (isCreatorAccount) {
-        toast.info('You need a fan account to send gifts.');
-      }
-      navigate(`/fan/signup?creator=${handle}`);
-      return;
-    }
     setSelectedGiftItem(item);
     setGiftMessage('');
     setGiftAnonymous(false);
+    setGiftFanName('');
     setShowGiftModal(true);
   };
 
   const handleGiftSubmit = async () => {
-    if (!selectedGiftItem || !currentFanId) return;
+    if (!selectedGiftItem) return;
     setIsGiftSubmitting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const giftBody: Record<string, unknown> = {
+        wishlist_item_id: selectedGiftItem.id,
+        profile_id: creatorProfileId || null,
+        message: giftMessage || null,
+        is_anonymous: giftAnonymous,
+      };
+      if (!currentFanId && giftFanName.trim()) {
+        giftBody.fan_name = giftFanName.trim();
+      }
+
       const { data, error } = await supabase.functions.invoke('create-gift-checkout', {
-        body: {
-          wishlist_item_id: selectedGiftItem.id,
-          profile_id: creatorProfileId || null,
-          message: giftMessage || null,
-          is_anonymous: giftAnonymous,
-        },
+        body: giftBody,
+        headers,
       });
       if (error || !data?.fields) {
         throw new Error(data?.error || 'Unable to start checkout');
@@ -1766,6 +1773,29 @@ const CreatorPublic = () => {
               </div>
               <span className="text-sm text-white/70">Stay anonymous</span>
             </label>
+
+            <AnimatePresence>
+              {!currentFanId && !giftAnonymous && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-white/50">Your name (optional)</p>
+                    <Input
+                      type="text"
+                      value={giftFanName}
+                      onChange={(e) => setGiftFanName(e.target.value)}
+                      placeholder="How should the creator know you?"
+                      maxLength={100}
+                      className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <div className="rounded-xl bg-white/5 border border-white/10 p-3">
               <p className="text-xs text-white/50 leading-relaxed">

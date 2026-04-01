@@ -1,8 +1,8 @@
 /**
  * create-gift-checkout — UGPayments QuickPay version.
  *
- * Request body: { wishlist_item_id, profile_id?, message?, is_anonymous? }
- * Auth: Required (fan must be logged in)
+ * Request body: { wishlist_item_id, profile_id?, message?, is_anonymous?, fan_name? }
+ * Auth: Optional (guests can gift)
  * Returns: { fields } for QuickPay HTML form POST
  */
 
@@ -68,18 +68,25 @@ serve(async (req) => {
   if (isRateLimited(ip)) return jsonError('Too many requests', 429, corsHeaders);
 
   try {
-    // ── Auth required ─────────────────────────────────────────────────
+    // ── Auth optional — guests can gift ─────────────────────────────────
     const authHeader = req.headers.get('authorization') ?? '';
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user: fanUser }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !fanUser) return jsonError('Authentication required', 401, corsHeaders);
+    const token = authHeader.replace('Bearer ', '').trim();
+    let fanUserId: string | null = null;
+    let fanEmail: string | null = null;
+    if (token) {
+      const { data: { user: fanUser } } = await supabase.auth.getUser(token);
+      if (fanUser) {
+        fanUserId = fanUser.id;
+        fanEmail = fanUser.email || null;
+      }
+    }
 
     const body = await req.json();
     const wishlistItemId = body?.wishlist_item_id as string | undefined;
     const profileId = body?.profile_id as string | undefined;
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
     const isAnonymous = body?.is_anonymous === true;
+    const fanName = typeof body?.fan_name === 'string' ? body.fan_name.trim().slice(0, 100) : null;
 
     if (!wishlistItemId || typeof wishlistItemId !== 'string') {
       return jsonError('Missing wishlist_item_id', 400, corsHeaders);
@@ -104,7 +111,7 @@ serve(async (req) => {
       return jsonError('This item has already been gifted the maximum number of times', 400, corsHeaders);
     }
 
-    if (wishlistItem.creator_id === fanUser.id) return jsonError('You cannot gift yourself', 400, corsHeaders);
+    if (fanUserId && wishlistItem.creator_id === fanUserId) return jsonError('You cannot gift yourself', 400, corsHeaders);
 
     const creator = wishlistItem.profiles as any;
     if (!creator) return jsonError('Creator not found', 404, corsHeaders);
@@ -112,11 +119,19 @@ serve(async (req) => {
 
     const amountCents = wishlistItem.price_cents;
 
+    // ── Calculate commission at creation time (locked in) ───────────────
+    const isSubscribed = creator.is_creator_subscribed === true;
+    const commissionRate = isSubscribed ? 0 : 0.10;
+    const platformCommission = Math.round(amountCents * commissionRate);
+    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+    const creatorNetCents = amountCents - platformCommission;
+    const totalPlatformFee = platformCommission + fanProcessingFeeCents;
+
     // ── Create gift_purchases record (pending) ────────────────────────
     const { data: giftRecord, error: giftErr } = await supabase
       .from('gift_purchases')
       .insert({
-        fan_id: fanUser.id,
+        fan_id: fanUserId ?? null,
         creator_id: wishlistItem.creator_id,
         profile_id: profileId || null,
         wishlist_item_id: wishlistItemId,
@@ -124,7 +139,10 @@ serve(async (req) => {
         currency: 'USD',
         message,
         is_anonymous: isAnonymous,
+        fan_name: fanName,
         status: 'pending',
+        creator_net_cents: creatorNetCents,
+        platform_fee_cents: totalPlatformFee,
       })
       .select('id')
       .single();
@@ -134,8 +152,7 @@ serve(async (req) => {
       return jsonError('Failed to create gift record', 500, corsHeaders);
     }
 
-    // ── Calculate total ───────────────────────────────────────────────
-    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+    // ── Calculate total fan pays ─────────────────────────────────────
     const totalFanPaysCents = amountCents + fanProcessingFeeCents;
     const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
@@ -155,11 +172,11 @@ serve(async (req) => {
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',
-      ApprovedURL: `${siteUrl}/gift-success?item=${encodeURIComponent(wishlistItem.name)}&creator=${encodeURIComponent(creatorHandle)}`,
+      ApprovedURL: `${siteUrl}/gift-success?item=${encodeURIComponent(wishlistItem.name)}&creator=${encodeURIComponent(creatorHandle)}${!fanUserId ? '&guest=1' : ''}`,
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?gift_failed=true`,
       MerchantReference: merchantReference,
-      Email: fanUser.email || '',
+      ...(fanEmail ? { Email: fanEmail } : {}),
     };
 
     // Store merchant ref

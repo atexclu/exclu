@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -33,6 +33,26 @@ interface TipRecord {
   message: string | null;
   is_anonymous: boolean;
   created_at: string;
+  creator: {
+    display_name: string | null;
+    handle: string | null;
+    avatar_url: string | null;
+  };
+}
+
+interface GiftRecord {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  message: string | null;
+  is_anonymous: boolean;
+  created_at: string;
+  wishlist_item: {
+    name: string;
+    emoji: string | null;
+    image_url: string | null;
+  } | null;
   creator: {
     display_name: string | null;
     handle: string | null;
@@ -100,6 +120,8 @@ const FanDashboard = () => {
   const [activeTab, setActiveTab] = useState<'favorites' | 'tips' | 'requests' | 'messages' | 'settings'>('favorites');
   const [favorites, setFavorites] = useState<FavoriteCreator[]>([]);
   const [tips, setTips] = useState<TipRecord[]>([]);
+  const [gifts, setGifts] = useState<GiftRecord[]>([]);
+  const [tipsSubTab, setTipsSubTab] = useState<'tips' | 'gifts'>('tips');
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -231,6 +253,18 @@ const FanDashboard = () => {
       setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
     }
 
+    // Fetch gifts
+    const { data: giftsData } = await supabase
+      .from('gift_purchases')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, wishlist_item:wishlist_items!gift_purchases_wishlist_item_id_fkey(name, emoji, image_url), creator:profiles!gift_purchases_creator_id_fkey(display_name, handle, avatar_url)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (giftsData) {
+      setGifts(giftsData.map((g: any) => ({ ...g, wishlist_item: g.wishlist_item, creator: g.creator })));
+    }
+
     // Fetch custom requests with delivery link slug (exclude incomplete checkouts)
     const { data: reqData } = await supabase
       .from('custom_requests')
@@ -292,7 +326,7 @@ const FanDashboard = () => {
   const tabs = [
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
     { key: 'messages' as const, label: 'Messages', icon: MessagesSquare },
-    { key: 'tips' as const, label: 'Tips', icon: DollarSign },
+    { key: 'tips' as const, label: 'Tips & Gifts', icon: DollarSign },
     { key: 'requests' as const, label: 'Requests', icon: MessageSquare },
   ];
 
@@ -576,7 +610,7 @@ const FanDashboard = () => {
               </motion.div>
             )}
 
-            {/* ── TIPS TAB ── */}
+            {/* ── TIPS & GIFTS TAB ── */}
             {!isLoading && activeTab === 'tips' && (
               <motion.div
                 key="tips"
@@ -586,62 +620,154 @@ const FanDashboard = () => {
                 transition={{ duration: 0.25 }}
               >
                 <div className="mb-6">
-                  <h2 className="text-xl font-bold text-foreground">Tips sent</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">Your tip history</p>
+                  <h2 className="text-xl font-bold text-foreground">Tips & Gifts</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Your support history</p>
                 </div>
 
-                {tips.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
-                      <DollarSign className="w-7 h-7 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm text-muted-foreground">No tips sent yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {tips.map((tip, i) => (
-                      <motion.div
-                        key={tip.id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.04 }}
-                        className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
-                              {tip.creator.avatar_url ? (
-                                <img src={tip.creator.avatar_url} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
-                                  {(tip.creator.display_name || '?').charAt(0).toUpperCase()}
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground">
-                                {tip.creator.display_name || tip.creator.handle}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-lg font-bold text-foreground">
-                              ${(tip.amount_cents / 100).toFixed(2)}
-                            </p>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[tip.status] || 'bg-gray-500/20 text-gray-400'}`}>
-                              {tip.status}
-                            </span>
-                          </div>
+                {/* Sub-tab toggle */}
+                <div className="flex gap-1 p-1 rounded-xl bg-muted/50 dark:bg-muted/30 mb-6 w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setTipsSubTab('tips')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      tipsSubTab === 'tips'
+                        ? 'bg-background dark:bg-white/10 text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <DollarSign className="w-3.5 h-3.5" />
+                    Tips
+                    {tips.length > 0 && <span className="text-[10px] ml-0.5 opacity-60">({tips.length})</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipsSubTab('gifts')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      tipsSubTab === 'gifts'
+                        ? 'bg-background dark:bg-white/10 text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Gift className="w-3.5 h-3.5" />
+                    Gifts
+                    {gifts.length > 0 && <span className="text-[10px] ml-0.5 opacity-60">({gifts.length})</span>}
+                  </button>
+                </div>
+
+                {/* Tips sub-tab */}
+                {tipsSubTab === 'tips' && (
+                  <>
+                    {tips.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-24 gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                          <DollarSign className="w-7 h-7 text-muted-foreground" />
                         </div>
-                        {tip.message && (
-                          <p className="text-xs text-muted-foreground mt-3 pl-[52px] italic">"{tip.message}"</p>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
+                        <p className="text-sm text-muted-foreground">No tips sent yet</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {tips.map((tip, i) => (
+                          <motion.div
+                            key={tip.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.04 }}
+                            className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                                  {tip.creator.avatar_url ? (
+                                    <img src={tip.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                      {(tip.creator.display_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {tip.creator.display_name || tip.creator.handle}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold text-foreground">
+                                  ${(tip.amount_cents / 100).toFixed(2)}
+                                </p>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[tip.status] || 'bg-gray-500/20 text-gray-400'}`}>
+                                  {tip.status}
+                                </span>
+                              </div>
+                            </div>
+                            {tip.message && (
+                              <p className="text-xs text-muted-foreground mt-3 pl-[52px] italic">"{tip.message}"</p>
+                            )}
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Gifts sub-tab */}
+                {tipsSubTab === 'gifts' && (
+                  <>
+                    {gifts.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-24 gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                          <Gift className="w-7 h-7 text-muted-foreground" />
+                        </div>
+                        <p className="text-sm text-muted-foreground">No gifts sent yet</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {gifts.map((gift, i) => (
+                          <motion.div
+                            key={gift.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.04 }}
+                            className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0 flex items-center justify-center">
+                                  {gift.wishlist_item?.image_url ? (
+                                    <img src={gift.wishlist_item.image_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-lg">{gift.wishlist_item?.emoji || '🎁'}</span>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {gift.wishlist_item?.name || 'Gift'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    to {gift.creator.display_name || gift.creator.handle} · {new Date(gift.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold text-foreground">
+                                  ${(gift.amount_cents / 100).toFixed(2)}
+                                </p>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColors[gift.status] || 'bg-gray-500/20 text-gray-400'}`}>
+                                  {gift.status}
+                                </span>
+                              </div>
+                            </div>
+                            {gift.message && (
+                              <p className="text-xs text-muted-foreground mt-3 pl-[52px] italic">"{gift.message}"</p>
+                            )}
+                          </motion.div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </motion.div>
             )}

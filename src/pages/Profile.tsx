@@ -30,6 +30,12 @@ import {
   Loader2,
   Tag,
   Landmark,
+  Wallet,
+  ArrowDownToLine,
+  Clock,
+  CircleCheck,
+  CircleX,
+  Banknote,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -55,7 +61,7 @@ const Profile = () => {
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'profiles' | 'security'>('profile');
+  const [activeSection, setActiveSection] = useState<'profile' | 'wallet' | 'subscription' | 'profiles' | 'security'>('profile');
   const [themeColor, setThemeColor] = useState<string>('pink');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
@@ -70,12 +76,21 @@ const Profile = () => {
   const [agencyCats, setAgencyCats] = useState<AgencyCategoryData>(EMPTY_AGENCY_CATEGORIES);
   const [isSavingAgencyCategories, setIsSavingAgencyCategories] = useState(false);
 
+  // Wallet state
+  const [walletBalanceCents, setWalletBalanceCents] = useState<number>(0);
+  const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState<number>(0);
+  const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
+  const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
+  const [isLoadingWallet, setIsLoadingWallet] = useState(false);
+
   // Handle hash navigation to open specific section
   useEffect(() => {
-    const hash = window.location.hash.slice(1); // Remove the #
+    const hash = window.location.hash.slice(1);
     if (hash === 'payments') {
       setActiveSection('subscription');
-      // Clear the hash after navigating
+      window.history.replaceState(null, '', window.location.pathname);
+    } else if (hash === 'wallet') {
+      setActiveSection('wallet');
       window.history.replaceState(null, '', window.location.pathname);
     }
   }, []);
@@ -718,8 +733,76 @@ const Profile = () => {
     { id: 'snapchat', label: 'Snapchat', placeholder: 'https://snapchat.com/add/yourhandle' },
   ];
 
+  // Fetch wallet data when wallet tab is selected
+  useEffect(() => {
+    if (activeSection !== 'wallet' || !userId) return;
+    const fetchWallet = async () => {
+      setIsLoadingWallet(true);
+      try {
+        // For agencies: sum wallet_balance_cents across all profiles under this user
+        // For single accounts: just use the user's profile
+        const { data: profileWallet } = await supabase
+          .from('profiles')
+          .select('wallet_balance_cents, total_earned_cents')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (profileWallet) {
+          setWalletBalanceCents(profileWallet.wallet_balance_cents ?? 0);
+          setWalletTotalEarnedCents(profileWallet.total_earned_cents ?? 0);
+        }
+
+        // Fetch payouts
+        const { data: payoutsData } = await supabase
+          .from('payouts')
+          .select('id, amount_cents, status, created_at, paid_at, notes')
+          .eq('creator_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (payoutsData) setWalletPayouts(payoutsData);
+      } catch (err) {
+        console.error('Error fetching wallet data:', err);
+      } finally {
+        setIsLoadingWallet(false);
+      }
+    };
+    fetchWallet();
+  }, [activeSection, userId]);
+
+  const handleRequestWithdrawal = async () => {
+    if (!userId) return;
+    if (walletBalanceCents < 5000) {
+      toast.error('Minimum withdrawal is $50.00');
+      return;
+    }
+    if (!payoutSetupComplete) {
+      toast.error('Please set up your bank details first in the Subscriptions tab.');
+      return;
+    }
+    setIsRequestingWithdrawal(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (error || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Withdrawal request failed');
+      }
+      toast.success('Withdrawal requested! You will receive your funds within 3-5 business days.');
+      // Refresh wallet data
+      setActiveSection('profile');
+      setTimeout(() => setActiveSection('wallet'), 50);
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to request withdrawal');
+    } finally {
+      setIsRequestingWithdrawal(false);
+    }
+  };
+
   const menuItems = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'wallet', label: 'Wallet', icon: Wallet },
     { id: 'subscription', label: 'Subscriptions', icon: CreditCard },
     { id: 'profiles', label: 'Profiles & Agency', icon: Users },
     { id: 'security', label: 'Security', icon: Lock },
@@ -989,6 +1072,143 @@ const Profile = () => {
                       </div>
                     )}
                   </div>
+                </motion.div>
+              )}
+
+              {/* Wallet Section */}
+              {activeSection === 'wallet' && (
+                <motion.div
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  {isLoadingWallet ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Balance Card */}
+                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-5">Wallet Balance</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4">
+                            <p className="text-xs text-muted-foreground mb-1">Available balance</p>
+                            <p className="text-3xl font-bold text-foreground">
+                              ${(walletBalanceCents / 100).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4">
+                            <p className="text-xs text-muted-foreground mb-1">Total earned</p>
+                            <p className="text-3xl font-bold text-foreground">
+                              ${(walletTotalEarnedCents / 100).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bank Status & Withdrawal */}
+                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Withdraw Funds</h2>
+
+                        <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                              payoutSetupComplete ? 'bg-green-500/20' : 'bg-yellow-500/20'
+                            }`}>
+                              {payoutSetupComplete ? (
+                                <CircleCheck className="w-4 h-4 text-green-400" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-yellow-400" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {payoutSetupComplete ? 'Bank account connected' : 'Bank account not set up'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {payoutSetupComplete
+                                  ? `IBAN: ••••${profileData?.bank_iban?.slice(-4) || ''}`
+                                  : 'Set up your bank details in the Subscriptions tab to withdraw funds.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            Minimum withdrawal: <span className="font-medium text-foreground">$50.00</span>. Funds are typically processed within 3–5 business days.
+                          </p>
+                          <Button
+                            type="button"
+                            onClick={handleRequestWithdrawal}
+                            disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                            className="w-full sm:w-auto rounded-xl gap-2"
+                          >
+                            {isRequestingWithdrawal ? (
+                              <><Loader2 className="w-4 h-4 animate-spin" />Processing...</>
+                            ) : (
+                              <><ArrowDownToLine className="w-4 h-4" />Request Withdrawal — ${(walletBalanceCents / 100).toFixed(2)}</>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Cashout History */}
+                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Withdrawal History</h2>
+                        {walletPayouts.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-12 gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+                              <Banknote className="w-5 h-5 text-muted-foreground" />
+                            </div>
+                            <p className="text-sm text-muted-foreground">No withdrawals yet</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {walletPayouts.map((payout) => {
+                              const statusIcon = payout.status === 'completed' || payout.status === 'paid'
+                                ? <CircleCheck className="w-4 h-4 text-green-400" />
+                                : payout.status === 'failed' || payout.status === 'rejected'
+                                ? <CircleX className="w-4 h-4 text-red-400" />
+                                : <Clock className="w-4 h-4 text-yellow-400" />;
+                              const statusColor = payout.status === 'completed' || payout.status === 'paid'
+                                ? 'bg-green-500/20 text-green-400'
+                                : payout.status === 'failed' || payout.status === 'rejected'
+                                ? 'bg-red-500/20 text-red-400'
+                                : 'bg-yellow-500/20 text-yellow-400';
+                              return (
+                                <div key={payout.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 dark:bg-white/5 p-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                      payout.status === 'completed' || payout.status === 'paid' ? 'bg-green-500/20'
+                                      : payout.status === 'failed' || payout.status === 'rejected' ? 'bg-red-500/20'
+                                      : 'bg-yellow-500/20'
+                                    }`}>
+                                      {statusIcon}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium text-foreground">
+                                        ${(payout.amount_cents / 100).toFixed(2)}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                        {payout.paid_at && ` · Paid ${new Date(payout.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor}`}>
+                                    {payout.status}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </motion.div>
               )}
 
