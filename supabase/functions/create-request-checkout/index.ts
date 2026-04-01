@@ -154,18 +154,7 @@ serve(async (req) => {
       return jsonError(`Minimum amount is $${(minAmount / 100).toFixed(2)}`, 400, corsHeaders);
     }
 
-    // Max 1 pending request per fan per creator
-    const { data: existingPending } = await supabase
-      .from('custom_requests')
-      .select('id')
-      .eq('fan_id', fanUserId)
-      .eq('creator_id', creatorId)
-      .in('status', ['pending_payment', 'pending'])
-      .limit(1);
-
-    if (existingPending && existingPending.length > 0) {
-      return jsonError('You already have a pending request with this creator', 400, corsHeaders);
-    }
+    // Fans can submit multiple requests to the same creator (no limit)
 
     // ── 5. Create request record (pending_payment) ────────────────────
     const expiresAt = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();

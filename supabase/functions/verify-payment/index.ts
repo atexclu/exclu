@@ -223,7 +223,7 @@ async function verifyGift(recordId: string, transactionId: string, cors: Record<
 async function verifyRequest(recordId: string, transactionId: string, cors: Record<string, string>) {
   const { data: request } = await supabase
     .from('custom_requests')
-    .select('id, status')
+    .select('id, status, creator_id, proposed_amount_cents, description, fan_email, is_new_account')
     .eq('id', recordId)
     .single();
 
@@ -235,6 +235,29 @@ async function verifyRequest(recordId: string, transactionId: string, cors: Reco
     status: 'pending',
     ugp_transaction_id: transactionId,
   }).eq('id', recordId);
+
+  // Send creator notification email
+  const { data: creator } = await supabase.from('profiles').select('id, display_name').eq('id', request.creator_id).single();
+  if (creator) {
+    const { data: creatorAuth } = await supabase.auth.admin.getUserById(request.creator_id);
+    const creatorEmail = creatorAuth?.user?.email;
+    const amtFmt = formatUSD(request.proposed_amount_cents);
+    const trimDesc = (request.description || '').slice(0, 100);
+
+    if (creatorEmail) {
+      await sendBrevoEmail({
+        to: creatorEmail,
+        subject: `New paid request — ${amtFmt} on hold`,
+        htmlContent: `<div style="font-family:system-ui;padding:20px;background:#020617;color:#f9fafb;border-radius:12px;">
+          <h2>New paid request</h2>
+          <p>A fan sent you a custom request with <strong style="color:#a3e635;">${amtFmt}</strong> on hold.</p>
+          <p style="background:#0b1120;border:1px solid #1e293b;border-radius:10px;padding:14px;color:#f1f5f9;font-style:italic;">"${escapeHtml(trimDesc)}"</p>
+          <p style="color:#94a3b8;font-size:13px;">You have 6 days to accept or decline. Go to your dashboard to respond.</p>
+          <a href="${siteUrl}/app/tips?tab=requests" style="display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635);color:#020617;text-decoration:none;padding:12px 24px;border-radius:999px;font-weight:600;margin-top:12px;">Review request</a>
+        </div>`,
+      });
+    }
+  }
 
   console.log('verify-payment: request pre-auth confirmed:', recordId);
   return jsonOk({ verified: true, status: 'pending' }, cors);
