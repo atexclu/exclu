@@ -158,7 +158,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
               type="button"
               onClick={handleRefuse}
               disabled={isActing}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-red-500/15 text-red-400 border border-red-500/20 hover:bg-red-500/25 transition-all disabled:opacity-40"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-muted/50 text-muted-foreground border border-border hover:bg-muted transition-all disabled:opacity-40"
             >
               {isActing ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
               Decline
@@ -167,7 +167,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
               type="button"
               onClick={handleDeliver}
               disabled={isActing || !onDeliver}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25 transition-all disabled:opacity-40"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all disabled:opacity-40"
             >
               <Upload className="w-3 h-3" />
               Deliver

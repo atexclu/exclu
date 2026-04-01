@@ -411,8 +411,8 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         </div>
       </div>
 
-      {/* Composer + action buttons */}
-      <div className="flex-shrink-0">
+      {/* Composer + action buttons (hidden during delivery) */}
+      <div className={`flex-shrink-0 ${deliveryRequestId ? 'hidden' : ''}`}>
         {/* Inline link picker panel — above composer */}
         <AnimatePresence>
           {showLinkPicker && (

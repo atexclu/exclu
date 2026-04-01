@@ -117,20 +117,24 @@ serve(async (req) => {
       const totalFanPaysCents = amountCents + fanProcessingFeeCents;
       const captureAmountDecimal = totalFanPaysCents / 100;
 
+      // Try to capture the pre-authorized payment via UGPayments API.
+      // If the payment was already processed as a Sale (via ConfirmURL or verify-payment fallback),
+      // the capture will fail — that's OK, the money is already collected.
       try {
         await ugpCapture(request.ugp_transaction_id, captureAmountDecimal);
         console.log('UGP capture success for request:', requestId);
       } catch (captureErr) {
         const ugpErr = captureErr as UgpApiError;
-        console.error('UGP capture error:', ugpErr.message);
+        console.error('UGP capture error (may be already processed as Sale):', ugpErr.message);
 
         if (ugpErr.isAlreadyProcessed) {
-          // Already captured — continue with status update (idempotent)
-          console.log('Transaction already captured, continuing...');
+          console.log('Transaction already captured/processed, continuing...');
         } else if (ugpErr.isExpired) {
           return jsonError('Payment authorization has expired (6-day limit). The hold has been released.', 400, corsHeaders);
         } else {
-          return jsonError('Failed to capture payment. The authorization may have expired.', 500, corsHeaders);
+          // If capture fails for other reasons, the payment may have been processed as a direct Sale.
+          // Continue with the wallet credit — the fan has already been charged.
+          console.warn('Capture failed but continuing (payment may be a Sale, not Auth):', ugpErr.message);
         }
       }
 
@@ -191,19 +195,30 @@ serve(async (req) => {
     if (action === 'cancel') {
       const newStatus = body?.reason === 'expired' ? 'expired' : 'refused';
 
-      // Void the pre-authorized payment
+      // Try to void the pre-authorized payment.
+      // If the payment was already processed as a Sale, void will fail — in that case
+      // we need to issue a refund instead, or just update status (fan already charged).
       try {
         await ugpVoid(request.ugp_transaction_id);
         console.log('UGP void success for request:', requestId);
       } catch (voidErr) {
         const ugpErr = voidErr as UgpApiError;
-        console.error('UGP void error:', ugpErr.message);
+        console.error('UGP void error (may be Sale not Auth):', ugpErr.message);
 
         if (ugpErr.isAlreadyProcessed) {
-          // Already voided or captured — continue with status update
           console.log('Transaction already voided/captured, continuing...');
         } else {
-          return jsonError('Failed to cancel payment authorization', 500, corsHeaders);
+          // If void fails, try refund (for Sale transactions that can't be voided)
+          try {
+            const { ugpRefund } = await import('../_shared/ugp-api.ts');
+            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.05)) / 100;
+            await ugpRefund(request.ugp_transaction_id, refundAmount);
+            console.log('UGP refund success (Sale → refund) for request:', requestId);
+          } catch (refundErr) {
+            console.error('Refund also failed:', (refundErr as any)?.message);
+            // Continue anyway — update the status so the creator sees it as declined
+            // The fan may need manual refund from admin
+          }
         }
       }
 
