@@ -391,7 +391,7 @@ const Profile = () => {
       // Refresh profile data
       window.location.reload();
     } catch (err: any) {
-      console.error('Error during Stripe Connect', err);
+      console.error('Error saving bank details:', err);
       toast.error(err?.message || 'Unable to save bank details. Please try again.');
     } finally {
       setIsSavingBank(false);
@@ -1145,6 +1145,15 @@ const Profile = () => {
                             onChange={(e) => setBankHolderName(e.target.value)}
                             placeholder="Jean Dupont"
                             className="bg-primary/10 border-border text-foreground"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-exclu-cloud ml-1 mb-1 block">BIC / SWIFT <span className="text-exclu-space/50 font-normal">(recommended for international transfers)</span></label>
+                          <Input
+                            value={bankBic}
+                            onChange={(e) => setBankBic(e.target.value.toUpperCase())}
+                            placeholder="BNPAFRPP"
+                            className="bg-primary/10 border-border text-foreground placeholder:text-exclu-space/30"
                           />
                         </div>
                         <div className="flex gap-2 pt-1">

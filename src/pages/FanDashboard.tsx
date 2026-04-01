@@ -654,7 +654,7 @@ const FanDashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
-                className="flex gap-0 -mx-4 sm:-mx-6 h-[calc(100vh-12rem)]"
+                className="flex gap-0 h-[calc(100vh-12rem)] rounded-none md:rounded-2xl border-0 md:border border-border/60 md:shadow-[0_0_40px_-12px_rgba(0,0,0,0.3)] overflow-hidden"
               >
                 {/* Liste des conversations */}
                 <div className={`flex flex-col border-r border-border/60 bg-card w-full md:w-72 flex-shrink-0 ${
