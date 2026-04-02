@@ -57,7 +57,10 @@ const Terms = () => {
           <h3>2.3 Consent and Releases</h3>
           <p>If your Creator Content depicts other individuals, you must obtain and maintain written consent from each depicted person confirming their age (18+), identity, and consent to publication on Exclu. You must provide such documentation to us upon request.</p>
 
-          <h3>2.4 Content Removal</h3>
+          <h3>2.4 Record-Keeping Obligations</h3>
+          <p>If you are a Creator who uploads visual content depicting real persons, you are responsible for maintaining records sufficient to confirm the identity and age of all individuals depicted, in compliance with applicable laws (including, where applicable, 18 U.S.C. § 2257 and equivalent EU/French regulations). These records must include government-issued identification confirming each individual is at least eighteen (18) years of age. You must retain these records for the duration of your account and for a minimum of five (5) years after account closure, and produce them upon lawful request by us or any competent authority.</p>
+
+          <h3>2.5 Content Removal</h3>
           <p>We reserve the right to remove any Creator Content that, in our sole discretion, violates these Terms or applicable law, without prior notice and without liability to you.</p>
 
           <h2>3. Purchases, Payments, and Fees</h2>

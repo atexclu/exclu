@@ -84,7 +84,16 @@ const Privacy = () => {
           <h3>5.4 No Analytics or Advertising</h3>
           <p>We do <strong>not</strong> use third-party analytics, advertising networks, or tracking pixels. We do not sell your data.</p>
 
-          <h2>6. Data Retention</h2>
+          <h2>6. Cookies and Local Storage</h2>
+          <p>Exclu uses only strictly necessary cookies and browser local storage to operate the Platform:</p>
+          <ul>
+            <li><strong>Authentication session token:</strong> A secure JWT token stored in your browser's localStorage to maintain your login session.</li>
+            <li><strong>Theme preference:</strong> Your light/dark mode selection stored locally on your device.</li>
+            <li><strong>Session state:</strong> Temporary UI state (e.g., dismissed modals) stored in sessionStorage.</li>
+          </ul>
+          <p>We do not use marketing cookies, analytics cookies, or any third-party tracking technologies. For full details, please see our <a href="/cookies">Cookie Policy</a>.</p>
+
+          <h2>7. Data Retention</h2>
           <p>We retain personal data only for as long as necessary for the purposes described in this policy:</p>
           <ul>
             <li><strong>Account data:</strong> Retained for the duration of your active account plus 30 days after deletion request.</li>
@@ -95,7 +104,7 @@ const Privacy = () => {
             <li><strong>Bank details (IBAN):</strong> Retained while the creator account is active. Deleted within 30 days of account deletion, except as required by financial regulations.</li>
           </ul>
 
-          <h2>7. Your Rights Under GDPR</h2>
+          <h2>8. Your Rights Under GDPR</h2>
           <p>As a data subject under the General Data Protection Regulation, you have the following rights:</p>
           <ul>
             <li><strong>Right of access (Art. 15):</strong> You may request a copy of your personal data in a structured, commonly used format.</li>
@@ -109,7 +118,7 @@ const Privacy = () => {
           </ul>
           <p>To exercise any of these rights, contact us at <a href="mailto:contact@exclu.at">contact@exclu.at</a>. We will respond within <strong>30 days</strong>. If the request is complex, we may extend this period by an additional 60 days, with prior notification.</p>
 
-          <h2>8. Data Security</h2>
+          <h2>9. Data Security</h2>
           <p>We implement appropriate technical and organizational measures pursuant to Article 32 of the GDPR:</p>
           <ul>
             <li>SSL/TLS encryption for all data in transit (HTTPS enforced)</li>
@@ -121,7 +130,7 @@ const Privacy = () => {
             <li>Regular dependency updates and security patches</li>
           </ul>
 
-          <h2>9. Data Breach Notification</h2>
+          <h2>10. Data Breach Notification</h2>
           <p>In the event of a personal data breach that is likely to result in a risk to your rights and freedoms, we will:</p>
           <ul>
             <li>Notify the <strong>CNIL</strong> within 72 hours of becoming aware of the breach, as required by Article 33 of the GDPR.</li>
@@ -129,10 +138,10 @@ const Privacy = () => {
             <li>Document the breach, its effects, and the remedial actions taken.</li>
           </ul>
 
-          <h2>10. Automated Decision-Making and Profiling</h2>
+          <h2>11. Automated Decision-Making and Profiling</h2>
           <p>Exclu does <strong>not</strong> engage in automated decision-making or profiling that produces legal effects concerning you or similarly significantly affects you. Commission calculations and payment processing are deterministic operations based on published rates, not individual profiling.</p>
 
-          <h2>11. International Data Transfers</h2>
+          <h2>12. International Data Transfers</h2>
           <p>Your data may be processed outside the European Economic Area (EEA), specifically:</p>
           <ul>
             <li><strong>United States:</strong> Supabase (database infrastructure on AWS) and Vercel (frontend hosting).</li>
@@ -140,13 +149,13 @@ const Privacy = () => {
           </ul>
           <p>For transfers to the United States, we rely on <strong>Standard Contractual Clauses (SCCs)</strong> approved by the European Commission (Decision 2021/914). Switzerland benefits from an <strong>adequacy decision</strong> from the European Commission. You may request a copy of the applicable safeguards by contacting us.</p>
 
-          <h2>12. Children's Privacy</h2>
+          <h2>13. Children's Privacy</h2>
           <p>Exclu is not intended for individuals under the age of 18. We do not knowingly collect personal data from minors. If we become aware that a minor has provided personal data, we will delete it within 48 hours of discovery and terminate the associated account.</p>
 
-          <h2>11. Changes to This Policy</h2>
+          <h2>14. Changes to This Policy</h2>
           <p>We may update this policy. Changes are effective when posted. Continued use constitutes acceptance.</p>
 
-          <h2>12. Contact and Complaints</h2>
+          <h2>15. Contact and Complaints</h2>
           <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a></p>
           <p>You may also lodge a complaint with the <strong>CNIL</strong> (Commission Nationale de l'Informatique et des Libertés) at <a href="https://www.cnil.fr" target="_blank" rel="noopener noreferrer">www.cnil.fr</a>.</p>
         </div>
