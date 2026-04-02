@@ -306,11 +306,12 @@ const FanDashboard = () => {
     }
 
     // Fetch purchased links (by buyer_email from purchases table)
-    if (email) {
+    const fanEmail = user.email;
+    if (fanEmail) {
       const { data: purchasesData } = await supabaseAnon
         .from('purchases')
         .select('id, link_id, amount_cents, currency, status, created_at, access_token')
-        .eq('buyer_email', email)
+        .eq('buyer_email', fanEmail)
         .eq('status', 'succeeded')
         .order('created_at', { ascending: false })
         .limit(50);
