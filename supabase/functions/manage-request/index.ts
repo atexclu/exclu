@@ -182,6 +182,26 @@ serve(async (req) => {
         return jsonError('Payment captured but request update failed', 500, corsHeaders);
       }
 
+      // Create a purchase record for the delivery link so the fan can unlock content
+      // This makes custom request deliveries work exactly like paid link purchases
+      try {
+        await supabase.from('purchases').insert({
+          link_id: linkId,
+          amount_cents: amountCents + fanProcessingFeeCents,
+          currency: 'USD',
+          status: 'succeeded',
+          access_token: crypto.randomUUID(),
+          buyer_email: null, // Fan email not needed — they access via ref
+          creator_net_cents: creatorNetCents,
+          platform_fee_cents: totalPlatformFee,
+          ugp_transaction_id: request.ugp_transaction_id,
+          ugp_merchant_reference: `req_delivery_${requestId}`,
+        });
+        console.log('Delivery purchase record created for request:', requestId);
+      } catch (purchaseErr) {
+        console.error('Error creating delivery purchase (non-fatal):', purchaseErr);
+      }
+
       // Notify fan via email
       await notifyFanRequestUpdate(request, 'delivered', creatorResponse);
 

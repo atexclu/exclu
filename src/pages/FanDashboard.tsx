@@ -71,6 +71,7 @@ interface RequestRecord {
   created_at: string;
   delivery_link_id: string | null;
   delivery_link_slug: string | null;
+  delivery_purchase_id: string | null;
   creator: {
     display_name: string | null;
     handle: string | null;
@@ -298,10 +299,28 @@ const FanDashboard = () => {
       .limit(50);
 
     if (reqData) {
+      // For delivered requests, fetch the purchase record so we can build the unlock URL
+      const deliveredLinkIds = reqData
+        .filter((r: any) => (r.status === 'delivered' || r.status === 'accepted') && r.delivery_link_id)
+        .map((r: any) => r.delivery_link_id);
+
+      let purchaseByLinkId: Record<string, string> = {};
+      if (deliveredLinkIds.length > 0) {
+        const { data: deliveryPurchases } = await supabaseAnon
+          .from('purchases')
+          .select('id, link_id')
+          .in('link_id', deliveredLinkIds)
+          .eq('status', 'succeeded');
+        if (deliveryPurchases) {
+          purchaseByLinkId = Object.fromEntries(deliveryPurchases.map((p: any) => [p.link_id, p.id]));
+        }
+      }
+
       setRequests(reqData.map((r: any) => ({
         ...r,
         creator: r.creator,
         delivery_link_slug: r.delivery_link?.slug ?? null,
+        delivery_purchase_id: r.delivery_link_id ? (purchaseByLinkId[r.delivery_link_id] ?? null) : null,
       })));
     }
 
@@ -1288,7 +1307,7 @@ const FanDashboard = () => {
                         {(req.status === 'delivered' || req.status === 'accepted') && req.delivery_link_id && req.delivery_link_slug && (
                           <div className="mt-3">
                             <a
-                              href={`/l/${req.delivery_link_slug}?ref=link_${req.delivery_link_id}`}
+                              href={`/l/${req.delivery_link_slug}${req.delivery_purchase_id ? `?ref=link_${req.delivery_purchase_id}&payment_success=true` : ''}`}
                               className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
                             >
                               <Unlock className="w-3.5 h-3.5" />
