@@ -1089,8 +1089,8 @@ const FanDashboard = () => {
                 transition={{ duration: 0.25 }}
               >
                 <div className="mb-6">
-                  <h2 className="text-xl font-bold text-foreground">Custom requests</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">Track your requests to creators</p>
+                  <h2 className="text-xl font-bold text-foreground">Links & Requests</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Track your purchases and requests to creators</p>
                 </div>
 
                 {requests.length === 0 ? (

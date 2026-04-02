@@ -204,6 +204,18 @@ const AppDashboard = () => {
 
         if (payoutsError) throw payoutsError;
 
+        // Custom requests delivered — count as sales + revenue
+        const { data: deliveredRequests } = await supabase
+          .from('custom_requests')
+          .select('id, proposed_amount_cents, creator_net_cents, created_at')
+          .eq('creator_id', user.id)
+          .eq('status', 'delivered');
+        const safeRequests = deliveredRequests ?? [];
+        const requestsRevenue = safeRequests.reduce((sum: number, r: any) => {
+          if (typeof r.creator_net_cents === 'number' && r.creator_net_cents > 0) return sum + r.creator_net_cents;
+          return sum + Math.round((r.proposed_amount_cents ?? 0) * (1 - rate));
+        }, 0);
+
         const safePayouts = payoutsData ?? [];
         const totalPayoutsCents = safePayouts
           .filter((p: any) => p.status !== 'failed')
@@ -212,14 +224,14 @@ const AppDashboard = () => {
         const dbWallet = profile?.wallet_balance_cents;
         const walletBalance = typeof dbWallet === 'number' && dbWallet >= 0
           ? dbWallet
-          : revenueSum + tipsSum - totalPayoutsCents;
+          : revenueSum + tipsSum + requestsRevenue - totalPayoutsCents;
 
         if (!isMounted) return;
 
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
-        setTotalSalesCount(salesCount);
-        setTotalRevenueCents(revenueSum + tipsSum);
+        setTotalSalesCount(salesCount + safeRequests.length);
+        setTotalRevenueCents(revenueSum + tipsSum + requestsRevenue);
         setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
         setLinksRaw(safeLinks);
