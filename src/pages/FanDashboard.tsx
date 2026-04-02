@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -127,6 +127,8 @@ const FanDashboard = () => {
   const [gifts, setGifts] = useState<GiftRecord[]>([]);
   const [tipsSubTab, setTipsSubTab] = useState<'tips' | 'gifts'>('tips');
   const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [purchasedLinks, setPurchasedLinks] = useState<any[]>([]);
+  const [linksReqSubTab, setLinksReqSubTab] = useState<'links' | 'requests'>('requests');
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -301,6 +303,45 @@ const FanDashboard = () => {
         creator: r.creator,
         delivery_link_slug: r.delivery_link?.slug ?? null,
       })));
+    }
+
+    // Fetch purchased links (by buyer_email from purchases table)
+    if (email) {
+      const { data: purchasesData } = await supabaseAnon
+        .from('purchases')
+        .select('id, link_id, amount_cents, currency, status, created_at, access_token')
+        .eq('buyer_email', email)
+        .eq('status', 'succeeded')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (purchasesData && purchasesData.length > 0) {
+        // Fetch link details for each purchase
+        const linkIds = [...new Set(purchasesData.map((p: any) => p.link_id))];
+        const { data: linksData } = await supabaseAnon
+          .from('links')
+          .select('id, title, slug, creator_id, price_cents, currency')
+          .in('id', linkIds);
+
+        // Fetch creator profiles
+        const creatorIds = [...new Set((linksData ?? []).map((l: any) => l.creator_id))];
+        const { data: creatorsData } = creatorIds.length > 0
+          ? await supabaseAnon.from('profiles').select('id, display_name, handle, avatar_url').in('id', creatorIds)
+          : { data: [] };
+
+        const linksMap = new Map((linksData ?? []).map((l: any) => [l.id, l]));
+        const creatorsMap = new Map((creatorsData ?? []).map((c: any) => [c.id, c]));
+
+        setPurchasedLinks(purchasesData.map((p: any) => {
+          const link = linksMap.get(p.link_id);
+          const creator = link ? creatorsMap.get(link.creator_id) : null;
+          return {
+            ...p,
+            link: link || null,
+            creator: creator || null,
+          };
+        }));
+      }
     }
 
     setIsLoading(false);
@@ -1088,12 +1129,108 @@ const FanDashboard = () => {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
               >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold text-foreground">Links & Requests</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">Track your purchases and requests to creators</p>
+                <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">Links & Requests</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">Track your purchases and requests to creators</p>
+                  </div>
+                  <div className="flex gap-1 p-1 rounded-xl bg-muted/50 dark:bg-muted/30 w-fit">
+                    <button
+                      type="button"
+                      onClick={() => setLinksReqSubTab('links')}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        linksReqSubTab === 'links'
+                          ? 'bg-background dark:bg-white/10 text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      Links
+                      {purchasedLinks.length > 0 && <span className="text-[10px] ml-0.5 opacity-60">({purchasedLinks.length})</span>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLinksReqSubTab('requests')}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        linksReqSubTab === 'requests'
+                          ? 'bg-background dark:bg-white/10 text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      Requests
+                      {requests.length > 0 && <span className="text-[10px] ml-0.5 opacity-60">({requests.length})</span>}
+                    </button>
+                  </div>
                 </div>
 
-                {requests.length === 0 ? (
+                {/* Purchased Links sub-tab */}
+                {linksReqSubTab === 'links' && (
+                  purchasedLinks.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-4">
+                      <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+                        <Unlock className="w-7 h-7 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">No purchased links yet</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {purchasedLinks.map((purchase, i) => (
+                        <motion.div
+                          key={purchase.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.04 }}
+                          className="rounded-2xl border border-exclu-arsenic/60 bg-card p-4 hover:border-exclu-arsenic/80 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                                {purchase.creator?.avatar_url ? (
+                                  <img src={purchase.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                    {(purchase.creator?.display_name || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-foreground">
+                                  {purchase.link?.title || 'Unlocked content'}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {purchase.creator?.display_name || purchase.creator?.handle || 'Creator'} · {new Date(purchase.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-sm font-bold text-foreground">
+                                ${(purchase.amount_cents / 100).toFixed(2)}
+                              </p>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium text-emerald-400 bg-emerald-500/15">
+                                Purchased
+                              </span>
+                            </div>
+                          </div>
+                          {purchase.link?.slug && (
+                            <div className="mt-3">
+                              <a
+                                href={`/l/${purchase.link.slug}?payment_success=true&ref=link_${purchase.id}`}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
+                              >
+                                <Unlock className="w-3 h-3" />
+                                View content
+                              </a>
+                            </div>
+                          )}
+                        </motion.div>
+                      ))}
+                    </div>
+                  )
+                )}
+
+                {/* Requests sub-tab */}
+                {linksReqSubTab === 'requests' && (requests.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-4">
                     <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
                       <MessageSquare className="w-7 h-7 text-muted-foreground" />
@@ -1164,7 +1301,7 @@ const FanDashboard = () => {
                       </motion.div>
                     ))}
                   </div>
-                )}
+                ))}
               </motion.div>
             )}
 
