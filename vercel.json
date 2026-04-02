@@ -62,6 +62,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/dmca",
+      "destination": "/index.html"
+    },
+    {
       "source": "/accept-chatter-invite",
       "destination": "/index.html"
     },

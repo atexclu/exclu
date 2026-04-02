@@ -19,6 +19,7 @@ import Contact from "./pages/Contact";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
+import DMCA from "./pages/DMCA";
 import AppDashboard from "./pages/AppDashboard";
 import CreatorLinks from "./pages/CreatorLinks";
 import CreateLink from "./pages/CreateLink";
@@ -286,6 +287,7 @@ const App = () => {
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/cookies" element={<Cookies />} />
+                <Route path="/dmca" element={<DMCA />} />
 
                 {/* Blog SPA pages (SSR handled by Vercel on first load for SEO) */}
                 <Route path="/blog" element={<BlogIndex />} />
