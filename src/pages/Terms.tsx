@@ -29,7 +29,8 @@ const Terms = () => {
           <ul>
             <li><strong>Creator Account:</strong> Allows you to upload and sell digital content, receive tips, fulfill custom requests, and manage a public creator profile. Creators must provide accurate identity information and may be required to provide bank details (IBAN) for payouts.</li>
             <li><strong>Fan Account:</strong> Allows you to discover creators, purchase content, send tips, gift wishlist items, submit custom content requests, and communicate with creators via the messaging system.</li>
-            <li><strong>Agency Account:</strong> Allows management of multiple creator profiles under a single account, with centralized revenue tracking and team member (chatter) management.</li>
+            <li><strong>Agency Account:</strong> Allows management of multiple creator profiles under a single account, with centralized revenue tracking, team member management, and consolidated withdrawal of earnings across all managed profiles.</li>
+            <li><strong>Chatter Account:</strong> A team member role granted by a Creator or Agency. Chatters are authorized to manage conversations with fans on behalf of a creator, share paid content links in chat, and respond to custom requests. When a sale is attributed to a chatter (via tracked links shared in conversations), the revenue is split between the creator, the chatter, and the platform according to the chatter revenue sharing model described in Section 5. Chatters do not have access to the creator's financial settings, bank details, or withdrawal capabilities. The creator or agency that grants chatter access remains fully responsible for all actions taken by their chatters.</li>
           </ul>
 
           <h3>1.3 Account Security</h3>
