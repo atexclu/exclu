@@ -262,8 +262,12 @@ const PublicLink = () => {
       setError(null);
 
       try {
+        // Use anon client for link queries — published links are public content
+        // and authenticated fans may be blocked by RLS (links belong to creators)
+        const anonClient = supabaseAnon;
+
         // First check if link exists at all (any status)
-        const { data: linkCheck } = await supabase
+        const { data: linkCheck } = await anonClient
           .from('links')
           .select('id, status')
           .eq('slug', slug)
@@ -280,7 +284,7 @@ const PublicLink = () => {
         }
 
         // Now fetch full published link data
-        const { data, error } = await supabase
+        const { data, error } = await anonClient
           .from('links')
           .select('id, title, description, price_cents, currency, status, storage_path, creator_id, click_count, is_support_link')
           .eq('slug', slug)
@@ -315,7 +319,7 @@ const PublicLink = () => {
       }
 
       if (data.creator_id) {
-        const { data: creatorProfile } = await supabase
+        const { data: creatorProfile } = await anonClient
           .from('profiles')
           .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio, show_certification')
           .eq('id', data.creator_id)
@@ -408,8 +412,8 @@ const PublicLink = () => {
         }
       }
 
-      // Fetch attached media from link_media
-      const { data: linkMedia } = await supabase
+      // Fetch attached media from link_media (use anon to bypass RLS)
+      const { data: linkMedia } = await anonClient
         .from('link_media')
         .select('asset_id, assets(storage_path, mime_type)')
         .eq('link_id', data.id)
