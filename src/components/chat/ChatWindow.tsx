@@ -109,7 +109,10 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   useEffect(() => {
     if (!messages.length) return;
     const behavior = hasScrolledRef.current ? 'smooth' : 'instant';
-    bottomRef.current?.scrollIntoView({ behavior });
+    // Use requestAnimationFrame to ensure DOM is painted before scrolling
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior });
+    });
     hasScrolledRef.current = true;
   }, [messages.length, conversation.id]);
 

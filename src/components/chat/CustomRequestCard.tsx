@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Check, X, Loader2, DollarSign, FileText, Upload } from 'lucide-react';
+import { Check, X, Loader2, DollarSign, FileText, Upload, Unlock } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 
@@ -46,7 +46,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
   useEffect(() => {
     supabase
       .from('custom_requests')
-      .select('id, description, proposed_amount_cents, status, creator_response, delivery_link_id, fan_id')
+      .select('id, description, proposed_amount_cents, status, creator_response, delivery_link_id, fan_id, delivery_link:links!delivery_link_id(slug)')
       .eq('id', requestId)
       .single()
       .then(({ data }) => {
@@ -179,12 +179,12 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       {/* Fan view — delivered content link */}
       {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
         <a
-          href={`/unlock/${request.delivery_link_id}`}
+          href={`/l/${(request as any).delivery_link?.slug || request.delivery_link_id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25 transition-all"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
         >
-          <DollarSign className="w-3 h-3" />
+          <Unlock className="w-3 h-3" />
           View content
         </a>
       )}

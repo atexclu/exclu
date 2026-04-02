@@ -117,7 +117,11 @@ const FanDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { resolvedTheme, setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'favorites' | 'tips' | 'requests' | 'messages' | 'settings'>('favorites');
+  const validTabs = ['favorites', 'tips', 'requests', 'messages', 'settings'] as const;
+  const urlTab = searchParams.get('tab') as typeof validTabs[number] | null;
+  const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(
+    urlTab && validTabs.includes(urlTab) ? urlTab : 'favorites'
+  );
   const [favorites, setFavorites] = useState<FavoriteCreator[]>([]);
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [gifts, setGifts] = useState<GiftRecord[]>([]);
@@ -564,13 +568,24 @@ const FanDashboard = () => {
                 transition={{ duration: 0.25 }}
               >
                 {/* Section header */}
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold text-foreground">My Creators</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {favorites.length > 0
-                      ? `${favorites.length} creator${favorites.length > 1 ? 's' : ''} you follow`
-                      : 'Discover and follow your favorite creators'}
-                  </p>
+                <div className="mb-6 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">My Creators</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {favorites.length > 0
+                        ? `${favorites.length} creator${favorites.length > 1 ? 's' : ''} you follow`
+                        : 'Discover and follow your favorite creators'}
+                    </p>
+                  </div>
+                  {favorites.length > 0 && !showDiscovery && (
+                    <button
+                      onClick={() => setShowDiscovery(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#CFFF16]/10 text-[#CFFF16] hover:bg-[#CFFF16]/20 transition-colors"
+                    >
+                      <Compass className="w-3.5 h-3.5" />
+                      Add more
+                    </button>
+                  )}
                 </div>
 
                 {(favorites.length === 0 || showDiscovery) ? (
@@ -732,19 +747,7 @@ const FanDashboard = () => {
                   </div>
                 ) : (
                   <div>
-                    {/* Add more button */}
-                    <div className="flex justify-end mb-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-xl gap-1.5 text-xs border-border/60"
-                        onClick={() => setShowDiscovery(true)}
-                      >
-                        <Compass className="w-3.5 h-3.5" />
-                        Add more
-                      </Button>
-                    </div>
+                    {/* Add more button moved to header */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {favorites.map((fav, i) => (
                       <motion.div
