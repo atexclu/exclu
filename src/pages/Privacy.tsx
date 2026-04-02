@@ -85,29 +85,63 @@ const Privacy = () => {
           <p>We do <strong>not</strong> use third-party analytics, advertising networks, or tracking pixels. We do not sell your data.</p>
 
           <h2>6. Data Retention</h2>
+          <p>We retain personal data only for as long as necessary for the purposes described in this policy:</p>
           <ul>
-            <li><strong>Active accounts:</strong> Data retained while your account is active.</li>
-            <li><strong>Deleted accounts:</strong> All personal data, content, and transaction history deleted upon request.</li>
-            <li><strong>Financial records:</strong> Retained up to 10 years for French tax and accounting compliance.</li>
+            <li><strong>Account data:</strong> Retained for the duration of your active account plus 30 days after deletion request.</li>
+            <li><strong>Transaction records:</strong> Retained for up to 10 years to comply with French commercial and tax law (Code de commerce, art. L123-22).</li>
+            <li><strong>Communication logs:</strong> Messages between users are deleted when either party's account is deleted.</li>
+            <li><strong>Server logs:</strong> Automatically purged after 90 days.</li>
+            <li><strong>Payment card data:</strong> Not stored by Exclu — handled entirely by UG Payments.</li>
+            <li><strong>Bank details (IBAN):</strong> Retained while the creator account is active. Deleted within 30 days of account deletion, except as required by financial regulations.</li>
           </ul>
 
-          <h2>7. Your Rights (GDPR)</h2>
-          <p>You have the right to: <strong>access</strong>, <strong>rectify</strong>, <strong>erase</strong>, <strong>restrict processing</strong>, <strong>data portability</strong>, <strong>object</strong>, and <strong>withdraw consent</strong>. Contact us at <a href="mailto:contact@exclu.at">contact@exclu.at</a>. We respond within 30 days.</p>
+          <h2>7. Your Rights Under GDPR</h2>
+          <p>As a data subject under the General Data Protection Regulation, you have the following rights:</p>
+          <ul>
+            <li><strong>Right of access (Art. 15):</strong> You may request a copy of your personal data in a structured, commonly used format.</li>
+            <li><strong>Right to rectification (Art. 16):</strong> You may request correction of inaccurate or incomplete data.</li>
+            <li><strong>Right to erasure (Art. 17):</strong> You may request deletion of your personal data ("right to be forgotten"), subject to legal retention obligations.</li>
+            <li><strong>Right to restriction (Art. 18):</strong> You may request that we limit the processing of your data in certain circumstances.</li>
+            <li><strong>Right to data portability (Art. 20):</strong> You may request your data in a machine-readable format for transfer to another service.</li>
+            <li><strong>Right to object (Art. 21):</strong> You may object to processing based on our legitimate interests.</li>
+            <li><strong>Right to withdraw consent (Art. 7):</strong> Where processing is based on consent, you may withdraw it at any time without affecting the lawfulness of prior processing.</li>
+            <li><strong>Right not to be subject to automated decision-making (Art. 22):</strong> We do not make decisions based solely on automated processing that produce legal effects concerning you.</li>
+          </ul>
+          <p>To exercise any of these rights, contact us at <a href="mailto:contact@exclu.at">contact@exclu.at</a>. We will respond within <strong>30 days</strong>. If the request is complex, we may extend this period by an additional 60 days, with prior notification.</p>
 
           <h2>8. Data Security</h2>
+          <p>We implement appropriate technical and organizational measures pursuant to Article 32 of the GDPR:</p>
           <ul>
-            <li>SSL/TLS encryption for all data in transit</li>
-            <li>Encryption at rest for stored data</li>
-            <li>Secure password hashing (bcrypt)</li>
-            <li>Row-Level Security (RLS) on all database tables</li>
-            <li>Access controls and authentication on all API endpoints</li>
+            <li>SSL/TLS encryption for all data in transit (HTTPS enforced)</li>
+            <li>AES-256 encryption at rest for stored data (provided by AWS/Supabase)</li>
+            <li>Secure password hashing using bcrypt with appropriate cost factors</li>
+            <li>Row-Level Security (RLS) policies enforced at the database level on all tables</li>
+            <li>API authentication and authorization on all endpoints</li>
+            <li>Rate limiting to prevent brute-force and denial-of-service attacks</li>
+            <li>Regular dependency updates and security patches</li>
           </ul>
 
-          <h2>9. International Data Transfers</h2>
-          <p>Data may be processed outside the EEA (United States). Transfers are protected by Standard Contractual Clauses (SCCs).</p>
+          <h2>9. Data Breach Notification</h2>
+          <p>In the event of a personal data breach that is likely to result in a risk to your rights and freedoms, we will:</p>
+          <ul>
+            <li>Notify the <strong>CNIL</strong> within 72 hours of becoming aware of the breach, as required by Article 33 of the GDPR.</li>
+            <li>Notify affected users without undue delay if the breach is likely to result in a <strong>high risk</strong> to their rights and freedoms (Article 34 GDPR).</li>
+            <li>Document the breach, its effects, and the remedial actions taken.</li>
+          </ul>
 
-          <h2>10. Children's Privacy</h2>
-          <p>Exclu is not intended for individuals under 18. We do not knowingly collect data from minors.</p>
+          <h2>10. Automated Decision-Making and Profiling</h2>
+          <p>Exclu does <strong>not</strong> engage in automated decision-making or profiling that produces legal effects concerning you or similarly significantly affects you. Commission calculations and payment processing are deterministic operations based on published rates, not individual profiling.</p>
+
+          <h2>11. International Data Transfers</h2>
+          <p>Your data may be processed outside the European Economic Area (EEA), specifically:</p>
+          <ul>
+            <li><strong>United States:</strong> Supabase (database infrastructure on AWS) and Vercel (frontend hosting).</li>
+            <li><strong>Switzerland:</strong> UG Payments (payment processing).</li>
+          </ul>
+          <p>For transfers to the United States, we rely on <strong>Standard Contractual Clauses (SCCs)</strong> approved by the European Commission (Decision 2021/914). Switzerland benefits from an <strong>adequacy decision</strong> from the European Commission. You may request a copy of the applicable safeguards by contacting us.</p>
+
+          <h2>12. Children's Privacy</h2>
+          <p>Exclu is not intended for individuals under the age of 18. We do not knowingly collect personal data from minors. If we become aware that a minor has provided personal data, we will delete it within 48 hours of discovery and terminate the associated account.</p>
 
           <h2>11. Changes to This Policy</h2>
           <p>We may update this policy. Changes are effective when posted. Continued use constitutes acceptance.</p>

@@ -150,13 +150,46 @@ const Terms = () => {
           <h2>11. Indemnification</h2>
           <p>You agree to indemnify, defend, and hold harmless FRANCEPRODUCT SAS and its officers, directors, employees, and agents from any claims, damages, losses, liabilities, and expenses (including reasonable attorneys' fees) arising out of or related to your use of Exclu, your violation of these Terms, or your violation of any rights of a third party.</p>
 
-          <h2>12. Governing Law and Disputes</h2>
-          <p>These Terms are governed by and construed in accordance with the laws of <strong>France</strong>. Any disputes arising out of or relating to these Terms or your use of Exclu shall be resolved exclusively in the courts of competent jurisdiction in France.</p>
+          <h2>12. Relationship Between Users</h2>
+          <p>All transactions for Creator Content — including paid links, tips, gifts, and custom requests — are between the Fan and the Creator. Exclu acts solely as a facilitator and intermediary. At no point does Exclu become a party to any transaction between Users. You agree that any disputes between Users in connection with Creator Content are solely between those Users. Exclu makes no representations or warranties regarding Creator Content quality, accuracy, or legality.</p>
 
-          <h2>13. Changes to These Terms</h2>
-          <p>We may modify these Terms at any time. Changes become effective on the date posted. Your continued use of Exclu after changes are posted constitutes your acceptance of the revised Terms. If you do not agree to the revised Terms, your sole remedy is to stop using Exclu.</p>
+          <h2>13. License to Use the Platform</h2>
+          <p>Subject to these Terms, we grant you a conditional, revocable, non-transferable, non-sublicensable, non-exclusive, limited license to access and use Exclu for your own lawful and personal use. This license may be revoked at any time for any reason, including violation of these Terms. All rights not expressly granted are reserved by FRANCEPRODUCT SAS.</p>
 
-          <h2>14. Contact</h2>
+          <h2>14. Electronic Communications</h2>
+          <p>By creating an account on Exclu, you consent to receive electronic communications from us, including transactional emails (purchase confirmations, tip notifications, custom request updates, account verification), and service announcements. These communications are part of your relationship with us and you may not opt out of transactional communications while maintaining an active account.</p>
+
+          <h2>15. Inactive Accounts</h2>
+          <p>If you do not log into your Exclu account for twelve (12) consecutive months, your account may be considered inactive. We reserve the right to deactivate inactive accounts after providing reasonable notice to the email address on file. Any remaining wallet balance will be available for withdrawal for 90 days following deactivation notice.</p>
+
+          <h2>16. Force Majeure</h2>
+          <p>FRANCEPRODUCT SAS shall not be liable for any failure or delay in performing its obligations under these Terms due to circumstances beyond its reasonable control, including but not limited to natural disasters, war, terrorism, pandemics, government actions, power failures, internet disruptions, or failures of third-party service providers (including payment processors).</p>
+
+          <h2>17. Governing Law and Dispute Resolution</h2>
+          <p>These Terms are governed by and construed in accordance with the laws of <strong>France</strong>, without regard to conflict of law principles. In the event of a dispute arising out of or relating to these Terms:</p>
+          <ol>
+            <li><strong>Amicable resolution:</strong> The parties shall first attempt to resolve the dispute amicably through direct negotiation for a period of thirty (30) days.</li>
+            <li><strong>Mediation:</strong> If amicable resolution fails, either party may submit the dispute to mediation in accordance with the mediation rules of the Centre de Médiation et d'Arbitrage de Paris (CMAP).</li>
+            <li><strong>Jurisdiction:</strong> If mediation fails, the dispute shall be submitted to the exclusive jurisdiction of the competent courts of Cambrai, France.</li>
+          </ol>
+          <p><strong>EU consumers:</strong> If you are a consumer residing in the European Union, you may also use the European Commission's Online Dispute Resolution platform at <a href="https://ec.europa.eu/consumers/odr" target="_blank" rel="noopener noreferrer">https://ec.europa.eu/consumers/odr</a>.</p>
+
+          <h2>18. Severability</h2>
+          <p>If any provision of these Terms is held to be invalid, illegal, or unenforceable by a court of competent jurisdiction, the remaining provisions shall remain in full force and effect. The invalid provision shall be modified to the minimum extent necessary to make it valid and enforceable while preserving its original intent.</p>
+
+          <h2>19. Assignment</h2>
+          <p>You may not assign, transfer, or delegate your rights or obligations under these Terms without our prior written consent. FRANCEPRODUCT SAS may freely assign its rights and obligations under these Terms in connection with a merger, acquisition, sale of assets, or by operation of law, without restriction and without notice to you.</p>
+
+          <h2>20. No Waiver</h2>
+          <p>The failure of FRANCEPRODUCT SAS to enforce any right or provision of these Terms shall not constitute a waiver of such right or provision. Any waiver must be in writing and signed by an authorized representative of the Company.</p>
+
+          <h2>21. Entire Agreement</h2>
+          <p>These Terms, together with the <a href="/privacy">Privacy Policy</a>, <a href="/cookies">Cookie Policy</a>, and <a href="/dmca">DMCA Policy</a>, constitute the entire agreement between you and FRANCEPRODUCT SAS regarding your use of Exclu, superseding any prior agreements or understandings.</p>
+
+          <h2>22. Changes to These Terms</h2>
+          <p>We may modify these Terms at any time. Material changes will be communicated via email to registered users at least fifteen (15) days before they take effect. Non-material changes become effective immediately upon posting. Your continued use of Exclu after changes take effect constitutes your acceptance of the revised Terms. If you do not agree to the revised Terms, your sole remedy is to stop using Exclu and request account deletion.</p>
+
+          <h2>23. Contact</h2>
           <p>For questions or concerns regarding these Terms, please contact us at:</p>
           <p>
             <strong>FRANCEPRODUCT SAS</strong><br />
