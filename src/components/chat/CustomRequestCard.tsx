@@ -43,14 +43,27 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
   const [isActing, setIsActing] = useState(false);
   const [responseText, setResponseText] = useState('');
 
+  const [deliverySlug, setDeliverySlug] = useState<string | null>(null);
+
   useEffect(() => {
     supabase
       .from('custom_requests')
-      .select('id, description, proposed_amount_cents, status, creator_response, delivery_link_id, fan_id, delivery_link:links!delivery_link_id(slug)')
+      .select('id, description, proposed_amount_cents, status, creator_response, delivery_link_id, fan_id')
       .eq('id', requestId)
       .single()
-      .then(({ data }) => {
-        if (data) setRequest(data);
+      .then(async ({ data }) => {
+        if (data) {
+          setRequest(data);
+          // Fetch delivery link slug separately (FK join unreliable with PostgREST cache)
+          if (data.delivery_link_id) {
+            const { data: link } = await supabase
+              .from('links')
+              .select('slug')
+              .eq('id', data.delivery_link_id)
+              .maybeSingle();
+            if (link?.slug) setDeliverySlug(link.slug);
+          }
+        }
         setIsLoading(false);
       });
   }, [requestId]);
@@ -179,7 +192,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       {/* Fan view — delivered content link */}
       {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
         <a
-          href={`/l/${(request as any).delivery_link?.slug || request.delivery_link_id}`}
+          href={`/l/${deliverySlug || request.delivery_link_id}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"

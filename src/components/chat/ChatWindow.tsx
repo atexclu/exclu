@@ -103,17 +103,24 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       .then(({ error }) => { if (error) console.error('Auto-favorite failed:', error); });
   }, [senderType, creatorInfo?.user_id, currentUserId]);
 
-  // Auto-scroll: instant on first load / conversation switch, smooth on new messages
+  // Auto-scroll to bottom of message list
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
   useEffect(() => { hasScrolledRef.current = false; }, [conversation.id]);
   useEffect(() => {
     if (!messages.length) return;
-    const behavior = hasScrolledRef.current ? 'smooth' : 'instant';
-    // Use requestAnimationFrame to ensure DOM is painted before scrolling
-    requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior });
-    });
-    hasScrolledRef.current = true;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const doScroll = () => {
+      if (hasScrolledRef.current) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+      hasScrolledRef.current = true;
+    };
+    // Double rAF to ensure layout is computed after render
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, [messages.length, conversation.id]);
 
   // Fetch profiles for team members (creator/chatter) other than current user
@@ -373,7 +380,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       </div>
 
       {/* Messages — scrollable */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-1">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-1">
         <div>
         {isLoading && (
           <div className="flex justify-center py-8">
