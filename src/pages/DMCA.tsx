@@ -29,7 +29,7 @@ const DMCA = () => {
           <p>
             <strong>DMCA Agent — FRANCEPRODUCT SAS</strong><br />
             13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />
-            Email: <a href="mailto:dmca@exclu.at">dmca@exclu.at</a>
+            Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a>
           </p>
           <p>For fastest processing, please submit your notice via email with the subject line "<strong>DMCA Takedown Notice</strong>."</p>
 
@@ -49,7 +49,7 @@ const DMCA = () => {
             <li><strong>Your full legal name, address, and telephone number,</strong> and a statement that you consent to the jurisdiction of the courts in your district (or, if outside the United States, the jurisdiction of the courts in Saint-Hilaire-lez-Cambrai, France).</li>
             <li><strong>Your physical or electronic signature.</strong></li>
           </ol>
-          <p>Counter-notifications should be sent to <a href="mailto:dmca@exclu.at">dmca@exclu.at</a>.</p>
+          <p>Counter-notifications should be sent to <a href="mailto:contact@exclu.at">contact@exclu.at</a>.</p>
 
           <h2>5. Restoration of Content</h2>
           <p>If we receive a valid counter-notification, we will forward it to the original complainant and inform them that the removed content may be restored in <strong>10–14 business days</strong> unless the complainant files a court action seeking to restrain the alleged infringer from engaging in infringing activity relating to the content on Exclu.</p>
@@ -68,7 +68,7 @@ const DMCA = () => {
             <strong>FRANCEPRODUCT SAS</strong><br />
             DMCA Agent<br />
             13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />
-            Email: <a href="mailto:dmca@exclu.at">dmca@exclu.at</a>
+            Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a>
           </p>
         </div>
       </main>
