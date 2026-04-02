@@ -389,7 +389,7 @@ const FanDashboard = () => {
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
     { key: 'messages' as const, label: 'Messages', icon: MessagesSquare },
     { key: 'tips' as const, label: 'Tips & Gifts', icon: DollarSign },
-    { key: 'requests' as const, label: 'Requests', icon: MessageSquare },
+    { key: 'requests' as const, label: 'Links & Requests', icon: Unlock },
   ];
 
   const handleMessagesTabClick = async () => {

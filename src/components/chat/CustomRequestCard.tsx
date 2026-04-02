@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import { Check, X, Loader2, DollarSign, FileText, Upload, Unlock } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 
 interface CustomRequestCardProps {
@@ -56,7 +56,8 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
           setRequest(data);
           // Fetch delivery link slug separately (FK join unreliable with PostgREST cache)
           if (data.delivery_link_id) {
-            const { data: link } = await supabase
+            // Use anon client to bypass RLS restrictions on links table
+            const { data: link } = await supabaseAnon
               .from('links')
               .select('slug')
               .eq('id', data.delivery_link_id)
@@ -192,7 +193,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       {/* Fan view — delivered content link */}
       {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
         <a
-          href={`/l/${deliverySlug || request.delivery_link_id}`}
+          href={deliverySlug ? `/l/${deliverySlug}?payment_success=true&ref=link_${request.delivery_link_id}` : '#'}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
