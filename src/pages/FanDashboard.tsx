@@ -1285,17 +1285,15 @@ const FanDashboard = () => {
                         )}
 
                         {/* Unlock button: visible when delivered/accepted + delivery link exists */}
-                        {(req.status === 'delivered' || req.status === 'accepted') && req.delivery_link_id && req.delivery_link_slug && req.creator.handle && (
+                        {(req.status === 'delivered' || req.status === 'accepted') && req.delivery_link_id && req.delivery_link_slug && (
                           <div className="mt-3">
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="w-full rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs"
-                              onClick={() => navigate(`/${req.creator.handle}/links/${req.delivery_link_slug}`)}
+                            <a
+                              href={`/l/${req.delivery_link_slug}?ref=link_${req.delivery_link_id}`}
+                              className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
                             >
                               <Unlock className="w-3.5 h-3.5" />
-                              Unlock content
-                            </Button>
+                              View content
+                            </a>
                           </div>
                         )}
                       </motion.div>

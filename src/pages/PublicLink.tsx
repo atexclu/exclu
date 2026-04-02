@@ -356,6 +356,49 @@ const PublicLink = () => {
           verifiedPurchase = quickCheck as PurchaseData;
         }
 
+        // If not found in purchases, check if this is a delivered custom request
+        // (delivery_link_id matches the link we're viewing)
+        if (!verifiedPurchase && data?.id) {
+          const { data: deliveredRequest } = await supabaseAnon
+            .from('custom_requests')
+            .select('id, proposed_amount_cents, created_at, status')
+            .eq('delivery_link_id', purchaseIdFromRef)
+            .eq('status', 'delivered')
+            .maybeSingle();
+
+          if (!deliveredRequest) {
+            // Also try: purchaseIdFromRef might be the link.id itself
+            const { data: deliveredByLink } = await supabaseAnon
+              .from('custom_requests')
+              .select('id, proposed_amount_cents, created_at, status')
+              .eq('delivery_link_id', data.id)
+              .eq('status', 'delivered')
+              .maybeSingle();
+
+            if (deliveredByLink) {
+              verifiedPurchase = {
+                id: deliveredByLink.id,
+                access_expires_at: null,
+                amount_cents: deliveredByLink.proposed_amount_cents,
+                currency: 'USD',
+                created_at: deliveredByLink.created_at,
+                email_sent: false,
+                download_count: 0,
+              } as PurchaseData;
+            }
+          } else {
+            verifiedPurchase = {
+              id: deliveredRequest.id,
+              access_expires_at: null,
+              amount_cents: deliveredRequest.proposed_amount_cents,
+              currency: 'USD',
+              created_at: deliveredRequest.created_at,
+              email_sent: false,
+              download_count: 0,
+            } as PurchaseData;
+          }
+        }
+
         // If not yet confirmed and we have a TransactionID, verify it ourselves
         if (!verifiedPurchase && ugpTransactionId && !signal.aborted) {
           try {

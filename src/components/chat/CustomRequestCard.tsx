@@ -193,7 +193,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       {/* Fan view — delivered content link */}
       {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
         <a
-          href={deliverySlug ? `/l/${deliverySlug}?payment_success=true&ref=link_${request.delivery_link_id}` : '#'}
+          href={deliverySlug ? `/l/${deliverySlug}?ref=link_${request.delivery_link_id}` : '#'}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"
