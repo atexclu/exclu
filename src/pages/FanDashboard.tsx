@@ -196,7 +196,7 @@ const FanDashboard = () => {
         }
       }
 
-      await fetchData(user.id);
+      await fetchData(user.id, user.email);
 
       // Handle tab/conversation redirect from CreatorPublic
       if (tabParam === 'messages') {
@@ -237,7 +237,7 @@ const FanDashboard = () => {
     setIsLoadingConversations(false);
   };
 
-  const fetchData = async (uid: string) => {
+  const fetchData = async (uid: string, email?: string | null) => {
     setIsLoading(true);
 
     // Fetch favorites with creator profile
@@ -306,12 +306,11 @@ const FanDashboard = () => {
     }
 
     // Fetch purchased links (by buyer_email from purchases table)
-    const fanEmail = user.email;
-    if (fanEmail) {
+    if (email) {
       const { data: purchasesData } = await supabaseAnon
         .from('purchases')
         .select('id, link_id, amount_cents, currency, status, created_at, access_token')
-        .eq('buyer_email', fanEmail)
+        .eq('buyer_email', email)
         .eq('status', 'succeeded')
         .order('created_at', { ascending: false })
         .limit(50);
