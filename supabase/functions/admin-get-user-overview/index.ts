@@ -492,7 +492,7 @@ serve(async (req) => {
               previewUrl = signed.signedUrl;
             }
           } catch (e) {
-            console.error('Exception generating signed URL for', cleanPath, ':', e);
+            console.error('Exception generating signed URL for', storagePath, ':', e);
           }
         } else {
           console.warn('Asset has no storage_path:', asset.id);
