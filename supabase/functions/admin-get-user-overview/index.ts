@@ -482,16 +482,20 @@ serve(async (req) => {
 
         if (storagePath) {
           try {
-            const { data: signed } = await supabaseAdmin.storage
+            const { data: signed, error: signError } = await supabaseAdmin.storage
               .from('paid-content')
               .createSignedUrl(storagePath, 60 * 60);
 
-            if (signed?.signedUrl) {
+            if (signError) {
+              console.error('Signed URL error for', storagePath, ':', signError.message);
+            } else if (signed?.signedUrl) {
               previewUrl = signed.signedUrl;
             }
           } catch (e) {
-            console.error('Error generating signed URL for asset in admin-get-user-overview', e);
+            console.error('Exception generating signed URL for', storagePath, ':', e);
           }
+        } else {
+          console.warn('Asset has no storage_path:', asset.id);
         }
 
         safeAssets.push({
