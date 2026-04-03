@@ -44,7 +44,6 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
   const [responseText, setResponseText] = useState('');
 
   const [deliverySlug, setDeliverySlug] = useState<string | null>(null);
-  const [deliveryPurchaseId, setDeliveryPurchaseId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -55,7 +54,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       .then(async ({ data }) => {
         if (data) {
           setRequest(data);
-          // Fetch delivery link slug + purchase ID separately (FK join unreliable with PostgREST cache)
+          // Fetch delivery link slug separately (FK join unreliable with PostgREST cache)
           if (data.delivery_link_id) {
             // Use anon client to bypass RLS restrictions on links table
             const { data: link } = await supabaseAnon
@@ -64,15 +63,6 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
               .eq('id', data.delivery_link_id)
               .maybeSingle();
             if (link?.slug) setDeliverySlug(link.slug);
-
-            // Fetch the purchase record created during delivery (needed for unlock URL)
-            const { data: purchase } = await supabaseAnon
-              .from('purchases')
-              .select('id')
-              .eq('link_id', data.delivery_link_id)
-              .eq('status', 'succeeded')
-              .maybeSingle();
-            if (purchase?.id) setDeliveryPurchaseId(purchase.id);
           }
         }
         setIsLoading(false);
@@ -203,7 +193,7 @@ export function CustomRequestCard({ requestId, viewerRole, fallbackContent, onDe
       {/* Fan view — delivered content link */}
       {!isCreatorView && request.status === 'delivered' && request.delivery_link_id && (
         <a
-          href={deliverySlug ? `/l/${deliverySlug}${deliveryPurchaseId ? `?ref=link_${deliveryPurchaseId}&payment_success=true` : ''}` : '#'}
+          href={deliverySlug ? `/l/${deliverySlug}` : '#'}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#CFFF16]/15 text-[#CFFF16] border border-[#CFFF16]/20 hover:bg-[#CFFF16]/25 transition-all"

@@ -337,11 +337,12 @@ const PublicLink = () => {
       let autoUnlockPurchaseId: string | null = null;
 
       // Auto-unlock for authenticated fans with a delivered custom request
-      // This handles the case where a fan clicks "View content" from chat or dashboard
+      // Uses authenticated supabase client (not anon) so RLS on custom_requests works
       if (!signal.aborted) {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) {
-          const { data: deliveredReq } = await supabaseAnon
+          // Check custom_requests with authenticated client (RLS allows fan to see own requests)
+          const { data: deliveredReq } = await supabase
             .from('custom_requests')
             .select('id, proposed_amount_cents, created_at')
             .eq('delivery_link_id', data.id)
@@ -350,7 +351,7 @@ const PublicLink = () => {
             .maybeSingle();
 
           if (deliveredReq) {
-            // Find purchase record created during delivery (by manage-request)
+            // Find purchase record created during delivery (use anon — purchases are public-readable)
             const { data: deliveryPurchase } = await supabaseAnon
               .from('purchases')
               .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
@@ -364,7 +365,7 @@ const PublicLink = () => {
               setIsUnlocked(true);
               setPurchaseData(deliveryPurchase as PurchaseData);
             } else {
-              // No purchase record yet — still unlock using custom_request as proof
+              // No purchase record — use custom_request as proof
               hasPurchased = true;
               autoUnlockPurchaseId = `req_${deliveredReq.id}`;
               setIsUnlocked(true);
