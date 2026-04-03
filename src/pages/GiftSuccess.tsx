@@ -17,16 +17,22 @@ const GiftSuccess = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
 
-    // Verify payment in background (fallback if ConfirmURL didn't fire)
-    if (ugpTransactionId && merchantRef) {
-      supabase.functions.invoke('verify-payment', {
-        body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
-      }).catch(() => {});
-    }
+    const init = async () => {
+      // Verify payment (fallback if ConfirmURL didn't fire)
+      if (ugpTransactionId && merchantRef) {
+        try {
+          await supabase.functions.invoke('verify-payment', {
+            body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
+          });
+        } catch (err) {
+          console.error('[GiftSuccess] verify-payment failed:', err);
+        }
+      }
 
-    supabase.auth.getUser().then(({ data }) => {
+      const { data } = await supabase.auth.getUser();
       if (data?.user) setIsLoggedIn(true);
-    });
+    };
+    init();
   }, []);
 
   return (

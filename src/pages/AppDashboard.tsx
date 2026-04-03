@@ -75,7 +75,7 @@ const AppDashboard = () => {
       if (ugpTxnId && ugpMerchRef) {
         supabase.functions.invoke('verify-payment', {
           body: { merchant_reference: ugpMerchRef, transaction_id: ugpTxnId },
-        }).catch(() => {});
+        }).catch((err) => console.error('[AppDashboard] verify-payment failed:', err));
       }
       toast.success('Premium subscription activated! You now keep 100% of your revenue.');
       // Clean URL params

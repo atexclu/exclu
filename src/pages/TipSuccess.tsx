@@ -205,12 +205,17 @@ const TipSuccess = () => {
 
   useEffect(() => {
     const load = async () => {
-      // Verify payment in background (fallback if ConfirmURL didn't fire)
+      // Verify payment (fallback if ConfirmURL didn't fire)
       if (ugpTransactionId && (merchantRef || tipId)) {
         const ref = merchantRef || (tipId ? `tip_${tipId}` : '');
-        supabase.functions.invoke('verify-payment', {
-          body: { merchant_reference: ref, transaction_id: ugpTransactionId },
-        }).catch(() => {});
+        try {
+          await supabase.functions.invoke('verify-payment', {
+            body: { merchant_reference: ref, transaction_id: ugpTransactionId },
+          });
+          console.log('[TipSuccess] verify-payment succeeded for', ref);
+        } catch (err) {
+          console.error('[TipSuccess] verify-payment failed:', err);
+        }
       }
 
       if (handle) {

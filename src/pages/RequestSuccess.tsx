@@ -32,11 +32,15 @@ const RequestSuccess = () => {
 
   useEffect(() => {
     const load = async () => {
-      // Verify payment in background (fallback if ConfirmURL didn't fire)
+      // Verify payment (fallback if ConfirmURL didn't fire)
       if (ugpTransactionId && merchantRef) {
-        supabase.functions.invoke('verify-payment', {
-          body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
-        }).catch(() => {});
+        try {
+          await supabase.functions.invoke('verify-payment', {
+            body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
+          });
+        } catch (err) {
+          console.error('[RequestSuccess] verify-payment failed:', err);
+        }
       }
 
       if (handle) {
