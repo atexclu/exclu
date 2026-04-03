@@ -158,16 +158,30 @@ serve(async (req: Request) => {
         ? entry.mimeType.startsWith('video/')
         : ['mp4', 'mov', 'webm', 'mkv'].includes(entry.path.split('.').pop()?.toLowerCase() ?? '');
 
-      const { data: signed, error: signedError } = await supabase.storage
-        .from('paid-content')
-        .createSignedUrl(entry.path, 15 * 60);
-
-      if (signedError) {
-        console.error('Error signing', entry.path, signedError.message);
-        signedUrls.push({ path: entry.path, url: null, type: isVideo ? 'video' : 'image' });
+      // Try path as-is, then fallback with/without 'paid-content/' prefix
+      let signedUrl: string | null = null;
+      const candidates = [entry.path];
+      if (entry.path.startsWith('paid-content/')) {
+        candidates.push(entry.path.slice('paid-content/'.length));
       } else {
-        signedUrls.push({ path: entry.path, url: signed?.signedUrl ?? null, type: isVideo ? 'video' : 'image' });
+        candidates.push('paid-content/' + entry.path);
       }
+
+      for (const candidate of candidates) {
+        const { data: signed, error: signedError } = await supabase.storage
+          .from('paid-content')
+          .createSignedUrl(candidate, 15 * 60);
+
+        if (!signedError && signed?.signedUrl) {
+          signedUrl = signed.signedUrl;
+          break;
+        }
+      }
+
+      if (!signedUrl) {
+        console.error('Error signing (all variants failed)', entry.path);
+      }
+      signedUrls.push({ path: entry.path, url: signedUrl, type: isVideo ? 'video' : 'image' });
     }
 
     return new Response(JSON.stringify({ signedUrls }), {

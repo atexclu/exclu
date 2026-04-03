@@ -481,21 +481,30 @@ serve(async (req) => {
         let previewUrl: string | null = null;
 
         if (storagePath) {
-          try {
-            const { data: signed, error: signError } = await supabaseAdmin.storage
-              .from('paid-content')
-              .createSignedUrl(storagePath, 60 * 60);
-
-            if (signError) {
-              console.error('Signed URL error for', storagePath, ':', signError.message);
-            } else if (signed?.signedUrl) {
-              previewUrl = signed.signedUrl;
-            }
-          } catch (e) {
-            console.error('Exception generating signed URL for', storagePath, ':', e);
+          // Try the path as-is first, then try with/without 'paid-content/' prefix
+          const candidates = [storagePath];
+          if (storagePath.startsWith('paid-content/')) {
+            candidates.push(storagePath.slice('paid-content/'.length));
+          } else {
+            candidates.push('paid-content/' + storagePath);
           }
-        } else {
-          console.warn('Asset has no storage_path:', asset.id);
+
+          for (const candidate of candidates) {
+            try {
+              const { data: signed, error: signError } = await supabaseAdmin.storage
+                .from('paid-content')
+                .createSignedUrl(candidate, 60 * 60);
+
+              if (!signError && signed?.signedUrl) {
+                previewUrl = signed.signedUrl;
+                break;
+              }
+            } catch {}
+          }
+
+          if (!previewUrl) {
+            console.warn('Asset preview failed for all path variants:', asset.id, storagePath);
+          }
         }
 
         safeAssets.push({
