@@ -779,7 +779,7 @@ const Profile = () => {
         // Fetch payouts
         const { data: payoutsData } = await supabase
           .from('payouts')
-          .select('id, amount_cents, status, created_at, paid_at, notes')
+          .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
           .eq('creator_id', userId)
           .order('created_at', { ascending: false })
           .limit(50);
@@ -814,10 +814,19 @@ const Profile = () => {
       if (error || !(data as any)?.success) {
         throw new Error((data as any)?.error || 'Withdrawal request failed');
       }
-      toast.success('Withdrawal requested! You will receive your funds within 3-5 business days.');
-      // Refresh wallet data
-      setActiveSection('profile');
-      setTimeout(() => setActiveSection('wallet'), 50);
+      toast.success('Withdrawal requested! You will receive your funds within 7 business days.');
+      // Refresh wallet balance from response
+      if ((data as any)?.new_balance !== undefined) {
+        setWalletBalanceCents((data as any).new_balance);
+      }
+      // Force re-fetch wallet payouts
+      const { data: refreshedPayouts } = await supabase
+        .from('payouts')
+        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
+        .eq('creator_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (refreshedPayouts) setWalletPayouts(refreshedPayouts);
     } catch (err: any) {
       toast.error(err?.message || 'Unable to request withdrawal');
     } finally {

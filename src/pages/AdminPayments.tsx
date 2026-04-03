@@ -34,7 +34,7 @@ interface PayoutRecord {
 
 type StatusFilter = 'all' | 'pending' | 'completed' | 'rejected';
 
-export default function AdminPayments() {
+export default function AdminPayments({ embedded = false }: { embedded?: boolean }) {
   const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -136,9 +136,8 @@ export default function AdminPayments() {
 
   const pendingCount = payouts.filter(p => ['pending', 'approved', 'processing'].includes(p.status)).length;
 
-  return (
-    <AppShell>
-      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-6xl mx-auto w-full">
+  const content = (
+      <div className={embedded ? '' : 'flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-6xl mx-auto w-full'}>
         <div className="flex items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-extrabold text-foreground">Payments</h1>
@@ -314,7 +313,9 @@ export default function AdminPayments() {
             })}
           </div>
         )}
-      </main>
-    </AppShell>
+      </div>
   );
+
+  if (embedded) return content;
+  return <AppShell><main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-6xl mx-auto w-full">{content}</main></AppShell>;
 }

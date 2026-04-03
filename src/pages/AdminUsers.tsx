@@ -7,6 +7,7 @@ import { AgencyCategoryConfig, type AgencyCategoryData } from '@/components/ui/A
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import AdminPayments from './AdminPayments';
 
 interface AdminUserSummary {
   id: string;
@@ -27,7 +28,7 @@ interface AdminUserSummary {
 
 type RoleFilter = 'all' | 'creator' | 'fan' | 'agency';
 type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'archived';
-type AdminTab = 'users' | 'blog' | 'agencies';
+type AdminTab = 'users' | 'blog' | 'agencies' | 'payments';
 
 interface DirectoryAgency {
   id: string;
@@ -177,6 +178,7 @@ const AdminUsers = () => {
   const [agencyForm, setAgencyForm] = useState(emptyAgencyForm);
   const [savingAgency, setSavingAgency] = useState(false);
   const [claimRequests, setClaimRequests] = useState<ClaimRequest[]>([]);
+  const [pendingPayoutsCount, setPendingPayoutsCount] = useState(0);
   const [showClaimRequests, setShowClaimRequests] = useState(false);
   const [claimFilter, setClaimFilter] = useState<'pending' | 'processed' | 'all'>('pending');
   const [showAdvancedAgency, setShowAdvancedAgency] = useState(false);
@@ -328,6 +330,15 @@ const AdminUsers = () => {
   useEffect(() => {
     if (activeTab === 'agencies') fetchDirAgencies();
   }, [activeTab, fetchDirAgencies]);
+
+  // Fetch pending payouts count for badge
+  useEffect(() => {
+    supabase
+      .from('payouts')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['pending', 'approved', 'processing'])
+      .then(({ count }) => setPendingPayoutsCount(count ?? 0));
+  }, [activeTab]);
 
   const handleAdminLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -566,7 +577,7 @@ const AdminUsers = () => {
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
             </div>
             <div className="flex items-center gap-1">
-              {(['users', 'blog', 'agencies'] as const).map((tab) => (
+              {(['users', 'blog', 'agencies', 'payments'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => switchTab(tab)}
@@ -576,7 +587,12 @@ const AdminUsers = () => {
                       : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
                   }`}
                 >
-                  {tab === 'users' ? 'Users' : tab === 'blog' ? 'Blog' : 'Agencies'}
+                  {tab === 'users' ? 'Users' : tab === 'blog' ? 'Blog' : tab === 'agencies' ? 'Agencies' : 'Payments'}
+                  {tab === 'payments' && pendingPayoutsCount > 0 && (
+                    <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
+                      {pendingPayoutsCount}
+                    </span>
+                  )}
                   {tab === 'agencies' && claimRequests.filter((c) => c.status === 'pending').length > 0 && (
                     <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
                       {claimRequests.filter((c) => c.status === 'pending').length}
@@ -1290,6 +1306,10 @@ const AdminUsers = () => {
                 )}
               </div>
             </>
+          )}
+
+          {activeTab === 'payments' && (
+            <AdminPayments embedded />
           )}
         </div>
       </main>
