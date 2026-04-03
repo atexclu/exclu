@@ -19,7 +19,7 @@ import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
   DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
-  Lock, Mail, Settings, ChevronRight, Landmark, Wallet,
+  Lock, Mail, Settings, ChevronRight, Landmark, Wallet, Inbox,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -549,30 +549,8 @@ export default function ChatterDashboard() {
     );
   }
 
-  // ── Unauthorized ───────────────────────────────────────────────────────
-  if (!isAuthorized) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-6 p-8 text-center">
-        <MessagesSquare className="w-12 h-12 text-muted-foreground/30" />
-        <div>
-          <h1 className="text-xl font-bold">Access denied</h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-            You haven't been invited to join a chatter team yet.
-            Contact the creator to receive an invitation.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => navigate('/')}>
-            Back to home
-          </Button>
-          <Button variant="hero" onClick={() => navigate('/app/chatter/contracts')}>
-            <Users className="w-4 h-4 mr-2" />
-            Browse contracts
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Note: isAuthorized=false means no accepted invitations yet.
+  // We still show the full UI (topbar, account, contracts) — only chat is restricted.
 
   return (
     <div className="h-screen bg-background text-foreground flex flex-col overflow-hidden">
@@ -1010,7 +988,27 @@ export default function ChatterDashboard() {
       )}
 
       {/* ── Chat view: split-pane (identical layout to CreatorChat) ────── */}
-      {mainView === 'chat' && (
+      {mainView === 'chat' && !isAuthorized && (
+        <div className="pt-16 sm:pt-20 flex-1 flex items-center justify-center overflow-hidden">
+          <div className="flex flex-col items-center gap-6 p-8 text-center max-w-md">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+              <Inbox className="w-7 h-7 text-muted-foreground/40" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground">No active team yet</h2>
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                You don't have any accepted invitations yet. Browse available contracts to apply, or wait for a creator to invite you.
+              </p>
+            </div>
+            <Button variant="hero" onClick={() => setMainView('contracts')}>
+              <Users className="w-4 h-4 mr-2" />
+              Browse contracts
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mainView === 'chat' && isAuthorized && (
       <div className="pt-16 sm:pt-20 flex-1 flex overflow-hidden">
 
         {/* ── Left panel: conversation list ──────────────────────────── */}
