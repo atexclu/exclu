@@ -154,13 +154,18 @@ serve(async (req: Request) => {
     const signedUrls: { path: string; url: string | null; type: string }[] = [];
 
     for (const entry of pathEntries) {
+      // Strip bucket prefix if present in storage_path
+      const cleanPath = entry.path.startsWith('paid-content/')
+        ? entry.path.slice('paid-content/'.length)
+        : entry.path;
+
       const isVideo = entry.mimeType
         ? entry.mimeType.startsWith('video/')
-        : ['mp4', 'mov', 'webm', 'mkv'].includes(entry.path.split('.').pop()?.toLowerCase() ?? '');
+        : ['mp4', 'mov', 'webm', 'mkv'].includes(cleanPath.split('.').pop()?.toLowerCase() ?? '');
 
       const { data: signed, error: signedError } = await supabase.storage
         .from('paid-content')
-        .createSignedUrl(entry.path, 15 * 60);
+        .createSignedUrl(cleanPath, 15 * 60);
 
       if (signedError) {
         console.error('Error signing', entry.path, signedError.message);

@@ -481,18 +481,24 @@ serve(async (req) => {
         let previewUrl: string | null = null;
 
         if (storagePath) {
+          // Some assets have storage_path prefixed with "paid-content/" — strip it
+          // since createSignedUrl is already scoped to the 'paid-content' bucket
+          const cleanPath = storagePath.startsWith('paid-content/')
+            ? storagePath.slice('paid-content/'.length)
+            : storagePath;
+
           try {
             const { data: signed, error: signError } = await supabaseAdmin.storage
               .from('paid-content')
-              .createSignedUrl(storagePath, 60 * 60);
+              .createSignedUrl(cleanPath, 60 * 60);
 
             if (signError) {
-              console.error('Signed URL error for', storagePath, ':', signError.message);
+              console.error('Signed URL error for', cleanPath, ':', signError.message);
             } else if (signed?.signedUrl) {
               previewUrl = signed.signedUrl;
             }
           } catch (e) {
-            console.error('Exception generating signed URL for', storagePath, ':', e);
+            console.error('Exception generating signed URL for', cleanPath, ':', e);
           }
         } else {
           console.warn('Asset has no storage_path:', asset.id);

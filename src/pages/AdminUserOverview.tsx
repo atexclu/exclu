@@ -115,14 +115,19 @@ const AdminUserOverview = () => {
     }
 
     let isMounted = true;
+    const abortController = new AbortController();
 
     const loadOverview = async () => {
       setIsLoading(true);
       setError(null);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      let session: any = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        session = data.session;
+      } catch (authErr) {
+        console.error('Auth session error:', authErr);
+      }
 
       if (!isMounted) return;
 
@@ -132,14 +137,22 @@ const AdminUserOverview = () => {
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('admin-get-user-overview', {
-        body: { user_id: id },
-        headers: {
-          // Same pattern as other admin functions: send the access token via x-supabase-auth
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'x-supabase-auth': session.access_token,
-        },
-      });
+      let data: any = null;
+      let error: any = null;
+      try {
+        const result = await supabase.functions.invoke('admin-get-user-overview', {
+          body: { user_id: id },
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'x-supabase-auth': session.access_token,
+          },
+        });
+        data = result.data;
+        error = result.error;
+      } catch (fetchErr) {
+        console.error('Fetch error:', fetchErr);
+        error = fetchErr;
+      }
 
       if (!isMounted) return;
 
