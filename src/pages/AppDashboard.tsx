@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -28,6 +28,8 @@ const AppDashboard = () => {
   const [payouts, setPayouts] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'metrics' | 'referral' | 'tips'>('metrics');
   const [tipsRaw, setTipsRaw] = useState<any[]>([]);
+  const [giftsRaw, setGiftsRaw] = useState<any[]>([]);
+  const [requestsRaw, setRequestsRaw] = useState<any[]>([]);
   // Referral state (recruteur)
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
@@ -207,10 +209,19 @@ const AppDashboard = () => {
         // Custom requests delivered — count as sales + revenue
         const { data: deliveredRequests } = await supabase
           .from('custom_requests')
-          .select('id, proposed_amount_cents, creator_net_cents, created_at')
+          .select('id, proposed_amount_cents, creator_net_cents, created_at, description, fan_id')
           .eq('creator_id', user.id)
           .eq('status', 'delivered');
         const safeRequests = deliveredRequests ?? [];
+
+        // Gift purchases
+        const { data: giftsData } = await supabase
+          .from('gift_purchases')
+          .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_id, created_at')
+          .eq('creator_id', user.id)
+          .eq('status', 'succeeded')
+          .order('created_at', { ascending: false });
+        const safeGifts = giftsData ?? [];
         const requestsRevenue = safeRequests.reduce((sum: number, r: any) => {
           if (typeof r.creator_net_cents === 'number' && r.creator_net_cents > 0) return sum + r.creator_net_cents;
           return sum + Math.round((r.proposed_amount_cents ?? 0) * (1 - rate));
@@ -244,6 +255,8 @@ const AppDashboard = () => {
         setLinksRaw(safeLinks);
         setPurchasesRaw(safePurchases);
         setPayouts(safePayouts);
+        setGiftsRaw(safeGifts);
+        setRequestsRaw(safeRequests);
         if (profile) {
           setProfileName(activeProfile?.display_name || profile.display_name || 'Creator');
           setProfileHandle(activeProfile?.username || profile.handle || null);
@@ -931,16 +944,18 @@ const AppDashboard = () => {
               </div>
             </section>
 
-            {/* Sales History */}
-            <section className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Sales History</h2>
-              {purchasesRaw.length === 0 && tipsRaw.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No sales yet. Start publishing links and sharing your profile!</p>
+            {/* Sales History — all revenue sources */}
+            <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+              <div className="px-5 py-4 border-b border-exclu-arsenic/40">
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Sales History</p>
+              </div>
+              {purchasesRaw.length === 0 && tipsRaw.length === 0 && giftsRaw.length === 0 && requestsRaw.length === 0 ? (
+                <p className="px-5 py-6 text-sm text-exclu-space/80">No sales yet. Start publishing links and sharing your profile!</p>
               ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                <div className="divide-y divide-exclu-arsenic/40 max-h-[500px] overflow-y-auto">
                   {[
                     ...purchasesRaw.map((p: any) => ({
-                      type: 'purchase' as const,
+                      type: 'sale' as const,
                       amount_cents: Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
                       raw_cents: p.amount_cents,
                       date: p.created_at,
@@ -953,35 +968,57 @@ const AppDashboard = () => {
                       date: t.created_at,
                       label: t.is_anonymous ? 'Anonymous tip' : ((t.fan as any)?.display_name || t.fan_name || 'Fan tip'),
                     })),
+                    ...giftsRaw.map((g: any) => ({
+                      type: 'gift' as const,
+                      amount_cents: g.creator_net_cents ?? Math.round((g.amount_cents ?? 0) * (1 - commissionRate)),
+                      raw_cents: g.amount_cents,
+                      date: g.created_at,
+                      label: g.is_anonymous ? 'Anonymous gift' : 'Wishlist gift',
+                    })),
+                    ...requestsRaw.map((r: any) => ({
+                      type: 'request' as const,
+                      amount_cents: r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate)),
+                      raw_cents: r.proposed_amount_cents,
+                      date: r.created_at,
+                      label: (r.description || 'Custom request').slice(0, 60),
+                    })),
                   ]
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .slice(0, 50)
-                    .map((item, i) => (
-                      <div key={i} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 dark:bg-white/5 px-4 py-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            item.type === 'tip' ? 'bg-pink-500/20' : 'bg-green-500/20'
-                          }`}>
-                            {item.type === 'tip' ? (
-                              <span className="text-pink-400 text-xs">♥</span>
-                            ) : (
-                              <CreditCard className="w-3.5 h-3.5 text-green-400" />
-                            )}
+                    .slice(0, 100)
+                    .map((item, i) => {
+                      const iconConfig = {
+                        sale: { icon: <CreditCard className="w-3.5 h-3.5 text-green-400" />, bg: 'bg-green-500/20' },
+                        tip: { icon: <Heart className="w-3.5 h-3.5 text-pink-400" />, bg: 'bg-pink-500/20' },
+                        gift: { icon: <Gift className="w-3.5 h-3.5 text-purple-400" />, bg: 'bg-purple-500/20' },
+                        request: { icon: <FileText className="w-3.5 h-3.5 text-blue-400" />, bg: 'bg-blue-500/20' },
+                      }[item.type];
+                      const typeLabel = { sale: 'Sale', tip: 'Tip', gift: 'Gift', request: 'Custom request' }[item.type];
+                      return (
+                        <div key={`${item.type}-${i}`} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${iconConfig.bg}`}>
+                              {iconConfig.icon}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-exclu-cloud truncate">{item.label}</p>
+                              <p className="text-[11px] text-exclu-space/60">
+                                {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' · '}
+                                <span>{typeLabel}</span>
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">{item.label}</p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {' · '}
-                              <span className="capitalize">{item.type}</span>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-bold text-green-400">
+                              +${(item.amount_cents / 100).toFixed(2)}
+                            </p>
+                            <p className="text-[10px] text-exclu-space/50">
+                              ${((item.raw_cents ?? 0) / 100).toFixed(2)} total
                             </p>
                           </div>
                         </div>
-                        <span className="text-sm font-semibold text-green-400 flex-shrink-0 ml-3">
-                          +${(item.amount_cents / 100).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               )}
             </section>
@@ -1325,7 +1362,7 @@ const AppDashboard = () => {
               </div>
             </div>
 
-            {/* Tips list */}
+            {/* Tips list — same UI as Sales History */}
             <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
               <div className="px-5 py-4 border-b border-exclu-arsenic/40">
                 <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Tips history</p>
@@ -1342,22 +1379,16 @@ const AppDashboard = () => {
               )}
 
               {!isLoading && tipsRaw.length > 0 && (
-                <div className="divide-y divide-exclu-arsenic/40">
+                <div className="divide-y divide-exclu-arsenic/40 max-h-[500px] overflow-y-auto">
                   {tipsRaw.map((tip: any) => {
                     const net = typeof tip.creator_net_cents === 'number' && tip.creator_net_cents > 0
                       ? tip.creator_net_cents
                       : Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
                     return (
-                      <div key={tip.id} className="px-5 py-4 flex items-start justify-between gap-3">
+                      <div key={tip.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-exclu-arsenic/40 flex-shrink-0 flex items-center justify-center overflow-hidden border border-exclu-arsenic/60">
-                            {!tip.is_anonymous && tip.fan?.avatar_url ? (
-                              <img src={tip.fan.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-xs font-bold text-exclu-space/70">
-                                {tip.is_anonymous ? '?' : (tip.fan?.display_name || tip.fan_name || '?').charAt(0).toUpperCase()}
-                              </span>
-                            )}
+                          <div className="w-8 h-8 rounded-full bg-pink-500/20 flex-shrink-0 flex items-center justify-center">
+                            <Heart className="w-3.5 h-3.5 text-pink-400" />
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-exclu-cloud truncate">
@@ -1365,15 +1396,13 @@ const AppDashboard = () => {
                             </p>
                             <p className="text-[11px] text-exclu-space/60">
                               {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {tip.message && ` · "${tip.message.slice(0, 40)}${tip.message.length > 40 ? '…' : ''}"`}
                             </p>
-                            {tip.message && (
-                              <p className="text-xs text-exclu-space/80 mt-1 line-clamp-2">{tip.message}</p>
-                            )}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <p className="text-sm font-bold text-exclu-cloud">
-                            ${(net / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <p className="text-sm font-bold text-green-400">
+                            +${(net / 100).toFixed(2)}
                           </p>
                           <p className="text-[10px] text-exclu-space/50">
                             ${(tip.amount_cents / 100).toFixed(2)} total
