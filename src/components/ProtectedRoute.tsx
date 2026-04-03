@@ -57,28 +57,20 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         console.error('Error loading profile in ProtectedRoute', profileError);
       }
 
-      // Fan accounts skip creator onboarding entirely and go to /fan dashboard
-      // Exception: chatters (fan-role with accepted invitations) can access /app/chatter
-      if (profile && profile.role === 'fan') {
+      // Chatter accounts → chatter dashboard
+      if (profile && profile.role === 'chatter') {
         if (location.pathname.startsWith('/app/chatter')) {
           setIsLoading(false);
           return;
         }
+        navigate('/app/chatter', { replace: true });
+        setIsLoading(false);
+        return;
+      }
 
-        const { data: chatterInvs } = await supabase
-          .from('chatter_invitations')
-          .select('id')
-          .eq('chatter_id', user.id)
-          .eq('status', 'accepted')
-          .limit(1);
-
-        if (chatterInvs && chatterInvs.length > 0) {
-          navigate('/app/chatter', { replace: true });
-        } else if (user.user_metadata?.is_chatter) {
-          navigate('/app/chatter', { replace: true });
-        } else {
-          navigate('/fan', { replace: true });
-        }
+      // Fan accounts → fan dashboard
+      if (profile && profile.role === 'fan') {
+        navigate('/fan', { replace: true });
         setIsLoading(false);
         return;
       }

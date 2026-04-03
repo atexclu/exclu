@@ -35,22 +35,16 @@ const ChatterAuth = () => {
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: chatterInvs } = await supabase
-        .from('chatter_invitations')
-        .select('id')
-        .eq('chatter_id', user.id)
-        .eq('status', 'accepted')
-        .limit(1);
-      if (chatterInvs && chatterInvs.length > 0) {
-        window.location.href = '/app/chatter';
-        return;
-      }
-      // Also redirect if account was created via /auth/chatter
-      if (user.user_metadata?.is_chatter) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profile?.role === 'chatter') {
         window.location.href = '/app/chatter';
       }
     });
-  }, [navigate]);
+  }, []);
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();

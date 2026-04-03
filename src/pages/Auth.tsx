@@ -209,23 +209,15 @@ const Auth = () => {
           console.error('Error loading profile after login', profileError);
         }
 
-        // Fan accounts: check if they're a chatter first
-        if (profile?.role === 'fan') {
-          const { data: chatterInvs } = await supabase
-            .from('chatter_invitations')
-            .select('id')
-            .eq('chatter_id', user.id)
-            .eq('status', 'accepted')
-            .limit(1);
+        // Chatter accounts → always go to chatter dashboard
+        if (profile?.role === 'chatter') {
+          window.location.href = '/app/chatter';
+          return;
+        }
 
-          if (chatterInvs && chatterInvs.length > 0) {
-            navigate('/app/chatter');
-          } else if (user.user_metadata?.is_chatter) {
-            // Account created via /auth/chatter but no invitation accepted yet
-            navigate('/app/chatter');
-          } else {
-            navigate('/fan');
-          }
+        // Fan accounts → fan dashboard
+        if (profile?.role === 'fan') {
+          navigate('/fan');
           return;
         }
 

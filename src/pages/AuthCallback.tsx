@@ -30,32 +30,38 @@ const AuthCallback = () => {
     const type = searchParams.get('type') as 'signup' | 'recovery' | 'email_change' | 'magiclink' | null;
     const next = searchParams.get('next') || null;
 
-    const redirectAfterAuth = (isCreator: boolean) => {
+    const redirectAfterAuth = (role: string | null) => {
       // recovery = password reset — always go to /auth?mode=update-password
       if (type === 'recovery') {
         navigate('/auth?mode=update-password', { replace: true });
         return;
       }
-      // next param takes priority (set by fan flow)
+      // next param takes priority (set by fan/chatter flow)
       if (next) {
         navigate(next, { replace: true });
         return;
       }
-      // Default: creator → /onboarding, fan → /fan
-      navigate(isCreator ? '/onboarding' : '/fan', { replace: true });
+      // Route by role
+      if (role === 'chatter') {
+        window.location.href = '/app/chatter';
+      } else if (role === 'creator') {
+        navigate('/onboarding', { replace: true });
+      } else {
+        navigate('/fan', { replace: true });
+      }
     };
 
-    const resolveIsCreator = async (): Promise<boolean | null> => {
+    const resolveRole = async (): Promise<string | null> => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return null;
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('is_creator')
+        .select('role')
         .eq('id', session.user.id)
         .maybeSingle();
 
-      return profile?.is_creator ?? false;
+      return profile?.role ?? null;
     };
 
     const autoFavoriteCreator = async (userId: string) => {
@@ -87,7 +93,7 @@ const AuthCallback = () => {
         if (error) {
           console.error('[AuthCallback] verifyOtp error:', error.message);
           // Token may already be consumed (double-click) — check for existing session
-          const isCreator = await resolveIsCreator();
+          const role = await resolveRole();
           if (isCreator !== null) {
             redirectAfterAuth(isCreator);
           } else {
@@ -100,15 +106,15 @@ const AuthCallback = () => {
         if (session && type === 'signup') {
           await autoFavoriteCreator(session.user.id);
         }
-        const isCreator = await resolveIsCreator();
-        redirectAfterAuth(isCreator ?? false);
+        const role = await resolveRole();
+        redirectAfterAuth(role);
         return;
       }
 
       // Case 2: Supabase verified server-side and redirected here — session should be live
-      const isCreator = await resolveIsCreator();
-      if (isCreator !== null) {
-        redirectAfterAuth(isCreator);
+      const role = await resolveRole();
+      if (role !== null) {
+        redirectAfterAuth(role);
         return;
       }
 
@@ -118,10 +124,10 @@ const AuthCallback = () => {
           unsub.data.subscription.unsubscribe();
           const { data: profile } = await supabase
             .from('profiles')
-            .select('is_creator')
+            .select('role')
             .eq('id', session.user.id)
             .maybeSingle();
-          redirectAfterAuth(profile?.is_creator ?? false);
+          redirectAfterAuth(profile?.role ?? 'fan');
         }
       });
 
