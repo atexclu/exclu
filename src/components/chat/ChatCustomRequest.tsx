@@ -67,7 +67,7 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
       });
 
       if (error || !data?.fields) {
-        throw new Error(data?.error || 'Unable to start checkout');
+        throw new Error(data?.error || (error as any)?.message || 'Unable to start checkout');
       }
 
       // Open QuickPay in new window (chat stays open)

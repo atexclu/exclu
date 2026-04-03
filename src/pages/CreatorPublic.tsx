@@ -478,7 +478,7 @@ const CreatorPublic = () => {
         headers,
       });
       if (error || !data?.fields) {
-        throw new Error(data?.error || 'Unable to start checkout');
+        throw new Error(data?.error || (error as any)?.message || 'Unable to start checkout');
       }
       // Submit QuickPay form
       const form = document.createElement('form');
@@ -605,7 +605,7 @@ const CreatorPublic = () => {
       });
 
       if (error || !data?.fields) {
-        throw new Error(data?.error || 'Unable to start checkout');
+        throw new Error(data?.error || (error as any)?.message || 'Unable to start checkout');
       }
 
       // Submit QuickPay form
@@ -686,7 +686,7 @@ const CreatorPublic = () => {
       });
 
       if (error || !data?.fields) {
-        throw new Error(data?.error || 'Unable to start checkout');
+        throw new Error(data?.error || (error as any)?.message || 'Unable to start checkout');
       }
 
       // Submit QuickPay form (pre-auth: funds held, not charged)

@@ -587,7 +587,7 @@ const PublicLink = () => {
 
       if (error || !(data as any)?.fields) {
         console.error('Error invoking create-link-checkout', error, data);
-        const serverMsg = (data as any)?.error;
+        const serverMsg = (data as any)?.error || (error as any)?.message;
         throw new Error(
           serverMsg || 'Unable to start checkout. Please try again later.',
         );
