@@ -231,7 +231,14 @@ const AppDashboard = () => {
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
         setTotalSalesCount(salesCount + safeRequests.length);
-        setTotalRevenueCents(revenueSum + tipsSum + requestsRevenue);
+        // Use DB total_earned_cents as source of truth (matches wallet credits)
+        // Fallback to frontend calc if not available
+        const dbTotalEarned = profile?.total_earned_cents;
+        setTotalRevenueCents(
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0
+            ? dbTotalEarned
+            : revenueSum + tipsSum + requestsRevenue
+        );
         setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
         setLinksRaw(safeLinks);

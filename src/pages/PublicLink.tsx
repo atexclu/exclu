@@ -663,6 +663,18 @@ const PublicLink = () => {
 
       <main className="flex-1 flex flex-col relative z-10">
         <div className="px-4 sm:px-6 lg:px-8 pt-16 pb-24 max-w-7xl mx-auto w-full">
+          {/* LOADING STATE */}
+          {isLoading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center py-32 gap-4"
+            >
+              <Loader2 className="w-8 h-8 text-white/60 animate-spin" />
+              <p className="text-sm text-white/40">Loading content…</p>
+            </motion.div>
+          )}
+
           {/* DELETED LINK STATE */}
           {error === 'deleted' && !link && (
             <motion.div
@@ -1319,10 +1331,6 @@ const PublicLink = () => {
                   </div>
                 )}
 
-                <div className="space-y-1.5 text-[11px] text-white">
-                  <p>✓ Download links expire after 15 minutes — revisit this page to regenerate</p>
-                  <p>✓ Bookmark this page to access your content anytime</p>
-                </div>
               </motion.div>
             </div>
           )}
