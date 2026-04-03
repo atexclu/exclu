@@ -52,6 +52,7 @@ import AcceptChatterInvite from './pages/AcceptChatterInvite';
 import ChatterDashboard from './pages/ChatterDashboard';
 import ChatterContracts from './pages/ChatterContracts';
 import ChatterClientSelector from './pages/ChatterClientSelector';
+import ChatterAuth from './pages/ChatterAuth';
 import DirectoryHub from './pages/DirectoryHub';
 import DirectoryCreators from './pages/DirectoryCreators';
 import DirectoryAgencies from './pages/DirectoryAgencies';
@@ -112,6 +113,7 @@ const App = () => {
                 <Route path="/help-center/links-content" element={<HelpLinksContent />} />
                 <Route path="/help-center/account-safety" element={<HelpAccountSafety />} />
                 <Route path="/auth" element={<Auth />} />
+                <Route path="/auth/chatter" element={<ChatterAuth />} />
                 <Route
                   path="/onboarding"
                   element={

@@ -168,7 +168,7 @@ serve(async (req) => {
         <table style="border-collapse:collapse;width:100%;margin:16px 0;">
           <tr><td style="padding:8px;color:#94a3b8;">Creator</td><td style="padding:8px;font-weight:600;">${creatorName}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">Amount</td><td style="padding:8px;font-weight:600;color:#a3e635;">${formatUSD(amountCents)}</td></tr>
-          <tr><td style="padding:8px;color:#94a3b8;">IBAN</td><td style="padding:8px;font-family:monospace;">${profile.bank_iban}</td></tr>
+          <tr><td style="padding:8px;color:#94a3b8;">IBAN</td><td style="padding:8px;font-family:monospace;">${profile.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profile.bank_iban.slice(-4)}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">Holder</td><td style="padding:8px;">${profile.bank_holder_name}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">New wallet balance</td><td style="padding:8px;">${formatUSD(newBalance)}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">User ID</td><td style="padding:8px;font-family:monospace;font-size:12px;">${user.id}</td></tr>
