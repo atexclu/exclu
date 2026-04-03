@@ -386,16 +386,25 @@ const Profile = () => {
   const [isSavingBank, setIsSavingBank] = useState(false);
   const [isEditingBank, setIsEditingBank] = useState(false);
 
+  const formatIbanDisplay = (raw: string): string => {
+    const cleaned = raw.replace(/\s/g, '').toUpperCase();
+    return cleaned.replace(/(.{4})/g, '$1 ').trim();
+  };
+  const handleIbanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\s/g, '').toUpperCase();
+    if (raw.length <= 34) setBankIban(formatIbanDisplay(raw));
+  };
   const validateIban = (iban: string): string | null => {
     const cleaned = iban.replace(/\s/g, '').toUpperCase();
     if (!cleaned) return null;
     if (cleaned.length < 15 || cleaned.length > 34) return 'IBAN must be between 15 and 34 characters';
-    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: country code + check digits + account number)';
-    // MOD-97 check (ISO 13616)
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: XX00 followed by digits/letters)';
+    // MOD-97 check (ISO 13616) — char-by-char to avoid overflow
     const rearranged = cleaned.slice(4) + cleaned.slice(0, 4);
     const numStr = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
-    let remainder = numStr.match(/.{1,7}/g)!.reduce((acc, chunk) => String(Number(acc + chunk) % 97), '');
-    if (Number(remainder) !== 1) return 'Invalid IBAN check digits';
+    let remainder = '';
+    for (const digit of numStr) { remainder = String(Number(remainder + digit) % 97); }
+    if (Number(remainder) !== 1) return 'Invalid IBAN — please double-check the number';
     return null;
   };
   const ibanError = validateIban(bankIban);
@@ -1230,9 +1239,9 @@ const Profile = () => {
                               <label className="text-xs font-medium text-foreground ml-1 mb-1 block">IBAN</label>
                               <Input
                                 value={bankIban}
-                                onChange={(e) => setBankIban(e.target.value.toUpperCase())}
+                                onChange={handleIbanChange}
                                 placeholder="FR76 1234 5678 9012 3456 7890 123"
-                                className={`bg-muted/50 border-border text-foreground ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                className={`bg-muted/50 border-border text-foreground font-mono tracking-wide ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                               />
                               {bankIban && ibanError && (
                                 <p className="text-xs text-red-500 mt-1">{ibanError}</p>

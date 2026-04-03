@@ -19,7 +19,7 @@ import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
   DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
-  Lock, Mail, Settings, ChevronRight,
+  Lock, Mail, Settings, ChevronRight, Landmark, Wallet,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -79,12 +79,65 @@ export default function ChatterDashboard() {
   const [profiles, setProfiles] = useState<ChatterProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
-  const [accountSection, setAccountSection] = useState<'profile' | 'security'>('profile');
+  const [accountSection, setAccountSection] = useState<'profile' | 'security' | 'wallet'>('profile');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [chatterEmail, setChatterEmail] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
+
+  // Wallet state
+  const [walletBalanceCents, setWalletBalanceCents] = useState(0);
+  const [totalEarnedCents, setTotalEarnedCents] = useState(0);
+  const [totalWithdrawnCents, setTotalWithdrawnCents] = useState(0);
+  const [bankIban, setBankIban] = useState('');
+  const [bankHolderName, setBankHolderName] = useState('');
+  const [bankBic, setBankBic] = useState('');
+  const [isSavingBank, setIsSavingBank] = useState(false);
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
+  const [bankData, setBankData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string } | null>(null);
+
+  const formatIbanDisplay = (raw: string): string => {
+    const cleaned = raw.replace(/\s/g, '').toUpperCase();
+    return cleaned.replace(/(.{4})/g, '$1 ').trim();
+  };
+  const handleIbanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\s/g, '').toUpperCase();
+    if (raw.length <= 34) setBankIban(formatIbanDisplay(raw));
+  };
+  const validateIban = (iban: string): string | null => {
+    const cleaned = iban.replace(/\s/g, '').toUpperCase();
+    if (!cleaned) return null;
+    if (cleaned.length < 15 || cleaned.length > 34) return 'IBAN must be between 15 and 34 characters';
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: XX00 followed by digits/letters)';
+    const rearranged = cleaned.slice(4) + cleaned.slice(0, 4);
+    const numStr = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
+    let remainder = '';
+    for (const digit of numStr) { remainder = String(Number(remainder + digit) % 97); }
+    if (Number(remainder) !== 1) return 'Invalid IBAN — please double-check the number';
+    return null;
+  };
+  const ibanError = validateIban(bankIban);
+  const isIbanValid = bankIban.replace(/\s/g, '').length > 0 && !ibanError;
+
+  const handleSaveBankDetails = async () => {
+    setIsSavingBank(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('save-bank-details', {
+        body: { iban: bankIban, holder_name: bankHolderName, bic: bankBic || undefined },
+      });
+      if (error || !(data as any)?.success) throw new Error((data as any)?.error || 'Failed to save bank details');
+      toast.success('Bank details saved successfully');
+      setIsEditingBank(false);
+      setPayoutSetupComplete(true);
+      setBankData({ bank_iban: bankIban.replace(/\s/g, ''), bank_holder_name: bankHolderName, bank_bic: bankBic });
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to save bank details');
+    } finally {
+      setIsSavingBank(false);
+    }
+  };
 
   // Derived: profiles for the active client
   const activeClient = clients.find((c) => c.user_id === activeClientUserId) ?? null;
@@ -131,10 +184,10 @@ export default function ChatterDashboard() {
       setCurrentUserId(user.id);
       setChatterEmail(user.email ?? '');
 
-      // Fetch chatter's own display name & avatar
+      // Fetch chatter's own profile (display name, avatar, wallet, bank details)
       const { data: ownProfile } = await supabase
         .from('profiles')
-        .select('display_name, avatar_url')
+        .select('display_name, avatar_url, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, payout_setup_complete')
         .eq('id', user.id)
         .single();
       if (ownProfile?.display_name) {
@@ -142,6 +195,16 @@ export default function ChatterDashboard() {
       }
       if (ownProfile?.avatar_url) {
         setChatterAvatarUrl(ownProfile.avatar_url);
+      }
+      // Load wallet & bank data
+      if (ownProfile) {
+        setWalletBalanceCents(ownProfile.wallet_balance_cents ?? 0);
+        setTotalEarnedCents(ownProfile.total_earned_cents ?? 0);
+        setTotalWithdrawnCents(ownProfile.total_withdrawn_cents ?? 0);
+        setPayoutSetupComplete(ownProfile.payout_setup_complete === true);
+        if (ownProfile.bank_iban) {
+          setBankData({ bank_iban: ownProfile.bank_iban, bank_holder_name: ownProfile.bank_holder_name, bank_bic: ownProfile.bank_bic });
+        }
       }
 
       // 1. Get invited profile IDs
@@ -1191,6 +1254,7 @@ export default function ChatterDashboard() {
                   <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
                     {([
                       { id: 'profile' as const, label: 'Profile', icon: User },
+                      { id: 'wallet' as const, label: 'Wallet', icon: Wallet },
                       { id: 'security' as const, label: 'Security', icon: Lock },
                     ]).map((item) => {
                       const Icon = item.icon;
@@ -1362,6 +1426,150 @@ export default function ChatterDashboard() {
                             ))}
                           </div>
                         )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Wallet Section */}
+                  {accountSection === 'wallet' && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="space-y-6"
+                    >
+                      {/* Balance Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="rounded-2xl border border-border/60 bg-card p-5">
+                          <p className="text-xs text-muted-foreground mb-1">Available balance</p>
+                          <p className="text-2xl font-bold text-foreground">
+                            ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-card p-5">
+                          <p className="text-xs text-muted-foreground mb-1">Total earned</p>
+                          <p className="text-2xl font-bold text-foreground">
+                            ${(totalEarnedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border/60 bg-card p-5">
+                          <p className="text-xs text-muted-foreground mb-1">Total withdrawn</p>
+                          <p className="text-2xl font-bold text-foreground">
+                            ${(totalWithdrawnCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Payout Account (IBAN) */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-1">Payout Account</h2>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Add your bank account details to receive payouts from your earnings.
+                        </p>
+
+                        {/* Current bank info display */}
+                        {payoutSetupComplete && !isEditingBank && (
+                          <div className="rounded-xl border border-border/60 bg-primary/5 p-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">IBAN</span>
+                              <span className="text-sm font-mono text-foreground">
+                                {bankData?.bank_iban
+                                  ? `${bankData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${bankData.bank_iban.slice(-4)}`
+                                  : '—'}
+                              </span>
+                            </div>
+                            {bankData?.bank_holder_name && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">Holder</span>
+                                <span className="text-sm text-foreground">{bankData.bank_holder_name}</span>
+                              </div>
+                            )}
+                            {bankData?.bank_bic && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">BIC</span>
+                                <span className="text-sm font-mono text-foreground">{bankData.bank_bic}</span>
+                              </div>
+                            )}
+                            <div className="pt-2">
+                              <Button
+                                onClick={() => {
+                                  setIsEditingBank(true);
+                                  setBankIban(formatIbanDisplay(bankData?.bank_iban || ''));
+                                  setBankHolderName(bankData?.bank_holder_name || '');
+                                  setBankBic(bankData?.bank_bic || '');
+                                }}
+                                variant="outline"
+                                className="rounded-xl"
+                              >
+                                Edit bank details
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Bank details form */}
+                        {(!payoutSetupComplete || isEditingBank) && (
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">IBAN</label>
+                              <Input
+                                value={bankIban}
+                                onChange={handleIbanChange}
+                                placeholder="FR76 1234 5678 9012 3456 7890 123"
+                                className={`bg-muted/50 border-border text-foreground font-mono tracking-wide ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                              />
+                              {bankIban && ibanError && (
+                                <p className="text-xs text-red-500 mt-1">{ibanError}</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Account holder name</label>
+                              <Input
+                                value={bankHolderName}
+                                onChange={(e) => setBankHolderName(e.target.value)}
+                                placeholder="Jean Dupont"
+                                className="bg-muted/50 border-border text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">BIC / SWIFT <span className="text-muted-foreground font-normal">(recommended)</span></label>
+                              <Input
+                                value={bankBic}
+                                onChange={(e) => setBankBic(e.target.value.toUpperCase())}
+                                placeholder="BNPAFRPP"
+                                className="bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50"
+                              />
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <Button
+                                onClick={handleSaveBankDetails}
+                                disabled={!isIbanValid || !bankHolderName || isSavingBank}
+                                className="rounded-xl gap-2"
+                              >
+                                <Landmark className="w-4 h-4" />
+                                {isSavingBank ? 'Saving...' : 'Save bank details'}
+                              </Button>
+                              {isEditingBank && (
+                                <Button
+                                  onClick={() => setIsEditingBank(false)}
+                                  variant="outline"
+                                  className="rounded-xl"
+                                >
+                                  Cancel
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Revenue split info */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-2">How earnings work</h2>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          As a chatter, you earn <span className="text-primary font-semibold">25%</span> of the revenue generated from conversations you manage.
+                          Your earnings are credited to your wallet automatically. Once you've set up your bank account, you can request a withdrawal.
+                        </p>
                       </div>
                     </motion.div>
                   )}

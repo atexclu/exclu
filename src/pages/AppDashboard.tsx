@@ -945,7 +945,7 @@ const AppDashboard = () => {
             </section>
 
             {/* Sales History — all revenue sources */}
-            <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+            <section className="mt-6 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
               <div className="px-5 py-4 border-b border-exclu-arsenic/40">
                 <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Sales History</p>
               </div>
