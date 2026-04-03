@@ -279,7 +279,7 @@ serve(async (req) => {
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select(
-        'id, display_name, handle, created_at, is_creator, country, stripe_connect_status, stripe_account_id',
+        'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, payout_setup_complete, is_creator_subscribed',
       )
       .eq('id', targetUserId)
       .maybeSingle();
@@ -654,6 +654,14 @@ serve(async (req) => {
       }
     }
 
+    // Fetch payouts for this user
+    const { data: payoutsData } = await supabaseAdmin
+      .from('payouts')
+      .select('id, amount_cents, status, created_at, requested_at, processed_at')
+      .eq('creator_id', targetUserId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
     const payload: UserOverviewPayload = {
       profile: profile
         ? {
@@ -663,14 +671,23 @@ serve(async (req) => {
           created_at: profile.created_at ?? null,
           is_creator: profile.is_creator ?? null,
           country: profile.country ?? null,
-          stripe_connect_status: profile.stripe_connect_status ?? null,
+          role: profile.role ?? null,
           is_directory_visible: isDirectoryVisible,
+          is_creator_subscribed: profile.is_creator_subscribed ?? false,
+          wallet_balance_cents: profile.wallet_balance_cents ?? 0,
+          total_earned_cents: profile.total_earned_cents ?? 0,
+          total_withdrawn_cents: profile.total_withdrawn_cents ?? 0,
+          bank_iban: profile.bank_iban ?? null,
+          bank_holder_name: profile.bank_holder_name ?? null,
+          bank_bic: profile.bank_bic ?? null,
+          payout_setup_complete: profile.payout_setup_complete ?? false,
         }
         : null,
       links: links,
       assets: safeAssets,
       sales,
       stripe: stripeDetails,
+      payouts: payoutsData ?? [],
     };
 
     return new Response(JSON.stringify(payload), {

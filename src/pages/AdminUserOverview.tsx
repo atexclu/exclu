@@ -14,8 +14,25 @@ interface UserProfileOverview {
   created_at: string | null;
   is_creator: boolean | null;
   country: string | null;
-  stripe_connect_status: string | null;
+  role: string | null;
   is_directory_visible: boolean | null;
+  is_creator_subscribed: boolean;
+  wallet_balance_cents: number;
+  total_earned_cents: number;
+  total_withdrawn_cents: number;
+  bank_iban: string | null;
+  bank_holder_name: string | null;
+  bank_bic: string | null;
+  payout_setup_complete: boolean;
+}
+
+interface PayoutOverview {
+  id: string;
+  amount_cents: number;
+  status: string;
+  created_at: string;
+  requested_at: string | null;
+  processed_at: string | null;
 }
 
 interface UserLinkOverview {
@@ -89,6 +106,7 @@ const AdminUserOverview = () => {
   const [assets, setAssets] = useState<UserAssetOverview[]>([]);
   const [sales, setSales] = useState<UserSaleOverview[]>([]);
   const [stripeDetails, setStripeDetails] = useState<UserStripeOverview | null>(null);
+  const [payouts, setPayouts] = useState<PayoutOverview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnectingStripe, setIsConnectingStripe] = useState(false);
@@ -169,6 +187,7 @@ const AdminUserOverview = () => {
       setAssets(payload.assets ?? []);
       setSales(payload.sales ?? []);
       setStripeDetails(payload.stripe ?? null);
+      setPayouts(payload.payouts ?? []);
 
       // Fetch agency data if user is an agency
       if (id) {
@@ -1020,43 +1039,82 @@ const AdminUserOverview = () => {
                   )}
                 </div>
 
-                <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
-                  <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Payment Account</h2>
+                {/* Wallet & Payout Info */}
+                <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4 space-y-3">
+                  <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Wallet & Payout</h2>
 
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-exclu-cloud">Stripe Connect</p>
-                      <p className="text-xs text-exclu-space mt-1">
-                        {formatStripeStatus(stripeDetails?.status ?? profile.stripe_connect_status)}
-                      </p>
-                      {stripeDetails?.account_email && (
-                        <p className="text-[11px] text-exclu-space/70 mt-1">
-                          Stripe account email:
-                          <span className="ml-1 font-medium text-exclu-cloud/90">
-                            {stripeDetails.account_email}
-                          </span>
-                          {stripeDetails.payout_country && (
-                            <span className="ml-1">
-                              · Payout country:{' '}
-                              <span className="font-medium">{stripeDetails.payout_country}</span>
-                            </span>
-                          )}
-                        </p>
-                      )}
-                      {stripeDetails?.friendly_messages && stripeDetails.friendly_messages.length > 0 && (
-                        <div className="mt-2 text-[11px] text-exclu-space/70">
-                          <p className="font-medium text-exclu-space/80 mb-1">
-                            Stripe still needs the following information:
-                          </p>
-                          <ul className="list-disc list-inside space-y-0.5">
-                            {stripeDetails.friendly_messages.map((msg, idx) => (
-                              <li key={idx}>{msg}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                  {/* Balance cards */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                      <p className="text-[10px] text-exclu-space/60">Balance</p>
+                      <p className="text-sm font-bold text-exclu-cloud">${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                      <p className="text-[10px] text-exclu-space/60">Total earned</p>
+                      <p className="text-sm font-bold text-exclu-cloud">${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}</p>
+                    </div>
+                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                      <p className="text-[10px] text-exclu-space/60">Withdrawn</p>
+                      <p className="text-sm font-bold text-exclu-cloud">${((profile.total_withdrawn_cents ?? 0) / 100).toFixed(2)}</p>
                     </div>
                   </div>
+
+                  {/* Plan */}
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${profile.is_creator_subscribed ? 'bg-primary/20 text-primary' : 'bg-exclu-arsenic/40 text-exclu-space/70'}`}>
+                      {profile.is_creator_subscribed ? 'Premium (0% commission)' : 'Free (10% commission)'}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${profile.role === 'chatter' ? 'bg-indigo-500/20 text-indigo-400' : profile.role === 'creator' ? 'bg-green-500/20 text-green-400' : 'bg-exclu-arsenic/40 text-exclu-space/70'}`}>
+                      {profile.role ?? 'unknown'}
+                    </span>
+                  </div>
+
+                  {/* Bank details */}
+                  <div className="rounded-lg bg-exclu-arsenic/30 p-3">
+                    <p className="text-[10px] text-exclu-space/60 mb-1.5">Bank Account</p>
+                    {profile.payout_setup_complete && profile.bank_iban ? (
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-exclu-space/60">IBAN</span>
+                          <span className="font-mono text-exclu-cloud">{profile.bank_iban.slice(0, 4)} {'····'.repeat(3)} {profile.bank_iban.slice(-4)}</span>
+                        </div>
+                        {profile.bank_holder_name && (
+                          <div className="flex justify-between">
+                            <span className="text-exclu-space/60">Holder</span>
+                            <span className="text-exclu-cloud">{profile.bank_holder_name}</span>
+                          </div>
+                        )}
+                        {profile.bank_bic && (
+                          <div className="flex justify-between">
+                            <span className="text-exclu-space/60">BIC</span>
+                            <span className="font-mono text-exclu-cloud">{profile.bank_bic}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-exclu-space/50 italic">No bank account set up</p>
+                    )}
+                  </div>
+
+                  {/* Recent payouts */}
+                  {payouts.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-exclu-space/60 mb-1.5">Recent Withdrawals</p>
+                      <div className="space-y-1">
+                        {payouts.slice(0, 5).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-exclu-arsenic/20 px-2.5 py-1.5">
+                            <span className="text-exclu-cloud font-medium">${(p.amount_cents / 100).toFixed(2)}</span>
+                            <span className="text-exclu-space/60">{new Date(p.requested_at || p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              p.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                              p.status === 'rejected' || p.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                              'bg-yellow-500/20 text-yellow-400'
+                            }`}>{p.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
