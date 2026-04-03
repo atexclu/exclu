@@ -53,6 +53,7 @@ import ChatterDashboard from './pages/ChatterDashboard';
 import ChatterContracts from './pages/ChatterContracts';
 import ChatterClientSelector from './pages/ChatterClientSelector';
 import ChatterAuth from './pages/ChatterAuth';
+import AdminPayments from './pages/AdminPayments';
 import DirectoryHub from './pages/DirectoryHub';
 import DirectoryCreators from './pages/DirectoryCreators';
 import DirectoryAgencies from './pages/DirectoryAgencies';
@@ -135,6 +136,14 @@ const App = () => {
                   element={
                     <AdminRoute>
                       <AdminUserOverview />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/payments"
+                  element={
+                    <AdminRoute>
+                      <AdminPayments />
                     </AdminRoute>
                   }
                 />

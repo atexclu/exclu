@@ -74,14 +74,7 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return jsonError('Authentication required', 401, corsHeaders);
 
-    const body = await req.json();
-    const amountCents = body?.amount_cents as number | undefined;
-
-    if (!amountCents || typeof amountCents !== 'number' || amountCents < MIN_WITHDRAWAL_CENTS) {
-      return jsonError(`Minimum withdrawal is ${formatUSD(MIN_WITHDRAWAL_CENTS)}`, 400, corsHeaders);
-    }
-
-    // Fetch profile with bank details
+    // Fetch profile with bank details — balance comes from DB, not from frontend
     const { data: profile, error: profileErr } = await supabase
       .from('profiles')
       .select('id, wallet_balance_cents, payout_setup_complete, bank_iban, bank_holder_name, display_name, handle')
@@ -94,8 +87,11 @@ serve(async (req) => {
       return jsonError('Please set up your bank details before requesting a withdrawal', 400, corsHeaders);
     }
 
-    if (profile.wallet_balance_cents < amountCents) {
-      return jsonError(`Insufficient balance. Available: ${formatUSD(profile.wallet_balance_cents)}`, 400, corsHeaders);
+    // Amount to withdraw = entire wallet balance (server-side, not from client)
+    const amountCents = profile.wallet_balance_cents as number;
+
+    if (!amountCents || amountCents < MIN_WITHDRAWAL_CENTS) {
+      return jsonError(`Minimum withdrawal is ${formatUSD(MIN_WITHDRAWAL_CENTS)}. Your balance: ${formatUSD(amountCents)}`, 400, corsHeaders);
     }
 
     // Check for existing pending/approved withdrawal
@@ -161,7 +157,7 @@ serve(async (req) => {
     // Notify admin via email
     const creatorName = profile.display_name || profile.handle || user.email || 'Unknown';
     await sendBrevoEmail({
-      to: 'atexclu@gmail.com',
+      to: 'contact@exclu.at',
       subject: `💸 Withdrawal request — ${formatUSD(amountCents)} from ${creatorName}`,
       htmlContent: `<div style="font-family:system-ui;padding:20px;background:#020617;color:#f9fafb;border-radius:12px;">
         <h2>New withdrawal request</h2>

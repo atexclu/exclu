@@ -808,6 +808,7 @@ const Profile = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+        body: {},
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
       });
       if (error || !(data as any)?.success) {
