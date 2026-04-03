@@ -217,16 +217,22 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     }
   }
 
-  // Chatter earnings (60/25/15 split)
+  // Chatter earnings (60/25/15 split) — credit wallet + counter
   if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
     try {
+      // Credit chatter's wallet (withdrawable balance)
+      await supabase.rpc('credit_creator_wallet', {
+        p_creator_id: purchase.chat_chatter_id,
+        p_amount_cents: purchase.chatter_earnings_cents,
+      });
+      // Also update the chatter-specific counter
       await supabase.rpc('increment_chatter_earnings', {
         p_chatter_id: purchase.chat_chatter_id,
         p_amount_cents: purchase.chatter_earnings_cents,
       });
-      console.log('Chatter earnings incremented:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
+      console.log('Chatter wallet + earnings credited:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
     } catch (err) {
-      console.error('Error incrementing chatter earnings:', err);
+      console.error('Error crediting chatter:', err);
     }
   }
 

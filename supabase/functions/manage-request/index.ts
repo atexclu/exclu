@@ -138,17 +138,42 @@ serve(async (req) => {
         }
       }
 
-      // Calculate commission
+      // Check if this request was handled by a chatter (via conversation assignment)
+      let chatterId: string | null = null;
+      if (request.fan_id && request.profile_id) {
+        const { data: conv } = await supabase
+          .from('conversations')
+          .select('assigned_chatter_id')
+          .eq('fan_id', request.fan_id)
+          .eq('profile_id', request.profile_id)
+          .maybeSingle();
+        if (conv?.assigned_chatter_id && conv.assigned_chatter_id !== user.id) {
+          chatterId = conv.assigned_chatter_id;
+        }
+      }
+
+      // Calculate commission with chatter split if applicable
       const { data: creatorProfile } = await supabase
         .from('profiles')
         .select('is_creator_subscribed')
         .eq('id', user.id)
         .single();
 
-      const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
-      const platformCommissionCents = Math.round(amountCents * commissionRate);
-      const creatorNetCents = amountCents - platformCommissionCents;
-      const totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
+      let creatorNetCents: number;
+      let totalPlatformFee: number;
+      let chatterEarningsCents = 0;
+
+      if (chatterId) {
+        // 60/25/15 split: creator/chatter/platform
+        creatorNetCents = Math.round(amountCents * 0.60);
+        chatterEarningsCents = Math.round(amountCents * 0.25);
+        totalPlatformFee = Math.round(amountCents * 0.15) + fanProcessingFeeCents;
+      } else {
+        const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
+        const platformCommissionCents = Math.round(amountCents * commissionRate);
+        creatorNetCents = amountCents - platformCommissionCents;
+        totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
+      }
 
       // Credit the creator's wallet
       try {
@@ -159,8 +184,23 @@ serve(async (req) => {
         console.log('Creator wallet credited:', user.id, '+', creatorNetCents, 'cents');
       } catch (walletErr) {
         console.error('Error crediting wallet after capture:', walletErr);
-        // Payment captured but wallet credit failed — log but continue
-        // The payment_events table has the record for manual reconciliation
+      }
+
+      // Credit chatter wallet if applicable
+      if (chatterId && chatterEarningsCents > 0) {
+        try {
+          await supabase.rpc('credit_creator_wallet', {
+            p_creator_id: chatterId,
+            p_amount_cents: chatterEarningsCents,
+          });
+          await supabase.rpc('increment_chatter_earnings', {
+            p_chatter_id: chatterId,
+            p_amount_cents: chatterEarningsCents,
+          });
+          console.log('Chatter wallet + earnings credited:', chatterId, '+', chatterEarningsCents, 'cents');
+        } catch (err) {
+          console.error('Error crediting chatter:', err);
+        }
       }
 
       // Update request to delivered

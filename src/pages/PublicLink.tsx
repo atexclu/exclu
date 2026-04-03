@@ -1315,23 +1315,20 @@ const PublicLink = () => {
                 )}
               </div>
 
-              {/* Info Footer */}
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-                className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 backdrop-blur-xl p-5 space-y-4"
-              >
-                {hasTemporaryAccess && expiresDate && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                    <p className="text-xs text-amber-300/90 text-center">
-                      ⏰ Temporary access expires on{' '}
-                      <span className="font-semibold">{expiresDate.toLocaleString()}</span>
-                    </p>
-                  </div>
-                )}
-
-              </motion.div>
+              {/* Temporary access warning */}
+              {hasTemporaryAccess && expiresDate && (
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.4 }}
+                  className="rounded-2xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-xl p-4"
+                >
+                  <p className="text-xs text-amber-300/90 text-center">
+                    Temporary access expires on{' '}
+                    <span className="font-semibold">{expiresDate.toLocaleString()}</span>
+                  </p>
+                </motion.div>
+              )}
             </div>
           )}
         </div>

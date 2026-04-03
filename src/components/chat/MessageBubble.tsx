@@ -7,10 +7,12 @@
  * - Messages système : centrés, italique, discrets
  */
 
-import { ExternalLink, UserCircle } from 'lucide-react';
+import { ExternalLink, UserCircle, Check, Clock } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { Message } from '@/types/chat';
 import StarBorder from '@/components/ui/StarBorder';
 import { CustomRequestCard } from './CustomRequestCard';
+import { supabaseAnon } from '@/lib/supabaseClient';
 
 interface MessageBubbleProps {
   message: Message;
@@ -28,7 +30,28 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function useLinkPurchaseStatus(linkId: string | null | undefined): 'pending' | 'purchased' | null {
+  const [status, setStatus] = useState<'pending' | 'purchased' | null>(null);
+  useEffect(() => {
+    if (!linkId) return;
+    supabaseAnon
+      .from('purchases')
+      .select('status')
+      .eq('link_id', linkId)
+      .eq('status', 'succeeded')
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        setStatus(data ? 'purchased' : 'pending');
+      });
+  }, [linkId]);
+  return status;
+}
+
 export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversationId, viewerRole = 'fan', onDeliver }: MessageBubbleProps) {
+  const linkPurchaseStatus = useLinkPurchaseStatus(
+    message.content_type === 'paid_content' ? message.link?.id : undefined
+  );
   const rightAligned = isTeam ?? isOwn;
 
   // Custom request rich card
@@ -125,6 +148,13 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
           <span className="text-[10px] text-muted-foreground/50">
             {formatTime(message.created_at)}
           </span>
+          {message.content_type === 'paid_content' && linkPurchaseStatus && (
+            <span className={`text-[9px] flex items-center gap-0.5 ${
+              linkPurchaseStatus === 'purchased' ? 'text-green-400' : 'text-muted-foreground/40'
+            }`}>
+              {linkPurchaseStatus === 'purchased' ? <><Check className="w-2.5 h-2.5" /> Purchased</> : <><Clock className="w-2.5 h-2.5" /> Pending</>}
+            </span>
+          )}
         </div>
       </div>
     </div>

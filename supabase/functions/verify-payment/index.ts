@@ -119,7 +119,10 @@ async function verifyLinkPurchase(recordId: string, transactionId: string, cors:
     try { await supabase.rpc('credit_creator_wallet', { p_creator_id: link.creator_id, p_amount_cents: purchase.creator_net_cents }); } catch (e) { console.error('Wallet credit error:', e); }
   }
   if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
-    try { await supabase.rpc('increment_chatter_earnings', { p_chatter_id: purchase.chat_chatter_id, p_amount_cents: purchase.chatter_earnings_cents }); } catch (e) { console.error('Chatter error:', e); }
+    try {
+      await supabase.rpc('credit_creator_wallet', { p_creator_id: purchase.chat_chatter_id, p_amount_cents: purchase.chatter_earnings_cents });
+      await supabase.rpc('increment_chatter_earnings', { p_chatter_id: purchase.chat_chatter_id, p_amount_cents: purchase.chatter_earnings_cents });
+    } catch (e) { console.error('Chatter credit error:', e); }
   }
   const basePriceCents = Math.round(purchase.amount_cents / 1.05);
   if (purchase.chat_conversation_id && basePriceCents > 0) {
