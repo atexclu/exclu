@@ -42,7 +42,12 @@ const ChatterAuth = () => {
         .eq('status', 'accepted')
         .limit(1);
       if (chatterInvs && chatterInvs.length > 0) {
-        navigate('/app/chatter');
+        window.location.href = '/app/chatter';
+        return;
+      }
+      // Also redirect if account was created via /auth/chatter
+      if (user.user_metadata?.is_chatter) {
+        window.location.href = '/app/chatter';
       }
     });
   }, [navigate]);
@@ -122,7 +127,7 @@ const ChatterAuth = () => {
         }
 
         toast.success('You are now logged in');
-        navigate('/app/chatter');
+        window.location.href = '/app/chatter';
       }
     } catch (error: any) {
       toast.error(error?.message || 'Something went wrong');

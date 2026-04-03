@@ -74,6 +74,8 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
         if (chatterInvs && chatterInvs.length > 0) {
           navigate('/app/chatter', { replace: true });
+        } else if (user.user_metadata?.is_chatter) {
+          navigate('/app/chatter', { replace: true });
         } else {
           navigate('/fan', { replace: true });
         }
