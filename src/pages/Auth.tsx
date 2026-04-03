@@ -220,6 +220,9 @@ const Auth = () => {
 
           if (chatterInvs && chatterInvs.length > 0) {
             navigate('/app/chatter');
+          } else if (user.user_metadata?.is_chatter) {
+            // Account created via /auth/chatter but no invitation accepted yet
+            navigate('/app/chatter');
           } else {
             navigate('/fan');
           }
