@@ -85,6 +85,7 @@ export default function ChatterDashboard() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [chatterEmail, setChatterEmail] = useState('');
   const [showBroadcast, setShowBroadcast] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // Wallet state
   const [walletBalanceCents, setWalletBalanceCents] = useState(0);
@@ -300,6 +301,31 @@ export default function ChatterDashboard() {
 
     init();
   }, [navigate]);
+
+  // ── Unread badge for chatter — count unread across all managed profiles ──
+  useEffect(() => {
+    if (!isAuthorized || profiles.length === 0) return;
+    const profileIds = profiles.map(p => p.id);
+
+    const fetchUnread = async () => {
+      const { count } = await supabase
+        .from('conversations')
+        .select('*', { count: 'exact', head: true })
+        .in('profile_id', profileIds)
+        .eq('is_read', false)
+        .in('status', ['unclaimed', 'active']);
+      setChatUnreadCount(count ?? 0);
+    };
+
+    fetchUnread();
+
+    const channel = supabase
+      .channel('chatter-unread')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => fetchUnread())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [isAuthorized, profiles]);
 
   // ── Realtime subscription to detect new profiles ───────────────────────
   useEffect(() => {
@@ -581,7 +607,14 @@ export default function ChatterDashboard() {
                     mainView === 'chat' ? 'text-black dark:text-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                  <div className="relative">
+                    <MessageCircle className="w-4 h-4 flex-shrink-0" />
+                    {chatUnreadCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                        {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                      </span>
+                    )}
+                  </div>
                   <span className="hidden sm:inline">Chat</span>
                 </div>
                 {mainView === 'chat' && (

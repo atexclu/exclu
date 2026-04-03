@@ -36,6 +36,7 @@ export default function CreatorChat() {
   const [showMobileList, setShowMobileList] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
+  const [pendingChatterRequests, setPendingChatterRequests] = useState(0);
 
   const statusesToFetch = useMemo<Conversation['status'][]>(() => {
     return ['unclaimed', 'active'];
@@ -51,6 +52,25 @@ export default function CreatorChat() {
       if (user) setCurrentUserId(user.id);
     });
   }, []);
+
+  // Pending chatter requests badge
+  useEffect(() => {
+    if (!currentUserId) return;
+    const fetchPending = async () => {
+      const { count } = await supabase
+        .from('chatter_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('creator_id', currentUserId)
+        .eq('status', 'pending');
+      setPendingChatterRequests(count ?? 0);
+    };
+    fetchPending();
+    const channel = supabase
+      .channel('chatter-requests-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chatter_requests' }, () => fetchPending())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
 
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) return conversations;
@@ -112,7 +132,14 @@ export default function CreatorChat() {
                       }`}
                       title="Chatters"
                     >
-                      <Users className="w-3.5 h-3.5" />
+                      <div className="relative">
+                        <Users className="w-3.5 h-3.5" />
+                        {pendingChatterRequests > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[12px] h-[12px] px-0.5 rounded-full bg-red-500 text-[8px] font-bold text-white flex items-center justify-center">
+                            {pendingChatterRequests}
+                          </span>
+                        )}
+                      </div>
                       Chatters
                     </button>
                   )}

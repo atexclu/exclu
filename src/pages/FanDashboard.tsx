@@ -11,6 +11,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ChatCustomRequest } from '@/components/chat/ChatCustomRequest';
 import type { Conversation } from '@/types/chat';
+import { useFanUnread } from '@/hooks/useFanUnread';
 
 interface FavoriteCreator {
   id: string;
@@ -137,6 +138,8 @@ const FanDashboard = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const fanUnreadCount = useFanUnread(userId);
 
   // Messages tab
   const [fanConversations, setFanConversations] = useState<Conversation[]>([]);
@@ -524,7 +527,14 @@ const FanDashboard = () => {
                       whileTap={{ scale: 0.97 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                     >
-                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <div className="relative">
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        {key === 'messages' && fanUnreadCount > 0 && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                            {fanUnreadCount > 99 ? '99+' : fanUnreadCount}
+                          </span>
+                        )}
+                      </div>
                       <span className="hidden sm:inline">{label}</span>
                     </motion.div>
                     {active && (
