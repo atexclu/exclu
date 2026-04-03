@@ -55,35 +55,36 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching payouts:', error);
+        throw error;
+      }
+
+      console.log('[AdminPayments] Fetched payouts:', data?.length ?? 0);
 
       // Fetch creator profiles for display names
       const creatorIds = [...new Set((data ?? []).map(p => p.creator_id))];
-      let profileMap: Record<string, { display_name: string | null; handle: string | null }> = {};
-      let emailMap: Record<string, string | null> = {};
+      let profileMap: Record<string, { display_name: string | null; handle: string | null; email?: string | null }> = {};
 
       if (creatorIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, display_name, handle')
-          .in('id', creatorIds);
-        (profiles ?? []).forEach(p => {
-          profileMap[p.id] = { display_name: p.display_name, handle: p.handle };
-        });
-
-        // Fetch emails via admin API
+        // Profiles are readable by the owner via RLS, but we need all of them.
+        // Use a workaround: fetch profiles individually (admin's own profile works, others may fail)
         for (const cid of creatorIds) {
-          try {
-            const { data: authUser } = await supabase.auth.admin.getUserById(cid);
-            emailMap[cid] = authUser?.user?.email ?? null;
-          } catch { emailMap[cid] = null; }
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('id, display_name, handle')
+            .eq('id', cid)
+            .maybeSingle();
+          if (prof) {
+            profileMap[cid] = { display_name: prof.display_name, handle: prof.handle };
+          }
         }
       }
 
       setPayouts((data ?? []).map(p => ({
         ...p,
-        creator_name: profileMap[p.creator_id]?.display_name || profileMap[p.creator_id]?.handle || null,
-        creator_email: emailMap[p.creator_id] ?? null,
+        creator_name: profileMap[p.creator_id]?.display_name || profileMap[p.creator_id]?.handle || p.bank_holder_name || null,
+        creator_email: null,
         creator_handle: profileMap[p.creator_id]?.handle || null,
       })));
     } catch (err) {
@@ -236,11 +237,24 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                           <p className="text-muted-foreground">Amount</p>
                           <p className="font-bold text-foreground text-sm">${(payout.amount_cents / 100).toFixed(2)}</p>
                         </div>
-                        <div>
+                        <div className="col-span-2 sm:col-span-1">
                           <p className="text-muted-foreground">IBAN</p>
-                          <p className="font-mono text-foreground">
-                            {payout.bank_iban ? `${payout.bank_iban.slice(0, 4)}...${payout.bank_iban.slice(-4)}` : '—'}
-                          </p>
+                          {payout.bank_iban ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(payout.bank_iban!);
+                                toast.success('IBAN copied');
+                              }}
+                              className="font-mono text-foreground text-left hover:text-primary transition-colors cursor-copy"
+                              title="Click to copy IBAN"
+                            >
+                              {payout.bank_iban.replace(/(.{4})/g, '$1 ').trim()}
+                            </button>
+                          ) : (
+                            <p className="text-foreground">—</p>
+                          )}
                         </div>
                         <div>
                           <p className="text-muted-foreground">Holder</p>

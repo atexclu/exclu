@@ -98,6 +98,8 @@ export default function ChatterDashboard() {
   const [isEditingBank, setIsEditingBank] = useState(false);
   const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
   const [bankData, setBankData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string } | null>(null);
+  const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
+  const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
 
   const formatIbanDisplay = (raw: string): string => {
     const cleaned = raw.replace(/\s/g, '').toUpperCase();
@@ -197,7 +199,7 @@ export default function ChatterDashboard() {
       if (ownProfile?.avatar_url) {
         setChatterAvatarUrl(ownProfile.avatar_url);
       }
-      // Load wallet & bank data
+      // Load wallet & bank data + payouts
       if (ownProfile) {
         setWalletBalanceCents(ownProfile.wallet_balance_cents ?? 0);
         setTotalEarnedCents(ownProfile.total_earned_cents ?? 0);
@@ -206,6 +208,14 @@ export default function ChatterDashboard() {
         if (ownProfile.bank_iban) {
           setBankData({ bank_iban: ownProfile.bank_iban, bank_holder_name: ownProfile.bank_holder_name, bank_bic: ownProfile.bank_bic });
         }
+        // Fetch payouts
+        const { data: payoutsData } = await supabase
+          .from('payouts')
+          .select('id, amount_cents, status, created_at, requested_at, processed_at')
+          .eq('creator_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (payoutsData) setWalletPayouts(payoutsData);
       }
 
       // 1. Get invited profile IDs
@@ -1490,6 +1500,63 @@ export default function ChatterDashboard() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Withdraw button */}
+                      <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-2">Withdraw Funds</h2>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Minimum withdrawal: <span className="font-medium text-foreground">$50.00</span>. Funds typically arrive within 7 business days.
+                        </p>
+                        <Button
+                          onClick={async () => {
+                            if (walletBalanceCents < 5000) { toast.error('Minimum withdrawal is $50.00'); return; }
+                            if (!payoutSetupComplete) { toast.error('Please set up your bank details first'); return; }
+                            setIsRequestingWithdrawal(true);
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+                                body: {},
+                                headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+                              });
+                              if (error || !(data as any)?.success) throw new Error((data as any)?.error || 'Failed');
+                              toast.success('Withdrawal requested! You will receive your funds within 7 business days.');
+                              if ((data as any)?.new_balance !== undefined) setWalletBalanceCents((data as any).new_balance);
+                              const { data: refreshed } = await supabase.from('payouts').select('id, amount_cents, status, created_at, requested_at, processed_at').eq('creator_id', currentUserId!).order('created_at', { ascending: false }).limit(20);
+                              if (refreshed) setWalletPayouts(refreshed);
+                            } catch (err: any) {
+                              toast.error(err?.message || 'Unable to request withdrawal');
+                            } finally {
+                              setIsRequestingWithdrawal(false);
+                            }
+                          }}
+                          disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                          className="w-full sm:w-auto rounded-xl gap-2"
+                        >
+                          {isRequestingWithdrawal ? <><Loader2 className="w-4 h-4 animate-spin" />Processing...</> : <>Request Withdrawal — ${(walletBalanceCents / 100).toFixed(2)}</>}
+                        </Button>
+                      </div>
+
+                      {/* Withdrawal history */}
+                      {walletPayouts.length > 0 && (
+                        <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+                          <h2 className="text-lg font-semibold text-foreground mb-3">Withdrawal History</h2>
+                          <div className="space-y-2">
+                            {walletPayouts.map((p: any) => (
+                              <div key={p.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 p-3">
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">${(p.amount_cents / 100).toFixed(2)}</p>
+                                  <p className="text-xs text-muted-foreground">{new Date(p.requested_at || p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                                </div>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                  p.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                                  p.status === 'rejected' || p.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                                  'bg-yellow-500/20 text-yellow-400'
+                                }`}>{p.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Payout Account (IBAN) */}
                       <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
