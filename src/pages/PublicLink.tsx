@@ -334,11 +334,58 @@ const PublicLink = () => {
       // Supports both new UGPayments flow (?payment_success=true&ref=link_<uuid>)
       // and legacy Stripe flow (?session_id=...)
       let hasPurchased = false;
+      let autoUnlockPurchaseId: string | null = null;
+
+      // Auto-unlock for authenticated fans with a delivered custom request
+      // This handles the case where a fan clicks "View content" from chat or dashboard
+      if (!signal.aborted) {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) {
+          const { data: deliveredReq } = await supabaseAnon
+            .from('custom_requests')
+            .select('id, proposed_amount_cents, created_at')
+            .eq('delivery_link_id', data.id)
+            .eq('fan_id', currentUser.id)
+            .eq('status', 'delivered')
+            .maybeSingle();
+
+          if (deliveredReq) {
+            // Find purchase record created during delivery (by manage-request)
+            const { data: deliveryPurchase } = await supabaseAnon
+              .from('purchases')
+              .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')
+              .eq('link_id', data.id)
+              .eq('status', 'succeeded')
+              .maybeSingle();
+
+            if (deliveryPurchase) {
+              hasPurchased = true;
+              autoUnlockPurchaseId = deliveryPurchase.id;
+              setIsUnlocked(true);
+              setPurchaseData(deliveryPurchase as PurchaseData);
+            } else {
+              // No purchase record yet — still unlock using custom_request as proof
+              hasPurchased = true;
+              autoUnlockPurchaseId = `req_${deliveredReq.id}`;
+              setIsUnlocked(true);
+              setPurchaseData({
+                id: deliveredReq.id,
+                access_expires_at: null,
+                amount_cents: deliveredReq.proposed_amount_cents,
+                currency: 'USD',
+                created_at: deliveredReq.created_at,
+                email_sent: false,
+                download_count: 0,
+              } as PurchaseData);
+            }
+          }
+        }
+      }
 
       // Extract purchase ID from ref param (format: link_<uuid>)
       const purchaseIdFromRef = paymentRef?.startsWith('link_') ? paymentRef.slice(5) : null;
 
-      if (purchaseIdFromRef) {
+      if (!hasPurchased && purchaseIdFromRef) {
         setIsVerifyingPayment(true);
         setIsLoading(false);
 
@@ -437,7 +484,7 @@ const PublicLink = () => {
           setPaymentNotFound(true);
         }
         setIsVerifyingPayment(false);
-      } else if (legacySessionId) {
+      } else if (!hasPurchased && legacySessionId) {
         // Legacy Stripe flow: check by stripe_session_id (for old purchases)
         const { data: existing } = await supabaseAnon
           .from('purchases')
@@ -492,7 +539,7 @@ const PublicLink = () => {
       setContentItems(items);
 
       // Generate signed URLs only if purchased (via Edge Function with service_role_key)
-      const verificationId = purchaseIdFromRef || legacySessionId;
+      const verificationId = autoUnlockPurchaseId || purchaseIdFromRef || legacySessionId;
       if (hasPurchased && verificationId) {
         const unlocked = await generateSignedUrls(data.id, verificationId, items);
         setUnlockedContent(unlocked);

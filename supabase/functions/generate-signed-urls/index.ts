@@ -51,33 +51,59 @@ serve(async (req: Request) => {
       });
     }
 
-    // Verify the purchase exists — supports both:
+    // Verify the purchase exists — supports:
     // - Direct purchase ID (UGPayments flow: session_id = purchase UUID)
     // - Legacy Stripe session ID (stripe_session_id field)
+    // - Custom request delivery (session_id = "req_<request_id>")
     let purchase: { id: string } | null = null;
     let purchaseError: any = null;
 
-    // Try by purchase ID first (UGPayments flow)
-    const { data: byId, error: byIdErr } = await supabase
-      .from('purchases')
-      .select('id')
-      .eq('id', session_id)
-      .eq('link_id', link_id)
-      .eq('status', 'succeeded')
-      .maybeSingle();
+    // Custom request delivery: session_id starts with "req_"
+    if (session_id.startsWith('req_')) {
+      const requestId = session_id.slice(4);
+      const { data: deliveredReq } = await supabase
+        .from('custom_requests')
+        .select('id')
+        .eq('id', requestId)
+        .eq('delivery_link_id', link_id)
+        .eq('status', 'delivered')
+        .maybeSingle();
 
-    if (byId) {
-      purchase = byId;
+      if (deliveredReq) {
+        purchase = { id: deliveredReq.id };
+      } else {
+        // Also check if a purchase record exists for this delivery link
+        const { data: deliveryPurchase } = await supabase
+          .from('purchases')
+          .select('id')
+          .eq('link_id', link_id)
+          .eq('status', 'succeeded')
+          .maybeSingle();
+        if (deliveryPurchase) purchase = deliveryPurchase;
+      }
     } else {
-      // Fallback: try by stripe_session_id (legacy Stripe flow)
-      const { data: byStripe, error: byStripeErr } = await supabase
+      // Try by purchase ID first (UGPayments flow)
+      const { data: byId } = await supabase
         .from('purchases')
         .select('id')
-        .eq('stripe_session_id', session_id)
+        .eq('id', session_id)
         .eq('link_id', link_id)
+        .eq('status', 'succeeded')
         .maybeSingle();
-      purchase = byStripe;
-      purchaseError = byStripeErr;
+
+      if (byId) {
+        purchase = byId;
+      } else {
+        // Fallback: try by stripe_session_id (legacy Stripe flow)
+        const { data: byStripe, error: byStripeErr } = await supabase
+          .from('purchases')
+          .select('id')
+          .eq('stripe_session_id', session_id)
+          .eq('link_id', link_id)
+          .maybeSingle();
+        purchase = byStripe;
+        purchaseError = byStripeErr;
+      }
     }
 
     if (purchaseError || !purchase) {
