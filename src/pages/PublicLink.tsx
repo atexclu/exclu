@@ -89,20 +89,20 @@ interface CreatorProfileData {
 // Map theme colors to pixel colors for PixelCard
 const getPixelColorsFromTheme = (themeColor: string): string => {
   const pixelColorMap: Record<string, string> = {
-    pink: '#fecdd3,#fda4af,#e11d48',
+    day: '#fef3c7,#fde68a,#f59e0b',
     purple: '#e9d5ff,#d8b4fe,#a855f7',
     blue: '#bfdbfe,#93c5fd,#3b82f6',
     orange: '#fed7aa,#fdba74,#f97316',
     green: '#bbf7d0,#86efac,#22c55e',
     red: '#fecaca,#fca5a5,#ef4444',
   };
-  return pixelColorMap[themeColor] || pixelColorMap.pink;
+  return pixelColorMap[themeColor] || pixelColorMap.day;
 };
 
 const themeColors: Record<string, { gradient: string; glow: string }> = {
-  pink: {
-    gradient: 'from-pink-500/40 via-rose-500/30 to-purple-500/40',
-    glow: 'bg-pink-500/40',
+  day: {
+    gradient: 'from-amber-400/50 via-yellow-300/40 to-orange-300/50',
+    glow: 'bg-amber-400/50',
   },
   purple: {
     gradient: 'from-purple-500/40 via-violet-500/30 to-fuchsia-500/40',
@@ -626,8 +626,8 @@ const PublicLink = () => {
       })}`
     : '';
 
-  const themeKey = creator?.theme_color || 'pink';
-  const theme = themeColors[themeKey] || themeColors.pink;
+  const themeKey = creator?.theme_color || 'day';
+  const theme = themeColors[themeKey] || themeColors.day;
 
   const expiresDate = accessExpiresAt ? new Date(accessExpiresAt) : null;
   const hasTemporaryAccess = !!expiresDate;
@@ -821,7 +821,7 @@ const PublicLink = () => {
                     <PixelCard 
                       variant="default" 
                       className="w-full h-full"
-                      colors={getPixelColorsFromTheme(creator?.theme_color || 'pink')}
+                      colors={getPixelColorsFromTheme(creator?.theme_color || 'day')}
                       speed={80}
                       gap={6}
                     >

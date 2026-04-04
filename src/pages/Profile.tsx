@@ -62,7 +62,7 @@ const Profile = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isStripeLoading, setIsStripeLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'profile' | 'wallet' | 'subscription' | 'profiles' | 'security'>('profile');
-  const [themeColor, setThemeColor] = useState<string>('pink');
+  const [themeColor, setThemeColor] = useState<string>('day');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -178,7 +178,7 @@ const Profile = () => {
           .maybeSingle();
 
         if (cpData) {
-          setThemeColor(cpData.theme_color || 'pink');
+          setThemeColor(cpData.theme_color || 'day');
           setSocialLinks(cpData.social_links || {});
           setShowJoinBanner(
             cpData.show_join_banner === null || cpData.show_join_banner === undefined
@@ -204,7 +204,7 @@ const Profile = () => {
           setStripeAccountId(profile.stripe_account_id || null);
           setStripeConnectStatus(profile.stripe_connect_status || null);
           setCountry(profile.country || null);
-          setThemeColor(profile.theme_color || 'pink');
+          setThemeColor(profile.theme_color || 'day');
           setSocialLinks(profile.social_links || {});
           setShowJoinBanner(
             profile.show_join_banner === null || profile.show_join_banner === undefined
@@ -737,7 +737,7 @@ const Profile = () => {
   };
 
   const themeOptions = [
-    { id: 'pink', label: 'Pink', color: 'bg-gradient-to-r from-pink-500 to-rose-500' },
+    { id: 'day', label: 'Day', color: 'bg-gradient-to-r from-amber-400 to-orange-400' },
     { id: 'purple', label: 'Purple', color: 'bg-gradient-to-r from-purple-500 to-violet-500' },
     { id: 'blue', label: 'Blue', color: 'bg-gradient-to-r from-blue-500 to-cyan-500' },
     { id: 'orange', label: 'Orange', color: 'bg-gradient-to-r from-orange-500 to-amber-500' },
