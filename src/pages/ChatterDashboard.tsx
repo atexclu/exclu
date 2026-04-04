@@ -387,21 +387,19 @@ export default function ChatterDashboard() {
     const fetchMetrics = async () => {
       setMetricsLoading(true);
       try {
-        // Conversations assigned to this chatter for the active profile(s)
+        // All conversations from managed profiles (not just assigned to this chatter)
+        // This gives a complete picture of the chatter's managed profiles revenue
+        const profileFilter = activeProfileId ? [activeProfileId] : allProfileIds;
         let convsQuery = supabase
           .from('conversations')
-          .select('id, status, total_revenue_cents, created_at')
-          .eq('assigned_chatter_id', currentUserId);
-
-        if (activeProfileId) {
-          convsQuery = convsQuery.eq('profile_id', activeProfileId);
-        } else {
-          convsQuery = convsQuery.in('profile_id', allProfileIds);
-        }
+          .select('id, status, total_revenue_cents, created_at, assigned_chatter_id')
+          .in('profile_id', profileFilter)
+          .in('status', ['unclaimed', 'active']);
 
         const { data: convs } = await convsQuery;
 
         const safeConvs = convs ?? [];
+        // Revenue: count all conversations in managed profiles
         const totalRev = safeConvs.reduce((s, c: any) => s + (c.total_revenue_cents ?? 0), 0);
         const activeCount = safeConvs.filter((c: any) => c.status === 'active').length;
 
