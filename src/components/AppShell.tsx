@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Building2, FileText, Wrench, DollarSign } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Plus, Link2, Image, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, Settings, BarChart3, DollarSign } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -21,19 +21,34 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<any>;
   adminOnly?: boolean;
-  agencyOnly?: boolean;
-  mobileHidden?: boolean;
-  hidden?: boolean;
 }
 
-const baseNavItems: NavItem[] = [
-  { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/profile', label: 'Profile', icon: Palette },
-  { path: '/app/links', label: 'Links', icon: Link2, mobileHidden: true },
-  { path: '/app/content', label: 'Content', icon: Image, mobileHidden: true },
-  { path: '/app/chat', label: 'Chat', icon: MessageSquare },
-  { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
-  { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
+const navSections = [
+  {
+    label: 'General',
+    items: [
+      { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/app/profile', label: 'Profile', icon: Palette },
+      { path: '/app/links', label: 'Links', icon: Link2 },
+      { path: '/app/content', label: 'Content', icon: Image },
+      { path: '/app/chat', label: 'Chat', icon: MessageSquare },
+      { path: '/app/wishlist', label: 'Wishlist', icon: Gift },
+    ],
+  },
+  {
+    label: 'Monetize',
+    items: [
+      { path: '/app/analytics', label: 'Analytics', icon: BarChart3 },
+      { path: '/app/earnings', label: 'Earnings', icon: DollarSign },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { path: '/app/referrals', label: 'Referrals', icon: Gift },
+      { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
+    ],
+  },
 ];
 
 const AppShell = ({ children, rightActions }: AppShellProps) => {
@@ -51,37 +66,25 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     const fetchAdminStatus = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const { data: profile } = await supabase
         .from('profiles')
         .select('is_admin')
         .eq('id', user.id)
         .single();
-
-      if (profile) {
-        setIsAdmin(profile.is_admin === true);
-      }
+      if (profile) setIsAdmin(profile.is_admin === true);
     };
-
     fetchAdminStatus();
   }, []);
 
   const isActive = (path: string) => {
-    if (path === '/app/links') {
-      return location.pathname === '/app/links' || location.pathname.startsWith('/app/links/');
-    }
-    if (path === '/app/content') {
-      return location.pathname === '/app/content';
-    }
-    if (path === '/app/chat') {
-      return location.pathname === '/app/chat';
-    }
-    if (path === '/app/wishlist') {
-      return location.pathname === '/app/wishlist';
-    }
-    if (path === '/admin/users') {
-      return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
-    }
+    if (path === '/app/links') return location.pathname === '/app/links' || location.pathname.startsWith('/app/links/');
+    if (path === '/app/content') return location.pathname === '/app/content';
+    if (path === '/app/chat') return location.pathname === '/app/chat';
+    if (path === '/app/wishlist') return location.pathname === '/app/wishlist';
+    if (path === '/app/analytics') return location.pathname === '/app/analytics';
+    if (path === '/app/earnings') return location.pathname === '/app/earnings';
+    if (path === '/app/referrals') return location.pathname === '/app/referrals';
+    if (path === '/admin/users') return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
     return location.pathname === path;
   };
 
@@ -90,196 +93,202 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     navigate('/', { replace: true });
   };
 
+  const allNavItems = useMemo(() => {
+    const items: NavItem[] = [];
+    navSections.forEach((s) => s.items.forEach((i) => items.push(i)));
+    return items;
+  }, []);
+
   const visibleNavItems = useMemo(
-    () => baseNavItems.filter((item) => {
-      if (item.hidden) return false;
+    () => allNavItems.filter((item) => {
       if (item.adminOnly && !isAdmin) return false;
-      if (item.agencyOnly && !isAgency) return false;
       return true;
     }),
-    [isAdmin, isAgency]
+    [allNavItems, isAdmin]
   );
 
+  const sidebarWidth = 'w-[200px]';
+
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* App topbar */}
-      <header className="fixed top-0 inset-x-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-4">
-          <Link to="/app" className="inline-flex items-center flex-shrink-0">
+    <div className="min-h-screen bg-background text-foreground flex">
+      {/* Vertical Sidebar — X/Twitter style */}
+      <aside className={`fixed left-0 top-0 bottom-0 ${sidebarWidth} flex flex-col z-40 border-r border-border/50 bg-card`}>
+        {/* Logo */}
+        <div className="px-4 py-5 border-b border-border/50">
+          <Link to="/app" className="inline-flex items-center">
             <img
               src={resolvedTheme === 'light' ? logoBlack : logoWhite}
               alt="Exclu logo"
-              className="h-5 sm:h-6 w-auto object-contain"
+              className="h-6 w-auto object-contain"
             />
           </Link>
+        </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 flex items-center justify-center">
-            <div className="relative flex items-center gap-0.5 sm:gap-1 rounded-2xl bg-muted/50 dark:bg-muted/30 p-1">
-              {visibleNavItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.path);
-                const badge = item.path === '/app/chat' ? chatUnreadCount : 0;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`relative z-10 ${item.mobileHidden ? 'hidden sm:inline-block' : ''}`}
-                  >
-                    <motion.div
-                      className={`relative z-10 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm transition-colors duration-200 ${active
-                        ? 'font-semibold text-black dark:text-foreground'
-                        : 'font-medium text-muted-foreground hover:text-foreground'
-                        }`}
-                      whileHover={!active ? { scale: 1.04 } : {}}
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                    >
-                      <div className="relative">
-                        <Icon className="w-4 h-4 flex-shrink-0" />
-                        {badge > 0 && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                      </div>
-                      <span className="hidden sm:inline">{item.label}</span>
-                    </motion.div>
-                    {active && (
-                      <motion.div
-                        layoutId="nav-active-pill"
-                        className="absolute inset-0 rounded-xl bg-background dark:bg-white/10 shadow-sm dark:shadow-[0_0_12px_rgba(255,255,255,0.06)] border border-border/60 dark:border-white/10"
-                        transition={{
-                          type: 'spring',
-                          stiffness: 350,
-                          damping: 30,
-                          mass: 0.8,
-                        }}
-                      />
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          </nav>
+        {/* Nav sections */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3">
+          {navSections.map((section) => {
+            const visibleItems = section.items.filter((item) => {
+              if (item.adminOnly && !isAdmin) return false;
+              return true;
+            });
+            if (visibleItems.length === 0) return null;
+            return (
+              <div key={section.label} className="mb-5">
+                <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  {section.label}
+                </p>
+                <div className="space-y-0.5">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    const badge = item.path === '/app/chat' ? chatUnreadCount : 0;
+                    return (
+                      <Link key={item.path} to={item.path} className="block">
+                        <div
+                          className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                            active
+                              ? 'text-foreground font-semibold'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {/* Active indicator dot */}
+                          {active && (
+                            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-primary" />
+                          )}
+                          <Icon className="w-5 h-5 flex-shrink-0" />
+                          <span>{item.label}</span>
+                          {badge > 0 && item.path === '/app/chat' && (
+                            <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
+                              {badge > 99 ? '99+' : badge}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
 
-          {rightActions && (
-            <div className="flex items-center gap-2">
-              {rightActions}
-            </div>
-          )}
+        {/* CTA + Theme + Profile at bottom */}
+        <div className="p-3 border-t border-border/50 space-y-2">
+          {/* Create Content CTA */}
+          <Link to="/app/links/new" className="block">
+            <Button className="w-full justify-start gap-2 rounded-xl h-11 font-semibold" size="sm">
+              <Plus className="w-4 h-4" />
+              Create
+            </Button>
+          </Link>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {isAgency && <ProfileSwitcherDropdown />}
+          {/* Theme toggle + Settings row */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+              className="flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="Toggle theme"
+            >
+              {resolvedTheme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span>{resolvedTheme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
             <Link
               to="/app/settings"
-              className="group relative"
-              aria-label="Profile settings"
+              className="flex items-center justify-center w-10 h-10 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
             >
-              <motion.div
-                className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 transition-all ${location.pathname === '/app/settings'
-                  ? 'border-primary shadow-[0_0_12px_rgba(var(--primary),0.3)]'
-                  : 'border-border/60 group-hover:border-primary/50'
-                  }`}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              >
+              <Settings className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {/* Profile row */}
+          <div className="flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-muted/50 transition-colors">
+            <Link to="/app/settings" className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-border/60 flex-shrink-0 bg-muted">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <div className="w-full h-full flex items-center justify-center">
                     <User className="w-4 h-4 text-muted-foreground" />
                   </div>
                 )}
-              </motion.div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">
+                  {activeProfile?.display_name || 'User'}
+                </p>
+                <p className="text-[10px] text-muted-foreground truncate">
+                  {activeProfile?.handle ? `@${activeProfile.handle}` : 'Creator'}
+                </p>
+              </div>
             </Link>
-            {/* Dark/Light mode toggle — desktop only */}
-            <motion.button
+            <button
               type="button"
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="hidden sm:flex items-center justify-center w-9 h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
-              aria-label="Toggle theme"
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              onClick={handleLogout}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              aria-label="Log out"
             >
-              {resolvedTheme === 'dark' ? (
-                <Sun className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <Moon className="w-4 h-4 text-muted-foreground" />
-              )}
-            </motion.button>
-            <motion.div
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              className="hidden sm:block"
-            >
-              <Button
-                variant="outline"
-                size="icon"
-                className="rounded-full h-8 w-8 sm:h-9 sm:w-9 border-border/60"
-                onClick={handleLogout}
-                aria-label="Log out"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </motion.div>
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-      </header>
+      </aside>
 
-      {/* Main content */}
-      <div className={`pt-16 sm:pt-20 flex-1 flex flex-col ${isChatPage ? 'overflow-hidden' : 'pb-24 sm:pb-0'}`}>
-        <main className={`flex-1 ${isChatPage ? 'overflow-hidden' : ''}`}>{children}</main>
-      </div>
+      {/* Main content area */}
+      <div className={`flex-1 flex flex-col ${sidebarWidth}`}>
+        {/* Topbar for mobile + right actions */}
+        <header className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl h-16 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2 flex-1">
+            <span className="text-sm font-semibold text-foreground">{rightActions}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {isAgency && <ProfileSwitcherDropdown />}
+          </div>
+        </header>
 
-      {/* Mobile Floating Dock — hidden on chat page */}
-      <div className={`fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none ${isChatPage ? 'hidden' : ''}`}>
-        <div className="flex items-center gap-1 px-3 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
-          {/* Links Button */}
-          <Link to="/app/links">
-            <motion.div
-              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname.startsWith('/app/links')
-                ? 'text-white bg-white/10'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-                }`}
-              whileTap={{ scale: 0.9 }}
-            >
-              <Link2 className="w-5 h-5" />
-              <span className="text-[9px] font-medium mt-0.5">Links</span>
-            </motion.div>
-          </Link>
-
-          {/* Add Content Button (Center) */}
-          <Link to="/app/links/new">
-            <motion.div
-              className="flex items-center justify-center w-14 h-14 rounded-full bg-[#E5FF7D] text-black shadow-lg shadow-[#E5FF7D]/20 border-4 border-black"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              style={{ y: -16 }}
-            >
-              <Plus className="w-7 h-7 stroke-[2.5]" />
-            </motion.div>
-          </Link>
-
-          {/* Content Button */}
-          <Link to="/app/content">
-            <motion.div
-              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname === '/app/content' && !location.search.includes('action=new')
-                ? 'text-white bg-white/10'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-                }`}
-              whileTap={{ scale: 0.9 }}
-            >
-              <Image className="w-5 h-5" />
-              <span className="text-[9px] font-medium mt-0.5">Content</span>
-            </motion.div>
-          </Link>
-
+        {/* Page content */}
+        <div className={`flex-1 flex flex-col ${isChatPage ? '' : 'pb-24 sm:pb-0'}`}>
+          <main className={`flex-1 ${isChatPage ? 'overflow-hidden' : ''}`}>{children}</main>
         </div>
       </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 sm:hidden ${isChatPage ? '' : ''}`}>
+        <div className="flex items-center justify-around px-2 py-2 bg-card/95 backdrop-blur-xl border-t border-border/50">
+          {[
+            { path: '/app', icon: LayoutDashboard, label: 'Home' },
+            { path: '/app/profile', icon: Palette, label: 'Profile' },
+            { path: '/app/links/new', icon: Plus, label: 'Create', center: true },
+            { path: '/app/chat', icon: MessageSquare, label: 'Chat', badge: chatUnreadCount },
+            { path: '/app/settings', icon: Settings, label: 'More' },
+          ].map(({ path, icon: Icon, label, badge, center }) => {
+            const active = isActive(path);
+            if (center) {
+              return (
+                <Link key={path} to={path} className="flex items-center justify-center -mt-4">
+                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center shadow-lg">
+                    <Icon className="w-6 h-6 text-primary-foreground" />
+                  </div>
+                </Link>
+              );
+            }
+            return (
+              <Link key={path} to={path} className="flex flex-col items-center gap-0.5 px-3 py-1">
+                <div className="relative">
+                  <Icon className={`w-5 h-5 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+                  {badge > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </div>
+                <span className={`text-[10px] ${active ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
       <AnimatePresence>
         {showProfileSwitcher && location.pathname.startsWith('/app') && <ProfileSwitcherOverlay />}
       </AnimatePresence>
