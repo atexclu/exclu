@@ -64,54 +64,54 @@
   }
 
   .light {
-    /* EXCLU Brand Colors - Light Mode */
-    --background: 0 0% 98%; /* #FAFAFA */
-    --foreground: 230 25% 10%; /* #1A1A2E */
+    /* EXCLU Brand Colors - Day Mode (amber/sunrise) */
+    --background: 38 92% 96%; /* #FFFBEB - warm cream */
+    --foreground: 30 80% 10%; /* dark warm brown */
 
     --card: 0 0% 100%; /* #FFFFFF */
-    --card-foreground: 230 25% 10%;
+    --card-foreground: 30 80% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 230 25% 10%;
+    --popover-foreground: 30 80% 10%;
 
-    --primary: 230 25% 10%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 38 92% 50%; /* #F59E0B - amber */
+    --primary-foreground: 30 80% 5%; /* dark brown */
 
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 230 25% 10%;
+    --secondary: 38 80% 92%;
+    --secondary-foreground: 30 80% 10%;
 
-    --muted: 0 0% 96%;
-    --muted-foreground: 220 9% 6%; /* #6B7280 */
+    --muted: 38 80% 92%;
+    --muted-foreground: 30 80% 35%; /* #92785A */
 
-    --accent: 0 0% 96%;
-    --accent-foreground: 230 25% 10%;
+    --accent: 38 80% 92%;
+    --accent-foreground: 30 80% 10%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 0%; /* Black borders in light mode */
-    --input: 0 0% 96%; /* Fond clair pour inputs */
-    --ring: 230 25% 10%;
+    --border: 38 60% 85%; /* warm border */
+    --input: 38 80% 95%; /* warm input bg */
+    --ring: 38 92% 50%;
 
-    /* EXCLU Custom Colors - Light Mode */
-    --exclu-black: 0 0% 100%; /* Inversé pour light */
-    --exclu-phantom: 0 0% 98%;
-    --exclu-arsenic: 0 0% 70%; /* Darker border gray for better visibility in light mode */
-    --exclu-graphite: 220 9% 46%;
-    --exclu-space: 220 9% 46%;
-    --exclu-steel: 230 5% 40%;
-    --exclu-smoke: 230 8% 22%;
-    --exclu-cloud: 230 12% 9%;
-    --exclu-white: 230 25% 10%; /* Inversé pour light */
+    /* EXCLU Custom Colors - Day Mode */
+    --exclu-black: 0 0% 100%;
+    --exclu-phantom: 38 92% 96%;
+    --exclu-arsenic: 38 20% 75%;
+    --exclu-graphite: 30 60% 35%;
+    --exclu-space: 30 60% 35%;
+    --exclu-steel: 30 50% 40%;
+    --exclu-smoke: 30 40% 30%;
+    --exclu-cloud: 30 80% 10%;
+    --exclu-white: 30 80% 10%;
 
-    /* Gradient Colors - Light Mode */
-    --gradient-violet: 266 85% 58%; /* #7C3AED */
-    --gradient-pink: 0 0% 100%; /* white */
-    --gradient-blue: 230 15% 45%;
+    /* Gradient Colors - Day Mode */
+    --gradient-violet: 38 92% 50%; /* amber */
+    --gradient-pink: 30 95% 55%; /* orange */
+    --gradient-blue: 30 80% 45%;
 
-    /* Glow Effects - Light Mode */
-    --glow-violet: 266 85% 58%;
-    --glow-pink: 0 0% 100%;
+    /* Glow Effects - Day Mode */
+    --glow-violet: 38 92% 50%;
+    --glow-pink: 30 95% 55%;
 
     /* Status Colors - Same for both modes */
     --success: 142 71% 45%;
