@@ -235,7 +235,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </aside>
 
       {/* Main content area */}
-      <div className={`flex-1 flex flex-col ${sidebarWidth}`}>
+      <div className={`flex-1 flex flex-col ml-[200px]`}>
         {/* Topbar for mobile + right actions */}
         <header className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl h-16 flex items-center justify-between px-4">
           <div className="flex items-center gap-2 flex-1">
