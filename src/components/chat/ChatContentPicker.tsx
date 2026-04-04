@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Search, Loader2, Paperclip, FileText, Check, Send, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
+import { getSignedUrl } from '@/lib/storageUtils';
 
 export interface ContentAsset {
   id: string;

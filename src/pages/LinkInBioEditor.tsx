@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -260,10 +261,8 @@ const LinkInBioEditor = () => {
         const withUrls = await Promise.all(
           publicData.map(async (item) => {
             if (!item.storage_path) return { ...item, previewUrl: null };
-            const { data: signed } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(item.storage_path, 60 * 60);
-            return { ...item, previewUrl: signed?.signedUrl || null };
+            const previewUrl = await getSignedUrl(item.storage_path, 60 * 60);
+            return { ...item, previewUrl: previewUrl || null };
           })
         );
         setPublicContent(withUrls);
@@ -462,10 +461,8 @@ const LinkInBioEditor = () => {
       const withUrls = await Promise.all(
         publicData.map(async (item) => {
           if (!item.storage_path) return { ...item, previewUrl: null };
-          const { data: signed } = await supabase.storage
-            .from('paid-content')
-            .createSignedUrl(item.storage_path, 60 * 60);
-          return { ...item, previewUrl: signed?.signedUrl || null };
+          const previewUrl = await getSignedUrl(item.storage_path, 60 * 60);
+          return { ...item, previewUrl: previewUrl || null };
         })
       );
       setPublicContent(withUrls);

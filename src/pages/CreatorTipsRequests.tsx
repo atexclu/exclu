@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
@@ -138,10 +139,8 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
         const withPreviews = await Promise.all(
           (data as LibraryAsset[]).map(async (a) => {
             if (!a.storage_path) return { ...a, previewUrl: null };
-            const { data: signed } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(a.storage_path, 3600);
-            return { ...a, previewUrl: signed?.signedUrl ?? null };
+            const previewUrl = await getSignedUrl(a.storage_path, 3600);
+            return { ...a, previewUrl };
           })
         );
         if (mounted) setLibraryAssets(withPreviews);

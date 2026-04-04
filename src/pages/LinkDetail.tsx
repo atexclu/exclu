@@ -2,6 +2,7 @@ import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { useEffect, useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -149,12 +150,10 @@ const LinkDetail = () => {
 
         // Load content preview if storage_path exists
         if (data.storage_path) {
-          const { data: signedData, error: signedError } = await supabase.storage
-            .from('paid-content')
-            .createSignedUrl(data.storage_path, 60 * 60);
-          
-          if (!signedError && signedData?.signedUrl) {
-            setContentPreviewUrl(signedData.signedUrl);
+          const signedUrl = await getSignedUrl(data.storage_path, 60 * 60);
+
+          if (signedUrl) {
+            setContentPreviewUrl(signedUrl);
           }
         }
       } catch (err) {

@@ -11,6 +11,7 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { UploadCloud, Image as ImageIcon, Film, Sparkles, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
@@ -150,16 +151,14 @@ const CreateLink = () => {
           baseAssets.map(async (asset) => {
             if (!asset.storage_path) return { ...asset, previewUrl: null };
 
-            const { data: signed, error: signedError } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(asset.storage_path, 60 * 60);
+            const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
 
-            if (signedError || !signed?.signedUrl) {
-              console.error('Error generating preview URL for asset', asset.id, signedError);
+            if (!previewUrl) {
+              console.error('Error generating preview URL for asset', asset.id);
               return { ...asset, previewUrl: null };
             }
 
-            return { ...asset, previewUrl: signed.signedUrl };
+            return { ...asset, previewUrl };
           })
         );
 
