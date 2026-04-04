@@ -111,8 +111,8 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
-      {/* Vertical Sidebar — X/Twitter style */}
-      <aside className={`fixed left-0 top-0 bottom-0 ${sidebarWidth} flex flex-col z-40 border-r border-border/50 bg-card`}>
+      {/* Vertical Sidebar — X/Twitter style — hidden on mobile */}
+      <aside className={`fixed left-0 top-0 bottom-0 ${sidebarWidth} flex flex-col z-40 border-r border-border/50 bg-card hidden lg:flex`}>
         {/* Logo */}
         <div className="px-4 py-5 border-b border-border/50">
           <Link to="/app" className="inline-flex items-center">
@@ -235,9 +235,9 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </aside>
 
       {/* Main content area */}
-      <div className={`flex-1 flex flex-col ml-[200px]`}>
+      <div className="flex-1 flex flex-col lg:ml-[200px]">
         {/* Topbar for mobile + right actions */}
-        <header className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl h-16 flex items-center justify-between px-4">
+        <header className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl h-14 flex items-center justify-between px-4 lg:hidden">
           <div className="flex items-center gap-2 flex-1">
             <span className="text-sm font-semibold text-foreground">{rightActions}</span>
           </div>
