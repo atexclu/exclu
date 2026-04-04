@@ -15,7 +15,6 @@ import { PublicContentSection } from '@/components/linkinbio/sections/PublicCont
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import AppShell from '@/components/AppShell';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 interface LinkInBioData {
@@ -524,7 +523,6 @@ const LinkInBioEditor = () => {
   }
 
   return (
-    <AppShell>
       <div className="min-h-screen bg-background">
         <div className="max-w-[1500px] mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] min-h-[calc(100vh-4rem)]">
@@ -794,7 +792,6 @@ const LinkInBioEditor = () => {
           </div>
         </div>
       </div>
-    </AppShell>
   );
 };
 
