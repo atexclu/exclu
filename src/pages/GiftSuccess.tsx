@@ -21,8 +21,10 @@ const GiftSuccess = () => {
       // Verify payment (fallback if ConfirmURL didn't fire)
       if (ugpTransactionId && merchantRef) {
         try {
-          await supabase.functions.invoke('verify-payment', {
-            body: { merchant_reference: merchantRef, transaction_id: ugpTransactionId },
+          await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ merchant_reference: merchantRef, transaction_id: ugpTransactionId }),
           });
         } catch (err) {
           console.error('[GiftSuccess] verify-payment failed:', err);

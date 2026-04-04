@@ -209,8 +209,10 @@ const TipSuccess = () => {
       if (ugpTransactionId && (merchantRef || tipId)) {
         const ref = merchantRef || (tipId ? `tip_${tipId}` : '');
         try {
-          await supabase.functions.invoke('verify-payment', {
-            body: { merchant_reference: ref, transaction_id: ugpTransactionId },
+          await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ merchant_reference: ref, transaction_id: ugpTransactionId }),
           });
           console.log('[TipSuccess] verify-payment succeeded for', ref);
         } catch (err) {

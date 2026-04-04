@@ -11,6 +11,7 @@ import { useNavigate, useParams, Link as RouterLink } from 'react-router-dom';
 import { UploadCloud, Film, Sparkles, X, Trash2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { AttachedContentManager, AttachedMedia } from '@/components/AttachedContentManager';
 
 type LibraryAsset = {
@@ -70,12 +71,10 @@ const EditLink = () => {
         const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
         setExistingMediaIsVideo(isVideo);
 
-        const { data: signed } = await supabase.storage
-          .from('paid-content')
-          .createSignedUrl(data.storage_path, 60 * 60);
+        const signedUrl = await getSignedUrl(data.storage_path, 60 * 60);
 
-        if (signed?.signedUrl) {
-          setExistingMediaUrl(signed.signedUrl);
+        if (signedUrl) {
+          setExistingMediaUrl(signedUrl);
         }
       }
 
@@ -93,9 +92,7 @@ const EditLink = () => {
             const asset = lm.assets;
             if (!asset || !asset.storage_path) return null;
 
-            const { data: signed } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(asset.storage_path, 60 * 60);
+            const signedUrl = await getSignedUrl(asset.storage_path, 60 * 60);
 
             return {
               id: asset.id,
@@ -103,7 +100,7 @@ const EditLink = () => {
               storage_path: asset.storage_path,
               mime_type: asset.mime_type,
               title: asset.title,
-              previewUrl: signed?.signedUrl || null,
+              previewUrl: signedUrl || null,
             } as AttachedMedia;
           })
         );

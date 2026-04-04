@@ -367,11 +367,9 @@ const CreatorPublic = () => {
           const withUrls = await Promise.all(
             publicData.map(async (item) => {
               if (!item.storage_path) return { ...item, previewUrl: null };
-              const { data: signed, error: signError } = await supabase.storage
-                .from('paid-content')
-                .createSignedUrl(item.storage_path, 60 * 60);
-              if (signError) console.warn('Signed URL failed for', item.storage_path, signError.message);
-              return { ...item, previewUrl: signed?.signedUrl || null };
+              const { getSignedUrl } = await import('@/lib/storageUtils');
+              const previewUrl = await getSignedUrl(item.storage_path);
+              return { ...item, previewUrl };
             })
           );
           if (!isMounted) return;

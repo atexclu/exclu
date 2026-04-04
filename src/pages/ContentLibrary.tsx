@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
@@ -89,16 +90,14 @@ const ContentLibrary = () => {
           baseAssets.map(async (asset) => {
             if (!asset.storage_path) return { ...asset, previewUrl: null };
 
-            const { data: signed, error: signedError } = await supabase.storage
-              .from('paid-content')
-              .createSignedUrl(asset.storage_path, 60 * 60); // 1 hour
+            const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
 
-            if (signedError || !signed?.signedUrl) {
-              console.error('Error generating preview URL for asset', asset.id, signedError);
+            if (!previewUrl) {
+              console.error('Error generating preview URL for asset', asset.id);
               return { ...asset, previewUrl: null };
             }
 
-            return { ...asset, previewUrl: signed.signedUrl };
+            return { ...asset, previewUrl };
           })
         );
 
@@ -241,13 +240,7 @@ const ContentLibrary = () => {
         // Create a signed URL for immediate preview of the newly uploaded asset
         let previewUrl: string | null = null;
         if (inserted.storage_path) {
-          const { data: signed, error: signedError } = await supabase.storage
-            .from('paid-content')
-            .createSignedUrl(inserted.storage_path as string, 60 * 60);
-
-          if (!signedError && signed?.signedUrl) {
-            previewUrl = signed.signedUrl;
-          }
+          previewUrl = await getSignedUrl(inserted.storage_path as string, 60 * 60);
         }
 
         newAssets.push({ ...(inserted as LibraryAsset), previewUrl });

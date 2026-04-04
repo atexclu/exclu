@@ -450,9 +450,12 @@ const PublicLink = () => {
         // If not yet confirmed and we have a TransactionID, verify it ourselves
         if (!verifiedPurchase && ugpTransactionId && !signal.aborted) {
           try {
-            const { data: verifyData } = await supabase.functions.invoke('verify-payment', {
-              body: { purchase_id: purchaseIdFromRef, transaction_id: ugpTransactionId },
+            const verifyRes = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ purchase_id: purchaseIdFromRef, transaction_id: ugpTransactionId }),
             });
+            const verifyData = await verifyRes.json().catch(() => null);
             if (verifyData?.verified) {
               const { data: confirmedPurchase } = await supabaseAnon
                 .from('purchases')

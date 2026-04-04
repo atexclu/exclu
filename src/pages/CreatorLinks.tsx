@@ -9,6 +9,7 @@ import { Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
+import { getSignedUrl } from '@/lib/storageUtils';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 interface LinkRow {
@@ -86,14 +87,12 @@ const CreatorLinks = () => {
           baseLinks.map(async (link) => {
             // First try main storage_path
             if (link.storage_path) {
-              const { data: signed, error: signedError } = await supabase.storage
-                .from('paid-content')
-                .createSignedUrl(link.storage_path, 60 * 60);
+              const previewUrl = await getSignedUrl(link.storage_path, 60 * 60);
 
-              if (!signedError && signed?.signedUrl) {
+              if (previewUrl) {
                 const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
                 const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-                return { ...link, previewUrl: signed.signedUrl, isVideo };
+                return { ...link, previewUrl, isVideo };
               }
             }
 
@@ -108,13 +107,11 @@ const CreatorLinks = () => {
             if (linkMedia && linkMedia.length > 0) {
               const asset = (linkMedia[0] as any).assets;
               if (asset?.storage_path) {
-                const { data: signed } = await supabase.storage
-                  .from('paid-content')
-                  .createSignedUrl(asset.storage_path, 60 * 60);
+                const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
 
-                if (signed?.signedUrl) {
+                if (previewUrl) {
                   const isVideo = asset.mime_type?.startsWith('video/') || false;
-                  return { ...link, previewUrl: signed.signedUrl, isVideo };
+                  return { ...link, previewUrl, isVideo };
                 }
               }
             }
