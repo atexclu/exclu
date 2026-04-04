@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import type { Message, SenderType } from '@/types/chat';
 
 interface SendMessageParams {
@@ -51,12 +51,10 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
     setIsLoading(true);
     setError(null);
 
-    // Charge les 100 derniers messages avec les liens optionnels joints
+    // Charge les 100 derniers messages
     const { data, error: fetchError } = await supabase
       .from('messages')
-      .select(
-        '*, link:links!messages_paid_content_id_fkey(id, title, slug, price_cents)'
-      )
+      .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(100);
@@ -67,7 +65,23 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
       return;
     }
 
-    setMessages((data ?? []) as Message[]);
+    // Load link data separately via anon client (bypasses RLS on links for fans)
+    const msgs = (data ?? []) as Message[];
+    const paidContentIds = [...new Set(msgs.filter(m => m.paid_content_id).map(m => m.paid_content_id!))];
+    if (paidContentIds.length > 0) {
+      const { data: links } = await supabaseAnon
+        .from('links')
+        .select('id, title, slug, price_cents')
+        .in('id', paidContentIds);
+      const linkMap = new Map((links ?? []).map(l => [l.id, l]));
+      for (const msg of msgs) {
+        if (msg.paid_content_id && linkMap.has(msg.paid_content_id)) {
+          (msg as any).link = linkMap.get(msg.paid_content_id);
+        }
+      }
+    }
+
+    setMessages(msgs);
     setIsLoading(false);
 
     // Marquer les messages de l'autre partie comme lus
@@ -111,9 +125,9 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
         async (payload) => {
           const newMsg = payload.new as Message;
 
-          // Charger le lien si le message contient du contenu payant
+          // Charger le lien si le message contient du contenu payant (via anon client for RLS bypass)
           if (newMsg.paid_content_id) {
-            const { data: linkData } = await supabase
+            const { data: linkData } = await supabaseAnon
               .from('links')
               .select('id, title, slug, price_cents')
               .eq('id', newMsg.paid_content_id)
