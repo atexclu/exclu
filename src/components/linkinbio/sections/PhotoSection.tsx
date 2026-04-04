@@ -1,11 +1,10 @@
 import { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Camera, Upload, ZoomIn, ZoomOut, Check, RefreshCw, RotateCw, Crop } from 'lucide-react';
+import { Camera, Upload, ZoomIn, ZoomOut, Check, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import Cropper, { Area } from 'react-easy-crop';
-import type { Point } from 'react-easy-crop';
 
 interface PhotoSectionProps {
   avatarUrl: string | null;
@@ -41,26 +40,6 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   });
 }
 
-async function generatePreview(imageSrc: string, pixelCrop: Area, size = 200): Promise<string> {
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = reject;
-    image.src = imageSrc;
-  });
-
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(
-    image,
-    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, size, size,
-  );
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
-
 export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoSectionProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -68,21 +47,13 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
 
   // Crop state
   const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [rotation, setRotation] = useState(0);
-  const [croppedPreview, setCroppedPreview] = useState<string | null>(null);
 
-  const onCropComplete = useCallback(async (_: Area, croppedPixels: Area) => {
+  const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
     setCroppedAreaPixels(croppedPixels);
-    if (rawImageUrl) {
-      try {
-        const preview = await generatePreview(rawImageUrl, croppedPixels, 180);
-        setCroppedPreview(preview);
-      } catch {}
-    }
-  }, [rawImageUrl]);
+  }, []);
 
   const handleFileSelect = useCallback((file: File) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -98,8 +69,6 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
     setRawImageUrl(objectUrl);
     setCrop({ x: 0, y: 0 });
     setZoom(1);
-    setRotation(0);
-    setCroppedPreview(null);
   }, [rawImageUrl]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -114,6 +83,8 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
     try {
       const croppedBlob = await getCroppedImg(rawImageUrl, croppedAreaPixels);
 
+      // Instant UI feedback across the app (topbar/switcher/manage cards)
+      // before network upload finishes.
       const optimisticPreviewUrl = URL.createObjectURL(croppedBlob);
       onUpdate({ avatar_url: optimisticPreviewUrl });
       setPreviewUrl(optimisticPreviewUrl);
@@ -138,7 +109,6 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
       onUpdate({ avatar_url: newAvatarUrl });
       setPreviewUrl(newAvatarUrl);
       setRawImageUrl(null);
-      setCroppedPreview(null);
       toast.success('Photo saved!');
     } catch (err) {
       console.error('Error uploading avatar', err);
@@ -151,7 +121,6 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
   const handleCancelCrop = () => {
     if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
     setRawImageUrl(null);
-    setCroppedPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -171,98 +140,65 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
   // ── Crop mode ──
   if (rawImageUrl) {
     return (
-      <div className="space-y-3">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Crop your photo</p>
-          <button
-            type="button"
-            onClick={handleCancelCrop}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Cancel
-          </button>
+      <div className="space-y-4">
+        <p className="text-sm font-semibold text-foreground text-center">Crop your photo</p>
+        <p className="text-xs text-muted-foreground text-center">Drag to reposition • Scroll or use the slider to zoom</p>
+
+        <div className="relative z-10 flex items-center gap-3 px-1">
+          <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <input
+            type="range"
+            min={1}
+            max={3}
+            step={0.02}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="flex-1 accent-primary h-1.5 cursor-pointer"
+          />
+          <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </div>
 
-        {/* Two-column layout */}
-        <div className="flex gap-3">
-          {/* Left: Crop area */}
-          <div className="flex-1 space-y-3">
-            {/* Cropper */}
-            <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-black/90 ring-1 ring-border cursor-move">
-              <Cropper
-                image={rawImageUrl}
-                crop={crop}
-                zoom={zoom}
-                cropShape="rect"
-                showGrid={false}
-                objectFit="cover"
-                rotation={rotation}
-                onCropChange={setCrop}
-                onZoomChange={setZoom}
-                onCropComplete={onCropComplete}
-                onRotationChange={setRotation}
-              />
-            </div>
+        <div className="relative z-10 flex gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 rounded-full"
+            onClick={handleCancelCrop}
+            disabled={isUploading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="hero"
+            className="flex-1 rounded-full"
+            onClick={handleConfirmCrop}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Check className="w-4 h-4 mr-2" />
+                Save
+              </>
+            )}
+          </Button>
+        </div>
 
-            {/* Zoom + Rotate */}
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setRotation(r => (r - 90) % 360)}
-                className="w-8 h-8 rounded-full bg-muted/50 hover:bg-muted flex items-center justify-center transition-colors"
-              >
-                <RotateCw className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-              <ZoomOut className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.02}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="flex-1 accent-primary h-1 cursor-pointer"
-              />
-              <ZoomIn className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-            </div>
-          </div>
-
-          {/* Right: Preview + Actions */}
-          <div className="w-[180px] flex flex-col gap-3">
-            {/* Preview */}
-            <div className="flex-1 flex flex-col items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 w-full">Preview</p>
-              <div className="relative w-[140px] h-[140px] rounded-xl overflow-hidden bg-muted ring-1 ring-border flex-shrink-0">
-                {croppedPreview ? (
-                  <img src={croppedPreview} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="w-8 h-8 rounded-full bg-muted-foreground/20 animate-pulse" />
-                  </div>
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground text-center">Square preview</p>
-            </div>
-
-            {/* Apply button */}
-            <Button
-              type="button"
-              variant="hero"
-              className="w-full rounded-xl text-sm font-semibold"
-              onClick={handleConfirmCrop}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Apply Crop
-                </>
-              )}
-            </Button>
-          </div>
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border">
+          <Cropper
+            image={rawImageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="rect"
+            showGrid={false}
+            objectFit="cover"
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
         </div>
       </div>
     );
@@ -302,30 +238,9 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
           >
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/90 shadow-lg">
               <RefreshCw className="w-4 h-4 text-black" />
-              <span className="text-sm font-medium text-black">Replace</span>
+              <span className="text-sm font-medium text-black">Replace photo</span>
             </div>
           </div>
-
-          {/* Crop button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const url = currentAvatar;
-              if (url) {
-                setExistingAvatarUrl(url);
-                setRawImageUrl(url);
-                setCrop({ x: 0, y: 0 });
-                setZoom(1);
-                setRotation(0);
-                setCroppedPreview(null);
-              }
-            }}
-            className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
-          >
-            <Crop className="w-3.5 h-3.5" />
-            Crop
-          </button>
         </div>
 
         <p className="text-xs text-muted-foreground text-center">

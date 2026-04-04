@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Gift, Eye, EyeOff, GripVertical, ExternalLink, Pencil, Plus, Sparkles } from 'lucide-react';
+import { Gift, Eye, EyeOff, GripVertical, ExternalLink, Pencil } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
 import {
   DndContext,
   closestCenter,
@@ -21,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
 
 interface WishlistItem {
   id: string;
@@ -146,18 +146,6 @@ export function WishlistSection({ items, onUpdate }: WishlistSectionProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [orderedItems, setOrderedItems] = useState<WishlistItem[]>(items);
 
-  const wishlistSuggestions = [
-    { emoji: '📱', name: 'iPhone', price: 99900 },
-    { emoji: '👗', name: 'Cosplay Outfit', price: 15000 },
-    { emoji: '🩱', name: 'Gym Wear', price: 8000 },
-    { emoji: '🧴', name: 'Lingerie', price: 12000 },
-    { emoji: '🍽️', name: 'Restaurant', price: 10000 },
-    { emoji: '💅', name: 'Nails', price: 6000 },
-    { emoji: '💐', name: 'Flowers', price: 5000 },
-    { emoji: '💆', name: 'Spa', price: 15000 },
-    { emoji: '✈️', name: 'Trip', price: 50000 },
-  ];
-
   // Sync when parent items change
   if (items.length !== orderedItems.length || items.some((it, i) => it.id !== orderedItems[i]?.id)) {
     setOrderedItems(items);
@@ -220,29 +208,6 @@ export function WishlistSection({ items, onUpdate }: WishlistSectionProps) {
   const visibleCount = orderedItems.filter((i) => i.is_visible).length;
   const hiddenCount = orderedItems.length - visibleCount;
 
-  const quickAddSuggestion = async (suggestion: { emoji: string; name: string; price: number }) => {
-    setIsUpdating(true);
-    const { data, error } = await supabase
-      .from('wishlist_items')
-      .insert({
-        name: suggestion.name,
-        emoji: suggestion.emoji,
-        price_cents: suggestion.price,
-        is_visible: true,
-        sort_order: orderedItems.length,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      toast.error(`Failed to add ${suggestion.name}`);
-    } else {
-      toast.success(`${suggestion.emoji} ${suggestion.name} added!`);
-      onUpdate();
-    }
-    setIsUpdating(false);
-  };
-
   return (
     <div className="space-y-6">
       {/* Stats */}
@@ -260,41 +225,6 @@ export function WishlistSection({ items, onUpdate }: WishlistSectionProps) {
             <span className="text-xs font-medium text-muted-foreground">Hidden</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{hiddenCount}</p>
-        </div>
-      </div>
-
-      {/* Quick Ideas */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Quick Ideas</h3>
-          <span className="text-xs text-muted-foreground ml-auto">Tap to add</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {wishlistSuggestions.map((suggestion) => {
-            const alreadyAdded = orderedItems.some(
-              (i) => i.name.toLowerCase() === suggestion.name.toLowerCase()
-            );
-            return (
-              <button
-                key={suggestion.name}
-                type="button"
-                disabled={isUpdating || alreadyAdded}
-                onClick={() => quickAddSuggestion(suggestion)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-full border text-sm font-medium transition-all ${
-                  alreadyAdded
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500 cursor-default'
-                    : 'border-border bg-card hover:border-primary/50 hover:bg-primary/5 text-foreground hover:text-primary'
-                }`}
-              >
-                <span>{suggestion.emoji}</span>
-                <span>{suggestion.name}</span>
-                <span className="text-xs opacity-60">${(suggestion.price / 100).toLocaleString()}</span>
-                {!alreadyAdded && <Plus className="w-3 h-3 opacity-60" />}
-                {alreadyAdded && <span className="text-[10px]">✓</span>}
-              </button>
-            );
-          })}
         </div>
       </div>
 

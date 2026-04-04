@@ -4,16 +4,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.animate-gradient-shift {
-  animation: gradient-shift 8s ease infinite;
-}
-
 @layer base {
   :root {
     /* EXCLU Brand Colors - Dark Mode (Default) */
@@ -74,56 +64,56 @@
   }
 
   .light {
-    /* EXCLU Brand Colors - Light Pink Mode */
-    --background: 350 30% 97%; /* #FDF2F4 - very light pink */
-    --foreground: 350 40% 15%; /* #2D1018 - dark pink/burgundy */
+    /* EXCLU Brand Colors - Light Mode */
+    --background: 0 0% 98%; /* #FAFAFA */
+    --foreground: 230 25% 10%; /* #1A1A2E */
 
-    --card: 350 25% 99%; /* #FFFAFB - almost white with pink tint */
-    --card-foreground: 350 40% 15%;
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 230 25% 10%;
 
-    --popover: 350 25% 99%;
-    --popover-foreground: 350 40% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 25% 10%;
 
-    --primary: 350 85% 55%; /* #E11D6E - vibrant pink */
+    --primary: 230 25% 10%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 350 20% 94%; /* light pink secondary */
-    --secondary-foreground: 350 40% 15%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 230 25% 10%;
 
-    --muted: 350 15% 92%; /* #F5EEF0 - muted pink */
-    --muted-foreground: 350 20% 45%; /* #8B6B75 - muted pink text */
+    --muted: 0 0% 96%;
+    --muted-foreground: 220 9% 6%; /* #6B7280 */
 
-    --accent: 350 30% 90%; /* pink accent */
-    --accent-foreground: 350 40% 15%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 230 25% 10%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 350 20% 88%; /* light pink borders */
-    --input: 350 15% 94%;
-    --ring: 350 85% 55%;
+    --border: 0 0% 0%; /* Black borders in light mode */
+    --input: 0 0% 96%; /* Fond clair pour inputs */
+    --ring: 230 25% 10%;
 
-    /* EXCLU Custom Colors - Light Pink Mode */
-    --exclu-black: 0 0% 100%;
-    --exclu-phantom: 350 20% 98%;
-    --exclu-arsenic: 350 15% 78%;
-    --exclu-graphite: 350 20% 40%;
-    --exclu-space: 350 20% 50%;
-    --exclu-steel: 350 15% 55%;
-    --exclu-smoke: 350 20% 75%;
-    --exclu-cloud: 350 30% 92%;
-    --exclu-white: 350 40% 15%;
+    /* EXCLU Custom Colors - Light Mode */
+    --exclu-black: 0 0% 100%; /* Inversé pour light */
+    --exclu-phantom: 0 0% 98%;
+    --exclu-arsenic: 0 0% 70%; /* Darker border gray for better visibility in light mode */
+    --exclu-graphite: 220 9% 46%;
+    --exclu-space: 220 9% 46%;
+    --exclu-steel: 230 5% 40%;
+    --exclu-smoke: 230 8% 22%;
+    --exclu-cloud: 230 12% 9%;
+    --exclu-white: 230 25% 10%; /* Inversé pour light */
 
-    /* Gradient Colors - Light Pink Mode */
-    --gradient-violet: 280 70% 60%;
-    --gradient-pink: 350 85% 60%; /* actual pink gradient */
-    --gradient-blue: 220 60% 55%;
+    /* Gradient Colors - Light Mode */
+    --gradient-violet: 266 85% 58%; /* #7C3AED */
+    --gradient-pink: 0 0% 100%; /* white */
+    --gradient-blue: 230 15% 45%;
 
-    /* Glow Effects - Light Pink Mode */
-    --glow-violet: 280 70% 65%;
-    --glow-pink: 350 85% 65%;
+    /* Glow Effects - Light Mode */
+    --glow-violet: 266 85% 58%;
+    --glow-pink: 0 0% 100%;
 
-    /* Status Colors */
+    /* Status Colors - Same for both modes */
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
     --error: 0 84% 60%;
