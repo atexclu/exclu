@@ -4,7 +4,7 @@ import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, Plus, Code, DollarSign, Layers, Heart, LayoutList, Link2, Image, MessageSquare, Zap } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -15,8 +15,8 @@ import { PublicContentSection } from '@/components/linkinbio/sections/PublicCont
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import AppShell from '@/components/AppShell';
 import { useProfiles } from '@/contexts/ProfileContext';
+import { ProUpgradeModal, shouldShowProModal, markProModalShown } from '@/components/ProUpgradeModal';
 
 interface LinkInBioData {
   display_name: string;
@@ -108,6 +108,52 @@ const LinkInBioEditor = () => {
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
   const [debouncedData] = useDebounce(editorData, 1500);
+  const [leftWidth, setLeftWidth] = useState(200);
+  const [rightWidth, setRightWidth] = useState(300);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const [showProModal, setShowProModal] = useState(false);
+
+  // Resize handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.min(Math.max(160, e.clientX), 280);
+        setLeftWidth(newWidth);
+      }
+      if (isResizingRight) {
+        const newWidth = Math.min(Math.max(240, window.innerWidth - e.clientX), 440);
+        setRightWidth(newWidth);
+      }
+    };
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+    if (isResizingLeft || isResizingRight) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingLeft, isResizingRight]);
+
+  // Auto-show Pro modal once per week
+  useEffect(() => {
+    if (shouldShowProModal()) {
+      const timer = setTimeout(() => {
+        setShowProModal(true);
+        markProModalShown();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -524,277 +570,218 @@ const LinkInBioEditor = () => {
   }
 
   return (
-    <AppShell>
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[1500px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] min-h-[calc(100vh-4rem)]">
-            <div className="border-r border-border bg-background overflow-y-auto">
-              <div className="py-6 px-4 sm:px-6 max-w-6xl mx-auto">
-                {/* Top menu - horizontal on all screen sizes */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <nav ref={navRef} className="hidden sm:flex gap-1 overflow-x-auto scrollbar-hide pb-2">
-                      {sections.map((section) => {
-                        const Icon = section.icon;
-                        const isActive = activeSection === section.id;
-                        return (
-                          <button
-                            key={section.id}
-                            type="button"
-                            onClick={(e) => {
-                              setActiveSection(section.id);
-                              const btn = e.currentTarget;
-                              const nav = navRef.current;
-                              if (nav) {
-                                const navRect = nav.getBoundingClientRect();
-                                const btnRect = btn.getBoundingClientRect();
-                                const scrollLeft = nav.scrollLeft + (btnRect.left + btnRect.width / 2) - (navRect.left + navRect.width / 2);
-                                nav.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-                              }
-                            }}
-                            className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                              isActive
-                                ? 'bg-primary/10 text-primary border border-primary/30'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                            }`}
-                          >
-                            <Icon className="w-4 h-4 flex-shrink-0" />
-                            <span>{section.label}</span>
-                          </button>
-                        );
-                      })}
-                    </nav>
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+        {/* ── Left Nav ── */}
+        <div style={{ width: leftWidth, flexShrink: 0 }} className="border-r border-border/50 bg-background overflow-y-auto py-4">
+          {/* Header */}
+          <div className="px-4 mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Editor</p>
+          </div>
 
-                    <div className="sm:hidden">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="rounded-xl"
-                        onClick={() => setIsMobileNavOpen(true)}
-                      >
-                        <Menu className="w-5 h-5" />
-                      </Button>
+          {/* Section nav */}
+          <nav className="px-3 space-y-0.5">
+            {sections.map((section) => {
+              const Icon = section.icon;
+              const isActive = activeSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => setActiveSection(section.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span>{section.label}</span>
+                  {isActive && (
+                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
 
-                      <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
-                        <SheetContent side="left" className="p-0">
-                          <div className="p-5 border-b border-border">
-                            <SheetTitle className="text-base">Profile editor</SheetTitle>
-                          </div>
-                          <div className="p-3">
-                            <div className="space-y-1">
-                              {sections.map((section) => {
-                                const Icon = section.icon;
-                                const isActive = activeSection === section.id;
-                                return (
-                                  <button
-                                    key={section.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveSection(section.id);
-                                      setIsMobileNavOpen(false);
-                                    }}
-                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-primary/10 text-primary'
-                                        : 'hover:bg-muted text-foreground'
-                                    }`}
-                                  >
-                                    <Icon className="w-4 h-4" />
-                                    <span>{section.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {saveStatus === 'saving' && (
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Saving...
-                        </span>
-                      )}
-                      {saveStatus === 'saved' && (
-                        <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-                          <div className="w-2 h-2 rounded-full bg-emerald-600" />
-                        </span>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="hidden sm:inline-flex rounded-full"
-                        onClick={() => window.open(`/${editorData.handle}`, '_blank')}
-                        disabled={!editorData.handle}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Preview
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="sm:hidden rounded-full"
-                        onClick={() => setIsMobilePreviewOpen(true)}
-                        disabled={!editorData.handle}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Preview
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="sm:hidden rounded-full"
-                        onClick={() => window.open(`/${editorData.handle}`, '_blank')}
-                        disabled={!editorData.handle}
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        View profile
-                      </Button>
-
-                      <Sheet open={isMobilePreviewOpen} onOpenChange={setIsMobilePreviewOpen}>
-                        <SheetContent side="right" className="p-0">
-                          <div className="p-5 border-b border-border">
-                            <SheetTitle className="text-base">Live preview</SheetTitle>
-                          </div>
-                          <div className="p-4 flex items-center justify-center">
-                            <MobilePreview data={editorData} links={links} isPremium={isPremium} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} />
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-                  </div>
-                </div>
-
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeSection}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {activeSection === 'photo' && (
-                      <div className="space-y-4">
-                        <PhotoSection
-                          avatarUrl={editorData.avatar_url}
-                          userId={userId}
-                          profileTag={activeProfile?.id || activeProfile?.username || null}
-                          onUpdate={handleAvatarUpdate}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'info' && (
-                      <div className="space-y-4">
-                        <InfoSection
-                          displayName={editorData.display_name}
-                          handle={editorData.handle}
-                          bio={editorData.bio}
-                          location={editorData.location}
-                          modelCategories={editorData.model_categories}
-                          onUpdate={updateEditorData}
-                          onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'social' && (
-                      <div className="space-y-4">
-                        <SocialSection
-                          socialLinks={editorData.social_links}
-                          exclusiveContentText={editorData.exclusive_content_text}
-                          exclusiveContentLinkId={editorData.exclusive_content_link_id}
-                          exclusiveContentUrl={editorData.exclusive_content_url}
-                          exclusiveContentImageUrl={editorData.exclusive_content_image_url}
-                          auroraGradient={editorData.aurora_gradient}
-                          links={links}
-                          userId={userId}
-                          onUpdate={updateEditorData}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'links' && (
-                      <div className="space-y-4">
-                        <ContentSection
-                          links={links}
-                          onUpdate={fetchLinks}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'content' && (
-                      <div className="space-y-4">
-                        <PublicContentSection
-                          userId={userId}
-                          profileId={activeProfile?.id || null}
-                          onUpdate={fetchLinks}
-                          onContentUpdate={fetchPublicContent}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'wishlist' && (
-                      <div className="space-y-4">
-                        <WishlistSection
-                          items={wishlistItems}
-                          onUpdate={fetchWishlistItems}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'colors' && (
-                      <div className="space-y-4">
-                        <OptionsSection
-                          showJoinBanner={editorData.show_join_banner}
-                          showCertification={editorData.show_certification}
-                          showDeeplinks={editorData.show_deeplinks}
-                          showAvailableNow={editorData.show_available_now}
-                          chatEnabled={editorData.chat_enabled}
-                          isPremium={isPremium}
-                          auroraGradient={editorData.aurora_gradient}
-                          tipsEnabled={editorData.tips_enabled}
-                          customRequestsEnabled={editorData.custom_requests_enabled}
-                          minTipAmountCents={editorData.min_tip_amount_cents}
-                          minCustomRequestCents={editorData.min_custom_request_cents}
-                          showAgencyBranding={editorData.show_agency_branding}
-                          agencyName={agencyName}
-                          agencyLogoUrl={agencyLogoUrl}
-                          onUpdate={updateEditorData}
-                          onAgencyNameChange={handleAgencyNameChange}
-                          onAgencyLogoUpload={handleAgencyLogoUpload}
-                          onAgencyLogoRemove={handleAgencyLogoRemove}
-                          isUploadingLogo={isUploadingLogo}
-                        />
-                      </div>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+          {/* Bottom: save status + preview */}
+          <div className="mt-6 px-4 space-y-2">
+            <div className="text-xs text-muted-foreground">
+              {saveStatus === 'saving' && (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="flex items-center gap-1.5 text-emerald-600">
+                  <div className="w-2 h-2 rounded-full bg-emerald-600" />
+                  Saved
+                </span>
+              )}
+  
             </div>
 
-            <div className="hidden lg:block bg-muted/30 overflow-y-auto sticky top-16 h-[calc(100vh-4rem)]">
-              <div className="p-6 flex items-center justify-center min-h-full">
-                <MobilePreview 
-                  data={editorData} 
-                  links={links} 
-                  isPremium={isPremium}
-                  publicContent={publicContent}
-                  wishlistItems={wishlistItems}
-                  agencyName={agencyName}
-                  agencyLogoUrl={agencyLogoUrl}
-                />
-              </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start rounded-xl text-xs"
+              onClick={() => window.open(`/${editorData.handle}`, '_blank')}
+              disabled={!editorData.handle}
+            >
+              <ExternalLink className="w-3.5 h-3.5 mr-2" />
+              View profile
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Resize Handle Left ── */}
+        <div
+          className="w-1 flex-shrink-0 cursor-col-resize group hover:bg-primary/30 transition-colors relative"
+          onMouseDown={() => setIsResizingLeft(true)}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+
+        {/* ── Center: Preview ── */}
+        <div className="flex-1 bg-muted/20 overflow-y-auto hidden md:flex items-start justify-center py-6">
+          <MobilePreview
+            data={editorData}
+            links={links}
+            isPremium={isPremium}
+            publicContent={publicContent}
+            wishlistItems={wishlistItems}
+            agencyName={agencyName}
+            agencyLogoUrl={agencyLogoUrl}
+          />
+        </div>
+
+        {/* ── Resize Handle Right ── */}
+        <div
+          className="w-1 flex-shrink-0 cursor-col-resize group hover:bg-primary/30 transition-colors relative"
+          onMouseDown={() => setIsResizingRight(true)}
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+
+        {/* ── Right: Editor Panel ── */}
+        <div style={{ width: rightWidth, flexShrink: 0 }} className="border-l border-border/50 bg-background overflow-y-auto">
+          <div className="p-4">
+            {/* Section header */}
+            <div className="flex items-center gap-2 mb-4">
+              {sections.find(s => s.id === activeSection)?.icon && (
+                (() => {
+                  const Icon = sections.find(s => s.id === activeSection)!.icon;
+                  return <Icon className="w-4 h-4 text-primary" />;
+                })()
+              )}
+              <p className="text-sm font-semibold text-foreground">
+                {sections.find(s => s.id === activeSection)?.label}
+              </p>
             </div>
+
+            {/* Active section content */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-4"
+              >
+                {activeSection === 'photo' && (
+                  <PhotoSection
+                    avatarUrl={editorData.avatar_url}
+                    userId={userId}
+                    profileTag={activeProfile?.id || activeProfile?.username || null}
+                    onUpdate={handleAvatarUpdate}
+                  />
+                )}
+
+                {activeSection === 'info' && (
+                  <InfoSection
+                    displayName={editorData.display_name}
+                    handle={editorData.handle}
+                    bio={editorData.bio}
+                    location={editorData.location}
+                    modelCategories={editorData.model_categories}
+                    onUpdate={updateEditorData}
+                    onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
+                  />
+                )}
+
+                {activeSection === 'social' && (
+                  <SocialSection
+                    socialLinks={editorData.social_links}
+                    exclusiveContentText={editorData.exclusive_content_text}
+                    exclusiveContentLinkId={editorData.exclusive_content_link_id}
+                    exclusiveContentUrl={editorData.exclusive_content_url}
+                    exclusiveContentImageUrl={editorData.exclusive_content_image_url}
+                    auroraGradient={editorData.aurora_gradient}
+                    links={links}
+                    userId={userId}
+                    onUpdate={updateEditorData}
+                  />
+                )}
+
+                {activeSection === 'links' && (
+                  <ContentSection
+                    links={links}
+                    onUpdate={fetchLinks}
+                  />
+                )}
+
+                {activeSection === 'content' && (
+                  <PublicContentSection
+                    userId={userId}
+                    profileId={activeProfile?.id || null}
+                    onUpdate={fetchLinks}
+                    onContentUpdate={fetchPublicContent}
+                  />
+                )}
+
+                {activeSection === 'wishlist' && (
+                  <WishlistSection
+                    items={wishlistItems}
+                    onUpdate={fetchWishlistItems}
+                  />
+                )}
+
+                {activeSection === 'colors' && (
+                  <OptionsSection
+                    showJoinBanner={editorData.show_join_banner}
+                    showCertification={editorData.show_certification}
+                    showDeeplinks={editorData.show_deeplinks}
+                    showAvailableNow={editorData.show_available_now}
+                    chatEnabled={editorData.chat_enabled}
+                    isPremium={isPremium}
+                    auroraGradient={editorData.aurora_gradient}
+                    tipsEnabled={editorData.tips_enabled}
+                    customRequestsEnabled={editorData.custom_requests_enabled}
+                    minTipAmountCents={editorData.min_tip_amount_cents}
+                    minCustomRequestCents={editorData.min_custom_request_cents}
+                    showAgencyBranding={editorData.show_agency_branding}
+                    agencyName={agencyName}
+                    agencyLogoUrl={agencyLogoUrl}
+                    onUpdate={updateEditorData}
+                    onAgencyNameChange={handleAgencyNameChange}
+                    onAgencyLogoUpload={handleAgencyLogoUpload}
+                    onAgencyLogoRemove={handleAgencyLogoRemove}
+                    isUploadingLogo={isUploadingLogo}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </div>
-    </AppShell>
+
+      {/* Pro Upgrade Modal */}
+      {showProModal && (
+        <ProUpgradeModal onClose={() => setShowProModal(false)} />
+      )}
+    </div>
   );
 };
 
