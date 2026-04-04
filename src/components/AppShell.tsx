@@ -252,40 +252,48 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
         </div>
       </div>
 
-      {/* Mobile Bottom Tab Bar */}
-      <div className={`fixed bottom-0 left-0 right-0 z-50 sm:hidden ${isChatPage ? '' : ''}`}>
-        <div className="flex items-center justify-around px-2 py-2 bg-card/95 backdrop-blur-xl border-t border-border/50">
-          {[
-            { path: '/app', icon: LayoutDashboard, label: 'Home' },
-            { path: '/app/profile', icon: Palette, label: 'Profile' },
-            { path: '/app/links/new', icon: Plus, label: 'Create', center: true },
-            { path: '/app/chat', icon: MessageSquare, label: 'Chat', badge: chatUnreadCount },
-            { path: '/app/settings', icon: Settings, label: 'More' },
-          ].map(({ path, icon: Icon, label, badge, center }) => {
-            const active = isActive(path);
-            if (center) {
-              return (
-                <Link key={path} to={path} className="flex items-center justify-center -mt-4">
-                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center shadow-lg">
-                    <Icon className="w-6 h-6 text-primary-foreground" />
-                  </div>
-                </Link>
-              );
-            }
-            return (
-              <Link key={path} to={path} className="flex flex-col items-center gap-0.5 px-3 py-1">
-                <div className="relative">
-                  <Icon className={`w-5 h-5 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
-                  {badge > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
-                      {badge > 9 ? '9+' : badge}
-                    </span>
-                  )}
-                </div>
-                <span className={`text-[10px] ${active ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{label}</span>
-              </Link>
-            );
-          })}
+      {/* Mobile Floating Dock */}
+      <div className={`fixed bottom-6 inset-x-0 z-50 flex justify-center sm:hidden pointer-events-none ${isChatPage ? 'hidden' : ''}`}>
+        <div className="flex items-center gap-1 px-3 py-2 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl pointer-events-auto">
+          {/* Links Button */}
+          <Link to="/app/links">
+            <motion.div
+              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname.startsWith('/app/links')
+                ? 'text-white bg-white/10'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Link2 className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Links</span>
+            </motion.div>
+          </Link>
+
+          {/* Add Content Button (Center) */}
+          <Link to="/app/links/new">
+            <motion.div
+              className="flex items-center justify-center w-14 h-14 rounded-full bg-[#E5FF7D] text-black shadow-lg shadow-[#E5FF7D]/20 border-4 border-black"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              style={{ y: -16 }}
+            >
+              <Plus className="w-7 h-7 stroke-[2.5]" />
+            </motion.div>
+          </Link>
+
+          {/* Content Button */}
+          <Link to="/app/content">
+            <motion.div
+              className={`flex flex-col items-center justify-center w-11 h-11 rounded-full transition-colors ${location.pathname === '/app/content' && !location.search.includes('action=new')
+                ? 'text-white bg-white/10'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Image className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Content</span>
+            </motion.div>
+          </Link>
         </div>
       </div>
 
