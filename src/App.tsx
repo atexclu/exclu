@@ -21,6 +21,7 @@ import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
 import DMCA from "./pages/DMCA";
 import AppDashboard from "./pages/AppDashboard";
+import CreatorDashboard from "./pages/CreatorDashboard";
 import CreatorLinks from "./pages/CreatorLinks";
 import CreateLink from "./pages/CreateLink";
 import EditLink from "./pages/EditLink";
@@ -151,7 +152,7 @@ const App = () => {
                   path="/app"
                   element={
                     <ProtectedRoute>
-                      <AppDashboard />
+                      <CreatorDashboard />
                     </ProtectedRoute>
                   }
                 />

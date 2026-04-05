@@ -6,51 +6,51 @@
 
 @layer base {
   :root {
-    /* EXCLU Brand Colors - Dark Mode (Default) */
-    --background: 230 25% 3%; /* #0A0A0F */
-    --foreground: 0 0% 100%; /* #FFFFFF */
+    /* Fanvue-style Dark Mode */
+    --background: 0 0% 6%; /* #0f0f0f */
+    --foreground: 0 0% 100%;
 
-    --card: 230 15% 6%; /* #141420 */
+    --card: 0 0% 10%; /* #1a1a1a */
     --card-foreground: 0 0% 100%;
 
-    --popover: 230 15% 6%;
+    --popover: 0 0% 10%;
     --popover-foreground: 0 0% 100%;
 
-    --primary: 0 0% 100%;
-    --primary-foreground: 230 25% 3%;
+    --primary: 282 85% 60%; /* Violet */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 230 10% 10%;
+    --secondary: 0 0% 10%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 230 8% 15%;
-    --muted-foreground: 230 5% 50%; /* #A0A0B0 */
+    --muted: 0 0% 15%; /* #262626 */
+    --muted-foreground: 0 0% 55%; /* #888888 */
 
     --accent: 0 0% 85%;
-    --accent-foreground: 230 25% 3%;
+    --accent-foreground: 0 0% 6%;
 
-    --destructive: 0 84.2% 60.2%; /* #EF4444 */
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 100%; /* White borders in dark mode */
-    --input: 230 8% 15%;
+    --border: 0 0% 20%; /* #333333 */
+    --input: 0 0% 15%;
     --ring: 0 0% 100%;
 
     --radius: 0.75rem;
 
     /* EXCLU Custom Colors - Dark Mode */
-    --exclu-black: 230 25% 3%; /* #0A0A0F */
-    --exclu-phantom: 230 12% 9%;
-    --exclu-arsenic: 230 8% 80%; /* Lighter border gray for better visibility in dark mode */
-    --exclu-graphite: 230 5% 20%;
-    --exclu-space: 230 5% 55%;
-    --exclu-steel: 230 8% 70%;
-    --exclu-smoke: 230 10% 82%;
-    --exclu-cloud: 230 15% 94%;
+    --exclu-black: 0 0% 6%;
+    --exclu-phantom: 0 0% 10%;
+    --exclu-arsenic: 0 0% 20%;
+    --exclu-graphite: 0 0% 25%;
+    --exclu-space: 0 0% 55%;
+    --exclu-steel: 0 0% 65%;
+    --exclu-smoke: 0 0% 82%;
+    --exclu-cloud: 0 0% 94%;
     --exclu-white: 0 0% 100%;
 
     /* Gradient Colors - Dark Mode */
-    --gradient-violet: 282 85% 60%; /* #9B59B6 */
-    --gradient-pink: 0 0% 100%; /* white */
+    --gradient-violet: 282 85% 60%;
+    --gradient-pink: 0 0% 100%;
     --gradient-blue: 230 15% 75%;
 
     /* Glow Effects - Dark Mode */
@@ -58,9 +58,9 @@
     --glow-pink: 0 0% 100%;
 
     /* Status Colors */
-    --success: 142 71% 45%; /* #10B981 */
-    --warning: 38 92% 50%; /* #F59E0B */
-    --error: 0 84% 60%; /* #EF4444 */
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --error: 0 84% 60%;
   }
 
   .light {

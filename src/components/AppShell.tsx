@@ -45,7 +45,7 @@ const navSections = [
   {
     label: 'Tools',
     items: [
-      { path: '/app/referrals', label: 'Referrals', icon: Gift },
+      { path: '/app/referral', label: 'Referrals', icon: Gift },
       { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
     ],
   },
@@ -83,7 +83,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     if (path === '/app/wishlist') return location.pathname === '/app/wishlist';
     if (path === '/app/analytics') return location.pathname === '/app/analytics';
     if (path === '/app/earnings') return location.pathname === '/app/earnings';
-    if (path === '/app/referrals') return location.pathname === '/app/referrals';
+    if (path === '/app/referral') return location.pathname === '/app/referral';
     if (path === '/admin/users') return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
     return location.pathname === path;
   };
@@ -176,7 +176,11 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
         <div className="p-3 border-t border-border/50 space-y-2">
           {/* Create Content CTA */}
           <Link to="/app/links/new" className="block">
-            <Button className="w-full justify-start gap-2 rounded-xl h-11 font-semibold" size="sm">
+            <Button
+              className="w-full justify-start gap-2 rounded-xl h-11 font-semibold border-0"
+              size="sm"
+              style={{ backgroundColor: '#00e676', color: '#000' }}
+            >
               <Plus className="w-4 h-4" />
               Create
             </Button>

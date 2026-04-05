@@ -4,7 +4,7 @@ import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, X } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -61,7 +61,6 @@ const LinkInBioEditor = () => {
   const { activeProfile, profiles, refreshProfiles, updateProfileAvatar } = useProfiles();
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const navRef = useRef<HTMLElement>(null);
   const skipNextAutoSaveRef = useRef(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   
@@ -70,7 +69,7 @@ const LinkInBioEditor = () => {
     handle: '',
     bio: '',
     avatar_url: null,
-    theme_color: 'day',
+    theme_color: 'pink',
     aurora_gradient: 'purple_dream',
     social_links: {},
     model_categories: [],
@@ -104,7 +103,6 @@ const LinkInBioEditor = () => {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
   const [debouncedData] = useDebounce(editorData, 1500);
 
@@ -204,7 +202,7 @@ const LinkInBioEditor = () => {
           handle: profileData.handle || '',
           bio: profileData.bio || '',
           avatar_url: profileData.avatar_url || null,
-          theme_color: profileData.theme_color || 'day',
+          theme_color: profileData.theme_color || 'pink',
           aurora_gradient: profileData.aurora_gradient || 'purple_dream',
           social_links: profileData.social_links || {},
           show_join_banner: profileData.show_join_banner !== false,
@@ -523,275 +521,252 @@ const LinkInBioEditor = () => {
   }
 
   return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[1500px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-[60%_40%] min-h-[calc(100vh-4rem)]">
-            <div className="border-r border-border bg-background overflow-y-auto">
-              <div className="py-6 px-4 sm:px-6 max-w-6xl mx-auto">
-                {/* Top menu - horizontal on all screen sizes */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <nav ref={navRef} className="hidden sm:flex gap-1 overflow-x-auto scrollbar-hide pb-2">
-                      {sections.map((section) => {
-                        const Icon = section.icon;
-                        const isActive = activeSection === section.id;
-                        return (
-                          <button
-                            key={section.id}
-                            type="button"
-                            onClick={(e) => {
-                              setActiveSection(section.id);
-                              const btn = e.currentTarget;
-                              const nav = navRef.current;
-                              if (nav) {
-                                const navRect = nav.getBoundingClientRect();
-                                const btnRect = btn.getBoundingClientRect();
-                                const scrollLeft = nav.scrollLeft + (btnRect.left + btnRect.width / 2) - (navRect.left + navRect.width / 2);
-                                nav.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-                              }
-                            }}
-                            className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                              isActive
-                                ? 'bg-primary/10 text-primary border border-primary/30'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
-                            }`}
-                          >
-                            <Icon className="w-4 h-4 flex-shrink-0" />
-                            <span>{section.label}</span>
-                          </button>
-                        );
-                      })}
-                    </nav>
-
-                    <div className="sm:hidden">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="rounded-xl"
-                        onClick={() => setIsMobileNavOpen(true)}
-                      >
-                        <Menu className="w-5 h-5" />
-                      </Button>
-
-                      <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
-                        <SheetContent side="left" className="p-0">
-                          <div className="p-5 border-b border-border">
-                            <SheetTitle className="text-base">Profile editor</SheetTitle>
-                          </div>
-                          <div className="p-3">
-                            <div className="space-y-1">
-                              {sections.map((section) => {
-                                const Icon = section.icon;
-                                const isActive = activeSection === section.id;
-                                return (
-                                  <button
-                                    key={section.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveSection(section.id);
-                                      setIsMobileNavOpen(false);
-                                    }}
-                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-primary/10 text-primary'
-                                        : 'hover:bg-muted text-foreground'
-                                    }`}
-                                  >
-                                    <Icon className="w-4 h-4" />
-                                    <span>{section.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {saveStatus === 'saving' && (
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Saving...
-                        </span>
-                      )}
-                      {saveStatus === 'saved' && (
-                        <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-                          <div className="w-2 h-2 rounded-full bg-emerald-600" />
-                        </span>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="hidden sm:inline-flex rounded-full"
-                        onClick={() => window.open(`/${editorData.handle}`, '_blank')}
-                        disabled={!editorData.handle}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Preview
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="sm:hidden rounded-full"
-                        onClick={() => setIsMobilePreviewOpen(true)}
-                        disabled={!editorData.handle}
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Preview
-                      </Button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="sm:hidden rounded-full"
-                        onClick={() => window.open(`/${editorData.handle}`, '_blank')}
-                        disabled={!editorData.handle}
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        View profile
-                      </Button>
-
-                      <Sheet open={isMobilePreviewOpen} onOpenChange={setIsMobilePreviewOpen}>
-                        <SheetContent side="right" className="p-0">
-                          <div className="p-5 border-b border-border">
-                            <SheetTitle className="text-base">Live preview</SheetTitle>
-                          </div>
-                          <div className="p-4 flex items-center justify-center">
-                            <MobilePreview data={editorData} links={links} isPremium={isPremium} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} />
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-                  </div>
-                </div>
-
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeSection}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.2 }}
+    <div className="min-h-screen bg-background">
+      <div className="flex h-screen overflow-hidden">
+        
+        {/* VERTICAL SIDEBAR - X/Twitter style */}
+        <aside className="hidden md:flex flex-col w-64 border-r border-border bg-background flex-shrink-0">
+          <div className="p-4 flex-1 overflow-y-auto">
+            {/* Logo */}
+            <div className="mb-6 px-2">
+              <span className="text-xl font-bold text-primary">Exclu</span>
+            </div>
+            
+            {/* Nav items */}
+            <nav className="space-y-1">
+              {sections.map((section) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary/10 text-primary border border-primary/30'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
+                    }`}
                   >
-                    {activeSection === 'photo' && (
-                      <div className="space-y-4">
-                        <PhotoSection
-                          avatarUrl={editorData.avatar_url}
-                          userId={userId}
-                          profileTag={activeProfile?.id || activeProfile?.username || null}
-                          onUpdate={handleAvatarUpdate}
-                        />
-                      </div>
-                    )}
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <span>{section.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </aside>
 
-                    {activeSection === 'info' && (
-                      <div className="space-y-4">
-                        <InfoSection
-                          displayName={editorData.display_name}
-                          handle={editorData.handle}
-                          bio={editorData.bio}
-                          location={editorData.location}
-                          modelCategories={editorData.model_categories}
-                          onUpdate={updateEditorData}
-                          onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'social' && (
-                      <div className="space-y-4">
-                        <SocialSection
-                          socialLinks={editorData.social_links}
-                          exclusiveContentText={editorData.exclusive_content_text}
-                          exclusiveContentLinkId={editorData.exclusive_content_link_id}
-                          exclusiveContentUrl={editorData.exclusive_content_url}
-                          exclusiveContentImageUrl={editorData.exclusive_content_image_url}
-                          auroraGradient={editorData.aurora_gradient}
-                          links={links}
-                          userId={userId}
-                          onUpdate={updateEditorData}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'links' && (
-                      <div className="space-y-4">
-                        <ContentSection
-                          links={links}
-                          onUpdate={fetchLinks}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'content' && (
-                      <div className="space-y-4">
-                        <PublicContentSection
-                          userId={userId}
-                          profileId={activeProfile?.id || null}
-                          onUpdate={fetchLinks}
-                          onContentUpdate={fetchPublicContent}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'wishlist' && (
-                      <div className="space-y-4">
-                        <WishlistSection
-                          items={wishlistItems}
-                          onUpdate={fetchWishlistItems}
-                        />
-                      </div>
-                    )}
-
-                    {activeSection === 'colors' && (
-                      <div className="space-y-4">
-                        <OptionsSection
-                          showJoinBanner={editorData.show_join_banner}
-                          showCertification={editorData.show_certification}
-                          showDeeplinks={editorData.show_deeplinks}
-                          showAvailableNow={editorData.show_available_now}
-                          chatEnabled={editorData.chat_enabled}
-                          isPremium={isPremium}
-                          auroraGradient={editorData.aurora_gradient}
-                          tipsEnabled={editorData.tips_enabled}
-                          customRequestsEnabled={editorData.custom_requests_enabled}
-                          minTipAmountCents={editorData.min_tip_amount_cents}
-                          minCustomRequestCents={editorData.min_custom_request_cents}
-                          showAgencyBranding={editorData.show_agency_branding}
-                          agencyName={agencyName}
-                          agencyLogoUrl={agencyLogoUrl}
-                          onUpdate={updateEditorData}
-                          onAgencyNameChange={handleAgencyNameChange}
-                          onAgencyLogoUpload={handleAgencyLogoUpload}
-                          onAgencyLogoRemove={handleAgencyLogoRemove}
-                          isUploadingLogo={isUploadingLogo}
-                        />
-                      </div>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top bar */}
+          <div className="h-14 border-b border-border flex items-center justify-between px-4 flex-shrink-0">
+            {/* Mobile: hamburger + title */}
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="md:hidden rounded-full"
+                onClick={() => setIsMobileNavOpen(true)}
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+              <span className="font-semibold text-foreground md:hidden">Profile editor</span>
             </div>
 
-            <div className="hidden lg:block bg-muted/30 overflow-y-auto sticky top-16 h-[calc(100vh-4rem)]">
-              <div className="p-6 flex items-center justify-center min-h-full">
-                <MobilePreview 
-                  data={editorData} 
-                  links={links} 
-                  isPremium={isPremium}
-                  publicContent={publicContent}
-                  wishlistItems={wishlistItems}
-                  agencyName={agencyName}
-                  agencyLogoUrl={agencyLogoUrl}
-                />
-              </div>
+            {/* Right side controls */}
+            <div className="flex items-center gap-2">
+              {saveStatus === 'saving' && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Saving...
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="flex items-center gap-1.5 text-xs text-emerald-600">
+                  <div className="w-2 h-2 rounded-full bg-emerald-600" />
+                </span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => window.open(`/${editorData.handle}`, '_blank')}
+                disabled={!editorData.handle}
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Preview
+              </Button>
+            </div>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-6 max-w-3xl">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeSection}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {activeSection === 'photo' && (
+                    <div className="space-y-4">
+                      <PhotoSection
+                        avatarUrl={editorData.avatar_url}
+                        userId={userId}
+                        profileTag={activeProfile?.id || activeProfile?.username || null}
+                        onUpdate={handleAvatarUpdate}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'info' && (
+                    <div className="space-y-4">
+                      <InfoSection
+                        displayName={editorData.display_name}
+                        handle={editorData.handle}
+                        bio={editorData.bio}
+                        location={editorData.location}
+                        modelCategories={editorData.model_categories}
+                        onUpdate={updateEditorData}
+                        onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'social' && (
+                    <div className="space-y-4">
+                      <SocialSection
+                        socialLinks={editorData.social_links}
+                        exclusiveContentText={editorData.exclusive_content_text}
+                        exclusiveContentLinkId={editorData.exclusive_content_link_id}
+                        exclusiveContentUrl={editorData.exclusive_content_url}
+                        exclusiveContentImageUrl={editorData.exclusive_content_image_url}
+                        auroraGradient={editorData.aurora_gradient}
+                        links={links}
+                        userId={userId}
+                        onUpdate={updateEditorData}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'links' && (
+                    <div className="space-y-4">
+                      <ContentSection
+                        links={links}
+                        onUpdate={fetchLinks}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'content' && (
+                    <div className="space-y-4">
+                      <PublicContentSection
+                        userId={userId}
+                        profileId={activeProfile?.id || null}
+                        onUpdate={fetchLinks}
+                        onContentUpdate={fetchPublicContent}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'wishlist' && (
+                    <div className="space-y-4">
+                      <WishlistSection
+                        items={wishlistItems}
+                        onUpdate={fetchWishlistItems}
+                      />
+                    </div>
+                  )}
+
+                  {activeSection === 'colors' && (
+                    <div className="space-y-4">
+                      <OptionsSection
+                        showJoinBanner={editorData.show_join_banner}
+                        showCertification={editorData.show_certification}
+                        showDeeplinks={editorData.show_deeplinks}
+                        showAvailableNow={editorData.show_available_now}
+                        chatEnabled={editorData.chat_enabled}
+                        isPremium={isPremium}
+                        auroraGradient={editorData.aurora_gradient}
+                        tipsEnabled={editorData.tips_enabled}
+                        customRequestsEnabled={editorData.custom_requests_enabled}
+                        minTipAmountCents={editorData.min_tip_amount_cents}
+                        minCustomRequestCents={editorData.min_custom_request_cents}
+                        showAgencyBranding={editorData.show_agency_branding}
+                        agencyName={agencyName}
+                        agencyLogoUrl={agencyLogoUrl}
+                        onUpdate={updateEditorData}
+                        onAgencyNameChange={handleAgencyNameChange}
+                        onAgencyLogoUpload={handleAgencyLogoUpload}
+                        onAgencyLogoRemove={handleAgencyLogoRemove}
+                        isUploadingLogo={isUploadingLogo}
+                      />
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </div>
+
+        {/* Right preview column */}
+        <div className="hidden lg:flex bg-muted/30 overflow-y-auto sticky top-0 h-screen w-80 flex-shrink-0">
+          <div className="p-6 flex items-center justify-center min-h-full">
+            <MobilePreview 
+              data={editorData} 
+              links={links} 
+              isPremium={isPremium}
+              publicContent={publicContent}
+              wishlistItems={wishlistItems}
+              agencyName={agencyName}
+              agencyLogoUrl={agencyLogoUrl}
+            />
+          </div>
+        </div>
+
+        {/* Mobile nav Sheet */}
+        <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+          <SheetContent side="left" className="p-0 w-72">
+            <div className="p-5 border-b border-border flex items-center justify-between">
+              <SheetTitle className="text-base">Exclu</SheetTitle>
+              <Button variant="ghost" size="icon" onClick={() => setIsMobileNavOpen(false)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <div className="p-3">
+              <div className="space-y-1">
+                {sections.map((section) => {
+                  const Icon = section.icon;
+                  const isActive = activeSection === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveSection(section.id);
+                        setIsMobileNavOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-primary/10 text-primary'
+                          : 'hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                      <span>{section.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
       </div>
+    </div>
   );
 };
 
