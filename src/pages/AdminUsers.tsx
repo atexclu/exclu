@@ -858,7 +858,7 @@ const AdminUsers = () => {
                                       {user.total_sales} vente{user.total_sales !== 1 ? 's' : ''}
                                     </span>
                                     <span className="text-[10px] text-exclu-space/60">
-                                      {(user.total_revenue_cents / 100).toFixed(2)} €
+                                      {(user.total_revenue_cents / 100).toFixed(2)} $
                                     </span>
                                   </div>
                                 </td>

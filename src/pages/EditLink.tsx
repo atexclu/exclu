@@ -441,7 +441,7 @@ const EditLink = () => {
                             onChange={(e) => setPrice(e.target.value)}
                             className="h-10 bg-white border-exclu-arsenic/70 text-black text-sm"
                           />
-                          <span className="text-xs text-exclu-space">EUR</span>
+                          <span className="text-xs text-exclu-space">USD</span>
                         </div>
                       </div>
 

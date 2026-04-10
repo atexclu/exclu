@@ -56,6 +56,11 @@ coverage/
 # Vercel
 .vercel
 
+# Lockfiles (using npm — ignore others)
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
 # Misc
 *.bak
 *.orig
