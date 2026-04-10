@@ -1,6 +1,9 @@
 [functions.create-creator-subscription]
 verify_jwt = false
 
+[functions.cancel-creator-subscription]
+verify_jwt = false
+
 [functions.increment-link-click]
 verify_jwt = false
 

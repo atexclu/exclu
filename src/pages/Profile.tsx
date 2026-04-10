@@ -414,34 +414,38 @@ const Profile = () => {
     }
   };
 
-  const handleCancelSubscription = () => {
+  const handleCancelSubscription = async () => {
     if (!confirm('Are you sure you want to cancel your Premium subscription? You will lose 0% commission and premium features.')) return;
 
-    const quickPayToken = import.meta.env.VITE_QUICKPAY_TOKEN;
-    const siteId = import.meta.env.VITE_QUICKPAY_SITE_ID || '98845';
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-creator-subscription', {
+        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
+      });
 
-    // Cancel must be an HTML form POST to QuickPay (server-to-server not supported)
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'https://quickpay.ugpayments.ch/Cancel';
-    form.style.display = 'none';
+      if (error || !data?.fields) {
+        toast.error('Unable to cancel subscription.');
+        return;
+      }
 
-    const fields: Record<string, string> = {
-      QuickpayToken: quickPayToken,
-      username: userId, // subscription_ugp_username = user.id
-      SiteID: siteId,
-    };
+      // Cancel must be an HTML form POST to QuickPay (server-to-server not supported)
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.action;
+      form.style.display = 'none';
 
-    Object.entries(fields).forEach(([name, value]) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      form.appendChild(input);
-    });
+      Object.entries(data.fields as Record<string, string>).forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
 
-    document.body.appendChild(form);
-    form.submit();
+      document.body.appendChild(form);
+      form.submit();
+    } catch {
+      toast.error('Unable to cancel subscription.');
+    }
   };
 
   const handleChangePassword = async () => {

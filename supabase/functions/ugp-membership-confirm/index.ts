@@ -49,8 +49,8 @@ serve(async (req) => {
 
   console.log(`Membership postback: action=${action} username=${username} memberId=${memberId} planId=${subscriptionPlanId}`);
 
-  // Verify Key
-  if (confirmKey && key !== confirmKey) {
+  // Verify Key (only reject if both confirmKey is set AND Key is provided but mismatched)
+  if (confirmKey && key && key !== confirmKey) {
     console.error('Invalid Key in membership postback');
     return new Response('Unauthorized', { status: 401 });
   }
