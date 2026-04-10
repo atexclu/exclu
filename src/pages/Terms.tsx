@@ -199,7 +199,8 @@ const Terms = () => {
             <strong>FRANCEPRODUCT SAS</strong><br />
             13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />
             SIREN: 898 251 384<br />
-            Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a>
+            Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />
+            Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a>
           </p>
         </div>
       </main>

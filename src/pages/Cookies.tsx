@@ -59,7 +59,7 @@ const Cookies = () => {
           <p>We may update this Cookie Policy if we introduce new technologies. Changes are effective when posted on this page.</p>
 
           <h2>7. Contact</h2>
-          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a></p>
+          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a></p>
         </div>
       </main>
       <Footer />

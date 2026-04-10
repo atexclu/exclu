@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
-import { Instagram, Send } from 'lucide-react';
+import { Instagram, Send, Mail, Phone } from 'lucide-react';
 
 // X (Twitter) icon component
 const XIcon = ({ className }: { className?: string }) => (
@@ -35,6 +35,7 @@ const Footer = () => {
     support: [
       { label: 'Help Center', href: '/help-center' },
       { label: 'Contact', href: 'https://telegram.me/exclu_support', external: true },
+      { label: 'DMCA', href: '/dmca' },
     ],
   };
 
@@ -121,11 +122,21 @@ const Footer = () => {
           </div>
         </div>
 
+        {/* Contact Info */}
+        <div className="pb-6 flex flex-col sm:flex-row items-center gap-4 text-exclu-space text-sm">
+          <a href="mailto:contact@exclu.at" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
+            <Mail className="w-3.5 h-3.5" /> contact@exclu.at
+          </a>
+          <a href="tel:+33745017758" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
+            <Phone className="w-3.5 h-3.5" /> +33 7 45 01 77 58
+          </a>
+        </div>
+
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-exclu-arsenic/40 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-exclu-graphite text-sm">
             © {new Date().getFullYear()}{' '}
-            <a href="/" className="hover:text-primary transition-colors">Exclu</a>. All rights reserved.
+            <a href="/" className="hover:text-primary transition-colors">Exclu</a> — FRANCEPRODUCT SAS. All rights reserved.
           </p>
           <p className="text-exclu-graphite text-sm">
             Made with 💜 for creators

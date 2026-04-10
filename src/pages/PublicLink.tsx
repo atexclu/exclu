@@ -236,6 +236,7 @@ const PublicLink = () => {
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const [purchaseData, setPurchaseData] = useState<PurchaseData | null>(null);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
@@ -581,6 +582,11 @@ const PublicLink = () => {
 
   const handleUnlockClick = async () => {
     if (!slug || !link) return;
+
+    if (!ageConfirmed) {
+      toast.error('You must confirm that you are at least 18 years old');
+      return;
+    }
 
     setIsUnlocking(true);
     try {
@@ -984,6 +990,21 @@ const PublicLink = () => {
                         </motion.p>
                       </div>
 
+                      {/* 18+ Age Confirmation */}
+                      <label className="flex items-start gap-3 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={ageConfirmed}
+                          onChange={(e) => setAgeConfirmed(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-white/30 bg-black/40 text-primary focus:ring-primary/50 accent-[#CFFF16]"
+                        />
+                        <span className="text-[11px] text-white/60 leading-relaxed group-hover:text-white/80 transition-colors">
+                          I confirm that I am at least <strong className="text-white">18 years old</strong> and agree to the{' '}
+                          <a href="/terms" target="_blank" className="text-primary hover:underline">Terms</a> and{' '}
+                          <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
+                        </span>
+                      </label>
+
                       {/* Unlock Button */}
                       <Button
                         variant="hero"
@@ -992,7 +1013,7 @@ const PublicLink = () => {
                           background: getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'purple_dream').preview
                         }}
                         className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl transition-all hover:scale-[1.02] active:scale-[0.98] hover:opacity-90"
-                        disabled={isUnlocking}
+                        disabled={isUnlocking || !ageConfirmed}
                         onClick={handleUnlockClick}
                       >
                         {isUnlocking ? (

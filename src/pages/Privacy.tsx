@@ -15,7 +15,7 @@ const Privacy = () => {
           <p>We are committed to protecting your privacy and processing your data in accordance with the <strong>General Data Protection Regulation (GDPR)</strong> (EU Regulation 2016/679) and applicable French data protection laws.</p>
 
           <h2>1. Data Controller</h2>
-          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />SIREN: 898 251 384<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a></p>
+          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />SIREN: 898 251 384<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a></p>
 
           <h2>2. Data We Collect</h2>
           <h3>2.1 Account Data (All Users)</h3>
@@ -156,7 +156,7 @@ const Privacy = () => {
           <p>We may update this policy. Changes are effective when posted. Continued use constitutes acceptance.</p>
 
           <h2>15. Contact and Complaints</h2>
-          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a></p>
+          <p><strong>FRANCEPRODUCT SAS</strong><br />13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a></p>
           <p>You may also lodge a complaint with the <strong>CNIL</strong> (Commission Nationale de l'Informatique et des Libertés) at <a href="https://www.cnil.fr" target="_blank" rel="noopener noreferrer">www.cnil.fr</a>.</p>
         </div>
       </main>

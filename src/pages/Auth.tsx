@@ -19,6 +19,7 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [accountType, setAccountType] = useState<'creator' | 'fan'>('creator');
   const [showPassword, setShowPassword] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -90,6 +91,11 @@ const Auth = () => {
         const username = accountType === 'creator' ? String(formData.get('username') || '').trim().toLowerCase() : '';
         if (!password) {
           toast.error('Please fill in all fields');
+          return;
+        }
+
+        if (!ageConfirmed) {
+          toast.error('You must confirm that you are at least 18 years old');
           return;
         }
 
@@ -492,12 +498,28 @@ const Auth = () => {
                   )}
                 </div>
 
+                {mode === 'signup' && (
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={ageConfirmed}
+                      onChange={(e) => setAgeConfirmed(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-white/30 bg-black/40 text-primary focus:ring-primary/50 accent-[#CFFF16]"
+                    />
+                    <span className="text-[11px] text-exclu-space/80 leading-relaxed group-hover:text-exclu-space transition-colors">
+                      I confirm that I am at least <strong className="text-exclu-cloud">18 years old</strong> and agree to the{' '}
+                      <a href="/terms" target="_blank" className="text-primary hover:underline">Terms of Service</a> and{' '}
+                      <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
+                    </span>
+                  </label>
+                )}
+
                 <Button
                   type="submit"
                   variant="hero"
                   size="lg"
                   className="w-full mt-1 inline-flex items-center justify-center gap-2"
-                  disabled={isLoading}
+                  disabled={isLoading || (mode === 'signup' && !ageConfirmed)}
                 >
                   {isLoading
                     ? 'Please wait...'

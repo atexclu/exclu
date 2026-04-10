@@ -22,6 +22,7 @@ const FanSignup = () => {
   const [mode, setMode] = useState<'signup' | 'login' | 'reset'>('signup');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [creatorPreview, setCreatorPreview] = useState<CreatorPreview | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -78,6 +79,11 @@ const FanSignup = () => {
         }
         if (!password) {
           toast.error('Please enter a password');
+          return;
+        }
+
+        if (!ageConfirmed) {
+          toast.error('You must confirm that you are at least 18 years old');
           return;
         }
 
@@ -416,7 +422,7 @@ const FanSignup = () => {
                   variant="hero"
                   size="lg"
                   className="w-full mt-1 inline-flex items-center justify-center gap-2"
-                  disabled={isLoading}
+                  disabled={isLoading || (mode === 'signup' && !ageConfirmed)}
                 >
                   {isLoading
                     ? 'Please wait...'
@@ -428,11 +434,19 @@ const FanSignup = () => {
                 </Button>
 
                 {mode === 'signup' && (
-                  <p className="text-[10px] text-exclu-space/70 text-center mt-2">
-                    By signing up, you agree to our{' '}
-                    <a href="/terms" className="text-primary hover:underline">Terms</a> and{' '}
-                    <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>.
-                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={ageConfirmed}
+                      onChange={(e) => setAgeConfirmed(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-white/30 bg-black/40 text-primary focus:ring-primary/50 accent-[#CFFF16]"
+                    />
+                    <span className="text-[11px] text-exclu-space/80 leading-relaxed group-hover:text-exclu-space transition-colors">
+                      I confirm that I am at least <strong className="text-exclu-cloud">18 years old</strong> and agree to the{' '}
+                      <a href="/terms" target="_blank" className="text-primary hover:underline">Terms of Service</a> and{' '}
+                      <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
+                    </span>
+                  </label>
                 )}
 
                 {mode === 'login' && (
