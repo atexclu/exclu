@@ -427,22 +427,39 @@ const Profile = () => {
         return;
       }
 
-      // Cancel must be an HTML form POST to QuickPay (server-to-server not supported)
-      const form = document.createElement('form');
+      // Open cancel in a popup — UGP Cancel page has no redirect URL support.
+      // When the user closes the popup, we reload the profile to reflect changes.
+      const popup = window.open('about:blank', 'ugp_cancel', 'width=600,height=700,scrollbars=yes');
+      if (!popup) {
+        toast.error('Please allow popups to cancel your subscription.');
+        return;
+      }
+
+      // Build a self-submitting form in the popup via DOM manipulation
+      const doc = popup.document;
+      const form = doc.createElement('form');
       form.method = 'POST';
       form.action = data.action;
-      form.style.display = 'none';
+      form.id = 'cancel-form';
 
       Object.entries(data.fields as Record<string, string>).forEach(([name, value]) => {
-        const input = document.createElement('input');
+        const input = doc.createElement('input');
         input.type = 'hidden';
         input.name = name;
         input.value = value;
         form.appendChild(input);
       });
 
-      document.body.appendChild(form);
+      doc.body.appendChild(form);
       form.submit();
+
+      // Poll for popup close, then refresh subscription status
+      const check = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(check);
+          window.location.reload();
+        }
+      }, 500);
     } catch {
       toast.error('Unable to cancel subscription.');
     }
