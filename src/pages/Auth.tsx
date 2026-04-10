@@ -252,7 +252,7 @@ const Auth = () => {
       </div>
 
       <Navbar />
-      <main className="min-h-[calc(100vh-5rem)] px-4 pt-28 pb-10 flex items-start sm:items-center justify-center relative z-10 overflow-hidden">
+      <main className="min-h-[calc(100vh-5rem)] px-4 pt-20 sm:pt-24 pb-10 flex items-start justify-center relative z-10 overflow-hidden">
 
         <motion.div
           initial={{ opacity: 0, y: 24 }}
