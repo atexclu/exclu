@@ -205,7 +205,7 @@ const CreatorLinks = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-6xl mx-auto">
+      <main className="px-4 lg:px-6 pb-16 w-full">
         <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">

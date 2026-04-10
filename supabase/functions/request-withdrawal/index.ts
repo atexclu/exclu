@@ -77,13 +77,13 @@ serve(async (req) => {
     // Fetch profile with bank details — balance comes from DB, not from frontend
     const { data: profile, error: profileErr } = await supabase
       .from('profiles')
-      .select('id, wallet_balance_cents, payout_setup_complete, bank_iban, bank_holder_name, display_name, handle')
+      .select('id, wallet_balance_cents, payout_setup_complete, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, display_name, handle')
       .eq('id', user.id)
       .single();
 
     if (profileErr || !profile) return jsonError('Profile not found', 400, corsHeaders);
 
-    if (!profile.payout_setup_complete || !profile.bank_iban) {
+    if (!profile.payout_setup_complete) {
       return jsonError('Please set up your bank details before requesting a withdrawal', 400, corsHeaders);
     }
 
@@ -132,8 +132,14 @@ serve(async (req) => {
         amount_cents: amountCents,
         currency: 'USD',
         status: 'pending',
+        bank_account_type: profile.bank_account_type || 'iban',
         bank_iban: profile.bank_iban,
         bank_holder_name: profile.bank_holder_name,
+        bank_bic: profile.bank_bic,
+        bank_account_number: profile.bank_account_number,
+        bank_routing_number: profile.bank_routing_number,
+        bank_bsb: profile.bank_bsb,
+        bank_country: profile.bank_country,
         requested_at: new Date().toISOString(),
       })
       .select('id')
@@ -164,8 +170,9 @@ serve(async (req) => {
         <table style="border-collapse:collapse;width:100%;margin:16px 0;">
           <tr><td style="padding:8px;color:#94a3b8;">Creator</td><td style="padding:8px;font-weight:600;">${creatorName}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">Amount</td><td style="padding:8px;font-weight:600;color:#a3e635;">${formatUSD(amountCents)}</td></tr>
-          <tr><td style="padding:8px;color:#94a3b8;">IBAN</td><td style="padding:8px;font-family:monospace;">${profile.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profile.bank_iban.slice(-4)}</td></tr>
+          <tr><td style="padding:8px;color:#94a3b8;">Account type</td><td style="padding:8px;">${(profile.bank_account_type || 'iban').toUpperCase()}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">Holder</td><td style="padding:8px;">${profile.bank_holder_name}</td></tr>
+          <tr><td style="padding:8px;color:#94a3b8;">Bank details</td><td style="padding:8px;font-family:monospace;">${profile.bank_iban ? 'IBAN: ' + profile.bank_iban.slice(0, 4) + ' •••• ' + profile.bank_iban.slice(-4) : profile.bank_account_number ? 'Acct: ••••' + (profile.bank_account_number as string).slice(-4) : '—'}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">New wallet balance</td><td style="padding:8px;">${formatUSD(newBalance)}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">User ID</td><td style="padding:8px;font-family:monospace;font-size:12px;">${user.id}</td></tr>
           <tr><td style="padding:8px;color:#94a3b8;">Payout ID</td><td style="padding:8px;font-family:monospace;font-size:12px;">${payout.id}</td></tr>
@@ -181,7 +188,7 @@ serve(async (req) => {
         subject: `Withdrawal request received — ${formatUSD(amountCents)}`,
         htmlContent: `<div style="font-family:system-ui;padding:20px;background:#020617;color:#f9fafb;border-radius:12px;">
           <h2>Your withdrawal request has been submitted ✅</h2>
-          <p style="color:#cbd5e1;">We've received your request to withdraw <strong style="color:#a3e635;">${formatUSD(amountCents)}</strong> to your bank account ending in ****${profile.bank_iban.slice(-4)}.</p>
+          <p style="color:#cbd5e1;">We've received your request to withdraw <strong style="color:#a3e635;">${formatUSD(amountCents)}</strong> to your bank account${profile.bank_iban ? ' ending in ****' + profile.bank_iban.slice(-4) : profile.bank_account_number ? ' ending in ****' + (profile.bank_account_number as string).slice(-4) : ''}.</p>
           <p style="color:#cbd5e1;">Withdrawals are typically processed within 1-3 business days. You'll receive a confirmation once the transfer is complete.</p>
           <p style="color:#64748b;font-size:13px;margin-top:20px;">If you didn't request this, please contact support immediately.</p>
         </div>`,

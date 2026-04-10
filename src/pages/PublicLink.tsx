@@ -217,7 +217,7 @@ interface PurchaseData {
 const PublicLink = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
-  const legacySessionId = searchParams.get('session_id'); // Legacy Stripe param
+  const legacySessionId = searchParams.get('session_id'); // Legacy param (pre-UGP purchases)
   const paymentRef = searchParams.get('ref'); // UGPayments: ref=link_<uuid>
   const paymentSuccess = searchParams.get('payment_success') === 'true';
   const paymentFailed = searchParams.get('payment_failed') === 'true';
@@ -331,8 +331,8 @@ const PublicLink = () => {
       }
 
       // Check if user has purchased this link
-      // Supports both new UGPayments flow (?payment_success=true&ref=link_<uuid>)
-      // and legacy Stripe flow (?session_id=...)
+      // Supports both UGPayments flow (?payment_success=true&ref=link_<uuid>)
+      // and legacy flow (?session_id=...) for pre-migration purchases
       let hasPurchased = false;
       let autoUnlockPurchaseId: string | null = null;
 
@@ -489,7 +489,7 @@ const PublicLink = () => {
         }
         setIsVerifyingPayment(false);
       } else if (!hasPurchased && legacySessionId) {
-        // Legacy Stripe flow: check by stripe_session_id (for old purchases)
+        // Legacy flow: check by stripe_session_id (for pre-migration purchases)
         const { data: existing } = await supabaseAnon
           .from('purchases')
           .select('id, access_expires_at, amount_cents, currency, created_at, email_sent, download_count, status')

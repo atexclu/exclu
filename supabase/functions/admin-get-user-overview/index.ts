@@ -1,4 +1,3 @@
-import Stripe from 'npm:stripe';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -7,7 +6,6 @@ const supabaseServiceRoleKey =
   Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const supabaseAnonKey = Deno.env.get('VITE_SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY');
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
-const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing SUPABASE_URL/PROJECT_URL or SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE_KEY');
@@ -17,14 +15,7 @@ if (!supabaseAnonKey) {
   throw new Error('Missing SUPABASE_ANON_KEY environment variable');
 }
 
-if (!stripeSecretKey) {
-  throw new Error('Missing STRIPE_SECRET_KEY environment variable');
-}
-
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
-const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16',
-});
 
 // CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
 const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
@@ -76,8 +67,21 @@ interface UserOverviewPayload {
     created_at: string | null;
     is_creator: boolean | null;
     country: string | null;
-    stripe_connect_status: string | null;
+    role: string | null;
     is_directory_visible: boolean | null;
+    is_creator_subscribed: boolean;
+    wallet_balance_cents: number;
+    total_earned_cents: number;
+    total_withdrawn_cents: number;
+    bank_iban: string | null;
+    bank_holder_name: string | null;
+    bank_bic: string | null;
+    bank_account_type: string | null;
+    bank_account_number: string | null;
+    bank_routing_number: string | null;
+    bank_bsb: string | null;
+    bank_country: string | null;
+    payout_setup_complete: boolean;
   } | null;
   links: Array<{
     id: string;
@@ -115,68 +119,14 @@ interface UserOverviewPayload {
     status: string;
     created_at: string | null;
   }>;
-  stripe: {
+  payouts: Array<{
+    id: string;
+    amount_cents: number;
     status: string;
-    disabled_reason: string | null;
-    friendly_messages: string[];
-    account_email: string | null;
-    payout_country: string | null;
-  } | null;
-}
-
-function mapRequirementKeyToMessage(key: string): string {
-  if (key === 'business_profile.mcc') {
-    return 'Select the business category for this account in Stripe.';
-  }
-  if (key === 'business_profile.url') {
-    return 'Add a website or main social profile URL in Stripe.';
-  }
-  if (key.startsWith('business_profile')) {
-    return 'Complete the business profile details in Stripe.';
-  }
-
-  if (key === 'external_account') {
-    return 'Add or confirm the bank account where payouts will be sent.';
-  }
-
-  if (key.startsWith('representative.address')) {
-    return 'Complete the address of the account holder (city, street, postal code).';
-  }
-  if (key.startsWith('representative.dob')) {
-    return 'Add the date of birth of the account holder.';
-  }
-  if (key === 'representative.email') {
-    return 'Add or confirm the email address of the account holder.';
-  }
-  if (key === 'representative.phone') {
-    return 'Add or confirm the phone number of the account holder.';
-  }
-  if (key === 'representative.first_name' || key === 'representative.last_name') {
-    return 'Complete the full name of the account holder.';
-  }
-
-  if (key === 'business_type') {
-    return 'Specify whether this account is for an individual or a business.';
-  }
-
-  if (key === 'tos_acceptance.date' || key === 'tos_acceptance.ip') {
-    return "Accept Stripe's terms of service in the onboarding flow.";
-  }
-
-  if (key.startsWith('individual.address')) {
-    return 'Add or complete the personal address of the account holder.';
-  }
-  if (key.startsWith('individual.verification.document')) {
-    return 'Upload a valid identity document for verification.';
-  }
-  if (key.startsWith('individual.email')) {
-    return 'Confirm the personal email address in Stripe.';
-  }
-  if (key.startsWith('individual.phone')) {
-    return 'Add or verify the phone number in Stripe.';
-  }
-
-  return 'Provide additional information requested by Stripe for this account.';
+    created_at: string | null;
+    requested_at: string | null;
+    processed_at: string | null;
+  }>;
 }
 
 function detectMimeType(path: string): string {
@@ -279,7 +229,7 @@ serve(async (req) => {
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select(
-        'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, payout_setup_complete, is_creator_subscribed',
+        'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed',
       )
       .eq('id', targetUserId)
       .maybeSingle();
@@ -292,8 +242,7 @@ serve(async (req) => {
       });
     }
 
-    // Resolve the target user's auth email via the Admin API so we can
-    // display it alongside Stripe status in the admin UI.
+    // Resolve the target user's auth email via the Admin API.
     let authEmail: string | null = null;
     try {
       const { data: authUser, error: authUserError } =
@@ -566,83 +515,6 @@ serve(async (req) => {
       }
     }
 
-    // Load detailed Stripe Connect status for this creator, similar to stripe-connect-status.
-    let stripeDetails: UserOverviewPayload['stripe'] = null;
-    let accountEmail: string | null = authEmail;
-    let payoutCountry: string | null = (profile as any)?.country ?? null;
-    if (profile?.stripe_account_id) {
-      try {
-        const account = await stripe.accounts.retrieve(profile.stripe_account_id as string);
-        const requirements = (account as any).requirements || {};
-        const currentlyDue: string[] = requirements.currently_due || [];
-        const pastDue: string[] = requirements.past_due || [];
-        const pendingVerification: string[] = requirements.pending_verification || [];
-        const disabledReason: string | null = requirements.disabled_reason || null;
-
-        // Prefer the email/country returned by Stripe if available.
-        if ((account as any).email) {
-          accountEmail = (account as any).email as string;
-        }
-        if ((account as any).country) {
-          payoutCountry = (account as any).country as string;
-        }
-
-        let status: 'pending' | 'restricted' | 'complete' = 'pending';
-        if ((account as any).charges_enabled && (account as any).payouts_enabled) {
-          status = 'complete';
-        } else if (disabledReason) {
-          status = 'restricted';
-        }
-
-        // Optionally sync DB status for this creator
-        if (profile.stripe_connect_status !== status) {
-          await supabaseAdmin
-            .from('profiles')
-            .update({ stripe_connect_status: status })
-            .eq('id', targetUserId);
-        }
-
-        const allKeys = new Set<string>();
-        [...currentlyDue, ...pastDue, ...pendingVerification].forEach((key) => allKeys.add(key));
-
-        const messageSet = new Set<string>();
-        const friendlyMessages: string[] = [];
-
-        for (const key of Array.from(allKeys)) {
-          const msg = mapRequirementKeyToMessage(key);
-          if (!messageSet.has(msg)) {
-            messageSet.add(msg);
-            friendlyMessages.push(msg);
-          }
-        }
-
-        stripeDetails = {
-          status,
-          disabled_reason: disabledReason,
-          friendly_messages: friendlyMessages.slice(0, 6),
-          account_email: accountEmail,
-          payout_country: payoutCountry,
-        };
-      } catch (e) {
-        console.error('Error loading Stripe account in admin-get-user-overview', e);
-        stripeDetails = {
-          status: profile.stripe_connect_status ?? 'unknown',
-          disabled_reason: null,
-          friendly_messages: [],
-          account_email: accountEmail,
-          payout_country: payoutCountry,
-        };
-      }
-    } else {
-      stripeDetails = {
-        status: profile?.stripe_connect_status ?? 'no_account',
-        disabled_reason: null,
-        friendly_messages: [],
-        account_email: authEmail,
-        payout_country: (profile as any)?.country ?? null,
-      };
-    }
-
     // Fetch is_directory_visible from creator_profiles
     let isDirectoryVisible: boolean | null = true;
     {
@@ -665,6 +537,42 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(20);
 
+    // Compute actual earned totals from transaction tables (fallback for pre-wallet-migration sales)
+    let computedEarnedCents = 0;
+    try {
+      const { data: purchaseSums } = await supabaseAdmin
+        .from('purchases')
+        .select('creator_net_cents')
+        .eq('status', 'succeeded')
+        .in('link_id', linkIds.length > 0 ? linkIds : ['__none__']);
+      computedEarnedCents += (purchaseSums ?? []).reduce((s: number, p: any) => s + (p.creator_net_cents || 0), 0);
+
+      const { data: tipSums } = await supabaseAdmin
+        .from('tips')
+        .select('creator_net_cents')
+        .eq('creator_id', targetUserId)
+        .eq('status', 'succeeded');
+      computedEarnedCents += (tipSums ?? []).reduce((s: number, t: any) => s + (t.creator_net_cents || 0), 0);
+
+      const { data: giftSums } = await supabaseAdmin
+        .from('gift_purchases')
+        .select('creator_net_cents')
+        .eq('creator_id', targetUserId)
+        .eq('status', 'succeeded');
+      computedEarnedCents += (giftSums ?? []).reduce((s: number, g: any) => s + (g.creator_net_cents || 0), 0);
+    } catch (e) {
+      console.error('Error computing earned totals:', e);
+    }
+
+    const computedWithdrawnCents = (payoutsData ?? [])
+      .filter((p: any) => p.status === 'completed' || p.status === 'approved' || p.status === 'processing')
+      .reduce((s: number, p: any) => s + (p.amount_cents || 0), 0);
+
+    // Use the larger of wallet columns vs computed values (handles pre-migration sales)
+    const finalEarned = Math.max(profile?.total_earned_cents ?? 0, computedEarnedCents);
+    const finalWithdrawn = Math.max(profile?.total_withdrawn_cents ?? 0, computedWithdrawnCents);
+    const finalBalance = finalEarned - finalWithdrawn;
+
     const payload: UserOverviewPayload = {
       profile: profile
         ? {
@@ -677,19 +585,23 @@ serve(async (req) => {
           role: profile.role ?? null,
           is_directory_visible: isDirectoryVisible,
           is_creator_subscribed: profile.is_creator_subscribed ?? false,
-          wallet_balance_cents: profile.wallet_balance_cents ?? 0,
-          total_earned_cents: profile.total_earned_cents ?? 0,
-          total_withdrawn_cents: profile.total_withdrawn_cents ?? 0,
+          wallet_balance_cents: Math.max(profile.wallet_balance_cents ?? 0, finalBalance),
+          total_earned_cents: finalEarned,
+          total_withdrawn_cents: finalWithdrawn,
           bank_iban: profile.bank_iban ?? null,
           bank_holder_name: profile.bank_holder_name ?? null,
           bank_bic: profile.bank_bic ?? null,
+          bank_account_type: profile.bank_account_type ?? null,
+          bank_account_number: profile.bank_account_number ?? null,
+          bank_routing_number: profile.bank_routing_number ?? null,
+          bank_bsb: profile.bank_bsb ?? null,
+          bank_country: profile.bank_country ?? null,
           payout_setup_complete: profile.payout_setup_complete ?? false,
         }
         : null,
       links: links,
       assets: safeAssets,
       sales,
-      stripe: stripeDetails,
       payouts: payoutsData ?? [],
     };
 

@@ -113,7 +113,7 @@ serve(async (req) => {
       });
     }
 
-    // Find the purchase based on Stripe session id
+    // Find the purchase based on session id (legacy pre-UGP purchases)
     const { data: purchase, error: purchaseError } = await supabase
       .from('purchases')
       .select('id, link_id, buyer_email, fan_email')

@@ -4,17 +4,30 @@ import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { User } from '@supabase/supabase-js';
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { useEffect, useState } from 'react';
 
 interface NavbarProps {
   user?: User | null;
   variant?: 'default' | 'blog';
+  centerContent?: React.ReactNode;
+  mobileTopContent?: React.ReactNode;
 }
 
-const Navbar = ({ user, variant = 'default' }: NavbarProps) => {
+const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopContent }: NavbarProps) => {
   const { resolvedTheme } = useTheme();
+  const [sessionUser, setSessionUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    if (userProp) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setSessionUser(data.session?.user ?? null);
+    });
+  }, [userProp]);
+
+  const user = userProp ?? sessionUser;
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -61,7 +74,7 @@ const Navbar = ({ user, variant = 'default' }: NavbarProps) => {
           </motion.a>
 
           {/* Navigation Links */}
-          {!user && (
+          {!user && !centerContent && (
             <div className="hidden md:flex items-center gap-8">
               {navLinks.map((link) => (
                 <a
@@ -75,26 +88,32 @@ const Navbar = ({ user, variant = 'default' }: NavbarProps) => {
             </div>
           )}
 
+          {/* Center content (e.g. onboarding step bubbles) */}
+          {centerContent && (
+            <div className="hidden sm:flex items-center justify-center flex-1">
+              {centerContent}
+            </div>
+          )}
+
+          {/* Mobile-only inline content (e.g. FOMO timer) */}
+          {mobileTopContent && (
+            <div className="sm:hidden flex items-center">
+              {mobileTopContent}
+            </div>
+          )}
+
           {/* CTA Buttons or User Menu */}
           <div className="flex items-center gap-3">
             {user ? (
-              <div className="flex items-center gap-4">
-                <div className="hidden sm:flex items-center gap-2 text-sm font-medium text-exclu-space">
-                  <span className="w-8 h-8 rounded-full bg-exclu-cloud/10 flex items-center justify-center">
-                    <UserIcon className="w-4 h-4 text-exclu-cloud" />
-                  </span>
-                  <span className="truncate max-w-[150px]">{user.email}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
-                  onClick={handleSignOut}
-                >
-                  <LogOut className="w-4 h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Sign out</span>
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
+                onClick={handleSignOut}
+              >
+                <LogOut className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Sign out</span>
+              </Button>
             ) : (
               <>
                 <Button variant="ghost" size="sm" className="hidden sm:inline-flex text-exclu-space hover:text-exclu-cloud" asChild>

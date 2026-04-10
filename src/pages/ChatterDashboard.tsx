@@ -36,6 +36,7 @@ import logoBlack from '@/assets/logo-black.svg';
 import ChatterContracts from '@/pages/ChatterContracts';
 import { BroadcastPanel } from '@/pages/MassMessage';
 import type { Conversation } from '@/types/chat';
+import BankDetailsForm, { BankData, getBankDisplayFields } from '@/components/BankDetailsForm';
 
 interface ChatterProfile {
   id: string;
@@ -91,56 +92,11 @@ export default function ChatterDashboard() {
   const [walletBalanceCents, setWalletBalanceCents] = useState(0);
   const [totalEarnedCents, setTotalEarnedCents] = useState(0);
   const [totalWithdrawnCents, setTotalWithdrawnCents] = useState(0);
-  const [bankIban, setBankIban] = useState('');
-  const [bankHolderName, setBankHolderName] = useState('');
-  const [bankBic, setBankBic] = useState('');
-  const [isSavingBank, setIsSavingBank] = useState(false);
   const [isEditingBank, setIsEditingBank] = useState(false);
   const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
-  const [bankData, setBankData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string } | null>(null);
+  const [bankData, setBankData] = useState<BankData | null>(null);
   const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
   const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
-
-  const formatIbanDisplay = (raw: string): string => {
-    const cleaned = raw.replace(/\s/g, '').toUpperCase();
-    return cleaned.replace(/(.{4})/g, '$1 ').trim();
-  };
-  const handleIbanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\s/g, '').toUpperCase();
-    if (raw.length <= 34) setBankIban(formatIbanDisplay(raw));
-  };
-  const validateIban = (iban: string): string | null => {
-    const cleaned = iban.replace(/\s/g, '').toUpperCase();
-    if (!cleaned) return null;
-    if (cleaned.length < 15 || cleaned.length > 34) return 'IBAN must be between 15 and 34 characters';
-    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: XX00 followed by digits/letters)';
-    const rearranged = cleaned.slice(4) + cleaned.slice(0, 4);
-    const numStr = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
-    let remainder = '';
-    for (const digit of numStr) { remainder = String(Number(remainder + digit) % 97); }
-    if (Number(remainder) !== 1) return 'Invalid IBAN — please double-check the number';
-    return null;
-  };
-  const ibanError = validateIban(bankIban);
-  const isIbanValid = bankIban.replace(/\s/g, '').length > 0 && !ibanError;
-
-  const handleSaveBankDetails = async () => {
-    setIsSavingBank(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('save-bank-details', {
-        body: { iban: bankIban, holder_name: bankHolderName, bic: bankBic || undefined },
-      });
-      if (error || !(data as any)?.success) throw new Error((data as any)?.error || 'Failed to save bank details');
-      toast.success('Bank details saved successfully');
-      setIsEditingBank(false);
-      setPayoutSetupComplete(true);
-      setBankData({ bank_iban: bankIban.replace(/\s/g, ''), bank_holder_name: bankHolderName, bank_bic: bankBic });
-    } catch (err: any) {
-      toast.error(err?.message || 'Unable to save bank details');
-    } finally {
-      setIsSavingBank(false);
-    }
-  };
 
   // Derived: profiles for the active client
   const activeClient = clients.find((c) => c.user_id === activeClientUserId) ?? null;
@@ -190,7 +146,7 @@ export default function ChatterDashboard() {
       // Fetch chatter's own profile (display name, avatar, wallet, bank details)
       const { data: ownProfile } = await supabase
         .from('profiles')
-        .select('display_name, avatar_url, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, payout_setup_complete')
+        .select('display_name, avatar_url, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete')
         .eq('id', user.id)
         .single();
       if (ownProfile?.display_name) {
@@ -205,8 +161,17 @@ export default function ChatterDashboard() {
         setTotalEarnedCents(ownProfile.total_earned_cents ?? 0);
         setTotalWithdrawnCents(ownProfile.total_withdrawn_cents ?? 0);
         setPayoutSetupComplete(ownProfile.payout_setup_complete === true);
-        if (ownProfile.bank_iban) {
-          setBankData({ bank_iban: ownProfile.bank_iban, bank_holder_name: ownProfile.bank_holder_name, bank_bic: ownProfile.bank_bic });
+        if (ownProfile.payout_setup_complete) {
+          setBankData({
+            bank_account_type: ownProfile.bank_account_type ?? undefined,
+            bank_iban: ownProfile.bank_iban ?? undefined,
+            bank_holder_name: ownProfile.bank_holder_name ?? undefined,
+            bank_bic: ownProfile.bank_bic ?? undefined,
+            bank_account_number: ownProfile.bank_account_number ?? undefined,
+            bank_routing_number: ownProfile.bank_routing_number ?? undefined,
+            bank_bsb: ownProfile.bank_bsb ?? undefined,
+            bank_country: ownProfile.bank_country ?? undefined,
+          });
         }
         // Fetch payouts
         const { data: payoutsData } = await supabase
@@ -1556,7 +1521,7 @@ export default function ChatterDashboard() {
                         </div>
                       )}
 
-                      {/* Payout Account (IBAN) */}
+                      {/* Payout Account */}
                       <div className="rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
                         <h2 className="text-lg font-semibold text-foreground mb-1">Payout Account</h2>
                         <p className="text-sm text-muted-foreground mb-4">
@@ -1566,34 +1531,15 @@ export default function ChatterDashboard() {
                         {/* Current bank info display */}
                         {payoutSetupComplete && !isEditingBank && (
                           <div className="rounded-xl border border-border/60 bg-primary/5 p-4 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-muted-foreground">IBAN</span>
-                              <span className="text-sm font-mono text-foreground">
-                                {bankData?.bank_iban
-                                  ? `${bankData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${bankData.bank_iban.slice(-4)}`
-                                  : '—'}
-                              </span>
-                            </div>
-                            {bankData?.bank_holder_name && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">Holder</span>
-                                <span className="text-sm text-foreground">{bankData.bank_holder_name}</span>
+                            {getBankDisplayFields(bankData).map((f) => (
+                              <div key={f.label} className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">{f.label}</span>
+                                <span className="text-sm font-mono text-foreground">{f.value}</span>
                               </div>
-                            )}
-                            {bankData?.bank_bic && (
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">BIC</span>
-                                <span className="text-sm font-mono text-foreground">{bankData.bank_bic}</span>
-                              </div>
-                            )}
+                            ))}
                             <div className="pt-2">
                               <Button
-                                onClick={() => {
-                                  setIsEditingBank(true);
-                                  setBankIban(formatIbanDisplay(bankData?.bank_iban || ''));
-                                  setBankHolderName(bankData?.bank_holder_name || '');
-                                  setBankBic(bankData?.bank_bic || '');
-                                }}
+                                onClick={() => setIsEditingBank(true)}
                                 variant="outline"
                                 className="rounded-xl"
                               >
@@ -1605,57 +1551,16 @@ export default function ChatterDashboard() {
 
                         {/* Bank details form */}
                         {(!payoutSetupComplete || isEditingBank) && (
-                          <div className="space-y-3">
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">IBAN</label>
-                              <Input
-                                value={bankIban}
-                                onChange={handleIbanChange}
-                                placeholder="FR76 1234 5678 9012 3456 7890 123"
-                                className={`bg-muted/50 border-border text-foreground font-mono tracking-wide ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-                              />
-                              {bankIban && ibanError && (
-                                <p className="text-xs text-red-500 mt-1">{ibanError}</p>
-                              )}
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Account holder name</label>
-                              <Input
-                                value={bankHolderName}
-                                onChange={(e) => setBankHolderName(e.target.value)}
-                                placeholder="Jean Dupont"
-                                className="bg-muted/50 border-border text-foreground"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">BIC / SWIFT <span className="text-muted-foreground font-normal">(recommended)</span></label>
-                              <Input
-                                value={bankBic}
-                                onChange={(e) => setBankBic(e.target.value.toUpperCase())}
-                                placeholder="BNPAFRPP"
-                                className="bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50"
-                              />
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                              <Button
-                                onClick={handleSaveBankDetails}
-                                disabled={!isIbanValid || !bankHolderName || isSavingBank}
-                                className="rounded-xl gap-2"
-                              >
-                                <Landmark className="w-4 h-4" />
-                                {isSavingBank ? 'Saving...' : 'Save bank details'}
-                              </Button>
-                              {isEditingBank && (
-                                <Button
-                                  onClick={() => setIsEditingBank(false)}
-                                  variant="outline"
-                                  className="rounded-xl"
-                                >
-                                  Cancel
-                                </Button>
-                              )}
-                            </div>
-                          </div>
+                          <BankDetailsForm
+                            initialData={bankData}
+                            payoutSetupComplete={payoutSetupComplete}
+                            onSaved={(data) => {
+                              setBankData(data);
+                              setPayoutSetupComplete(true);
+                              setIsEditingBank(false);
+                            }}
+                            onCancel={isEditingBank ? () => setIsEditingBank(false) : undefined}
+                          />
                         )}
                       </div>
 

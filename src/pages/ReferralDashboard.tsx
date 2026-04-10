@@ -1,55 +1,22 @@
 import AppShell from '@/components/AppShell';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Copy, Check, Mail, Users, TrendingUp, DollarSign,
+    Copy, Check, Mail,
     ExternalLink, Send, ChevronRight,
-    Loader2, Share2, Clock, Zap,
+    Loader2,
 } from 'lucide-react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
-    SiX, SiInstagram, SiTiktok, SiTelegram, SiSnapchat,
+    SiX, SiInstagram, SiTelegram, SiSnapchat,
 } from 'react-icons/si';
-import { getAuroraGradient } from '@/lib/auroraGradients';
 
-// Commission rate (35%)
 const COMMISSION_RATE = 0.35;
-// Monthly Exclu premium price in USD (used for display only)
-const PREMIUM_MONTHLY_USD = 39;
-// Minimum payout threshold in cents
-const MIN_PAYOUT_CENTS = 10000; // $100
+const MIN_PAYOUT_CENTS = 10000;
 
-interface ReferralRow {
-    id: string;
-    referred_id: string;
-    status: 'pending' | 'converted' | 'inactive';
-    commission_earned_cents: number;
-    created_at: string;
-    converted_at: string | null;
-    // Joined from profiles
-    referred_handle: string | null;
-    referred_display_name: string | null;
-    referred_avatar_url: string | null;
-}
-
-const SHARE_MESSAGE =
-    `Still giving away 20% to OnlyFans ? 😅
-
-Smart 🔞 creators are moving to Exclu.
-
-0% commission 💸
-Get paid fast 💵
-Sell from your bio, anywhere 🔗
-
-Every day you wait = money lost.
-
-Switch now 📲 exclu.at
-
-(Limited FREE access link)`;
+const SHARE_MSG = `Still giving away 20% to OnlyFans ? 😅\n\nSmart 🔞 creators are moving to Exclu.\n\n0% commission 💸\nGet paid fast 💵\nSell from your bio, anywhere 🔗\n\nEvery day you wait = money lost.\n\nSwitch now 📲 exclu.at\n\n(Limited FREE access link)`;
 
 const ReferralDashboard = () => {
     const navigate = useNavigate();
@@ -57,21 +24,13 @@ const ReferralDashboard = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [referralCode, setReferralCode] = useState<string | null>(null);
     const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
-    const [referrals, setReferrals] = useState<ReferralRow[]>([]);
-    const [linkCopied, setLinkCopied] = useState(false);
+    const [referrals, setReferrals] = useState<any[]>([]);
+    const [referralLinkCopied, setReferralLinkCopied] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
     const [isSendingEmail, setIsSendingEmail] = useState(false);
-    const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
-    const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const referralLink = referralCode
-        ? `${window.location.origin}/auth?mode=signup&ref=${referralCode}`
-        : null;
-
-    // Stats derived from referrals
-    const totalReferred = referrals.length;
-    const totalConverted = referrals.filter((r) => r.status === 'converted').length;
-    const conversionRate = totalReferred > 0 ? Math.round((totalConverted / totalReferred) * 100) : 0;
+    const [isRequestingPayout, setIsRequestingPayout] = useState(false);
+    const [payoutRequested, setPayoutRequested] = useState(false);
+    const [myReferralBonus, setMyReferralBonus] = useState<{ eligible: boolean; unlocked: boolean; daysLeft: number } | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -80,15 +39,11 @@ const ReferralDashboard = () => {
             setIsLoading(true);
 
             const { data: { user }, error: userError } = await supabase.auth.getUser();
-            if (userError || !user) {
-                navigate('/auth');
-                return;
-            }
+            if (userError || !user) { navigate('/auth'); return; }
 
-            // Load profile
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('display_name, handle, referral_code, affiliate_earnings_cents')
+                .select('display_name, handle, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at')
                 .eq('id', user.id)
                 .single();
 
@@ -96,52 +51,49 @@ const ReferralDashboard = () => {
 
             if (profile) {
                 setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
+                if (profile.affiliate_payout_requested_at) setPayoutRequested(true);
 
                 let code = profile.referral_code;
-
-                // Auto-generate referral code if missing (safety net)
                 if (!code) {
-                    const handlePrefix = (profile.handle || 'exclu').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 6);
-                    const randomSuffix = Math.random().toString(36).substring(2, 8);
-                    code = `${handlePrefix}-${randomSuffix}`;
+                    const prefix = (profile.handle || 'exclu').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 6);
+                    code = `${prefix}-${Math.random().toString(36).substring(2, 8)}`;
                     await supabase.from('profiles').update({ referral_code: code }).eq('id', user.id);
                 }
-
                 setReferralCode(code);
 
-                // Load referrals with joined profile data
                 const { data: referralsData } = await supabase
                     .from('referrals')
-                    .select('id, referred_id, status, commission_earned_cents, created_at, converted_at')
+                    .select('id, referred_id, status, commission_earned_cents, created_at')
                     .eq('referrer_id', user.id)
                     .order('created_at', { ascending: false });
 
-                if (!isMounted) return;
+                const { data: myReferralRow } = await supabase
+                    .from('referrals')
+                    .select('created_at, bonus_paid_to_referred')
+                    .eq('referred_id', user.id)
+                    .maybeSingle();
 
-                if (referralsData && referralsData.length > 0) {
-                    // Fetch referred profiles
+                if (myReferralRow && isMounted) {
+                    const signupDate = new Date(myReferralRow.created_at);
+                    const diffDays = (Date.now() - signupDate.getTime()) / (1000 * 3600 * 24);
+                    setMyReferralBonus({
+                        eligible: diffDays <= 90,
+                        unlocked: myReferralRow.bonus_paid_to_referred === true,
+                        daysLeft: Math.max(0, Math.ceil(90 - diffDays)),
+                    });
+                }
+
+                if (referralsData && referralsData.length > 0 && isMounted) {
                     const referredIds = referralsData.map((r: any) => r.referred_id);
                     const { data: referredProfiles } = await supabase
                         .from('profiles')
                         .select('id, handle, display_name, avatar_url')
                         .in('id', referredIds);
-
-                    const profileMap = new Map<string, any>(
-                        (referredProfiles || []).map((p: any) => [p.id, p])
-                    );
-
-                    const enriched: ReferralRow[] = referralsData.map((r: any) => {
+                    const profileMap = new Map((referredProfiles || []).map((p: any) => [p.id, p]));
+                    setReferrals(referralsData.map((r: any) => {
                         const rp = profileMap.get(r.referred_id);
-                        return {
-                            ...r,
-                            referred_handle: rp?.handle || null,
-                            referred_display_name: rp?.display_name || null,
-                            referred_avatar_url: rp?.avatar_url || null,
-                        };
-                    });
-
-                    if (!isMounted) return;
-                    setReferrals(enriched);
+                        return { ...r, referred_handle: rp?.handle || null, referred_display_name: rp?.display_name || null };
+                    }));
                 }
             }
 
@@ -152,83 +104,90 @@ const ReferralDashboard = () => {
         return () => { isMounted = false; };
     }, [navigate]);
 
-    const handleCopyLink = async () => {
+    const fmtAmt = (c: number) => `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const referralLink = referralCode ? `${window.location.origin}/auth?mode=signup&ref=${referralCode}` : null;
+    const totalReferred = referrals.length;
+    const totalConverted = referrals.filter((r: any) => r.status === 'converted').length;
+    const conversionRate = totalReferred > 0 ? Math.round((totalConverted / totalReferred) * 100) : 0;
+    const canRequestPayout = affiliateEarningsCents >= MIN_PAYOUT_CENTS;
+
+    const handleCopy = async () => {
         if (!referralLink) return;
+        await navigator.clipboard.writeText(referralLink).catch(() => { });
+        setReferralLinkCopied(true);
+        setTimeout(() => setReferralLinkCopied(false), 2500);
+    };
+
+    const handleShare = (platform: string) => {
+        if (!referralLink) return;
+        const fullMsg = SHARE_MSG + '\n' + referralLink;
+        const t = encodeURIComponent(fullMsg);
+        const u = encodeURIComponent(referralLink);
+        const m = encodeURIComponent(SHARE_MSG);
+        if (platform === 'instagram') {
+            navigator.clipboard.writeText(fullMsg).catch(() => { });
+            toast.success('Message copied! Paste it on Instagram 📋');
+            return;
+        }
+        const urls: Record<string, string> = {
+            twitter: `https://twitter.com/intent/tweet?text=${t}`,
+            telegram: `https://t.me/share/url?url=${u}&text=${m}`,
+            snapchat: `https://www.snapchat.com/scan?attachmentUrl=${u}`,
+        };
+        if (urls[platform]) { window.open(urls[platform], '_blank', 'noopener,noreferrer'); }
+        else { navigator.clipboard.writeText(fullMsg).catch(() => { }); }
+    };
+
+    const handleRequestPayout = async () => {
+        setIsRequestingPayout(true);
         try {
-            await navigator.clipboard.writeText(referralLink);
-            setLinkCopied(true);
-            toast.success('Referral link copied!');
-            if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-            copyTimeoutRef.current = setTimeout(() => setLinkCopied(false), 2500);
+            const { data: { session } } = await supabase.auth.getSession();
+            const { error } = await supabase.functions.invoke('request-affiliate-payout', {
+                body: {},
+                headers: {
+                    Authorization: '',
+                    'x-supabase-auth': session?.access_token ?? '',
+                },
+            });
+            if (error) throw error;
+            setPayoutRequested(true);
+            toast.success('Payout request sent! Our team will process it within 3 business days.');
         } catch {
-            toast.error('Failed to copy link');
+            toast.error('Failed to send payout request. Please try again.');
+        } finally {
+            setIsRequestingPayout(false);
         }
     };
 
     const handleSendEmail = async () => {
-        if (!inviteEmail || !inviteEmail.includes('@')) {
-            toast.error('Please enter a valid email address');
-            return;
-        }
-
+        if (!inviteEmail || !inviteEmail.includes('@')) return;
         setIsSendingEmail(true);
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.access_token) throw new Error('Not authenticated');
-
             const { error } = await supabase.functions.invoke('send-referral-invite', {
                 body: { to_email: inviteEmail },
-                headers: { Authorization: `Bearer ${session.access_token}` },
+                headers: {
+                    Authorization: '',
+                    'x-supabase-auth': session?.access_token ?? '',
+                },
             });
-
-            if (error) throw error;
-
-            toast.success(`Invite sent to ${inviteEmail}!`);
-            setInviteEmail('');
-        } catch (err: any) {
-            console.error('[ReferralDashboard] send-referral-invite error:', err);
-            toast.error('Failed to send invite. Please try again.');
-        } finally {
-            setIsSendingEmail(false);
-        }
+            if (!error) { setInviteEmail(''); toast.success(`Invite sent to ${inviteEmail}!`); }
+            else { toast.error('Failed to send invite. Please try again.'); }
+        } catch { toast.error('Failed to send invite. Please try again.'); }
+        finally { setIsSendingEmail(false); }
     };
 
-    const handleSocialShare = (platform: string) => {
-        if (!referralLink) return;
-        const fullMessage = `${SHARE_MESSAGE}\n${referralLink}`;
-        const text = encodeURIComponent(fullMessage);
-        const encodedLink = encodeURIComponent(referralLink);
-        const encodedMsg = encodeURIComponent(SHARE_MESSAGE);
-
-        const urls: Record<string, string> = {
-            twitter: `https://twitter.com/intent/tweet?text=${text}`,
-            telegram: `https://t.me/share/url?url=${encodedLink}&text=${encodedMsg}`,
-            snapchat: `https://www.snapchat.com/scan?attachmentUrl=${encodedLink}`,
-        };
-
-        const url = urls[platform];
-        if (url) {
-            window.open(url, '_blank', 'noopener,noreferrer');
-        } else {
-            // Instagram / TikTok — copy link + message since they don't support direct share URLs
-            navigator.clipboard.writeText(fullMessage).catch(() => { });
-            toast.info(`Message & link copied! Paste it on ${platform === 'instagram' ? 'Instagram' : 'TikTok'}.`);
-        }
-    };
-
-    const formatAmount = (cents: number) =>
-        `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    const formatDate = (iso: string) =>
-        new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    const canRequestPayout = affiliateEarningsCents >= MIN_PAYOUT_CENTS;
-    const gradientPreview = getAuroraGradient('purple_dream').preview;
+    const socialPlatformsList = [
+        { p: 'twitter', label: 'X', icon: <SiX className="w-5 h-5" />, gradient: 'from-slate-900 to-slate-700' },
+        { p: 'telegram', label: 'Telegram', icon: <SiTelegram className="w-5 h-5" />, gradient: 'from-sky-500 to-cyan-500' },
+        { p: 'instagram', label: 'Instagram', icon: <SiInstagram className="w-5 h-5" />, gradient: 'from-[#f97316] to-[#ec4899]' },
+        { p: 'snapchat', label: 'Snapchat', icon: <SiSnapchat className="w-5 h-5" />, gradient: 'from-yellow-300 to-yellow-500' },
+    ];
 
     if (isLoading) {
         return (
             <AppShell>
-                <main className="px-4 pb-16 max-w-4xl mx-auto">
+                <main className="px-4 lg:px-6 pb-16 w-full overflow-x-hidden">
                     <div className="mt-16 flex items-center justify-center">
                         <Loader2 className="w-6 h-6 animate-spin text-exclu-space/60" />
                     </div>
@@ -239,22 +198,10 @@ const ReferralDashboard = () => {
 
     return (
         <AppShell>
-            <main className="px-4 pb-16 max-w-4xl mx-auto">
+            <main className="px-4 lg:px-6 pb-16 w-full overflow-x-hidden">
                 {/* Header */}
                 <section className="mt-4 sm:mt-6 mb-6">
-                    <div className="flex items-center gap-2 mb-1">
-                        <RouterLink
-                            to="/app"
-                            className="text-[11px] text-exclu-space/60 hover:text-exclu-space transition-colors"
-                        >
-                            Dashboard
-                        </RouterLink>
-                        <ChevronRight className="w-3 h-3 text-exclu-space/40" />
-                        <span className="text-[11px] text-exclu-cloud/80">Referral</span>
-                    </div>
-                    <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud">
-                        Referral Program
-                    </h1>
+                    <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud">Referral Program</h1>
                     <p className="text-sm text-exclu-space/70 mt-1">
                         Recruit creators and earn{' '}
                         <span className="text-primary font-semibold">{Math.round(COMMISSION_RATE * 100)}%</span>
@@ -262,429 +209,212 @@ const ReferralDashboard = () => {
                     </p>
                 </section>
 
-                {/* Stats cards */}
-                <section className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
-                    {/* Earnings */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.05 }}
-                        className="col-span-2 lg:col-span-1 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
-                    >
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
-                                <DollarSign className="w-4 h-4 text-primary" />
-                            </div>
-                            <p className="text-xs text-exclu-space">Total earned</p>
+                {/* Stat cards — identical to Dashboard referral tab */}
+                <div className={`grid gap-4 grid-cols-2 ${myReferralBonus !== null ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} mb-6`}>
+                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                        <p className="text-xs text-exclu-space mb-1">Affiliate earnings</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-2xl font-bold text-exclu-cloud">{fmtAmt(affiliateEarningsCents)}</p>
+                            {payoutRequested && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">Pending</span>
+                            )}
                         </div>
-                        <p className="text-2xl font-bold text-exclu-cloud">
-                            {formatAmount(affiliateEarningsCents)}
-                        </p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">
-                            Credited to your earnings pot
-                        </p>
-                    </motion.div>
-
-                    {/* Recruited */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.1 }}
-                        className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
-                    >
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center">
-                                <Users className="w-4 h-4 text-blue-400" />
-                            </div>
-                            <p className="text-xs text-exclu-space">Recruited</p>
-                        </div>
-                        <p className="text-2xl font-bold text-exclu-cloud">{totalReferred}</p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">Creators referred</p>
-                    </motion.div>
-
-                    {/* Converted */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.15 }}
-                        className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
-                    >
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center">
-                                <TrendingUp className="w-4 h-4 text-green-400" />
-                            </div>
-                            <p className="text-xs text-exclu-space">Conversion</p>
-                        </div>
-                        <p className="text-2xl font-bold text-exclu-cloud">{conversionRate}%</p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">
-                            {totalConverted} premium out of {totalReferred}
-                        </p>
-                    </motion.div>
-
-                    {/* Payout */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.2 }}
-                        className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
-                    >
-                        <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center">
-                                <Zap className="w-4 h-4 text-amber-400" />
-                            </div>
-                            <p className="text-xs text-exclu-space">Payout status</p>
-                        </div>
-                        <p className={`text-sm font-semibold ${canRequestPayout ? 'text-green-400' : 'text-exclu-space/60'}`}>
-                            {canRequestPayout ? 'Ready to claim' : `${formatAmount(MIN_PAYOUT_CENTS - affiliateEarningsCents)} to go`}
-                        </p>
-                        <p className="text-[11px] text-exclu-space/70 mt-1">
-                            Min. {formatAmount(MIN_PAYOUT_CENTS)} to request payout
-                        </p>
-                    </motion.div>
-                </section>
-
-                {/* How it works banner */}
-                <motion.section
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.25 }}
-                    className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 p-4 sm:p-5"
-                >
-                    <p className="text-sm font-semibold text-exclu-cloud mb-1">
-                        How it works 💡
-                    </p>
-                    <p className="text-xs text-exclu-space/80 leading-relaxed">
-                        When a creator signs up with your link and goes premium, you earn{' '}
-                        <span className="text-primary font-semibold">{Math.round(COMMISSION_RATE * 100)}%</span>
-                        {' '}of their monthly subscription (≈{' '}
-                        <span className="text-primary font-semibold">
-                            {formatAmount(Math.round(PREMIUM_MONTHLY_USD * COMMISSION_RATE * 100))} / month
-                        </span>
-                        {' '}per creator), credited to your earnings pot as long as they stay premium.
-                        Payouts are processed manually once you reach ${MIN_PAYOUT_CENTS / 100}.
-                    </p>
-                </motion.section>
-
-                {/* Tab toggle */}
-                <section className="mb-5">
-                    <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
-                        {[
-                            { key: 'overview' as const, label: 'Share & Invite' },
-                            { key: 'history' as const, label: `Activity (${totalReferred})` },
-                        ].map((tab) => (
-                            <button
-                                key={tab.key}
-                                type="button"
-                                onClick={() => setActiveTab(tab.key)}
-                                className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
-                                    ? 'bg-primary text-white dark:text-black shadow-sm'
-                                    : 'hover:text-exclu-cloud'
-                                    }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                        <p className="text-[11px] text-exclu-space/80 mt-1">Cashout when earnings &gt; $100.</p>
                     </div>
-                </section>
+                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                        <p className="text-xs text-exclu-space mb-1">Creators recruited</p>
+                        <p className="text-2xl font-bold text-exclu-cloud">{totalReferred}</p>
+                        <p className="text-[11px] text-exclu-space/80 mt-1">Signed up via your link.</p>
+                    </div>
+                    <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 transition-colors hover:border-primary/70 hover:ring-1 hover:ring-primary/70">
+                        <p className="text-xs text-exclu-space mb-1">Conversion rate</p>
+                        <p className="text-2xl font-bold text-exclu-cloud">{conversionRate}%</p>
+                        <p className="text-[11px] text-exclu-space/80 mt-1">{totalConverted} premium out of {totalReferred}.</p>
+                    </div>
+                    {myReferralBonus !== null && (
+                        <div className={`rounded-2xl border p-5 transition-colors ${myReferralBonus.unlocked ? 'border-green-500/60 bg-green-950/40 hover:border-green-400/70 hover:ring-1 hover:ring-green-400/70' : 'border-exclu-arsenic/60 bg-exclu-ink/80 hover:border-primary/70 hover:ring-1 hover:ring-primary/70'}`}>
+                            <p className="text-xs text-exclu-space mb-1">Welcome bonus</p>
+                            <p className={`text-2xl font-bold ${myReferralBonus.unlocked ? 'text-green-400' : 'text-exclu-cloud'}`}>$100.00</p>
+                            <p className="text-[11px] text-exclu-space/80 mt-1">
+                                {myReferralBonus.unlocked
+                                    ? 'Unlocked — credited to your earnings.'
+                                    : myReferralBonus.eligible
+                                        ? `Make $1,000 in sales within ${myReferralBonus.daysLeft}d to unlock.`
+                                        : 'Expired — $1,000 target not reached in time.'}
+                            </p>
+                        </div>
+                    )}
+                </div>
 
-                <AnimatePresence mode="wait">
-                    {activeTab === 'overview' && (
-                        <motion.div
-                            key="overview"
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.25 }}
-                            className="space-y-4"
+                {/* Payout request button */}
+                {canRequestPayout && !payoutRequested && (
+                    <div className="flex flex-col items-center gap-2 py-1 mb-6 max-w-full">
+                        <Button
+                            type="button"
+                            variant="hero"
+                            size="sm"
+                            disabled={isRequestingPayout}
+                            onClick={handleRequestPayout}
+                            className="max-w-full whitespace-normal text-center h-auto py-2"
                         >
-                            {/* Referral link card */}
-                            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Share2 className="w-4 h-4 text-exclu-space/60" />
-                                    <p className="text-sm font-semibold text-exclu-cloud">Your referral link</p>
+                            {isRequestingPayout
+                                ? <><Loader2 className="w-4 h-4 animate-spin" />Sending request…</>
+                                : <><ExternalLink className="w-4 h-4" /><span className="truncate">Request payout — {fmtAmt(affiliateEarningsCents)}</span></>}
+                        </Button>
+                        <p className="text-[10px] text-exclu-space/50 text-center">Payouts are processed manually within 3 business days.</p>
+                    </div>
+                )}
+
+                {/* Referral link + email + social */}
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6 space-y-4 mb-4">
+                    <div className="flex items-center gap-2">
+                        <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Your referral link</p>
+                        <div className="relative group/info">
+                            <button type="button" className="w-4 h-4 rounded-full border border-exclu-arsenic/60 text-exclu-space/50 hover:text-exclu-cloud hover:border-exclu-space/60 transition-colors flex items-center justify-center">
+                                <span className="text-[9px] font-bold leading-none">i</span>
+                            </button>
+                            <div className="
+                                hidden sm:block
+                                absolute left-0 bottom-[calc(100%+8px)] w-72 max-w-[calc(100vw-2rem)] z-50
+                                rounded-2xl border border-slate-200 dark:border-exclu-arsenic/60
+                                bg-white dark:bg-[#0e0e16]
+                                shadow-xl p-4
+                                opacity-0 translate-y-2 pointer-events-none
+                                group-hover/info:opacity-100 group-hover/info:translate-y-0 group-hover/info:pointer-events-auto
+                                transition-all duration-200 ease-out
+                            ">
+                                <p className="text-xs font-semibold text-slate-900 dark:text-exclu-cloud mb-2">How it works 💡</p>
+                                <div className="space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-exclu-space/80">
+                                    <p>
+                                        <span className="font-medium text-slate-900 dark:text-exclu-cloud">For you :</span>{' '}
+                                        We give you <span className="text-primary font-semibold">35%</span> of the revenue Exclu generates from your referrals. Withdrawals start at $100.
+                                    </p>
+                                    <p>
+                                        <span className="font-medium text-slate-900 dark:text-exclu-cloud">For friends :</span>{' '}
+                                        <span className="text-primary font-semibold">+$100</span> Bonus if they reach $1k in revenue within 90 days.
+                                    </p>
+                                    <p className="text-slate-400 dark:text-exclu-space/50 text-[10px] pt-1 border-t border-slate-200 dark:border-exclu-arsenic/40">
+                                        *Each referral doubles as an entry ticket to win our monthly Mystery Box: Birkins, Cash Prizes.
+                                    </p>
                                 </div>
-
-                                {referralLink ? (
-                                    <div className="space-y-4">
-                                        {/* Link display + copy */}
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 min-w-0 rounded-xl border border-exclu-arsenic/50 bg-black/20 px-3 py-2.5">
-                                                <p className="text-xs text-exclu-space/80 font-mono truncate">
-                                                    {referralLink}
-                                                </p>
-                                            </div>
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant={linkCopied ? 'outline' : 'hero'}
-                                                className="rounded-xl px-4 flex-shrink-0 transition-all"
-                                                onClick={handleCopyLink}
-                                            >
-                                                {linkCopied ? (
-                                                    <span className="flex items-center gap-1.5">
-                                                        <Check className="w-3.5 h-3.5 text-green-400" />
-                                                        <span className="text-green-400">Copied!</span>
-                                                    </span>
-                                                ) : (
-                                                    <span className="flex items-center gap-1.5">
-                                                        <Copy className="w-3.5 h-3.5" />
-                                                        Copy
-                                                    </span>
-                                                )}
-                                            </Button>
-                                        </div>
-
-                                        {/* Email invite */}
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Mail className="w-3.5 h-3.5 text-exclu-space/50" />
-                                                <p className="text-xs text-exclu-space/60">Send a personal invite by email</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    type="email"
-                                                    placeholder="creator@example.com"
-                                                    value={inviteEmail}
-                                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSendEmail(); }}
-                                                    className="flex-1 h-10 bg-white border-exclu-arsenic/70 text-black placeholder:text-slate-500 text-sm"
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    variant="hero"
-                                                    size="sm"
-                                                    className="rounded-xl px-4 flex-shrink-0"
-                                                    onClick={handleSendEmail}
-                                                    disabled={isSendingEmail || !inviteEmail}
-                                                >
-                                                    {isSendingEmail ? (
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                    ) : (
-                                                        <span className="flex items-center gap-1.5">
-                                                            <Send className="w-3.5 h-3.5" />
-                                                            Send
-                                                        </span>
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        {/* Social share buttons */}
-                                        <div>
-                                            <p className="text-[11px] text-exclu-space/60 mb-2">Share on social media</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {[
-                                                    {
-                                                        platform: 'twitter',
-                                                        label: 'X (Twitter)',
-                                                        icon: <SiX className="w-3.5 h-3.5" />,
-                                                        gradient: 'from-slate-700 to-slate-900',
-                                                    },
-                                                    {
-                                                        platform: 'telegram',
-                                                        label: 'Telegram',
-                                                        icon: <SiTelegram className="w-3.5 h-3.5" />,
-                                                        gradient: 'from-sky-500 to-cyan-500',
-                                                    },
-                                                    {
-                                                        platform: 'instagram',
-                                                        label: 'Instagram',
-                                                        icon: <SiInstagram className="w-3.5 h-3.5" />,
-                                                        gradient: 'from-orange-500 to-pink-500',
-                                                    },
-                                                    {
-                                                        platform: 'tiktok',
-                                                        label: 'TikTok',
-                                                        icon: <SiTiktok className="w-3.5 h-3.5" />,
-                                                        gradient: 'from-[#ff0050] to-[#00f2ea]',
-                                                    },
-                                                    {
-                                                        platform: 'snapchat',
-                                                        label: 'Snapchat',
-                                                        icon: <SiSnapchat className="w-3.5 h-3.5" />,
-                                                        gradient: 'from-yellow-300 to-yellow-500',
-                                                    },
-                                                ].map(({ platform, label, icon, gradient }) => (
-                                                    <motion.button
-                                                        key={platform}
-                                                        type="button"
-                                                        whileHover={{ scale: 1.05 }}
-                                                        whileTap={{ scale: 0.97 }}
-                                                        onClick={() => handleSocialShare(platform)}
-                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-white bg-gradient-to-r ${gradient} shadow-sm`}
-                                                    >
-                                                        {icon}
-                                                        {label}
-                                                    </motion.button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-exclu-space/60">Generating your referral code…</p>
-                                )}
+                                <div className="absolute -bottom-1.5 left-3 w-3 h-3 rotate-45 border-b border-r border-slate-200 dark:border-exclu-arsenic/60 bg-white dark:bg-[#0e0e16]" />
                             </div>
+                        </div>
+                    </div>
 
-                            {/* Payout / Earnings pot */}
-                            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <DollarSign className="w-4 h-4 text-exclu-space/60" />
-                                    <p className="text-sm font-semibold text-exclu-cloud">Your earnings pot</p>
-                                </div>
-                                <div className="flex items-end justify-between gap-4">
-                                    <div>
-                                        <p className="text-3xl font-bold text-exclu-cloud">
-                                            {formatAmount(affiliateEarningsCents)}
-                                        </p>
-                                        <p className="text-xs text-exclu-space/60 mt-1">
-                                            {canRequestPayout
-                                                ? 'Payout available — contact us to request a withdrawal.'
-                                                : `Accumulate ${formatAmount(MIN_PAYOUT_CENTS)} to unlock your first payout.`}
-                                        </p>
-                                    </div>
-                                    {canRequestPayout && (
-                                        <a
-                                            href="mailto:hello@exclu.at?subject=Affiliate payout request"
-                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold text-black hover:opacity-90 transition-opacity"
-                                            style={{ background: gradientPreview }}
-                                        >
-                                            <ExternalLink className="w-3.5 h-3.5" />
-                                            Request payout
-                                        </a>
-                                    )}
-                                </div>
+                    <div className="flex gap-2">
+                        <div className="flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-exclu-arsenic/50 bg-white dark:bg-black/30 px-3 py-2.5">
+                            <p className="text-xs text-black dark:text-exclu-space/80 font-mono truncate">{referralLink ?? 'Generating…'}</p>
+                        </div>
+                        <Button
+                            type="button" size="sm"
+                            variant={referralLinkCopied ? 'outline' : 'hero'}
+                            className="rounded-xl px-4 flex-shrink-0 transition-all"
+                            onClick={handleCopy}
+                            disabled={!referralLink}
+                        >
+                            {referralLinkCopied
+                                ? <span className="flex items-center gap-1.5 text-green-400"><Check className="w-3.5 h-3.5" />Copied!</span>
+                                : <span className="flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" />Copy</span>}
+                        </Button>
+                    </div>
 
-                                {/* Progress bar */}
-                                <div className="mt-4">
-                                    <div className="h-1.5 rounded-full bg-exclu-arsenic/40 overflow-hidden">
-                                        <motion.div
-                                            className="h-full rounded-full"
-                                            style={{
-                                                background: gradientPreview,
-                                                width: `${Math.min(100, (affiliateEarningsCents / MIN_PAYOUT_CENTS) * 100)}%`,
-                                            }}
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${Math.min(100, (affiliateEarningsCents / MIN_PAYOUT_CENTS) * 100)}%` }}
-                                            transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
-                                        />
+                    <div>
+                        <p className="text-[11px] text-exclu-space/60 mb-2 flex items-center gap-1.5"><Mail className="w-3 h-3" />Send a personal invite by email</p>
+                        <div className="flex gap-2">
+                            <input
+                                type="email"
+                                placeholder="creator@example.com"
+                                value={inviteEmail}
+                                onChange={(e) => setInviteEmail(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleSendEmail(); }}
+                                className="flex-1 h-9 rounded-xl border border-slate-200 dark:border-exclu-arsenic/50 bg-white dark:bg-black/30 px-3 text-sm text-black dark:text-exclu-cloud placeholder:text-slate-400 dark:placeholder:text-exclu-space/40 outline-none focus:ring-1 focus:ring-primary/50"
+                            />
+                            <Button
+                                type="button" variant="hero" size="sm"
+                                className="rounded-xl px-3 flex-shrink-0"
+                                onClick={handleSendEmail}
+                                disabled={isSendingEmail || !inviteEmail}
+                            >
+                                {isSendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span className="flex items-center gap-1"><Send className="w-3 h-3" />Send</span>}
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-[11px] text-exclu-space/60 mb-3">Share on social media</p>
+                        <div className="grid grid-cols-4 gap-2">
+                            {socialPlatformsList.map(({ p, label, icon, gradient }) => (
+                                <button
+                                    key={p}
+                                    type="button"
+                                    onClick={() => handleShare(p)}
+                                    className="flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl border border-exclu-arsenic/60 bg-exclu-arsenic/10 hover:bg-exclu-arsenic/20 hover:border-exclu-arsenic/80 transition-all group"
+                                >
+                                    <div className={`w-9 h-9 rounded-full bg-gradient-to-r ${gradient} flex items-center justify-center text-white flex-shrink-0`}>
+                                        {icon}
                                     </div>
-                                    <div className="mt-1 flex justify-between">
-                                        <span className="text-[10px] text-exclu-space/50">$0</span>
-                                        <span className="text-[10px] text-exclu-space/50">${MIN_PAYOUT_CENTS / 100} min.</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
+                                    <p className="text-[10px] font-medium text-exclu-cloud/80 group-hover:text-exclu-cloud truncate w-full text-center">{label}</p>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Activity table */}
+                <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-exclu-arsenic/40 flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Recruitment history</p>
+                        {referrals.length > 0 && <p className="text-[11px] text-exclu-space/70">{referrals.length} creator{referrals.length > 1 ? 's' : ''}</p>}
+                    </div>
+
+                    {referrals.length === 0 && (
+                        <p className="px-5 py-6 text-sm text-exclu-space/80">
+                            No recruitments yet — share your link to start earning!
+                        </p>
                     )}
 
-                    {activeTab === 'history' && (
-                        <motion.div
-                            key="history"
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.25 }}
-                        >
-                            <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-                                {referrals.length === 0 ? (
-                                    <div className="p-10 flex flex-col items-center gap-3 text-center">
-                                        <div className="w-12 h-12 rounded-full bg-exclu-arsenic/30 flex items-center justify-center">
-                                            <Users className="w-5 h-5 text-exclu-space/40" />
-                                        </div>
-                                        <p className="text-sm text-exclu-space/60">
-                                            No recruitments yet — share your link to start earning!
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Table header */}
-                                        <div className="grid grid-cols-12 gap-2 px-5 py-3 border-b border-exclu-arsenic/40 text-[10px] uppercase tracking-widest text-exclu-space/50">
-                                            <div className="col-span-5">Creator</div>
-                                            <div className="col-span-3">Date</div>
-                                            <div className="col-span-2">Status</div>
-                                            <div className="col-span-2 text-right">Commission</div>
-                                        </div>
-
-                                        {/* Rows */}
-                                        <div className="divide-y divide-exclu-arsenic/30">
-                                            {referrals.map((referral, index) => (
-                                                <motion.div
-                                                    key={referral.id}
-                                                    initial={{ opacity: 0, x: -8 }}
-                                                    animate={{ opacity: 1, x: 0 }}
-                                                    transition={{ duration: 0.3, delay: index * 0.04 }}
-                                                    className="grid grid-cols-12 gap-2 px-5 py-4 items-center hover:bg-white/[0.02] transition-colors"
-                                                >
-                                                    {/* Creator */}
-                                                    <div className="col-span-5 flex items-center gap-2.5 min-w-0">
-                                                        <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-exclu-arsenic/40">
-                                                            {referral.referred_avatar_url ? (
-                                                                <img
-                                                                    src={referral.referred_avatar_url}
-                                                                    alt={referral.referred_display_name || ''}
-                                                                    className="w-full h-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="w-full h-full flex items-center justify-center text-[11px] font-bold text-exclu-space/60">
-                                                                    {(referral.referred_display_name || referral.referred_handle || '?').charAt(0).toUpperCase()}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-medium text-exclu-cloud truncate">
-                                                                {referral.referred_display_name || referral.referred_handle || 'Anonymous'}
-                                                            </p>
-                                                            {referral.referred_handle && (
-                                                                <p className="text-[10px] text-exclu-space/50 truncate">
-                                                                    @{referral.referred_handle}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Date */}
-                                                    <div className="col-span-3">
-                                                        <p className="text-xs text-exclu-space/70 flex items-center gap-1">
-                                                            <Clock className="w-3 h-3 text-exclu-space/40 flex-shrink-0" />
-                                                            {formatDate(referral.created_at)}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Status */}
-                                                    <div className="col-span-2">
-                                                        <span
-                                                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${referral.status === 'converted'
-                                                                ? 'bg-green-500/15 text-green-400'
-                                                                : referral.status === 'inactive'
-                                                                    ? 'bg-red-500/10 text-red-400/80'
-                                                                    : 'bg-amber-500/15 text-amber-400'
-                                                                }`}
-                                                        >
-                                                            {referral.status === 'converted'
-                                                                ? 'Premium'
-                                                                : referral.status === 'inactive'
-                                                                    ? 'Inactive'
-                                                                    : 'Pending'}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* Commission */}
-                                                    <div className="col-span-2 text-right">
-                                                        <p className={`text-xs font-semibold ${referral.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}`}>
-                                                            {referral.commission_earned_cents > 0
-                                                                ? formatAmount(referral.commission_earned_cents)
-                                                                : '—'}
-                                                        </p>
-                                                    </div>
-                                                </motion.div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </motion.div>
+                    {referrals.length > 0 && (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full text-sm">
+                                <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
+                                    <tr>
+                                        <th className="px-5 py-2 text-left">Creator</th>
+                                        <th className="px-3 py-2 text-left">Date</th>
+                                        <th className="px-3 py-2 text-left">Status</th>
+                                        <th className="px-3 py-2 text-right">Commission</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {referrals.map((r: any) => (
+                                        <tr key={r.id} className="border-t border-exclu-arsenic/40 hover:bg-white/[0.02] transition-colors">
+                                            <td className="px-5 py-3 text-exclu-cloud font-medium">
+                                                {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                                                {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
+                                            </td>
+                                            <td className="px-3 py-3 text-exclu-space/80 text-xs">
+                                                {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </td>
+                                            <td className="px-3 py-3">
+                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${r.status === 'converted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                                    : r.status === 'inactive' ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                                        : 'bg-blue-500/10 text-blue-300 border border-blue-500/40'
+                                                    }`}>
+                                                    {r.status === 'converted' ? 'Premium' : r.status === 'inactive' ? 'Inactive' : 'Free'}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-3 text-right font-medium">
+                                                <span className={r.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}>
+                                                    {r.commission_earned_cents > 0 ? fmtAmt(r.commission_earned_cents) : '—'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
-                </AnimatePresence>
+                </div>
             </main>
         </AppShell>
     );

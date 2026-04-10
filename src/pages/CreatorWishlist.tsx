@@ -13,6 +13,22 @@ import {
   Sparkles, Package, Upload, Link as LinkIcon, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface PresetItem {
   id: string;
@@ -60,6 +76,111 @@ const DEFAULT_EMOJI = '🎁';
 const EMOJI_OPTIONS = ['🎁', '💻', '👠', '🛍️', '🛒', '🍽️', '💆', '💐', '🌸', '✈️', '🥂', '💄', '👜', '💎', '🎀', '🌴', '🎧', '👟'];
 
 type Tab = 'manage' | 'received';
+
+interface SortableWishlistItemProps {
+  item: WishlistItem;
+  togglingId: string | null;
+  deletingId: string | null;
+  onToggleVisibility: (item: WishlistItem) => void;
+  onEdit: (item: WishlistItem) => void;
+  onDelete: (id: string) => void;
+  formatPrice: (cents: number) => string;
+}
+
+const SortableWishlistItem = ({ item, togglingId, deletingId, onToggleVisibility, onEdit, onDelete, formatPrice }: SortableWishlistItemProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors ${item.is_visible ? 'border-border/50' : 'border-border/30 opacity-60'}`}
+    >
+      <button
+        type="button"
+        className="w-4 h-4 text-muted-foreground/40 flex-shrink-0 cursor-grab active:cursor-grabbing hidden sm:block touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+
+      <div className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden bg-muted flex items-center justify-center">
+        {item.image_url ? (
+          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-3xl">{item.emoji || DEFAULT_EMOJI}</span>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-semibold text-foreground truncate">{item.name}</p>
+          {!item.is_visible && (
+            <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">Hidden</span>
+          )}
+        </div>
+        {item.description && (
+          <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
+        )}
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <span className="text-sm font-medium text-[#a3e635]">{formatPrice(item.price_cents)}</span>
+          <span className="text-xs text-muted-foreground">
+            {item.gifted_count} gifted
+            {item.max_quantity !== null ? ` / ${item.max_quantity}` : ''}
+            {item.max_quantity !== null && item.gifted_count >= item.max_quantity && (
+              <span className="ml-1 text-green-400 font-medium">· Fulfilled ✓</span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {item.gift_url && (
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={() => window.open(item.gift_url!, '_blank', 'noopener')}
+            className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            title="Open gift link"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </motion.button>
+        )}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => onToggleVisibility(item)}
+          disabled={togglingId === item.id}
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title={item.is_visible ? 'Hide from profile' : 'Show on profile'}
+        >
+          {togglingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : item.is_visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => onEdit(item)}
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <Pencil className="w-4 h-4" />
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={() => onDelete(item.id)}
+          disabled={deletingId === item.id}
+          className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+        >
+          {deletingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+        </motion.button>
+      </div>
+    </div>
+  );
+};
 
 const CreatorWishlist = () => {
   const { activeProfile } = useProfiles();
@@ -269,6 +390,28 @@ const CreatorWishlist = () => {
     setTogglingId(null);
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = items.findIndex((i) => i.id === active.id);
+    const newIndex = items.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(items, oldIndex, newIndex);
+    setItems(reordered);
+
+    const updates = reordered.map((item, idx) => ({ id: item.id, sort_order: idx }));
+    for (const u of updates) {
+      await supabase.from('wishlist_items').update({ sort_order: u.sort_order }).eq('id', u.id);
+    }
+  };
+
   const markGiftsAsRead = async () => {
     if (!creatorId || unreadGiftsCount === 0) return;
     await supabase
@@ -293,13 +436,13 @@ const CreatorWishlist = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-6xl mx-auto">
+      <main className="px-4 lg:px-6 pb-16 w-full">
         {/* Header */}
         <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud mb-1">Wishlist</h1>
             <p className="text-exclu-space text-xs sm:text-sm max-w-xl">
-              Let your fans treat you — they gift, the money goes straight to your Stripe account.
+              Let your fans treat you — they gift, the money goes straight to your wallet.
             </p>
           </div>
           <Button
@@ -570,87 +713,24 @@ const CreatorWishlist = () => {
                   </Button>
                 </div>
               ) : !showAddModal && items.length > 0 ? (
-                <div className="space-y-3">
-                  {items.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      layout
-                      className={`group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors ${item.is_visible ? 'border-border/50' : 'border-border/30 opacity-60'}`}
-                    >
-                      <GripVertical className="w-4 h-4 text-muted-foreground/40 flex-shrink-0 cursor-grab hidden sm:block" />
-
-                      {/* Image / Emoji */}
-                      <div className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden bg-muted flex items-center justify-center">
-                        {item.image_url ? (
-                          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-3xl">{item.emoji || DEFAULT_EMOJI}</span>
-                        )}
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-foreground truncate">{item.name}</p>
-                          {!item.is_visible && (
-                            <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">Hidden</span>
-                          )}
-                        </div>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
-                        )}
-                        <div className="flex items-center gap-3 mt-1 flex-wrap">
-                          <span className="text-sm font-medium text-[#a3e635]">{formatPrice(item.price_cents)}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {item.gifted_count} gifted
-                            {item.max_quantity !== null ? ` / ${item.max_quantity}` : ''}
-                            {item.max_quantity !== null && item.gifted_count >= item.max_quantity && (
-                              <span className="ml-1 text-green-400 font-medium">· Fulfilled ✓</span>
-                            )}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {item.gift_url && (
-                          <motion.button
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => window.open(item.gift_url, '_blank', 'noopener')}
-                            className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                            title="Open gift link"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </motion.button>
-                        )}
-                        <motion.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleToggleVisibility(item)}
-                          disabled={togglingId === item.id}
-                          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                          title={item.is_visible ? 'Hide from profile' : 'Show on profile'}
-                        >
-                          {togglingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : item.is_visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                        </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => openEdit(item)}
-                          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </motion.button>
-                        <motion.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleDelete(item.id)}
-                          disabled={deletingId === item.id}
-                          className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          {deletingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                        </motion.button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-3">
+                      {items.map((item) => (
+                        <SortableWishlistItem
+                          key={item.id}
+                          item={item}
+                          togglingId={togglingId}
+                          deletingId={deletingId}
+                          onToggleVisibility={handleToggleVisibility}
+                          onEdit={openEdit}
+                          onDelete={handleDelete}
+                          formatPrice={formatPrice}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
               ) : null}
             </motion.div>
           )}

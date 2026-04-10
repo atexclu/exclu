@@ -1,8 +1,7 @@
 /**
  * create-link-checkout — Generate QuickPay form fields for a link purchase.
  *
- * Replaces create-link-checkout-session (Stripe).
- * Instead of creating a Stripe Checkout session, this:
+ * Generates QuickPay form fields for UGPayments checkout. This:
  *   1. Validates the link and creator
  *   2. Resolves chatter attribution (if chtref present)
  *   3. Calculates the commission split

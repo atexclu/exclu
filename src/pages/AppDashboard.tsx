@@ -48,21 +48,12 @@ const AppDashboard = () => {
   const [profileName, setProfileName] = useState<string>('');
   const [profileHandle, setProfileHandle] = useState<string | null>(null);
   const [profileViewCount, setProfileViewCount] = useState<number | null>(null);
-  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
-  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
-  const [showStripeModal, setShowStripeModal] = useState(false);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [commissionRate, setCommissionRate] = useState(0.10);
-  const [connectPhaseIndex, setConnectPhaseIndex] = useState(0);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const stripeConnectPhases = [
-    'Preparing a secure connection with Stripe…',
-    'Creating your Stripe onboarding link…',
-    'Almost ready, redirecting you to Stripe…',
-  ];
 
   useEffect(() => {
     let isMounted = true;
@@ -111,10 +102,9 @@ const AppDashboard = () => {
       }
 
       try {
-        // Profile (display_name for greeting + stripe_connect_status + premium flag)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, stripe_connect_status, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents')
+          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents')
           .eq('id', user.id)
           .single();
 
@@ -263,7 +253,6 @@ const AppDashboard = () => {
           setProfileName(activeProfile?.display_name || profile.display_name || 'Creator');
           setProfileHandle(activeProfile?.username || profile.handle || null);
           setProfileViewCount(activeProfile?.profile_view_count ?? profile.profile_view_count ?? 0);
-          setStripeConnectStatus(profile.stripe_connect_status || null);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
@@ -317,8 +306,8 @@ const AppDashboard = () => {
 
           // Show bank setup modal if payout not configured (only once per session)
           const bankModalDismissed = sessionStorage.getItem('bankModalDismissed');
-          if (!profile.payout_setup_complete && profile.stripe_connect_status !== 'complete' && !bankModalDismissed) {
-            setShowStripeModal(true); // Reusing same state name for the modal
+          if (!profile.payout_setup_complete && !bankModalDismissed) {
+            setShowPayoutModal(true);
           }
         }
       } catch (err) {
@@ -333,7 +322,6 @@ const AppDashboard = () => {
     fetchMetrics();
 
     // --- SELF-HEALING: REFRESH ON TAB FOCUS ---
-    // This helps when a user goes to Stripe/Email and comes back
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchMetrics();
@@ -347,17 +335,9 @@ const AppDashboard = () => {
     };
   }, [activeProfile?.id]);
 
-  // We removed the stripe_onboarding=return effect here
-  // because the user is now redirected to /app/stripe-validation.
-
-  // handleStripeConnect removed — replaced by IBAN setup in Profile.tsx
-  const handleStripeConnect = async () => {
-    window.location.href = '/app/settings#payments';
-  };
-
-  const handleDismissStripeModal = () => {
+  const handleDismissPayoutModal = () => {
     sessionStorage.setItem('bankModalDismissed', 'true');
-    setShowStripeModal(false);
+    setShowPayoutModal(false);
   };
 
   const formattedRevenue = (totalRevenueCents / 100).toLocaleString('en-US', {
@@ -366,21 +346,6 @@ const AppDashboard = () => {
   });
 
   const publicProfileUrl = profileHandle ? `${window.location.origin}/${profileHandle}` : null;
-
-  // While we are starting the Stripe Connect flow, show a small phased status message
-  // so creators understand that the redirect can take a few seconds.
-  useEffect(() => {
-    if (!isConnectingStripe) {
-      setConnectPhaseIndex(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setConnectPhaseIndex((prev) => (prev + 1) % stripeConnectPhases.length);
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [isConnectingStripe]);
 
   const buildSeries = (
     metric: 'profile_views' | 'sales' | 'revenue',
@@ -449,15 +414,15 @@ const AppDashboard = () => {
 
   return (
     <AppShell>
-      {/* Stripe Connect Modal */}
+      {/* Payout Setup Modal */}
       <AnimatePresence>
-        {showStripeModal && (
+        {showPayoutModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-            onClick={handleDismissStripeModal}
+            onClick={handleDismissPayoutModal}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -469,7 +434,7 @@ const AppDashboard = () => {
             >
               <button
                 type="button"
-                onClick={handleDismissStripeModal}
+                onClick={handleDismissPayoutModal}
                 className="absolute top-4 right-4 text-exclu-space/60 hover:text-exclu-cloud transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -514,8 +479,8 @@ const AppDashboard = () => {
                   size="lg"
                   className="w-full rounded-full"
                   onClick={() => {
-                    handleDismissStripeModal();
-                    window.location.href = '/app/settings#payments';
+                    handleDismissPayoutModal();
+                    window.location.href = '/app/earnings';
                   }}
                 >
                   <Landmark className="w-4 h-4 mr-2" />
@@ -523,7 +488,7 @@ const AppDashboard = () => {
                 </Button>
                 <button
                   type="button"
-                  onClick={handleDismissStripeModal}
+                  onClick={handleDismissPayoutModal}
                   className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors py-2"
                 >
                   I'll do this later
@@ -534,7 +499,7 @@ const AppDashboard = () => {
         )}
       </AnimatePresence>
 
-      <main className="px-4 pb-16 max-w-6xl mx-auto">
+      <main className="px-4 lg:px-6 pb-16 w-full">
         {/* Simple header with greeting */}
         <section className="mt-4 sm:mt-6 mb-6">
           <div className="flex items-center justify-between gap-3">
@@ -543,7 +508,7 @@ const AppDashboard = () => {
                 <span>Welcome back{profileName ? <>, <span className="text-black dark:text-[#CFFF16]">{profileName}</span></> : ''}</span>
               </h1>
               <p className="text-sm text-exclu-space/70 mt-1">
-                Here's an overview of your performance <span className="text-[10px] opacity-30">v{APP_DASHBOARD_VERSION}</span>
+                Here's an overview of your performance
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -599,42 +564,6 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
-        {/* Notice for creators with existing links but incomplete or limited Stripe Connect — temporarily hidden */}
-        {false && !isLoading && !error && totalLinks > 0 && stripeConnectStatus !== 'complete' && (
-          <section className="mb-4 max-w-2xl">
-            <div className="rounded-2xl border border-amber-500/50 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-[13px]">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <CreditCard className="w-3.5 h-3.5 text-amber-900 dark:text-amber-300" />
-                </div>
-                <div className="space-y-0.5">
-                  <p className="font-medium text-amber-900 dark:text-amber-100">
-                    {stripeConnectStatus === 'restricted'
-                      ? 'Action needed to restore payouts on Stripe'
-                      : 'Finish your Stripe payout setup to unlock payments'}
-                  </p>
-                  <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-100/80">
-                    {stripeConnectStatus === 'restricted'
-                      ? 'Stripe has temporarily limited your payout account. Open Stripe to provide the missing information or fix any issues so payouts can be enabled again.'
-                      : 'Fans can already see your links, but checkout is disabled until you complete your payout details on Stripe.'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex-shrink-0 flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="hero"
-                  className="rounded-full px-3 py-1 text-xs whitespace-nowrap"
-                  onClick={handleStripeConnect}
-                  disabled={isConnectingStripe}
-                >
-                  {isConnectingStripe ? 'Redirecting…' : 'Finish Stripe setup'}
-                </Button>
-              </div>
-            </div>
-          </section>
-        )}
 
         {/* Metrics / Earnings / Referral toggle */}
         <section className="mt-1 mb-4">
@@ -1097,8 +1026,7 @@ const AppDashboard = () => {
             setIsSendingEmail(true);
             try {
               const { data: { session } } = await supabase.auth.getSession();
-              // Use x-supabase-auth header — same pattern as stripe-connect-onboard
-              // to avoid Supabase gateway JWT validation conflict
+              // Use x-supabase-auth header to avoid Supabase gateway JWT validation conflict
               const { error } = await supabase.functions.invoke('send-referral-invite', {
                 body: { to_email: inviteEmail },
                 headers: {

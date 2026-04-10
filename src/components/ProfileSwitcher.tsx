@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check, ChevronDown, Users, Building2 } from 'lucide-react';
+import { Plus, Check, ChevronDown } from 'lucide-react';
 import { useProfiles, CreatorProfile } from '@/contexts/ProfileContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -145,12 +145,14 @@ export function ProfileSwitcherOverlay() {
   );
 }
 
-export function ProfileSwitcherDropdown() {
-  const { profiles, activeProfile, setActiveProfileId, setShowProfileSwitcher, isAgency } = useProfiles();
+export function ProfileSwitcherDropdown({ openDirection = 'up' }: { openDirection?: 'up' | 'down' } = {}) {
+  const { profiles, activeProfile, setActiveProfileId, isAgency } = useProfiles();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
   if (!activeProfile || profiles.length <= 1) return null;
+
+  const isUp = openDirection === 'up';
 
   const handleSwitch = (profileId: string) => {
     setActiveProfileId(profileId);
@@ -161,21 +163,24 @@ export function ProfileSwitcherDropdown() {
     <div className="relative">
       <motion.button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl hover:bg-muted/50 transition-colors"
+        className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-muted/50 transition-colors w-full"
         whileTap={{ scale: 0.97 }}
       >
-        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-        <div className="hidden sm:block text-right max-w-[120px]">
-          <p className="text-xs font-medium truncate text-foreground">
-            {activeProfile.display_name || activeProfile.username}
-          </p>
-          {isAgency && (
-            <p className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
-              <Building2 className="w-2.5 h-2.5" />
-              {profiles.length} profiles
-            </p>
+        <div className="w-7 h-7 rounded-full overflow-hidden border border-border/60 flex-shrink-0 bg-muted">
+          {activeProfile.avatar_url ? (
+            <img src={activeProfile.avatar_url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+              {(activeProfile.display_name || activeProfile.username || '?')[0]?.toUpperCase()}
+            </div>
           )}
         </div>
+        <div className="flex-1 min-w-0 text-left">
+          <p className="text-xs font-medium truncate text-foreground max-w-[140px]">
+            {activeProfile.display_name || activeProfile.username}
+          </p>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
       </motion.button>
 
       <AnimatePresence>
@@ -189,11 +194,13 @@ export function ProfileSwitcherDropdown() {
               onClick={() => setOpen(false)}
             />
             <motion.div
-              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              initial={{ opacity: 0, y: isUp ? -8 : 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.96 }}
+              exit={{ opacity: 0, y: isUp ? -8 : 8, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              className="absolute top-full right-0 mt-2 w-64 z-50 rounded-xl border border-border/60 bg-card shadow-xl overflow-hidden"
+              className={`absolute ${
+                isUp ? 'bottom-full left-0 mb-2' : 'top-full right-0 mt-2'
+              } w-64 max-w-[calc(100vw-2rem)] z-50 rounded-xl border border-border/60 bg-card shadow-xl overflow-hidden`}
             >
               <div className="p-2 border-b border-border/40">
                 <p className="text-xs font-medium text-muted-foreground px-2 py-1">Switch Profile</p>
@@ -238,19 +245,6 @@ export function ProfileSwitcherDropdown() {
                     <Plus className="w-4 h-4 text-muted-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">Add Profile</p>
-                </motion.button>
-                <motion.button
-                  onClick={() => {
-                    setOpen(false);
-                    navigate('/app/agency');
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted/50 transition-colors"
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Building2 className="w-4 h-4 text-primary" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Agency Panel</p>
                 </motion.button>
               </div>
             </motion.div>

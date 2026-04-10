@@ -1,13 +1,15 @@
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
+import Aurora from '@/components/ui/Aurora';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Mail, Lock, Heart, ArrowLeft, User } from 'lucide-react';
+import { Mail, Lock, Heart, ArrowLeft, User, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
-import logo from '@/assets/logo-white.svg';
 
 interface CreatorPreview {
   id: string;
@@ -19,6 +21,7 @@ interface CreatorPreview {
 const FanSignup = () => {
   const [mode, setMode] = useState<'signup' | 'login' | 'reset'>('signup');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [creatorPreview, setCreatorPreview] = useState<CreatorPreview | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -195,37 +198,31 @@ const FanSignup = () => {
   const displayName = creatorPreview?.display_name || creatorHandle || '';
 
   return (
-    <div className="min-h-screen bg-background text-foreground relative overflow-hidden">
-      {/* Background effects */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-40 -left-24 h-64 w-64 rounded-full bg-pink-500/15 blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -right-24 h-72 w-72 rounded-full bg-purple-500/15 blur-3xl animate-[pulse_7s_ease-in-out_infinite]" />
+    <div className="min-h-screen bg-background text-foreground relative">
+      {/* Aurora background — same treatment as /auth */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-30">
+        <Aurora colorStops={['#CFFF16', '#a3e635', '#CFFF16']} blend={0.5} amplitude={0.7} speed={0.6} />
       </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4">
-        <a href="/" className="flex items-center gap-2">
-          <img src={logo} alt="Exclu" className="h-5" />
-        </a>
-        {creatorHandle && (
-          <button
-            type="button"
-            onClick={() => navigate(`/${creatorHandle}`)}
-            className="flex items-center gap-1.5 text-xs text-exclu-space/80 hover:text-exclu-cloud transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to {displayName || 'profile'}
-          </button>
-        )}
-      </div>
-
-      <main className="px-4 pt-8 pb-10 flex items-start sm:items-center justify-center min-h-[calc(100vh-4rem)]">
+      <Navbar />
+      <main className="min-h-[calc(100vh-5rem)] px-4 pt-28 pb-10 flex items-start sm:items-center justify-center relative z-10 overflow-hidden">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, ease: 'easeOut' }}
           className="w-full max-w-md space-y-6"
         >
+          {creatorHandle && (
+            <button
+              type="button"
+              onClick={() => navigate(`/${creatorHandle}`)}
+              className="inline-flex items-center gap-1.5 text-xs text-exclu-space/80 hover:text-exclu-cloud transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to {displayName || 'profile'}
+            </button>
+          )}
+
           {/* Creator preview card */}
           {creatorPreview && (
             <motion.div
@@ -391,16 +388,26 @@ const FanSignup = () => {
                       <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
                       Password
                     </label>
-                    <Input
-                      id="fan-password"
-                      name="password"
-                      type="password"
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      placeholder={mode === 'signup' ? 'Create a password' : 'Your password'}
-                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                      minLength={6}
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="fan-password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                        placeholder={mode === 'signup' ? 'Create a password' : 'Your password'}
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pr-10"
+                        minLength={6}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -464,6 +471,7 @@ const FanSignup = () => {
           </p>
         </motion.div>
       </main>
+      <Footer />
     </div>
   );
 };

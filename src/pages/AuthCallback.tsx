@@ -64,6 +64,31 @@ const AuthCallback = () => {
       return profile?.role ?? null;
     };
 
+    const claimGuestSessions = async (userId: string) => {
+      const sessionKeys: string[] = [];
+      const chatOpenKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('exclu_guest_session_')) sessionKeys.push(key);
+        if (key?.startsWith('exclu_guest_chat_open_')) chatOpenKeys.push(key);
+      }
+      for (const key of sessionKeys) {
+        const token = localStorage.getItem(key);
+        if (!token) continue;
+        try {
+          await supabase.functions.invoke('guest-chat-claim', {
+            body: { session_token: token, user_id: userId },
+          });
+        } catch {
+          // Silent — claim is best-effort
+        }
+        localStorage.removeItem(key);
+      }
+      for (const key of chatOpenKeys) {
+        localStorage.removeItem(key);
+      }
+    };
+
     const autoFavoriteCreator = async (userId: string) => {
       const { data: { user } } = await supabase.auth.getUser();
       const favoriteHandle = user?.user_metadata?.favorite_creator as string | undefined;
@@ -94,17 +119,20 @@ const AuthCallback = () => {
           console.error('[AuthCallback] verifyOtp error:', error.message);
           // Token may already be consumed (double-click) — check for existing session
           const role = await resolveRole();
-          if (isCreator !== null) {
-            redirectAfterAuth(isCreator);
+          if (role !== null) {
+            redirectAfterAuth(role);
           } else {
             navigate('/auth?error=link_expired', { replace: true });
           }
           return;
         }
-        // Auto-favorite creator for new fan signups
+        // Auto-favorite creator for new fan signups + claim guest sessions
         const { data: { session } } = await supabase.auth.getSession();
-        if (session && type === 'signup') {
-          await autoFavoriteCreator(session.user.id);
+        if (session) {
+          if (type === 'signup') {
+            await autoFavoriteCreator(session.user.id);
+          }
+          await claimGuestSessions(session.user.id);
         }
         const role = await resolveRole();
         redirectAfterAuth(role);
@@ -112,6 +140,10 @@ const AuthCallback = () => {
       }
 
       // Case 2: Supabase verified server-side and redirected here — session should be live
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession) {
+        await claimGuestSessions(existingSession.user.id);
+      }
       const role = await resolveRole();
       if (role !== null) {
         redirectAfterAuth(role);

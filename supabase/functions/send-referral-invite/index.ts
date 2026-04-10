@@ -23,7 +23,7 @@ if (!brevoApiKey || !brevoSenderEmail) {
 // Admin client (service role) for profile reads/writes
 const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceRoleKey!);
 
-// Rate limiting (same pattern as stripe-connect-onboard)
+// Rate limiting
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 10;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
@@ -142,7 +142,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    // --- Auth: same pattern as stripe-connect-onboard ---
+    // --- Auth: token from x-supabase-auth header ---
     // Read token from x-supabase-auth header (avoids Supabase gateway JWT validation
     // conflicting with the user access token in the Authorization header).
     const rawToken =

@@ -1,7 +1,7 @@
 /**
  * ugp-confirm — UG Payments QuickPay ConfirmURL callback handler.
  *
- * Replaces stripe-webhook for processing payment confirmations.
+ * Processes UGPayments payment confirmations.
  * Called by UGPayments via HTTP POST (application/x-www-form-urlencoded)
  * BEFORE the customer is redirected to the ApprovedURL.
  *
@@ -61,8 +61,9 @@ serve(async (req) => {
   const merchantRef = body.MerchantReference || '';
   const amount = body.Amount || '0';
 
-  // ── 1. Verify Key FIRST (before logging to prevent audit log pollution) ──
-  if (confirmKey && body.Key !== confirmKey) {
+  // ── 1. Verify Key if present (standard ConfirmURL callbacks don't include Key,
+  //       only Membership Postbacks do — so only validate when actually sent) ──
+  if (confirmKey && body.Key && body.Key !== confirmKey) {
     console.error('Invalid Key in ConfirmURL callback. Got:', body.Key?.slice(0, 8) + '...');
     return new Response('Unauthorized', { status: 401 });
   }

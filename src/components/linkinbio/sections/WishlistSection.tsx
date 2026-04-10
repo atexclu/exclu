@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Gift, Eye, EyeOff, GripVertical, ExternalLink, Pencil, Check, Plus } from 'lucide-react';
+import { Gift, Eye, EyeOff, GripVertical, ExternalLink, Pencil } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,18 +21,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
-
-const QUICK_IDEAS = [
-  { emoji: '📱', name: 'iPhone', price_cents: 99900 },
-  { emoji: '👗', name: 'Cosplay Outfit', price_cents: 15000 },
-  { emoji: '🩱', name: 'Gym Wear', price_cents: 8000 },
-  { emoji: '🧴', name: 'Lingerie', price_cents: 12000 },
-  { emoji: '🍽️', name: 'Restaurant', price_cents: 10000 },
-  { emoji: '💅', name: 'Nails', price_cents: 6000 },
-  { emoji: '💐', name: 'Flowers', price_cents: 5000 },
-  { emoji: '💆', name: 'Spa', price_cents: 15000 },
-  { emoji: '✈️', name: 'Trip', price_cents: 50000 },
-];
 
 interface WishlistItem {
   id: string;
@@ -237,61 +225,6 @@ export function WishlistSection({ items, onUpdate }: WishlistSectionProps) {
             <span className="text-xs font-medium text-muted-foreground">Hidden</span>
           </div>
           <p className="text-2xl font-bold text-foreground">{hiddenCount}</p>
-        </div>
-      </div>
-
-      {/* Quick Ideas */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Gift className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Quick Ideas</h3>
-          <span className="text-xs text-muted-foreground ml-1">— tap to add</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {QUICK_IDEAS.map((idea) => {
-            const exists = orderedItems.some(
-              (i) => i.name === idea.name && i.emoji === idea.emoji
-            );
-            if (exists) {
-              return (
-                <div
-                  key={idea.name}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 text-xs font-medium border border-emerald-500/20 cursor-default"
-                >
-                  <Check className="w-3 h-3" />
-                  {idea.emoji} {idea.name}
-                </div>
-              );
-            }
-            return (
-              <button
-                key={idea.name}
-                type="button"
-                onClick={async () => {
-                  const { data: { user } } = await supabase.auth.getUser();
-                  if (!user) return;
-                  const { error } = await supabase.from('wishlist_items').insert({
-                    profile_id: user.id,
-                    name: idea.name,
-                    emoji: idea.emoji,
-                    price_cents: idea.price_cents,
-                    is_visible: true,
-                    sort_order: orderedItems.length,
-                  });
-                  if (error) {
-                    toast.error('Failed to add item');
-                  } else {
-                    toast.success(`${idea.emoji} ${idea.name} added!`);
-                    onUpdate();
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted hover:bg-muted/80 text-xs font-medium text-foreground transition-colors border border-transparent hover:border-primary/30"
-              >
-                <Plus className="w-3 h-3 text-primary" />
-                {idea.emoji} {idea.name} · ${(idea.price_cents / 100).toFixed(0)}
-              </button>
-            );
-          })}
         </div>
       </div>
 

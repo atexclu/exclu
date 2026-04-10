@@ -124,7 +124,8 @@ const Footer = () => {
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-exclu-arsenic/40 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-exclu-graphite text-sm">
-            © 2026 Exclu. All rights reserved.
+            © {new Date().getFullYear()}{' '}
+            <a href="/" className="hover:text-primary transition-colors">Exclu</a>. All rights reserved.
           </p>
           <p className="text-exclu-graphite text-sm">
             Made with 💜 for creators

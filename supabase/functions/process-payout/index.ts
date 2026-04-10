@@ -73,7 +73,7 @@ serve(async (req) => {
     // Fetch the payout
     const { data: payout, error: payoutErr } = await supabase
       .from('payouts')
-      .select('id, creator_id, amount_cents, status, bank_iban, bank_holder_name')
+      .select('id, creator_id, amount_cents, status, bank_iban, bank_holder_name, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_bic, bank_country')
       .eq('id', payoutId)
       .single();
 

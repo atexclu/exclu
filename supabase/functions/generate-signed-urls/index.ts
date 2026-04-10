@@ -53,7 +53,7 @@ serve(async (req: Request) => {
 
     // Verify the purchase exists — supports:
     // - Direct purchase ID (UGPayments flow: session_id = purchase UUID)
-    // - Legacy Stripe session ID (stripe_session_id field)
+    // - Legacy session ID (stripe_session_id field, pre-UGP purchases)
     // - Custom request delivery (session_id = "req_<request_id>")
     let purchase: { id: string } | null = null;
     let purchaseError: any = null;
@@ -94,12 +94,13 @@ serve(async (req: Request) => {
       if (byId) {
         purchase = byId;
       } else {
-        // Fallback: try by stripe_session_id (legacy Stripe flow)
+        // Fallback: try by stripe_session_id (legacy pre-UGP purchases)
         const { data: byStripe, error: byStripeErr } = await supabase
           .from('purchases')
           .select('id')
           .eq('stripe_session_id', session_id)
           .eq('link_id', link_id)
+          .eq('status', 'succeeded')
           .maybeSingle();
         purchase = byStripe;
         purchaseError = byStripeErr;

@@ -43,8 +43,6 @@ export default function CreateProfile() {
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [showAddonConfirm, setShowAddonConfirm] = useState(false);
-  const [parentStripeAccountId, setParentStripeAccountId] = useState<string | null>(null);
-  const [parentStripeStatus, setParentStripeStatus] = useState<string>('not_started');
 
   useEffect(() => {
     const checkParentAccount = async () => {
@@ -52,12 +50,10 @@ export default function CreateProfile() {
       if (!user) return;
       const { data } = await supabase
         .from('profiles')
-        .select('is_creator_subscribed, stripe_account_id, stripe_connect_status')
+        .select('is_creator_subscribed')
         .eq('id', user.id)
         .single();
       setIsPremium(data?.is_creator_subscribed === true);
-      setParentStripeAccountId(data?.stripe_account_id || null);
-      setParentStripeStatus(data?.stripe_connect_status || 'not_started');
     };
     checkParentAccount();
   }, []);
@@ -159,10 +155,6 @@ export default function CreateProfile() {
           display_name: displayName.trim(),
           bio: bio.trim() || null,
           avatar_url: avatarUrl,
-          // Stripe is account-level and temporarily disabled for new profile creation.
-          // Keep creator_profiles Stripe fields empty to avoid unique conflicts.
-          stripe_account_id: null,
-          stripe_connect_status: 'not_started',
         })
         .select('id')
         .single();

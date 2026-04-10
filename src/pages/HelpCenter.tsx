@@ -276,7 +276,7 @@ const HelpCenter = () => {
                         <Input
                           id="help-name"
                           placeholder="How should we call you?"
-                          className="bg-exclu-ink/60 border-exclu-arsenic/70 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
+                          className="bg-exclu-ink/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/60 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
                           required
                         />
                       </div>
@@ -288,7 +288,9 @@ const HelpCenter = () => {
                           id="help-email"
                           type="email"
                           placeholder="you@example.com"
-                          className="bg-exclu-ink/60 border-exclu-arsenic/70 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
+                          pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                          title="Please enter a valid email address"
+                          className="bg-exclu-ink/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/60 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
                           required
                         />
                       </div>
@@ -301,7 +303,7 @@ const HelpCenter = () => {
                       <Input
                         id="help-subject"
                         placeholder="Payout issue, link not working, feature request..."
-                        className="bg-exclu-ink/60 border-exclu-arsenic/70 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
+                        className="bg-exclu-ink/60 border-exclu-arsenic/70 text-exclu-cloud placeholder:text-exclu-space/60 focus-visible:ring-primary/60 focus-visible:ring-offset-0"
                         required
                       />
                     </div>

@@ -50,7 +50,10 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
-  const fanName = fan?.display_name || 'Fan';
+  const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
+  const fanName = isGuest
+    ? (conversation.guest_display_name || 'Guest')
+    : (fan?.display_name || 'Fan');
 
   // Creator profile info (fetched for fan senderType)
   const [creatorInfo, setCreatorInfo] = useState<{
@@ -75,7 +78,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         if (!data) return;
         const { data: parent } = await supabase
           .from('profiles')
-          .select('is_creator_subscribed, stripe_connect_status')
+          .select('is_creator_subscribed')
           .eq('id', data.user_id)
           .single();
         setCreatorInfo({
@@ -267,6 +270,11 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
+            {isGuest && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 flex-shrink-0">
+                Guest
+              </span>
+            )}
             {senderType !== 'fan' && conversation.total_revenue_cents > 0 && (
               <span className="text-[11px] text-green-400/70 flex-shrink-0">
                 ${(conversation.total_revenue_cents / 100).toFixed(2)}
@@ -296,7 +304,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               )}
             </p>
           )}
-          {senderType !== 'fan' && (
+          {senderType !== 'fan' && conversation.fan_id && (
             <div className="mt-1">
               <FanTagsRow
                 fanId={conversation.fan_id}

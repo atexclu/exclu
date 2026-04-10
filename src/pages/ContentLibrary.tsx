@@ -28,6 +28,7 @@ const ContentLibrary = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -127,15 +128,17 @@ const ContentLibrary = () => {
     }
 
     const MAX_FILE_SIZE_MB = 500;
-    const allowedVideoTypes = ['video/mp4', 'video/quicktime', 'video/webm'];
+    const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
     const accepted: File[] = [];
     let hadInvalid = false;
     let hadZip = false;
 
     for (const file of files) {
-      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-      const isImage = file.type.startsWith('image/');
-      const isVideo = allowedVideoTypes.includes(file.type);
+      const fileName = file.name.toLowerCase();
+      const isZip = fileName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+      const isHeic = file.type === 'image/heic' || file.type === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+      const isImage = file.type.startsWith('image/') || isHeic;
+      const isVideo = file.type.startsWith('video/') || videoExtensions.some(ext => fileName.endsWith(ext));
 
       if (isZip) {
         hadZip = true;
@@ -187,6 +190,7 @@ const ContentLibrary = () => {
     if (selectedFiles.length === 0) return;
 
     setIsUploadingAsset(true);
+    setUploadProgress({ current: 0, total: selectedFiles.length });
 
     try {
       const {
@@ -200,7 +204,9 @@ const ContentLibrary = () => {
 
       const newAssets: LibraryAsset[] = [];
 
-      for (const rawFile of selectedFiles) {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const rawFile = selectedFiles[i];
+        setUploadProgress({ current: i + 1, total: selectedFiles.length });
         const file = await maybeConvertHeic(rawFile);
         const assetId = crypto.randomUUID();
         const ext = file.name.split('.').pop() ?? 'bin';
@@ -369,7 +375,7 @@ const ContentLibrary = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-6xl mx-auto">
+      <main className="px-4 lg:px-6 pb-16 w-full overflow-x-hidden">
         {/* Header with New content button */}
         <section className="mt-4 sm:mt-6 mb-6 flex items-center justify-between gap-4">
           <div>
@@ -488,7 +494,9 @@ const ContentLibrary = () => {
                       disabled={isUploadingAsset || selectedFiles.length === 0}
                       className="rounded-full"
                     >
-                      {isUploadingAsset ? 'Uploading…' : 'Upload'}
+                      {isUploadingAsset
+                      ? `Uploading ${uploadProgress.current}/${uploadProgress.total}…`
+                      : 'Upload'}
                     </Button>
                   </div>
                 </form>

@@ -2,7 +2,7 @@ import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/lib/supabaseClient';
-import { ExternalLink, LayoutDashboard, Plus, FileText, Eye, EyeOff, Pencil, Archive, Trash2, CheckCircle2, Clock, Building2, Loader2, X, Save, ChevronDown, ImagePlus, Inbox } from 'lucide-react';
+import { ExternalLink, LayoutDashboard, Plus, FileText, Eye, EyeOff, Pencil, Archive, Trash2, CheckCircle2, Clock, Building2, Loader2, X, Save, ChevronDown, ImagePlus, Inbox, Download, SlidersHorizontal, Check } from 'lucide-react';
 import { AgencyCategoryConfig, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -25,6 +25,26 @@ interface AdminUserSummary {
   total_revenue_cents: number;
   profile_view_count: number;
 }
+
+const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
+  { key: 'username', label: 'Username', defaultOn: true },
+  { key: 'display_name', label: 'Display name', defaultOn: false },
+  { key: 'handle', label: 'Handle', defaultOn: false },
+  { key: 'email', label: 'Email', defaultOn: true },
+  { key: 'account_type', label: 'Account type', defaultOn: true },
+  { key: 'country', label: 'Country', defaultOn: true },
+  { key: 'phone', label: 'Phone', defaultOn: false },
+  { key: 'created_at', label: 'Created at', defaultOn: true },
+  { key: 'subscription', label: 'Subscription', defaultOn: false },
+  { key: 'wallet_balance', label: 'Wallet balance ($)', defaultOn: false },
+  { key: 'total_earned', label: 'Total earned ($)', defaultOn: false },
+  { key: 'total_withdrawn', label: 'Total withdrawn ($)', defaultOn: false },
+  { key: 'links_count', label: 'Links count', defaultOn: false },
+  { key: 'total_sales', label: 'Total sales', defaultOn: false },
+  { key: 'total_revenue', label: 'Total revenue ($)', defaultOn: false },
+  { key: 'profile_views', label: 'Profile views', defaultOn: false },
+  { key: 'bank_country', label: 'Bank country', defaultOn: false },
+];
 
 type RoleFilter = 'all' | 'creator' | 'fan' | 'agency';
 type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'archived';
@@ -154,6 +174,12 @@ const AdminUsers = () => {
   // ── Users state ──
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportConfig, setShowExportConfig] = useState(false);
+  const [exportColumns, setExportColumns] = useState<Set<string>>(
+    new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key))
+  );
+  const exportConfigRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [sortMode, setSortMode] = useState(initialSort);
@@ -198,6 +224,18 @@ const AdminUsers = () => {
     };
     fetchAgencyIds();
   }, []);
+
+  // Close export popover on click outside
+  useEffect(() => {
+    if (!showExportConfig) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportConfigRef.current && !exportConfigRef.current.contains(e.target as Node)) {
+        setShowExportConfig(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportConfig]);
 
   // Load users
   useEffect(() => {
@@ -562,6 +600,45 @@ const AdminUsers = () => {
     archived: articles.filter((a) => a.status === 'archived').length,
   };
 
+  const toggleExportColumn = (key: string) => {
+    setExportColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const handleExportCSV = async () => {
+    if (exportColumns.size === 0) { toast.error('Select at least one column'); return; }
+    setIsExporting(true);
+    setShowExportConfig(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error('Not authenticated'); return; }
+
+      const res = await supabase.functions.invoke('admin-export-users-csv', {
+        headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+        body: { columns: Array.from(exportColumns) },
+      });
+
+      if (res.error) { toast.error('Export failed'); return; }
+
+      const csvString = typeof res.data === 'string' ? res.data : await res.data?.text?.() ?? '';
+      const blob = new Blob([csvString], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `exclu-users-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('CSV exported');
+    } catch {
+      toast.error('Export failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const switchTab = (tab: AdminTab) => {
     setActiveTab(tab);
     setSearchParams({ tab });
@@ -569,19 +646,19 @@ const AdminUsers = () => {
 
   return (
     <AppShell>
-      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8">
-        <div className="space-y-4">
-          {/* Header with tabs */}
-          <div className="flex items-start justify-between gap-4">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 overflow-x-hidden">
+        <div className="space-y-4 min-w-0">
+          {/* Header with tabs — stacked on mobile, inline on sm+ */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none">
               {(['users', 'blog', 'agencies', 'payments'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => switchTab(tab)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex-shrink-0 ${
                     activeTab === tab
                       ? 'bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20'
                       : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
@@ -636,6 +713,75 @@ const AdminUsers = () => {
                   <option value="most_content">Plus de contenus</option>
                   <option value="most_links">Plus de liens</option>
                 </select>
+                <div className="relative sm:ml-auto flex-shrink-0" ref={exportConfigRef}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowExportConfig(!showExportConfig)}
+                    disabled={isExporting}
+                    className="rounded-full"
+                  >
+                    {isExporting ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Download className="w-4 h-4 mr-1.5" />}
+                    Export CSV
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+
+                  {showExportConfig && (
+                    <div className="absolute right-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card shadow-xl z-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                        <span className="text-sm font-semibold text-foreground">Select columns</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setExportColumns(new Set(EXPORT_COLUMNS.map(c => c.key)))}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExportColumns(new Set(EXPORT_COLUMNS.filter(c => c.defaultOn).map(c => c.key)))}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {EXPORT_COLUMNS.map((col) => (
+                          <button
+                            key={col.key}
+                            type="button"
+                            onClick={() => toggleExportColumn(col.key)}
+                            className="w-full flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-muted/50 transition-colors text-left"
+                          >
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              exportColumns.has(col.key)
+                                ? 'bg-primary border-primary text-primary-foreground'
+                                : 'border-border'
+                            }`}>
+                              {exportColumns.has(col.key) && <Check className="w-3 h-3" />}
+                            </span>
+                            <span className="text-foreground">{col.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="px-4 py-3 border-t border-border">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleExportCSV}
+                          disabled={isExporting || exportColumns.size === 0}
+                          className="w-full rounded-lg gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          Export {exportColumns.size} column{exportColumns.size !== 1 ? 's' : ''}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">

@@ -385,19 +385,19 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
       {availablePlatforms.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Add Social Link</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {availablePlatforms.map((platform) => (
               <button
                 type="button"
                 key={platform.id}
                 onClick={() => handleAddPlatform(platform.id)}
-                className="flex items-center gap-2 p-3 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-primary/50 transition-all group"
+                className="flex items-center gap-2 p-3 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-primary/50 transition-all group min-w-0"
               >
                 <div className={`w-8 h-8 rounded-full bg-gradient-to-r ${platform.gradient} flex items-center justify-center text-white flex-shrink-0`}>
                   {platform.icon}
                 </div>
-                <span className="text-sm font-medium text-foreground truncate">{platform.label}</span>
-                <Plus className="w-4 h-4 ml-auto text-muted-foreground group-hover:text-primary transition-colors" />
+                <span className="text-sm font-medium text-foreground truncate flex-1 min-w-0 text-left">{platform.label}</span>
+                <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
               </button>
             ))}
           </div>

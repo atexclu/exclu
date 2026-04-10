@@ -1,7 +1,7 @@
 /**
  * create-tip-checkout — UGPayments QuickPay version.
  *
- * Same request body and validations as the previous Stripe version.
+ * Generates QuickPay form fields for UGPayments tip checkout.
  * Returns { fields } for the QuickPay HTML form POST instead of { url }.
  *
  * Request body: { creator_id, profile_id?, amount_cents, message?, is_anonymous?, fan_name? }
@@ -92,6 +92,8 @@ serve(async (req) => {
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
     const isAnonymous = body?.is_anonymous === true;
     const fanName = typeof body?.fan_name === 'string' ? body.fan_name.trim().slice(0, 100) : null;
+    const guestSessionId = typeof body?.guest_session_id === 'string' ? body.guest_session_id : null;
+    const conversationId = typeof body?.conversation_id === 'string' ? body.conversation_id : null;
 
     // ── Validation ────────────────────────────────────────────────────
     if (!creatorId || typeof creatorId !== 'string') return jsonError('Missing creator_id', 400, corsHeaders);
@@ -137,6 +139,7 @@ serve(async (req) => {
         status: 'pending',
         creator_net_cents: creatorNetCents,
         platform_fee_cents: totalPlatformFee,
+        ...(conversationId ? { chat_conversation_id: conversationId } : {}),
       })
       .select('id')
       .single();

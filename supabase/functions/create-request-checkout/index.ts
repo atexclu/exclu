@@ -101,7 +101,7 @@ serve(async (req) => {
     if (proposedAmountCents > 100000) return jsonError('Maximum amount is $1,000.00', 400, corsHeaders);
     if (!authenticatedUserId && !fanEmail) return jsonError('Email is required', 400, corsHeaders);
 
-    // ── 3. Resolve fan identity (same logic as Stripe version) ────────
+    // ── 3. Resolve fan identity ────────
     let fanUserId: string;
     let isNewAccount = false;
 

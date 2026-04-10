@@ -23,6 +23,11 @@ interface UserProfileOverview {
   bank_iban: string | null;
   bank_holder_name: string | null;
   bank_bic: string | null;
+  bank_account_type: string | null;
+  bank_account_number: string | null;
+  bank_routing_number: string | null;
+  bank_bsb: string | null;
+  bank_country: string | null;
   payout_setup_complete: boolean;
 }
 
@@ -80,20 +85,12 @@ interface UserSaleOverview {
   created_at: string | null;
 }
 
-interface UserStripeOverview {
-  status: string;
-  disabled_reason: string | null;
-  friendly_messages: string[];
-  account_email: string | null;
-  payout_country: string | null;
-}
-
 interface UserOverviewPayload {
   profile: UserProfileOverview | null;
   links: UserLinkOverview[];
   assets: UserAssetOverview[];
   sales: UserSaleOverview[];
-  stripe: UserStripeOverview | null;
+  payouts: PayoutOverview[];
 }
 
 const AdminUserOverview = () => {
@@ -105,11 +102,9 @@ const AdminUserOverview = () => {
   const [links, setLinks] = useState<UserLinkOverview[]>([]);
   const [assets, setAssets] = useState<UserAssetOverview[]>([]);
   const [sales, setSales] = useState<UserSaleOverview[]>([]);
-  const [stripeDetails, setStripeDetails] = useState<UserStripeOverview | null>(null);
   const [payouts, setPayouts] = useState<PayoutOverview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<UserAssetOverview | null>(null);
   const [selectedLink, setSelectedLink] = useState<UserLinkOverview | null>(null);
   const [linkPreviewUrl, setLinkPreviewUrl] = useState<string | null>(null);
@@ -186,7 +181,6 @@ const AdminUserOverview = () => {
       setLinks(payload.links ?? []);
       setAssets(payload.assets ?? []);
       setSales(payload.sales ?? []);
-      setStripeDetails(payload.stripe ?? null);
       setPayouts(payload.payouts ?? []);
 
       // Fetch agency data if user is an agency
@@ -233,91 +227,6 @@ const AdminUserOverview = () => {
       isMounted = false;
     };
   }, [id]);
-
-  const handleStripeConnectAsUser = async () => {
-    if (!id) return;
-
-    setIsConnectingStripe(true);
-    setError(null);
-
-    // Open a blank tab immediately while we're still in the click event,
-    // so most browsers will treat this as a user-initiated popup.
-    const stripeWindow = window.open('', '_blank', 'noopener,noreferrer');
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        if (stripeWindow) {
-          stripeWindow.close();
-        }
-        setError('Please sign in again to connect Stripe for this user.');
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('stripe-connect-onboard', {
-        body: { target_user_id: id },
-        headers: {
-          // Same pattern as other admin functions: send the access token via x-supabase-auth
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'x-supabase-auth': session.access_token,
-        },
-      });
-
-      console.log('[AdminUserOverview] stripe-connect-onboard response', { data, error });
-
-      if (error) {
-        console.error('Error invoking stripe-connect-onboard as admin', error);
-        if (stripeWindow) {
-          stripeWindow.close();
-        }
-        setError('Unable to start Stripe Connect onboarding for this user.');
-        return;
-      }
-
-      const url = (data as any)?.url as string | undefined;
-      console.log('[AdminUserOverview] Stripe onboard URL', url);
-      if (!url) {
-        if (stripeWindow) {
-          stripeWindow.close();
-        }
-        setError('Stripe Connect URL not available for this user.');
-        return;
-      }
-
-      try {
-        if (stripeWindow) {
-          // Normal case: we successfully opened a tab in response to the click,
-          // now send it to Stripe.
-          stripeWindow.location.assign(url);
-        } else {
-          // Fallback: popup was blocked, navigate in the current tab.
-          window.location.assign(url);
-        }
-      } catch (navError) {
-        console.error('[AdminUserOverview] Failed to navigate to Stripe URL', navError);
-        setError('Navigation to Stripe failed. Please copy/paste this URL manually into your browser: ' + url);
-      }
-    } finally {
-      setIsConnectingStripe(false);
-    }
-  };
-
-  const formatStripeStatus = (status: string | null) => {
-    if (!status) return 'Not connected';
-    switch (status) {
-      case 'pending_requirements':
-        return 'Pending verification';
-      case 'complete':
-        return 'Connected';
-      case 'restricted':
-        return 'Restricted';
-      default:
-        return status;
-    }
-  };
 
   const handleDeleteUser = async () => {
     if (!id) return;
@@ -850,7 +759,6 @@ const AdminUserOverview = () => {
                 </div>
                 )}
 
-                 {/* stripe section moved to bottom */}
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-2">
@@ -1072,24 +980,28 @@ const AdminUserOverview = () => {
                   {/* Bank details */}
                   <div className="rounded-lg bg-exclu-arsenic/30 p-3">
                     <p className="text-[10px] text-exclu-space/60 mb-1.5">Bank Account</p>
-                    {profile.payout_setup_complete && profile.bank_iban ? (
+                    {profile.payout_setup_complete ? (
                       <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-exclu-space/60">IBAN</span>
-                          <span className="font-mono text-exclu-cloud">{profile.bank_iban.slice(0, 4)} {'····'.repeat(3)} {profile.bank_iban.slice(-4)}</span>
-                        </div>
-                        {profile.bank_holder_name && (
-                          <div className="flex justify-between">
-                            <span className="text-exclu-space/60">Holder</span>
-                            <span className="text-exclu-cloud">{profile.bank_holder_name}</span>
-                          </div>
-                        )}
-                        {profile.bank_bic && (
-                          <div className="flex justify-between">
-                            <span className="text-exclu-space/60">BIC</span>
-                            <span className="font-mono text-exclu-cloud">{profile.bank_bic}</span>
-                          </div>
-                        )}
+                        {(() => {
+                          const type = profile.bank_account_type || 'iban';
+                          const rows: { label: string; value: string; mono?: boolean }[] = [];
+                          if (type === 'iban' && profile.bank_iban) {
+                            rows.push({ label: 'IBAN', value: `${profile.bank_iban.slice(0, 4)} ${'····'.repeat(3)} ${profile.bank_iban.slice(-4)}`, mono: true });
+                          } else if (profile.bank_account_number) {
+                            rows.push({ label: 'Account', value: `····${profile.bank_account_number.slice(-4)}`, mono: true });
+                          }
+                          if (type === 'us' && profile.bank_routing_number) rows.push({ label: 'ABA', value: profile.bank_routing_number, mono: true });
+                          if (type === 'au' && profile.bank_bsb) rows.push({ label: 'BSB', value: profile.bank_bsb, mono: true });
+                          if (profile.bank_bic) rows.push({ label: 'SWIFT', value: profile.bank_bic, mono: true });
+                          if (profile.bank_holder_name) rows.push({ label: 'Holder', value: profile.bank_holder_name });
+                          if (profile.bank_country) rows.push({ label: 'Country', value: profile.bank_country });
+                          return rows.map((r) => (
+                            <div key={r.label} className="flex justify-between">
+                              <span className="text-exclu-space/60">{r.label}</span>
+                              <span className={`text-exclu-cloud ${r.mono ? 'font-mono' : ''}`}>{r.value}</span>
+                            </div>
+                          ));
+                        })()}
                       </div>
                     ) : (
                       <p className="text-xs text-exclu-space/50 italic">No bank account set up</p>
@@ -1307,7 +1219,7 @@ const AdminUserOverview = () => {
               <li>All creator links and sales</li>
               <li>All uploaded content (avatars, paid content, public content)</li>
               <li>All purchases made by this user</li>
-              <li>Stripe Connect account (if connected)</li>
+              <li>Payment account details</li>
             </ul>
             <p className="text-xs text-red-400 font-semibold mb-6">
               This action cannot be undone.

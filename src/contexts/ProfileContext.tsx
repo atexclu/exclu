@@ -9,8 +9,6 @@ export interface CreatorProfile {
   avatar_url: string | null;
   bio: string | null;
   is_active: boolean;
-  stripe_account_id: string | null;
-  stripe_connect_status: string;
   profile_view_count: number;
   country: string | null;
   aurora_gradient: string | null;
@@ -51,7 +49,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
     const { data, error } = await supabase
       .from('creator_profiles')
-      .select('id, user_id, username, display_name, avatar_url, bio, is_active, stripe_account_id, stripe_connect_status, profile_view_count, country, created_at')
+      .select('id, user_id, username, display_name, avatar_url, bio, is_active, profile_view_count, country, created_at')
       .eq('user_id', user.id)
       .eq('is_active', true)
       .order('created_at', { ascending: true });

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, DollarSign, MessageSquare, Loader2, ArrowLeft, ExternalLink } from 'lucide-react';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
+import GuestChat from '@/components/GuestChat';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import {
   SiX,
@@ -41,7 +42,6 @@ interface CreatorProfileData {
   exclusive_content_link_id?: string | null;
   exclusive_content_url?: string | null;
   exclusive_content_image_url?: string | null;
-  stripe_connect_status?: string | null;
   payout_setup_complete?: boolean | null;
   tips_enabled?: boolean | null;
   custom_requests_enabled?: boolean | null;
@@ -109,6 +109,27 @@ const CreatorPublic = () => {
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [currentFanId, setCurrentFanId] = useState<string | null>(null);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
+  const [showGuestChat, setShowGuestChat] = useState(false);
+
+  const openGuestChat = useCallback(() => {
+    setShowGuestChat(true);
+    if (creatorProfileId) localStorage.setItem(`exclu_guest_chat_open_${creatorProfileId}`, '1');
+  }, [creatorProfileId]);
+
+  const closeGuestChat = useCallback(() => {
+    setShowGuestChat(false);
+    if (creatorProfileId) localStorage.removeItem(`exclu_guest_chat_open_${creatorProfileId}`);
+  }, [creatorProfileId]);
+
+  // Auto-restore guest chat if session exists and was open before refresh
+  useEffect(() => {
+    if (!creatorProfileId) return;
+    const hasSession = localStorage.getItem(`exclu_guest_session_${creatorProfileId}`);
+    const wasChatOpen = localStorage.getItem(`exclu_guest_chat_open_${creatorProfileId}`);
+    if (hasSession && wasChatOpen) {
+      setShowGuestChat(true);
+    }
+  }, [creatorProfileId]);
 
   // Wishlist state
   const [wishlistItems, setWishlistItems] = useState<any[]>([]);
@@ -167,13 +188,29 @@ const CreatorPublic = () => {
     return () => { subscription.unsubscribe(); };
   }, []);
 
-  // Show tip success toast on redirect from Stripe (runs once on mount)
+  // Show payment result toasts on redirect (runs once on mount)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const url = new URL(window.location.href);
+    let shouldCleanUrl = false;
+
     if (params.get('tip_success') === 'true') {
       toast.success('Thank you! Your tip has been sent.');
-      const url = new URL(window.location.href);
       url.searchParams.delete('tip_success');
+      shouldCleanUrl = true;
+    }
+    if (params.get('tip_failed') === 'true') {
+      toast.error('Tip payment was not completed. You have not been charged.');
+      url.searchParams.delete('tip_failed');
+      shouldCleanUrl = true;
+    }
+    if (params.get('gift_failed') === 'true') {
+      toast.error('Gift payment was not completed. You have not been charged.');
+      url.searchParams.delete('gift_failed');
+      shouldCleanUrl = true;
+    }
+
+    if (shouldCleanUrl) {
       window.history.replaceState({}, '', url.pathname);
     }
   }, []);
@@ -203,7 +240,7 @@ const CreatorPublic = () => {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, stripe_account_id, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
           .eq('username', handle)
           .maybeSingle();
 
@@ -222,10 +259,10 @@ const CreatorPublic = () => {
           userId = cpData.user_id;
           profileId = cpData.id;
 
-          // Load account-level data (premium status, Stripe) from parent profiles row
+          // Load account-level data (premium status, payout) from parent profiles row
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('is_creator_subscribed, stripe_connect_status, stripe_account_id, payout_setup_complete')
+            .select('is_creator_subscribed, payout_setup_complete')
             .eq('id', cpData.user_id)
             .maybeSingle();
 
@@ -268,7 +305,6 @@ const CreatorPublic = () => {
             show_certification: cpData.show_certification,
             show_deeplinks: cpData.show_deeplinks,
             show_available_now: cpData.show_available_now,
-            stripe_connect_status: parentProfile?.stripe_connect_status ?? cpData.stripe_connect_status,
             payout_setup_complete: parentProfile?.payout_setup_complete ?? false,
             exclusive_content_text: cpData.exclusive_content_text,
             exclusive_content_link_id: cpData.exclusive_content_link_id,
@@ -287,7 +323,7 @@ const CreatorPublic = () => {
         if (!profileData) {
           const { data: fallbackData, error: profileError } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, stripe_connect_status, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+            .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
             .eq('handle', handle)
             .maybeSingle();
 
@@ -317,8 +353,8 @@ const CreatorPublic = () => {
         }
 
         // ── Step 3: Load links (use profile_id when available, else creator_id) ──
-        // Always load links regardless of Stripe status — links should be visible
-        // on the public profile. The purchase flow itself checks Stripe readiness.
+        // Always load links — they should be visible on the public profile.
+        // The purchase flow itself checks payment readiness.
         {
           let linksQuery = supabase
             .from('links')
@@ -499,6 +535,16 @@ const CreatorPublic = () => {
   };
 
   const handleRequestCta = () => {
+    // Guests can't send custom requests — send them to fan signup with the
+    // creator pre-linked so the creator is auto-added to their favorites
+    // after signup/email confirmation.
+    if (!currentFanId) {
+      if (isCreatorAccount) {
+        toast.info('You need a fan account to send requests. Please sign up as a fan.');
+      }
+      navigate(`/fan/signup?creator=${handle}`);
+      return;
+    }
     setShowRequestModal(true);
   };
 
@@ -509,7 +555,8 @@ const CreatorPublic = () => {
     if (!fanId) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
+        // Not logged in → open guest chat inline
+        openGuestChat();
         return;
       }
 
@@ -520,7 +567,8 @@ const CreatorPublic = () => {
         .maybeSingle();
 
       if (prof?.is_creator) {
-        navigate(`/fan/signup?action=chat&creator=${handle}&profile=${creatorProfileId}`);
+        // Creators can't chat as fans — open guest chat instead
+        openGuestChat();
         return;
       }
 
@@ -821,10 +869,10 @@ const CreatorPublic = () => {
       )}
 
       {/* ─────────────────────────────────────────────────
-          MOBILE: Hero image header (unchanged)
+          MOBILE: Hero image header (hidden when guest chat is open)
       ───────────────────────────────────────────────── */}
       <motion.div
-        className="sm:hidden relative -mx-4 overflow-hidden z-10"
+        className={`${showGuestChat ? 'hidden' : ''} sm:hidden relative -mx-4 overflow-hidden z-10`}
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -866,9 +914,35 @@ const CreatorPublic = () => {
       </motion.div>
 
       {/* ─────────────────────────────────────────────────
+          MOBILE: Fullscreen Guest Chat overlay
+          — stops above the "Join Exclu" banner when it's visible,
+            so the composer is never hidden behind it.
+      ───────────────────────────────────────────────── */}
+      {showGuestChat && creatorProfileId && (
+        <div
+          className={`sm:hidden fixed left-0 right-0 top-0 z-[60] bg-black ${
+            shouldShowJoinBanner ? 'bottom-[92px]' : 'bottom-0'
+          }`}
+        >
+          <GuestChat
+            variant="inline"
+            fullHeight
+            profileId={creatorProfileId}
+            creatorUserId={creatorUserId || profile?.id || ''}
+            creatorName={displayName}
+            creatorAvatarUrl={profile?.avatar_url ?? null}
+            tipsEnabled={profile?.tips_enabled ?? false}
+            minTipAmountCents={profile?.min_tip_amount_cents ?? undefined}
+            onClose={closeGuestChat}
+            gradientStops={gradientStops}
+          />
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────
           MOBILE: Vertical single-column layout
       ───────────────────────────────────────────────── */}
-      <main className="sm:hidden relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24">
+      <main className={`${showGuestChat ? 'hidden' : ''} sm:hidden relative z-10 flex-1 flex flex-col px-4 pt-4 pb-24`}>
         <div className="absolute inset-x-0 top-0 h-[250px] bg-gradient-to-b from-black to-transparent pointer-events-none z-0" />
         <div className="max-w-md mx-auto w-full flex flex-col flex-1 relative z-10">
           {/* Bio */}
@@ -889,8 +963,8 @@ const CreatorPublic = () => {
           )}
           {profile?.bio && <p className="text-sm text-white max-w-xs mx-auto mb-4 drop-shadow text-center">{profile.bio}</p>}
 
-          {/* Tabs */}
-          {(links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
+          {/* Tabs — hidden when guest chat is active */}
+          {!showGuestChat && (links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
             <div className="relative mb-6">
               <div className="flex justify-center gap-8 relative">
                 {(links.length > 0 || publicContent.length > 0) && (
@@ -916,13 +990,13 @@ const CreatorPublic = () => {
             </div>
           )}
 
-          {/* Tab content */}
-          <div className="flex-1 space-y-3">
+          {/* Tab content — hidden when guest chat is active */}
+          {!showGuestChat && <div className="flex-1 space-y-3">
             {isLoading && <p className="text-sm text-white/60 text-center py-4">Loading content…</p>}
 
             {!isLoading && activeTab === 'links' && (
               <div className="space-y-3">
-                {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
+                {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0) && (
                   <StarBorder
                     as="div"
                     color1={gradientStops[0]}
@@ -967,7 +1041,7 @@ const CreatorPublic = () => {
                     </motion.button>
                   );
                 }) : (
-                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
+                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0)) && (
                     <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No exclusive content available yet.</div>
                   )
                 )}
@@ -1048,10 +1122,10 @@ const CreatorPublic = () => {
             )}
 
             {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
-          </div>
+          </div>}
 
-          {/* Tip, Request & Chat CTAs */}
-          {!isLoading && (showTipsCta || showRequestsCta || showChatCta) && (
+          {/* Tip, Request & Chat CTAs — hidden when guest chat is active */}
+          {!isLoading && !showGuestChat && (showTipsCta || showRequestsCta || showChatCta) && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="mt-6 space-y-3">
               {showTipsCta && (
                 <StarBorder
@@ -1112,7 +1186,7 @@ const CreatorPublic = () => {
           DESKTOP: Two-column layout (PublicLink-inspired)
       ───────────────────────────────────────────────── */}
       <main className="hidden sm:flex relative z-10 flex-1 flex-col">
-        <div className="px-6 lg:px-10 xl:px-16 pt-10 pb-16 max-w-7xl mx-auto w-full">
+        <div className={`px-6 lg:px-10 xl:px-16 pt-10 max-w-7xl mx-auto w-full ${shouldShowJoinBanner ? 'pb-[120px]' : 'pb-16'}`}>
           <div
             className="grid gap-8 items-start transition-[grid-template-columns] duration-500 ease-in-out"
             style={{ gridTemplateColumns: photoVisible ? '400px 1fr' : '0px 1fr' }}
@@ -1130,10 +1204,15 @@ const CreatorPublic = () => {
               transition={{ duration: 0.45, ease: [0.32, 0, 0.67, 0] }}
               className="sticky top-6 self-start"
             >
-              {/* Glow ring behind the photo card */}
-              <div className="absolute -inset-3 rounded-[2rem] opacity-40 blur-2xl pointer-events-none"
-                style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }} />
-              <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl shadow-black/60">
+              {/* Glow is rendered as a downward-only box-shadow on the photo
+                  itself so nothing can ever extend above the top edge — the
+                  card stays flush with the top of the bio card on the right. */}
+              <div
+                className="relative w-full rounded-3xl overflow-hidden"
+                style={{
+                  boxShadow: `0 25px 50px -12px rgba(0,0,0,0.6), 0 40px 80px -20px ${gradientStops[0]}66, 0 60px 100px -30px ${gradientStops[1]}4d`,
+                }}
+              >
                 {/* Photo */}
                 {profile?.avatar_url ? (
                   <img src={profile.avatar_url} alt={displayName} className="block w-full aspect-[3/4] object-cover" />
@@ -1187,8 +1266,23 @@ const CreatorPublic = () => {
             </AnimatePresence>
             </div>
 
-            {/* ── RIGHT: Info card + content card ── */}
-            <div className="flex flex-col gap-6">
+            {/* ── RIGHT: Info card + content card ──
+                When the guest chat is active we cap the right column to the
+                viewport minus the top offset and the banner zone, so the chat
+                (which uses flex-1 below) is guaranteed to fit above the Join
+                banner with a comfortable margin. */}
+            <div
+              className="flex flex-col gap-6 min-h-0"
+              style={
+                showGuestChat
+                  ? {
+                      height: shouldShowJoinBanner
+                        ? 'calc(100vh - 180px)'
+                        : 'calc(100vh - 96px)',
+                    }
+                  : undefined
+              }
+            >
 
               {/* TOP RIGHT: Creator info card */}
               <motion.div
@@ -1275,8 +1369,28 @@ const CreatorPublic = () => {
                 </div>
               </motion.div>
 
-              {/* BOTTOM RIGHT: Tabs + content card */}
-              <motion.div
+              {/* Guest Chat (inline, desktop) — replaces content card when
+                  active. The parent right column is capped to a viewport-
+                  derived height above, so flex-1 here makes the chat fill
+                  exactly the space between the info card and the banner. */}
+              {showGuestChat && creatorProfileId && (
+                <div className="flex-1 min-h-0 w-full">
+                  <GuestChat
+                    variant="inline"
+                    profileId={creatorProfileId}
+                    creatorUserId={creatorUserId || profile?.id || ''}
+                    creatorName={displayName}
+                    creatorAvatarUrl={profile?.avatar_url ?? null}
+                    tipsEnabled={profile?.tips_enabled ?? false}
+                    minTipAmountCents={profile?.min_tip_amount_cents ?? undefined}
+                    onClose={closeGuestChat}
+                    gradientStops={gradientStops}
+                  />
+                </div>
+              )}
+
+              {/* BOTTOM RIGHT: Tabs + content card — hidden when guest chat is active */}
+              {!showGuestChat && <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: 'easeOut', delay: 0.3 }}
@@ -1324,7 +1438,7 @@ const CreatorPublic = () => {
                     {/* Links Tab */}
                     {!isLoading && activeTab === 'links' && (
                       <div className="space-y-3">
-                        {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id) && (
+                        {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0) && (
                           <StarBorder
                             as="div"
                             color1={gradientStops[0]}
@@ -1471,7 +1585,7 @@ const CreatorPublic = () => {
                     {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
                   </div>
                 </div>
-              </motion.div>
+              </motion.div>}
 
               {/* Footer */}
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }} className="flex items-center justify-center gap-2 text-[11px] text-white/30 pb-2">

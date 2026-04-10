@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ProfileProvider } from "@/contexts/ProfileContext";
@@ -21,7 +21,6 @@ import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
 import DMCA from "./pages/DMCA";
 import AppDashboard from "./pages/AppDashboard";
-import CreatorDashboard from "./pages/CreatorDashboard";
 import CreatorLinks from "./pages/CreatorLinks";
 import CreateLink from "./pages/CreateLink";
 import EditLink from "./pages/EditLink";
@@ -61,6 +60,7 @@ import DirectoryAgencies from './pages/DirectoryAgencies';
 import DirectoryTools from './pages/DirectoryTools';
 import AgencyDetail from './pages/AgencyDetail';
 import AdminBlogEditor from './pages/AdminBlogEditor';
+import Earnings from './pages/Earnings';
 import BlogIndex from './pages/BlogIndex';
 import BlogArticle from './pages/BlogArticle';
 import BlogCategory from './pages/BlogCategory';
@@ -152,7 +152,15 @@ const App = () => {
                   path="/app"
                   element={
                     <ProtectedRoute>
-                      <CreatorDashboard />
+                      <Navigate to="/app/profile" replace />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <AppDashboard />
                     </ProtectedRoute>
                   }
                 />
@@ -220,7 +228,15 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
-                {/* StripeValidation route removed — replaced by inline IBAN setup */}
+                <Route
+                  path="/app/earnings"
+                  element={
+                    <ProtectedRoute>
+                      <Earnings />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* IBAN payout setup is inline in Profile/Settings */}
                 <Route
                   path="/app/chat"
                   element={

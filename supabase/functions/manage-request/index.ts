@@ -2,7 +2,7 @@
  * manage-request — UGPayments version.
  *
  * Handles creator accept (capture) and decline (void) for custom requests.
- * Replaces Stripe PaymentIntent capture/cancel with UGPayments REST API.
+ * Captures or voids pre-authorized payments via UGPayments REST API.
  *
  * Actions:
  *   'capture' — Creator accepts, content uploaded → capture pre-auth → credit wallet

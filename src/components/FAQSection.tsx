@@ -21,7 +21,7 @@ const faqData = [
   },
   {
     question: 'How do payouts work?',
-    answer: 'You get paid instantly after every sale. Connect your Stripe, PayPal, or bank account and cash out with just one click. No delays, no thresholds.',
+    answer: 'You get paid instantly after every sale. Set up your bank account and cash out with just one click. No delays, no thresholds.',
   },
   {
     question: 'Is Exclu safe for my accounts and audience?',

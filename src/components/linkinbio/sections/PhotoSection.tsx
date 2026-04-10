@@ -140,11 +140,26 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
   // ── Crop mode ──
   if (rawImageUrl) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 overflow-y-auto">
         <p className="text-sm font-semibold text-foreground text-center">Crop your photo</p>
-        <p className="text-xs text-muted-foreground text-center">Drag to reposition • Scroll or use the slider to zoom</p>
+        <p className="text-xs text-muted-foreground text-center">Drag to reposition • Use the slider to zoom</p>
 
-        <div className="relative z-10 flex items-center gap-3 px-1">
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border touch-none">
+          <Cropper
+            image={rawImageUrl}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape="rect"
+            showGrid={false}
+            objectFit="cover"
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+        </div>
+
+        <div className="flex items-center gap-3 px-1">
           <ZoomOut className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <input
             type="range"
@@ -158,7 +173,7 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
           <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </div>
 
-        <div className="relative z-10 flex gap-3">
+        <div className="flex gap-3">
           <Button
             type="button"
             variant="outline"
@@ -184,21 +199,6 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
               </>
             )}
           </Button>
-        </div>
-
-        <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-border">
-          <Cropper
-            image={rawImageUrl}
-            crop={crop}
-            zoom={zoom}
-            aspect={1}
-            cropShape="rect"
-            showGrid={false}
-            objectFit="cover"
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onCropComplete={onCropComplete}
-          />
         </div>
       </div>
     );

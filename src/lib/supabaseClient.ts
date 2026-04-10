@@ -31,7 +31,8 @@ export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
 // Anonymous client: never sends an Authorization header with a user JWT.
 // Use this when you need anon RLS policies to apply regardless of auth state
 // (e.g. post-checkout purchase verification in PublicLink.tsx).
+// Uses a distinct storageKey to avoid "Multiple GoTrueClient instances" warning.
 export const supabaseAnon = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
-  auth: { persistSession: false, autoRefreshToken: false },
+  auth: { persistSession: false, autoRefreshToken: false, storageKey: 'sb-anon-auth-token' },
   global: { fetch: customFetch },
 });

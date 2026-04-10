@@ -29,13 +29,6 @@ import {
   Trash2,
   Loader2,
   Tag,
-  Landmark,
-  Wallet,
-  ArrowDownToLine,
-  Clock,
-  CircleCheck,
-  CircleX,
-  Banknote,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -51,17 +44,13 @@ const Profile = () => {
   const [handle, setHandle] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [stripeAccountId, setStripeAccountId] = useState<string | null>(null);
-  const [stripeConnectStatus, setStripeConnectStatus] = useState<string | null>(null);
   const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
-  const [profileData, setProfileData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string } | null>(null);
+  const [profileData, setProfileData] = useState<{ bank_iban?: string; bank_holder_name?: string; bank_bic?: string; bank_account_type?: string; bank_account_number?: string; bank_routing_number?: string; bank_bsb?: string; bank_country?: string } | null>(null);
   const [country, setCountry] = useState<string | null>(null);
-  const [stripeMissingInfo, setStripeMissingInfo] = useState<string[]>([]);
-  const [isStripeDetailsLoading, setIsStripeDetailsLoading] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isStripeLoading, setIsStripeLoading] = useState(false);
-  const [activeSection, setActiveSection] = useState<'profile' | 'wallet' | 'subscription' | 'profiles' | 'security'>('profile');
+  const [isUpgradeLoading, setIsUpgradeLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<'profile' | 'subscription' | 'profiles' | 'security'>('profile');
   const [themeColor, setThemeColor] = useState<string>('day');
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
   const [showJoinBanner, setShowJoinBanner] = useState<boolean>(true);
@@ -76,12 +65,6 @@ const Profile = () => {
   const [agencyCats, setAgencyCats] = useState<AgencyCategoryData>(EMPTY_AGENCY_CATEGORIES);
   const [isSavingAgencyCategories, setIsSavingAgencyCategories] = useState(false);
 
-  // Wallet state
-  const [walletBalanceCents, setWalletBalanceCents] = useState<number>(0);
-  const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState<number>(0);
-  const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
-  const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
-  const [isLoadingWallet, setIsLoadingWallet] = useState(false);
 
   // Handle hash navigation to open specific section
   useEffect(() => {
@@ -90,8 +73,8 @@ const Profile = () => {
       setActiveSection('subscription');
       window.history.replaceState(null, '', window.location.pathname);
     } else if (hash === 'wallet') {
-      setActiveSection('wallet');
-      window.history.replaceState(null, '', window.location.pathname);
+      window.location.href = '/app/earnings';
+      return;
     }
   }, []);
 
@@ -123,20 +106,23 @@ const Profile = () => {
       // Always load account-level data from profiles
       const { data: mainProfile } = await supabase
         .from('profiles')
-        .select('is_creator_subscribed, stripe_account_id, stripe_connect_status, country, payout_setup_complete, bank_iban, bank_holder_name, bank_bic')
+        .select('is_creator_subscribed, country, payout_setup_complete, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country')
         .eq('id', user.id)
         .maybeSingle();
 
       if (mainProfile) {
         setIsCreatorSubscribed(mainProfile.is_creator_subscribed === true);
-        setStripeAccountId(mainProfile.stripe_account_id || null);
-        setStripeConnectStatus(mainProfile.stripe_connect_status || null);
         setCountry(mainProfile.country || null);
         setPayoutSetupComplete(mainProfile.payout_setup_complete === true);
         setProfileData({
           bank_iban: mainProfile.bank_iban || undefined,
           bank_holder_name: mainProfile.bank_holder_name || undefined,
           bank_bic: mainProfile.bank_bic || undefined,
+          bank_account_type: mainProfile.bank_account_type || undefined,
+          bank_account_number: mainProfile.bank_account_number || undefined,
+          bank_routing_number: mainProfile.bank_routing_number || undefined,
+          bank_bsb: mainProfile.bank_bsb || undefined,
+          bank_country: mainProfile.bank_country || undefined,
         });
       }
 
@@ -190,7 +176,7 @@ const Profile = () => {
         // Fallback: load from profiles table
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, bio, avatar_url, stripe_account_id, stripe_connect_status, theme_color, social_links, show_join_banner, country')
+          .select('display_name, handle, bio, avatar_url, theme_color, social_links, show_join_banner, country')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -201,8 +187,6 @@ const Profile = () => {
           setHandle(profile.handle || '');
           setBio(profile.bio || '');
           setAvatarUrl(profile.avatar_url || null);
-          setStripeAccountId(profile.stripe_account_id || null);
-          setStripeConnectStatus(profile.stripe_connect_status || null);
           setCountry(profile.country || null);
           setThemeColor(profile.theme_color || 'day');
           setSocialLinks(profile.social_links || {});
@@ -224,13 +208,14 @@ const Profile = () => {
 
         if (dirAgency) {
           setDirectoryAgencyId(dirAgency.id);
-          setAgencyPricing(dirAgency.pricing_structure || '');
-          setAgencyTargetMarket(dirAgency.target_market || []);
-          setAgencyServicesOffered(dirAgency.services_offered || []);
-          setAgencyPlatformFocus(dirAgency.platform_focus || []);
-          setAgencyGeography(dirAgency.geography || []);
-          setAgencyGrowthStrategy(dirAgency.growth_strategy || []);
-          setAgencyModelCategories(dirAgency.model_categories || []);
+          setAgencyCats({
+            pricing: dirAgency.pricing_structure || '',
+            targetMarket: dirAgency.target_market || [],
+            services: dirAgency.services_offered || [],
+            platform: dirAgency.platform_focus || [],
+            growthStrategy: dirAgency.growth_strategy || [],
+            modelTypes: dirAgency.model_categories || [],
+          });
         }
       }
 
@@ -239,8 +224,6 @@ const Profile = () => {
 
     fetchProfile();
   }, [activeProfile?.id, isAgency]);
-
-  // Stripe Connect status check removed — replaced by IBAN-based payout setup
 
   const handleAvatarClick = () => {
     avatarInputRef.current?.click();
@@ -379,66 +362,8 @@ const Profile = () => {
     }
   };
 
-  // Bank details state for payout setup
-  const [bankIban, setBankIban] = useState('');
-  const [bankHolderName, setBankHolderName] = useState('');
-  const [bankBic, setBankBic] = useState('');
-  const [isSavingBank, setIsSavingBank] = useState(false);
-  const [isEditingBank, setIsEditingBank] = useState(false);
-
-  const formatIbanDisplay = (raw: string): string => {
-    const cleaned = raw.replace(/\s/g, '').toUpperCase();
-    return cleaned.replace(/(.{4})/g, '$1 ').trim();
-  };
-  const handleIbanChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\s/g, '').toUpperCase();
-    if (raw.length <= 34) setBankIban(formatIbanDisplay(raw));
-  };
-  const validateIban = (iban: string): string | null => {
-    const cleaned = iban.replace(/\s/g, '').toUpperCase();
-    if (!cleaned) return null;
-    if (cleaned.length < 15 || cleaned.length > 34) return 'IBAN must be between 15 and 34 characters';
-    if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(cleaned)) return 'Invalid IBAN format (expected: XX00 followed by digits/letters)';
-    // MOD-97 check (ISO 13616) — char-by-char to avoid overflow
-    const rearranged = cleaned.slice(4) + cleaned.slice(0, 4);
-    const numStr = rearranged.replace(/[A-Z]/g, (ch) => String(ch.charCodeAt(0) - 55));
-    let remainder = '';
-    for (const digit of numStr) { remainder = String(Number(remainder + digit) % 97); }
-    if (Number(remainder) !== 1) return 'Invalid IBAN — please double-check the number';
-    return null;
-  };
-  const ibanError = validateIban(bankIban);
-  const isIbanValid = bankIban.replace(/\s/g, '').length > 0 && !ibanError;
-
-  const handleSaveBankDetails = async () => {
-    setIsSavingBank(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('save-bank-details', {
-        body: {
-          iban: bankIban,
-          holder_name: bankHolderName,
-          bic: bankBic || undefined,
-        },
-      });
-
-      if (error || !(data as any)?.success) {
-        throw new Error((data as any)?.error || 'Failed to save bank details');
-      }
-
-      toast.success('Bank details saved successfully');
-      setIsEditingBank(false);
-      // Refresh profile data
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Error saving bank details:', err);
-      toast.error(err?.message || 'Unable to save bank details. Please try again.');
-    } finally {
-      setIsSavingBank(false);
-    }
-  };
-
   const handleUpgradeToPremium = async () => {
-    setIsStripeLoading(true);
+    setIsUpgradeLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -485,7 +410,7 @@ const Profile = () => {
       console.error('Error starting subscription checkout', err);
       toast.error(err?.message || 'Unable to upgrade. Please try again.');
     } finally {
-      setIsStripeLoading(false);
+      setIsUpgradeLoading(false);
     }
   };
 
@@ -757,86 +682,9 @@ const Profile = () => {
     { id: 'snapchat', label: 'Snapchat', placeholder: 'https://snapchat.com/add/yourhandle' },
   ];
 
-  // Fetch wallet data when wallet tab is selected
-  useEffect(() => {
-    if (activeSection !== 'wallet' || !userId) return;
-    const fetchWallet = async () => {
-      setIsLoadingWallet(true);
-      try {
-        // For agencies: sum wallet_balance_cents across all profiles under this user
-        // For single accounts: just use the user's profile
-        const { data: profileWallet } = await supabase
-          .from('profiles')
-          .select('wallet_balance_cents, total_earned_cents')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profileWallet) {
-          setWalletBalanceCents(profileWallet.wallet_balance_cents ?? 0);
-          setWalletTotalEarnedCents(profileWallet.total_earned_cents ?? 0);
-        }
-
-        // Fetch payouts
-        const { data: payoutsData } = await supabase
-          .from('payouts')
-          .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
-          .eq('creator_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (payoutsData) setWalletPayouts(payoutsData);
-      } catch (err) {
-        console.error('Error fetching wallet data:', err);
-      } finally {
-        setIsLoadingWallet(false);
-      }
-    };
-    fetchWallet();
-  }, [activeSection, userId]);
-
-  const handleRequestWithdrawal = async () => {
-    if (!userId) return;
-    if (walletBalanceCents < 5000) {
-      toast.error('Minimum withdrawal is $50.00');
-      return;
-    }
-    if (!payoutSetupComplete) {
-      toast.error('Please set up your bank details first in the Subscriptions tab.');
-      return;
-    }
-    setIsRequestingWithdrawal(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const { data, error } = await supabase.functions.invoke('request-withdrawal', {
-        body: {},
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-      });
-      if (error || !(data as any)?.success) {
-        throw new Error((data as any)?.error || 'Withdrawal request failed');
-      }
-      toast.success('Withdrawal requested! You will receive your funds within 7 business days.');
-      // Refresh wallet balance from response
-      if ((data as any)?.new_balance !== undefined) {
-        setWalletBalanceCents((data as any).new_balance);
-      }
-      // Force re-fetch wallet payouts
-      const { data: refreshedPayouts } = await supabase
-        .from('payouts')
-        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
-        .eq('creator_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (refreshedPayouts) setWalletPayouts(refreshedPayouts);
-    } catch (err: any) {
-      toast.error(err?.message || 'Unable to request withdrawal');
-    } finally {
-      setIsRequestingWithdrawal(false);
-    }
-  };
 
   const menuItems = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'wallet', label: 'Wallet', icon: Wallet },
     { id: 'subscription', label: 'Subscriptions', icon: CreditCard },
     { id: 'profiles', label: 'Profiles & Agency', icon: Users },
     { id: 'security', label: 'Security', icon: Lock },
@@ -862,14 +710,14 @@ const Profile = () => {
           className="mt-4 sm:mt-6"
         >
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">Profile</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud">Settings</h1>
             <ThemeToggleSwitch />
           </div>
 
-          <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex flex-col lg:flex-row gap-6 overflow-x-hidden">
             {/* Sidebar menu */}
-            <aside className="lg:w-56 flex-shrink-0">
-              <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
+            <aside className="lg:w-56 flex-shrink-0 -mx-4 px-4 lg:mx-0 lg:px-0">
+              <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeSection === item.id;
@@ -1109,269 +957,6 @@ const Profile = () => {
                 </motion.div>
               )}
 
-              {/* Wallet Section */}
-              {activeSection === 'wallet' && (
-                <motion.div
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="space-y-6"
-                >
-                  {isLoadingWallet ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Balance Card */}
-                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-5">Wallet Balance</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4">
-                            <p className="text-xs text-muted-foreground mb-1">Available balance</p>
-                            <p className="text-3xl font-bold text-foreground">
-                              ${(walletBalanceCents / 100).toFixed(2)}
-                            </p>
-                          </div>
-                          <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4">
-                            <p className="text-xs text-muted-foreground mb-1">Total earned</p>
-                            <p className="text-3xl font-bold text-foreground">
-                              ${(walletTotalEarnedCents / 100).toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bank Status & Withdrawal */}
-                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Withdraw Funds</h2>
-
-                        <div className="rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60 p-4 mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                              payoutSetupComplete ? 'bg-green-500/20' : 'bg-yellow-500/20'
-                            }`}>
-                              {payoutSetupComplete ? (
-                                <CircleCheck className="w-4 h-4 text-green-400" />
-                              ) : (
-                                <AlertCircle className="w-4 h-4 text-yellow-400" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground">
-                                {payoutSetupComplete ? 'Bank account connected' : 'Bank account not set up'}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {payoutSetupComplete
-                                  ? `IBAN: ••••${profileData?.bank_iban?.slice(-4) || ''}`
-                                  : 'Set up your bank details below to withdraw funds.'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <p className="text-xs text-muted-foreground">
-                            Minimum withdrawal: <span className="font-medium text-foreground">$50.00</span>. Funds are typically processed within 3–5 business days.
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={handleRequestWithdrawal}
-                            disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
-                            className="w-full sm:w-auto rounded-xl gap-2"
-                          >
-                            {isRequestingWithdrawal ? (
-                              <><Loader2 className="w-4 h-4 animate-spin" />Processing...</>
-                            ) : (
-                              <><ArrowDownToLine className="w-4 h-4" />Request Withdrawal — ${(walletBalanceCents / 100).toFixed(2)}</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Payout Account Card (IBAN) */}
-                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Payout Account</h2>
-
-                        {payoutSetupComplete && !isEditingBank ? (
-                          <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-green-500/15">
-                              <Landmark className="w-6 h-6 text-green-400" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-base font-semibold text-foreground">Bank Account</h3>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/20 text-[10px] text-green-400 font-medium">
-                                  <Check className="w-3 h-3" />
-                                  Connected
-                                </span>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                Your bank account is set up. You can receive payouts from your wallet.
-                              </p>
-                              <div className="mt-2 space-y-1 text-sm">
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">IBAN</span>
-                                  <span className="text-foreground font-mono text-xs">
-                                    {profileData?.bank_iban
-                                      ? `${profileData.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${profileData.bank_iban.slice(-4)}`
-                                      : '••••'}
-                                  </span>
-                                </div>
-                                {profileData?.bank_holder_name && (
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">Holder</span>
-                                    <span className="text-foreground">{profileData.bank_holder_name}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 dark:bg-white/5 border border-border/60">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted">
-                              <Landmark className="w-6 h-6 text-muted-foreground" />
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-base font-semibold text-foreground">
-                                {isEditingBank ? 'Edit Bank Details' : 'Set Up Payouts'}
-                              </h3>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                Add your bank account details to receive payouts from your earnings.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {(!payoutSetupComplete || isEditingBank) && (
-                          <div className="mt-4 space-y-3">
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">IBAN</label>
-                              <Input
-                                value={bankIban}
-                                onChange={handleIbanChange}
-                                placeholder="FR76 1234 5678 9012 3456 7890 123"
-                                className={`bg-muted/50 border-border text-foreground font-mono tracking-wide ${bankIban && ibanError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
-                              />
-                              {bankIban && ibanError && (
-                                <p className="text-xs text-red-500 mt-1">{ibanError}</p>
-                              )}
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Account holder name</label>
-                              <Input
-                                value={bankHolderName}
-                                onChange={(e) => setBankHolderName(e.target.value)}
-                                placeholder="Jean Dupont"
-                                className="bg-muted/50 border-border text-foreground"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-foreground ml-1 mb-1 block">BIC / SWIFT <span className="text-muted-foreground font-normal">(recommended for international transfers)</span></label>
-                              <Input
-                                value={bankBic}
-                                onChange={(e) => setBankBic(e.target.value.toUpperCase())}
-                                placeholder="BNPAFRPP"
-                                className="bg-muted/50 border-border text-foreground placeholder:text-muted-foreground/50"
-                              />
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                              <Button
-                                onClick={handleSaveBankDetails}
-                                disabled={!isIbanValid || !bankHolderName || isSavingBank}
-                                className="rounded-xl gap-2"
-                              >
-                                <Landmark className="w-4 h-4" />
-                                {isSavingBank ? 'Saving...' : 'Save bank details'}
-                              </Button>
-                              {isEditingBank && (
-                                <Button
-                                  onClick={() => setIsEditingBank(false)}
-                                  variant="outline"
-                                  className="rounded-xl"
-                                >
-                                  Cancel
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {payoutSetupComplete && !isEditingBank && (
-                          <div className="mt-4">
-                            <Button
-                              onClick={() => {
-                                setIsEditingBank(true);
-                                setBankIban(profileData?.bank_iban || '');
-                                setBankHolderName(profileData?.bank_holder_name || '');
-                                setBankBic(profileData?.bank_bic || '');
-                              }}
-                              variant="outline"
-                              className="rounded-xl"
-                            >
-                              Edit bank details
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Cashout History */}
-                      <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Withdrawal History</h2>
-                        {walletPayouts.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12 gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
-                              <Banknote className="w-5 h-5 text-muted-foreground" />
-                            </div>
-                            <p className="text-sm text-muted-foreground">No withdrawals yet</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {walletPayouts.map((payout) => {
-                              const statusIcon = payout.status === 'completed' || payout.status === 'paid'
-                                ? <CircleCheck className="w-4 h-4 text-green-400" />
-                                : payout.status === 'failed' || payout.status === 'rejected'
-                                ? <CircleX className="w-4 h-4 text-red-400" />
-                                : <Clock className="w-4 h-4 text-yellow-400" />;
-                              const statusColor = payout.status === 'completed' || payout.status === 'paid'
-                                ? 'bg-green-500/20 text-green-400'
-                                : payout.status === 'failed' || payout.status === 'rejected'
-                                ? 'bg-red-500/20 text-red-400'
-                                : 'bg-yellow-500/20 text-yellow-400';
-                              return (
-                                <div key={payout.id} className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 dark:bg-white/5 p-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                      payout.status === 'completed' || payout.status === 'paid' ? 'bg-green-500/20'
-                                      : payout.status === 'failed' || payout.status === 'rejected' ? 'bg-red-500/20'
-                                      : 'bg-yellow-500/20'
-                                    }`}>
-                                      {statusIcon}
-                                    </div>
-                                    <div>
-                                      <p className="text-sm font-medium text-foreground">
-                                        ${(payout.amount_cents / 100).toFixed(2)}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                        {payout.paid_at && ` · Paid ${new Date(payout.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusColor}`}>
-                                    {payout.status}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              )}
-
               {/* Subscription Section */}
               {activeSection === 'subscription' && (
                 <motion.div
@@ -1431,11 +1016,11 @@ const Profile = () => {
                         <Button
                           onClick={handleUpgradeToPremium}
                           variant="hero"
-                          disabled={isStripeLoading}
+                          disabled={isUpgradeLoading}
                           className="rounded-full"
                         >
                           <Zap className="w-4 h-4 mr-2" />
-                          {isStripeLoading ? 'Loading...' : 'Upgrade to Premium – $39/mo'}
+                          {isUpgradeLoading ? 'Loading...' : 'Upgrade to Premium – $39/mo'}
                         </Button>
                       )}
                       {isCreatorSubscribed && (

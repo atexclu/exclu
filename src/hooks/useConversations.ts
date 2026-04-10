@@ -70,7 +70,33 @@ export function useConversations({
       return;
     }
 
-    setConversations((data ?? []) as Conversation[]);
+    const convs = (data ?? []) as Conversation[];
+
+    // Enrich guest conversations with display_name from guest_sessions
+    const guestSessionIds = convs
+      .filter((c) => c.guest_session_id && !c.fan_id)
+      .map((c) => c.guest_session_id!);
+
+    if (guestSessionIds.length > 0) {
+      const { data: guestSessions } = await supabase
+        .from('guest_sessions')
+        .select('id, display_name')
+        .in('id', guestSessionIds);
+
+      if (guestSessions) {
+        const guestMap = new Map(guestSessions.map((gs: any) => [gs.id, gs.display_name]));
+        for (const conv of convs) {
+          if (conv.guest_session_id && !conv.fan_id) {
+            conv.is_guest = true;
+            if (guestMap.has(conv.guest_session_id)) {
+              conv.guest_display_name = guestMap.get(conv.guest_session_id) || 'Guest';
+            }
+          }
+        }
+      }
+    }
+
+    setConversations(convs);
     setIsLoading(false);
   }, [effectiveKey, statusFilter.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 

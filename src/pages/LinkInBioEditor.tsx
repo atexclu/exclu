@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Package, Palette, ChevronRight, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, X } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -16,6 +16,7 @@ import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useProfiles } from '@/contexts/ProfileContext';
+import AppShell from '@/components/AppShell';
 
 interface LinkInBioData {
   display_name: string;
@@ -69,7 +70,7 @@ const LinkInBioEditor = () => {
     handle: '',
     bio: '',
     avatar_url: null,
-    theme_color: 'pink',
+    theme_color: 'day',
     aurora_gradient: 'purple_dream',
     social_links: {},
     model_categories: [],
@@ -103,6 +104,7 @@ const LinkInBioEditor = () => {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
   const [debouncedData] = useDebounce(editorData, 1500);
 
@@ -123,10 +125,10 @@ const LinkInBioEditor = () => {
 
       setUserId(user.id);
 
-      // Load account-level data from profiles (premium + Stripe status)
+      // Load account-level data from profiles (premium status)
       const { data: mainProfile } = await supabase
         .from('profiles')
-        .select('is_creator_subscribed, stripe_connect_status, stripe_account_id')
+        .select('is_creator_subscribed')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -151,7 +153,7 @@ const LinkInBioEditor = () => {
       if (activeProfile?.id) {
         const { data: cpData, error: cpError } = await supabase
           .from('creator_profiles')
-          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories')
           .eq('id', activeProfile.id)
           .maybeSingle();
 
@@ -161,9 +163,6 @@ const LinkInBioEditor = () => {
           profileData = {
             ...cpData,
             handle: cpData.username,
-            // Override with account-level Stripe status (always up to date)
-            stripe_connect_status: mainProfile?.stripe_connect_status ?? cpData.stripe_connect_status,
-            stripe_account_id: mainProfile?.stripe_account_id ?? cpData.stripe_account_id,
           };
           // Load show_agency_branding separately (migration 070)
           try {
@@ -183,7 +182,7 @@ const LinkInBioEditor = () => {
       if (!profileData) {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, stripe_connect_status, stripe_account_id, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+          .select('display_name, handle, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -202,7 +201,7 @@ const LinkInBioEditor = () => {
           handle: profileData.handle || '',
           bio: profileData.bio || '',
           avatar_url: profileData.avatar_url || null,
-          theme_color: profileData.theme_color || 'pink',
+          theme_color: profileData.theme_color || 'day',
           aurora_gradient: profileData.aurora_gradient || 'purple_dream',
           social_links: profileData.social_links || {},
           show_join_banner: profileData.show_join_banner !== false,
@@ -339,11 +338,13 @@ const LinkInBioEditor = () => {
       }
 
       // Only sync to profiles table for the primary profile (backward compat)
+      // Exclude columns that only exist on creator_profiles (not on profiles table)
       const isPrimary = !activeProfile || profiles.length <= 1 || profiles[0]?.id === activeProfile?.id;
       if (isPrimary) {
+        const { chat_enabled: _ce, tips_enabled: _te, custom_requests_enabled: _cre, min_tip_amount_cents: _mt, min_custom_request_cents: _mcr, ...profilesSafePayload } = profilePayload;
         const { error } = await supabase
           .from('profiles')
-          .update({ ...profilePayload, profile_draft: null })
+          .update({ ...profilesSafePayload, profile_draft: null })
           .eq('id', userId);
         if (error) {
           console.error('Error saving to profiles', error);
@@ -514,197 +515,178 @@ const LinkInBioEditor = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <AppShell>
+        <div className="flex items-center justify-center min-h-[60vh] bg-background">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </AppShell>
     );
   }
 
+  const activeSectionLabel = sections.find((s) => s.id === activeSection)?.label ?? 'Photo';
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex h-screen overflow-hidden">
-        
-        {/* VERTICAL SIDEBAR - X/Twitter style */}
-        <aside className="hidden md:flex flex-col w-64 border-r border-border bg-background flex-shrink-0">
-          <div className="p-4 flex-1 overflow-y-auto">
-            {/* Logo */}
-            <div className="mb-6 px-2">
-              <span className="text-xl font-bold text-primary">Exclu</span>
-            </div>
-            
-            {/* Nav items */}
-            <nav className="space-y-1">
+    <AppShell>
+      <div className="flex-1 flex flex-col bg-background">
+        {/* ── Desktop: 3-column layout — each column scrolls independently ── */}
+        <div className="hidden md:grid md:grid-cols-[220px_1fr_380px] flex-1 md:h-[calc(100dvh-3.5rem)] lg:h-[100dvh] md:min-h-0 md:overflow-hidden">
+          {/* LEFT — Vertical editor menu */}
+          <aside className="border-r border-border bg-background overflow-y-auto py-5 px-3 flex flex-col">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-2">Editor</p>
+            <nav className="space-y-0.5">
               {sections.map((section) => {
                 const Icon = section.icon;
                 const isActive = activeSection === section.id;
                 return (
                   <button
                     key={section.id}
+                    type="button"
                     onClick={() => setActiveSection(section.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-primary/10 text-primary border border-primary/30'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent'
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                     }`}
                   >
-                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <Icon className="w-4 h-4 flex-shrink-0" />
                     <span>{section.label}</span>
+                    {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                   </button>
                 );
               })}
             </nav>
-          </div>
-        </aside>
 
-        {/* Main content area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Top bar */}
-          <div className="h-14 border-b border-border flex items-center justify-between px-4 flex-shrink-0">
-            {/* Mobile: hamburger + title */}
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="md:hidden rounded-full"
-                onClick={() => setIsMobileNavOpen(true)}
-              >
-                <Menu className="w-5 h-5" />
-              </Button>
-              <span className="font-semibold text-foreground md:hidden">Profile editor</span>
-            </div>
-
-            {/* Right side controls */}
-            <div className="flex items-center gap-2">
+            <div className="mt-auto pt-4 px-1 space-y-2">
               {saveStatus === 'saving' && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
                   <Loader2 className="w-3 h-3 animate-spin" />
                   Saving...
                 </span>
               )}
               {saveStatus === 'saved' && (
-                <span className="flex items-center gap-1.5 text-xs text-emerald-600">
-                  <div className="w-2 h-2 rounded-full bg-emerald-600" />
+                <span className="flex items-center gap-1.5 text-xs text-emerald-500 px-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Saved
                 </span>
               )}
               <Button
                 variant="outline"
                 size="sm"
-                className="rounded-full"
+                className="w-full rounded-xl gap-2"
                 onClick={() => window.open(`/${editorData.handle}`, '_blank')}
                 disabled={!editorData.handle}
               >
-                <Eye className="w-4 h-4 mr-2" />
-                Preview
+                <ExternalLink className="w-4 h-4" />
+                View profile
               </Button>
+            </div>
+          </aside>
+
+          {/* CENTER — Mobile preview */}
+          <div className="bg-muted/30 overflow-y-auto flex items-center justify-center">
+            <div className="py-6">
+              <MobilePreview
+                data={editorData}
+                links={links}
+                isPremium={isPremium}
+                publicContent={publicContent}
+                wishlistItems={wishlistItems}
+                agencyName={agencyName}
+                agencyLogoUrl={agencyLogoUrl}
+              />
+              <p className="text-center text-xs text-muted-foreground mt-3">Live Preview</p>
             </div>
           </div>
 
-          {/* Scrollable content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-6 max-w-3xl">
+          {/* RIGHT — Edit panel */}
+          <div className="border-l border-border bg-background overflow-y-auto">
+            <div className="p-5 sm:p-6">
+              <h2 className="text-base font-semibold text-foreground mb-5 flex items-center gap-2">
+                {(() => { const Icon = sections.find((s) => s.id === activeSection)?.icon; return Icon ? <Icon className="w-4 h-4 text-muted-foreground" /> : null; })()}
+                {activeSectionLabel}
+              </h2>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeSection}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.15 }}
                 >
                   {activeSection === 'photo' && (
-                    <div className="space-y-4">
-                      <PhotoSection
-                        avatarUrl={editorData.avatar_url}
-                        userId={userId}
-                        profileTag={activeProfile?.id || activeProfile?.username || null}
-                        onUpdate={handleAvatarUpdate}
-                      />
-                    </div>
+                    <PhotoSection
+                      avatarUrl={editorData.avatar_url}
+                      userId={userId}
+                      profileTag={activeProfile?.id || activeProfile?.username || null}
+                      onUpdate={handleAvatarUpdate}
+                    />
                   )}
-
                   {activeSection === 'info' && (
-                    <div className="space-y-4">
-                      <InfoSection
-                        displayName={editorData.display_name}
-                        handle={editorData.handle}
-                        bio={editorData.bio}
-                        location={editorData.location}
-                        modelCategories={editorData.model_categories}
-                        onUpdate={updateEditorData}
-                        onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
-                      />
-                    </div>
+                    <InfoSection
+                      displayName={editorData.display_name}
+                      handle={editorData.handle}
+                      bio={editorData.bio}
+                      location={editorData.location}
+                      modelCategories={editorData.model_categories}
+                      onUpdate={updateEditorData}
+                      onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
+                    />
                   )}
-
                   {activeSection === 'social' && (
-                    <div className="space-y-4">
-                      <SocialSection
-                        socialLinks={editorData.social_links}
-                        exclusiveContentText={editorData.exclusive_content_text}
-                        exclusiveContentLinkId={editorData.exclusive_content_link_id}
-                        exclusiveContentUrl={editorData.exclusive_content_url}
-                        exclusiveContentImageUrl={editorData.exclusive_content_image_url}
-                        auroraGradient={editorData.aurora_gradient}
-                        links={links}
-                        userId={userId}
-                        onUpdate={updateEditorData}
-                      />
-                    </div>
+                    <SocialSection
+                      socialLinks={editorData.social_links}
+                      exclusiveContentText={editorData.exclusive_content_text}
+                      exclusiveContentLinkId={editorData.exclusive_content_link_id}
+                      exclusiveContentUrl={editorData.exclusive_content_url}
+                      exclusiveContentImageUrl={editorData.exclusive_content_image_url}
+                      auroraGradient={editorData.aurora_gradient}
+                      links={links}
+                      userId={userId}
+                      onUpdate={updateEditorData}
+                    />
                   )}
-
                   {activeSection === 'links' && (
-                    <div className="space-y-4">
-                      <ContentSection
-                        links={links}
-                        onUpdate={fetchLinks}
-                      />
-                    </div>
+                    <ContentSection
+                      links={links}
+                      onUpdate={fetchLinks}
+                    />
                   )}
-
                   {activeSection === 'content' && (
-                    <div className="space-y-4">
-                      <PublicContentSection
-                        userId={userId}
-                        profileId={activeProfile?.id || null}
-                        onUpdate={fetchLinks}
-                        onContentUpdate={fetchPublicContent}
-                      />
-                    </div>
+                    <PublicContentSection
+                      userId={userId}
+                      profileId={activeProfile?.id || null}
+                      onUpdate={fetchLinks}
+                      onContentUpdate={fetchPublicContent}
+                    />
                   )}
-
                   {activeSection === 'wishlist' && (
-                    <div className="space-y-4">
-                      <WishlistSection
-                        items={wishlistItems}
-                        onUpdate={fetchWishlistItems}
-                      />
-                    </div>
+                    <WishlistSection
+                      items={wishlistItems}
+                      onUpdate={fetchWishlistItems}
+                    />
                   )}
-
                   {activeSection === 'colors' && (
-                    <div className="space-y-4">
-                      <OptionsSection
-                        showJoinBanner={editorData.show_join_banner}
-                        showCertification={editorData.show_certification}
-                        showDeeplinks={editorData.show_deeplinks}
-                        showAvailableNow={editorData.show_available_now}
-                        chatEnabled={editorData.chat_enabled}
-                        isPremium={isPremium}
-                        auroraGradient={editorData.aurora_gradient}
-                        tipsEnabled={editorData.tips_enabled}
-                        customRequestsEnabled={editorData.custom_requests_enabled}
-                        minTipAmountCents={editorData.min_tip_amount_cents}
-                        minCustomRequestCents={editorData.min_custom_request_cents}
-                        showAgencyBranding={editorData.show_agency_branding}
-                        agencyName={agencyName}
-                        agencyLogoUrl={agencyLogoUrl}
-                        onUpdate={updateEditorData}
-                        onAgencyNameChange={handleAgencyNameChange}
-                        onAgencyLogoUpload={handleAgencyLogoUpload}
-                        onAgencyLogoRemove={handleAgencyLogoRemove}
-                        isUploadingLogo={isUploadingLogo}
-                      />
-                    </div>
+                    <OptionsSection
+                      showJoinBanner={editorData.show_join_banner}
+                      showCertification={editorData.show_certification}
+                      showDeeplinks={editorData.show_deeplinks}
+                      showAvailableNow={editorData.show_available_now}
+                      chatEnabled={editorData.chat_enabled}
+                      isPremium={isPremium}
+                      auroraGradient={editorData.aurora_gradient}
+                      tipsEnabled={editorData.tips_enabled}
+                      customRequestsEnabled={editorData.custom_requests_enabled}
+                      minTipAmountCents={editorData.min_tip_amount_cents}
+                      minCustomRequestCents={editorData.min_custom_request_cents}
+                      showAgencyBranding={editorData.show_agency_branding}
+                      agencyName={agencyName}
+                      agencyLogoUrl={agencyLogoUrl}
+                      onUpdate={updateEditorData}
+                      onAgencyNameChange={handleAgencyNameChange}
+                      onAgencyLogoUpload={handleAgencyLogoUpload}
+                      onAgencyLogoRemove={handleAgencyLogoRemove}
+                      isUploadingLogo={isUploadingLogo}
+                    />
                   )}
                 </motion.div>
               </AnimatePresence>
@@ -712,61 +694,176 @@ const LinkInBioEditor = () => {
           </div>
         </div>
 
-        {/* Right preview column */}
-        <div className="hidden lg:flex bg-muted/30 overflow-y-auto sticky top-0 h-screen w-80 flex-shrink-0">
-          <div className="p-6 flex items-center justify-center min-h-full">
-            <MobilePreview 
-              data={editorData} 
-              links={links} 
-              isPremium={isPremium}
-              publicContent={publicContent}
-              wishlistItems={wishlistItems}
-              agencyName={agencyName}
-              agencyLogoUrl={agencyLogoUrl}
-            />
-          </div>
-        </div>
-
-        {/* Mobile nav Sheet */}
-        <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
-          <SheetContent side="left" className="p-0 w-72">
-            <div className="p-5 border-b border-border flex items-center justify-between">
-              <SheetTitle className="text-base">Exclu</SheetTitle>
-              <Button variant="ghost" size="icon" onClick={() => setIsMobileNavOpen(false)}>
-                <X className="w-5 h-5" />
+        {/* ── Mobile: stacked layout with sheet navigation ── */}
+        <div className="md:hidden">
+          <div className="px-4 py-4">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-xl gap-2"
+                onClick={() => setIsMobileNavOpen(true)}
+              >
+                <Menu className="w-4 h-4" />
+                {activeSectionLabel}
               </Button>
-            </div>
-            <div className="p-3">
-              <div className="space-y-1">
-                {sections.map((section) => {
-                  const Icon = section.icon;
-                  const isActive = activeSection === section.id;
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => {
-                        setActiveSection(section.id);
-                        setIsMobileNavOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'bg-primary/10 text-primary'
-                          : 'hover:bg-muted text-foreground'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span>{section.label}</span>
-                    </button>
-                  );
-                })}
+
+              <div className="flex items-center gap-2">
+                {saveStatus === 'saving' && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  </span>
+                )}
+                {saveStatus === 'saved' && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setIsMobilePreviewOpen(true)}
+                >
+                  <Eye className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => window.open(`/${editorData.handle}`, '_blank')}
+                  disabled={!editorData.handle}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
               </div>
             </div>
-          </SheetContent>
-        </Sheet>
 
+            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+              <SheetContent side="left" className="p-0">
+                <div className="p-5 border-b border-border">
+                  <SheetTitle className="text-base">Profile editor</SheetTitle>
+                </div>
+                <div className="p-3 space-y-0.5">
+                  {sections.map((section) => {
+                    const Icon = section.icon;
+                    const isActive = activeSection === section.id;
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveSection(section.id);
+                          setIsMobileNavOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-primary/10 text-primary'
+                            : 'hover:bg-muted text-foreground'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{section.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <Sheet open={isMobilePreviewOpen} onOpenChange={setIsMobilePreviewOpen}>
+              <SheetContent side="right" className="p-0">
+                <div className="p-5 border-b border-border">
+                  <SheetTitle className="text-base">Live preview</SheetTitle>
+                </div>
+                <div className="p-4 flex items-center justify-center">
+                  <MobilePreview data={editorData} links={links} isPremium={isPremium} publicContent={publicContent} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} />
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+              >
+                {activeSection === 'photo' && (
+                  <PhotoSection
+                    avatarUrl={editorData.avatar_url}
+                    userId={userId}
+                    profileTag={activeProfile?.id || activeProfile?.username || null}
+                    onUpdate={handleAvatarUpdate}
+                  />
+                )}
+                {activeSection === 'info' && (
+                  <InfoSection
+                    displayName={editorData.display_name}
+                    handle={editorData.handle}
+                    bio={editorData.bio}
+                    location={editorData.location}
+                    modelCategories={editorData.model_categories}
+                    onUpdate={updateEditorData}
+                    onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
+                  />
+                )}
+                {activeSection === 'social' && (
+                  <SocialSection
+                    socialLinks={editorData.social_links}
+                    exclusiveContentText={editorData.exclusive_content_text}
+                    exclusiveContentLinkId={editorData.exclusive_content_link_id}
+                    exclusiveContentUrl={editorData.exclusive_content_url}
+                    exclusiveContentImageUrl={editorData.exclusive_content_image_url}
+                    auroraGradient={editorData.aurora_gradient}
+                    links={links}
+                    userId={userId}
+                    onUpdate={updateEditorData}
+                  />
+                )}
+                {activeSection === 'links' && (
+                  <ContentSection links={links} onUpdate={fetchLinks} />
+                )}
+                {activeSection === 'content' && (
+                  <PublicContentSection
+                    userId={userId}
+                    profileId={activeProfile?.id || null}
+                    onUpdate={fetchLinks}
+                    onContentUpdate={fetchPublicContent}
+                  />
+                )}
+                {activeSection === 'wishlist' && (
+                  <WishlistSection items={wishlistItems} onUpdate={fetchWishlistItems} />
+                )}
+                {activeSection === 'colors' && (
+                  <OptionsSection
+                    showJoinBanner={editorData.show_join_banner}
+                    showCertification={editorData.show_certification}
+                    showDeeplinks={editorData.show_deeplinks}
+                    showAvailableNow={editorData.show_available_now}
+                    chatEnabled={editorData.chat_enabled}
+                    isPremium={isPremium}
+                    auroraGradient={editorData.aurora_gradient}
+                    tipsEnabled={editorData.tips_enabled}
+                    customRequestsEnabled={editorData.custom_requests_enabled}
+                    minTipAmountCents={editorData.min_tip_amount_cents}
+                    minCustomRequestCents={editorData.min_custom_request_cents}
+                    showAgencyBranding={editorData.show_agency_branding}
+                    agencyName={agencyName}
+                    agencyLogoUrl={agencyLogoUrl}
+                    onUpdate={updateEditorData}
+                    onAgencyNameChange={handleAgencyNameChange}
+                    onAgencyLogoUpload={handleAgencyLogoUpload}
+                    onAgencyLogoRemove={handleAgencyLogoRemove}
+                    isUploadingLogo={isUploadingLogo}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
-    </div>
+    </AppShell>
   );
 };
 

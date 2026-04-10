@@ -6,15 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Mail, Lock, Sparkles, AtSign, User, Palette } from 'lucide-react';
+import { Mail, Lock, Sparkles, AtSign, User, Palette, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+
+const isValidEmail = (email: string) =>
+  /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
 
 const Auth = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset' | 'update-password'>('signup');
   const [isLoading, setIsLoading] = useState(false);
   const [accountType, setAccountType] = useState<'creator' | 'fan'>('creator');
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -49,6 +53,11 @@ const Auth = () => {
 
     if (!email && mode !== 'update-password') {
       toast.error('Please fill in your email');
+      return;
+    }
+
+    if (email && mode !== 'update-password' && !isValidEmail(email)) {
+      toast.error('Please enter a valid email address');
       return;
     }
 
@@ -201,7 +210,7 @@ const Auth = () => {
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('handle, avatar_url, social_links, role')
+          .select('handle, avatar_url, role')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -221,13 +230,11 @@ const Auth = () => {
           return;
         }
 
-        const socialLinks = (profile?.social_links as Record<string, string> | null) || {};
-        const hasSocialLinks = Object.values(socialLinks).some((url) => url && url.length > 0);
-
-        if (!profile?.handle || !profile?.avatar_url || !hasSocialLinks) {
+        if (!profile?.handle || !profile?.avatar_url) {
           navigate('/onboarding');
         } else {
-          navigate('/app');
+          const isMobile = window.innerWidth < 768;
+          navigate(isMobile ? '/app/profile' : '/app');
         }
       }
     } catch (error: any) {
@@ -462,16 +469,26 @@ const Auth = () => {
                     Password
                   </label>
                   {mode !== 'reset' && mode !== 'update-password' && (
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
-                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                      minLength={6}
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                        placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pr-10"
+                        minLength={6}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   )}
                 </div>
 

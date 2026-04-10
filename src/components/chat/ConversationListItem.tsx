@@ -33,7 +33,10 @@ export function ConversationListItem({
   onClick,
 }: ConversationListItemProps) {
   const fan = conversation.fan;
-  const fanName = fan?.display_name || 'Fan';
+  const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
+  const fanName = isGuest
+    ? (conversation.guest_display_name || 'Guest')
+    : (fan?.display_name || 'Fan');
   const initial = fanName.charAt(0).toUpperCase();
   const isUnread = !conversation.is_read;
   const isUnclaimed = conversation.status === 'unclaimed';
@@ -71,6 +74,11 @@ export function ConversationListItem({
           <span className={`text-sm truncate ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
             {fanName}
           </span>
+          {isGuest && (
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 flex-shrink-0">
+              Guest
+            </span>
+          )}
           <div className="flex items-center gap-1 flex-shrink-0">
             {conversation.is_pinned && (
               <Pin className="w-3 h-3 text-muted-foreground/50" />

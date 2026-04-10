@@ -22,6 +22,12 @@ interface PayoutRecord {
   status: string;
   bank_iban: string | null;
   bank_holder_name: string | null;
+  bank_account_type: string | null;
+  bank_account_number: string | null;
+  bank_routing_number: string | null;
+  bank_bsb: string | null;
+  bank_bic: string | null;
+  bank_country: string | null;
   admin_notes: string | null;
   rejection_reason: string | null;
   requested_at: string | null;
@@ -51,7 +57,7 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
     try {
       const { data, error } = await supabase
         .from('payouts')
-        .select('id, creator_id, amount_cents, currency, status, bank_iban, bank_holder_name, admin_notes, rejection_reason, requested_at, processed_at, created_at')
+        .select('id, creator_id, amount_cents, currency, status, bank_iban, bank_holder_name, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_bic, bank_country, admin_notes, rejection_reason, requested_at, processed_at, created_at')
         .order('created_at', { ascending: false })
         .limit(200);
 
@@ -153,8 +159,8 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row gap-3 mb-6 min-w-0">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               value={searchQuery}
@@ -163,12 +169,12 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
               className="pl-9 h-10 bg-muted/30 border-border/60 rounded-xl"
             />
           </div>
-          <div className="flex gap-1 rounded-xl bg-muted/30 p-1">
+          <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none">
             {(['all', 'pending', 'completed', 'rejected'] as StatusFilter[]).map(s => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                   statusFilter === s
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
@@ -212,7 +218,7 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                     isPending ? 'border-yellow-500/30' : 'border-border/60'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 min-w-0">
                     {/* Left: creator info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2">
@@ -238,23 +244,31 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                           <p className="font-bold text-foreground text-sm">${(payout.amount_cents / 100).toFixed(2)}</p>
                         </div>
                         <div className="col-span-2 sm:col-span-1">
-                          <p className="text-muted-foreground">IBAN</p>
-                          {payout.bank_iban ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(payout.bank_iban!);
-                                toast.success('IBAN copied');
-                              }}
-                              className="font-mono text-foreground text-left hover:text-primary transition-colors cursor-copy"
-                              title="Click to copy IBAN"
-                            >
-                              {payout.bank_iban.replace(/(.{4})/g, '$1 ').trim()}
-                            </button>
-                          ) : (
-                            <p className="text-foreground">—</p>
-                          )}
+                          <p className="text-muted-foreground">Bank details</p>
+                          {(() => {
+                            const type = payout.bank_account_type || 'iban';
+                            const copyValue = type === 'iban' ? payout.bank_iban : payout.bank_account_number;
+                            const label = type === 'iban' ? 'IBAN' : type === 'us' ? 'Acct' : type === 'au' ? 'Acct' : 'Acct';
+                            if (!copyValue) return <p className="text-foreground">—</p>;
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(copyValue);
+                                  toast.success(`${label} copied`);
+                                }}
+                                className="font-mono text-foreground text-left hover:text-primary transition-colors cursor-copy"
+                                title={`Click to copy ${label}`}
+                              >
+                                {type === 'iban'
+                                  ? copyValue.replace(/(.{4})/g, '$1 ').trim()
+                                  : `${label}: ••••${copyValue.slice(-4)}`}
+                                {type === 'us' && payout.bank_routing_number && <span className="text-muted-foreground ml-1">ABA: {payout.bank_routing_number}</span>}
+                                {type === 'au' && payout.bank_bsb && <span className="text-muted-foreground ml-1">BSB: {payout.bank_bsb}</span>}
+                              </button>
+                            );
+                          })()}
                         </div>
                         <div>
                           <p className="text-muted-foreground">Holder</p>
@@ -295,26 +309,29 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                             value={adminNotes[payout.id] || ''}
                             onChange={(e) => setAdminNotes(prev => ({ ...prev, [payout.id]: e.target.value }))}
                             placeholder="Admin notes (optional)"
-                            className="h-8 text-xs bg-muted/30 border-border/60 rounded-lg w-full sm:w-56"
+                            className="h-9 text-xs bg-muted/30 border-border/60 rounded-xl w-full sm:w-56"
                           />
                           <div className="flex gap-2">
                             <Button
+                              type="button"
                               size="sm"
+                              variant="hero"
                               onClick={() => handleProcess(payout.id, 'complete')}
                               disabled={processingId === payout.id}
-                              className="flex-1 rounded-lg gap-1.5 bg-green-600 hover:bg-green-700 text-white text-xs h-8"
+                              className="flex-1"
                             >
-                              {processingId === payout.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                              {processingId === payout.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                               Mark paid
                             </Button>
                             <Button
+                              type="button"
                               size="sm"
                               variant="outline"
                               onClick={() => handleProcess(payout.id, 'reject')}
                               disabled={processingId === payout.id}
-                              className="flex-1 rounded-lg gap-1.5 text-xs h-8 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                              className="flex-1"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                               Reject
                             </Button>
                           </div>

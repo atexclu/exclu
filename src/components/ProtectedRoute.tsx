@@ -49,7 +49,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('handle, avatar_url, social_links, role, is_creator')
+        .select('handle, avatar_url, role, is_creator')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -75,11 +75,8 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         return;
       }
 
-      // Onboarding is incomplete if handle, avatar, or at least one social link is missing
-      const socialLinks = (profile?.social_links as Record<string, string> | null) || {};
-      const hasSocialLinks = Object.values(socialLinks).some((url) => url && url.length > 0);
-
-      if (!profile?.handle || !profile?.avatar_url || !hasSocialLinks) {
+      // Onboarding is incomplete if handle or avatar is missing
+      if (!profile?.handle || !profile?.avatar_url) {
         navigate('/onboarding', { replace: true });
         setIsLoading(false);
         return;

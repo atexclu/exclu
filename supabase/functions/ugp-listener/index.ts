@@ -64,8 +64,8 @@ serve(async (req) => {
     }
   }
 
-  // Verify Key
-  if (confirmKey && body.Key !== confirmKey) {
+  // Verify Key only when actually present in payload (standard callbacks don't include Key)
+  if (confirmKey && body.Key && body.Key !== confirmKey) {
     console.error('Invalid Key in listener callback');
     return new Response('Unauthorized', { status: 401 });
   }

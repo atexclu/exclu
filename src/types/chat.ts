@@ -11,9 +11,10 @@ export interface FanProfile {
 
 export interface Conversation {
   id: string;
-  fan_id: string;
+  fan_id: string | null;
   profile_id: string;
   assigned_chatter_id: string | null;
+  guest_session_id: string | null;
   status: 'unclaimed' | 'active' | 'archived' | 'transferred';
   is_pinned: boolean;
   is_read: boolean;
@@ -23,6 +24,8 @@ export interface Conversation {
   created_at: string;
   archived_at: string | null;
   fan?: FanProfile | null;
+  guest_display_name?: string | null;
+  is_guest?: boolean;
 }
 
 export type MessageContentType =
@@ -40,7 +43,8 @@ export interface Message {
   id: string;
   conversation_id: string;
   sender_type: SenderType;
-  sender_id: string;
+  sender_id: string | null;
+  guest_session_id?: string | null;
   content: string | null;
   content_type: MessageContentType;
   paid_content_id: string | null;
