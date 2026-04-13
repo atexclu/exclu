@@ -95,7 +95,7 @@ serve(async (req) => {
       'username', 'display_name', 'handle', 'email', 'account_type', 'country',
       'created_at', 'wallet_balance', 'total_earned', 'total_withdrawn',
       'subscription', 'links_count', 'total_sales', 'total_revenue',
-      'profile_views', 'bank_country', 'phone',
+      'profile_views', 'bank_country',
     ];
 
     let requestedColumns: string[] = ALL_COLUMNS;
@@ -112,19 +112,28 @@ serve(async (req) => {
       }
     } catch { /* ignore parse errors */ }
 
-    // 1. Load all profiles with relevant columns
-    const { data: profiles, error: profilesError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, handle, display_name, country, is_creator, is_admin, agency_name, created_at, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, is_creator_subscribed, bank_country, role, phone')
-      .order('created_at', { ascending: false })
-      .range(0, 99999);
+    // 1. Load ALL profiles via pagination (Supabase limits rows per query)
+    const PAGE_SIZE = 1000;
+    const profiles: any[] = [];
+    let pageStart = 0;
+    let hasMoreProfiles = true;
+    while (hasMoreProfiles) {
+      const { data: batch, error: batchError } = await supabaseAdmin
+        .from('profiles')
+        .select('id, handle, display_name, country, is_creator, is_admin, agency_name, created_at, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, is_creator_subscribed, bank_country, role')
+        .order('created_at', { ascending: false })
+        .range(pageStart, pageStart + PAGE_SIZE - 1);
 
-    if (profilesError) {
-      console.error('Error loading profiles', profilesError);
-      return new Response(JSON.stringify({ error: 'Failed to load profiles' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      if (batchError) {
+        console.error('Error loading profiles', batchError);
+        return new Response(JSON.stringify({ error: 'Failed to load profiles' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      profiles.push(...(batch ?? []));
+      hasMoreProfiles = (batch?.length ?? 0) === PAGE_SIZE;
+      pageStart += PAGE_SIZE;
     }
 
     // 2. Load emails from auth if needed
@@ -151,30 +160,43 @@ serve(async (req) => {
       }
     }
 
-    // 3. Load analytics if needed
+    // 3. Load analytics if needed (paginated)
     const needsAnalytics = ['links_count', 'total_sales', 'total_revenue', 'profile_views'].some(c => requestedColumns.includes(c));
     const analyticsMap = new Map<string, { sales: number; revenue: number; views: number; links: number }>();
     if (needsAnalytics) {
-      const { data: analytics } = await supabaseAdmin
-        .from('profile_analytics')
-        .select('profile_id, sales_count, revenue_cents, profile_views, link_clicks');
-      for (const a of (analytics ?? []) as any[]) {
-        const pid = a.profile_id as string;
-        const existing = analyticsMap.get(pid) ?? { sales: 0, revenue: 0, views: 0, links: 0 };
-        existing.sales += a.sales_count ?? 0;
-        existing.revenue += a.revenue_cents ?? 0;
-        existing.views += a.profile_views ?? 0;
-        analyticsMap.set(pid, existing);
+      let aStart = 0;
+      let aMore = true;
+      while (aMore) {
+        const { data: analytics } = await supabaseAdmin
+          .from('profile_analytics')
+          .select('profile_id, sales_count, revenue_cents, profile_views, link_clicks')
+          .range(aStart, aStart + PAGE_SIZE - 1);
+        for (const a of (analytics ?? []) as any[]) {
+          const pid = a.profile_id as string;
+          const existing = analyticsMap.get(pid) ?? { sales: 0, revenue: 0, views: 0, links: 0 };
+          existing.sales += a.sales_count ?? 0;
+          existing.revenue += a.revenue_cents ?? 0;
+          existing.views += a.profile_views ?? 0;
+          analyticsMap.set(pid, existing);
+        }
+        aMore = (analytics?.length ?? 0) === PAGE_SIZE;
+        aStart += PAGE_SIZE;
       }
-      // links count
+      // links count (paginated)
       if (requestedColumns.includes('links_count')) {
-        const { data: links } = await supabaseAdmin.from('links').select('id, creator_id').range(0, 99999);
-        for (const l of (links ?? []) as any[]) {
-          const cid = l.creator_id as string;
-          if (!cid) continue;
-          const existing = analyticsMap.get(cid) ?? { sales: 0, revenue: 0, views: 0, links: 0 };
-          existing.links += 1;
-          analyticsMap.set(cid, existing);
+        let lStart = 0;
+        let lMore = true;
+        while (lMore) {
+          const { data: links } = await supabaseAdmin.from('links').select('id, creator_id').range(lStart, lStart + PAGE_SIZE - 1);
+          for (const l of (links ?? []) as any[]) {
+            const cid = l.creator_id as string;
+            if (!cid) continue;
+            const existing = analyticsMap.get(cid) ?? { sales: 0, revenue: 0, views: 0, links: 0 };
+            existing.links += 1;
+            analyticsMap.set(cid, existing);
+          }
+          lMore = (links?.length ?? 0) === PAGE_SIZE;
+          lStart += PAGE_SIZE;
         }
       }
     }
@@ -206,7 +228,6 @@ serve(async (req) => {
         case 'total_revenue': return ((a?.revenue ?? 0) / 100).toFixed(2);
         case 'profile_views': return String(a?.views ?? 0);
         case 'bank_country': return p.bank_country || '';
-        case 'phone': return p.phone || '';
         default: return '';
       }
     };

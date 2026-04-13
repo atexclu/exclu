@@ -1007,7 +1007,6 @@ const AppDashboard = () => {
               const { error } = await supabase.functions.invoke('request-affiliate-payout', {
                 body: {},
                 headers: {
-                  Authorization: '',
                   'x-supabase-auth': session?.access_token ?? '',
                 },
               });
@@ -1030,7 +1029,6 @@ const AppDashboard = () => {
               const { error } = await supabase.functions.invoke('send-referral-invite', {
                 body: { to_email: inviteEmail },
                 headers: {
-                  Authorization: '',
                   'x-supabase-auth': session?.access_token ?? '',
                 },
               });

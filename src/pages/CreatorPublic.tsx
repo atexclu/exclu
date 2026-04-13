@@ -84,6 +84,7 @@ const CreatorPublic = () => {
   const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>('links');
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isContentLoading, setIsContentLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeactivated, setIsDeactivated] = useState(false);
   const [creatorUserId, setCreatorUserId] = useState<string | null>(null);
@@ -317,6 +318,12 @@ const CreatorPublic = () => {
             show_agency_branding: showBranding,
             chat_enabled: cpData.chat_enabled,
           };
+
+          // Show profile immediately (progressive loading)
+          setProfile(profileData as CreatorProfileData);
+          setCreatorUserId(userId);
+          setCreatorProfileId(profileId);
+          setIsLoading(false);
         }
 
         // ── Step 2: Fallback to profiles table (backward compat) ──
@@ -339,6 +346,11 @@ const CreatorPublic = () => {
 
           userId = fallbackData.id;
           profileData = fallbackData;
+
+          // Show profile immediately (progressive loading)
+          setProfile(profileData as CreatorProfileData);
+          setCreatorUserId(userId);
+          setIsLoading(false);
 
           // Load agency branding separately (migration 070)
           try {
@@ -430,10 +442,6 @@ const CreatorPublic = () => {
         if (!isMounted) return;
         setWishlistItems(wishlistData ?? []);
 
-        setProfile(profileData as CreatorProfileData);
-        setCreatorUserId(userId);
-        setCreatorProfileId(profileId);
-
         // Increment profile view count (best-effort)
         if (profileData.handle) {
           supabase.functions
@@ -443,7 +451,7 @@ const CreatorPublic = () => {
             .catch(() => {});
         }
 
-        setIsLoading(false);
+        setIsContentLoading(false);
       } catch (err: any) {
         if (!isMounted) return;
         console.error('Error in fetchCreator:', err);
@@ -826,8 +834,73 @@ const CreatorPublic = () => {
     }
   };
 
+  // ── Skeleton de chargement — affiché immédiatement pendant que les données arrivent ──
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col relative overflow-hidden">
+        {/* Mobile skeleton */}
+        <div className="sm:hidden flex flex-col items-center w-full">
+          {/* Photo placeholder avec shimmer */}
+          <div className="w-full aspect-square bg-gradient-to-b from-zinc-900 to-black relative overflow-hidden">
+            <div className="absolute inset-0 shimmer-bg" />
+          </div>
+          {/* Nom + badge */}
+          <div className="px-6 -mt-10 relative z-10 w-full flex flex-col items-center gap-3">
+            <div className="h-7 w-40 rounded-full bg-white/10 animate-pulse" />
+            <div className="h-3 w-24 rounded-full bg-white/5 animate-pulse" />
+            {/* Socials placeholder */}
+            <div className="flex gap-3 mt-2">
+              {[1, 2, 3].map(i => <div key={i} className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />)}
+            </div>
+            {/* Tab bar */}
+            <div className="w-full flex justify-center gap-8 mt-4 border-b border-white/5 pb-3">
+              <div className="h-4 w-12 rounded bg-white/10 animate-pulse" />
+              <div className="h-4 w-14 rounded bg-white/5 animate-pulse" />
+            </div>
+            {/* Link placeholders */}
+            <div className="w-full space-y-3 mt-2 px-2">
+              {[1, 2, 3].map(i => <div key={i} className="w-full h-14 rounded-full bg-white/5 animate-pulse" />)}
+            </div>
+          </div>
+        </div>
+        {/* Desktop skeleton */}
+        <div className="hidden sm:flex flex-1 px-10 pt-10 max-w-7xl mx-auto w-full gap-8">
+          <div className="w-[400px] shrink-0">
+            <div className="w-full aspect-[3/4] rounded-3xl bg-zinc-900 animate-pulse relative overflow-hidden">
+              <div className="absolute inset-0 shimmer-bg" />
+            </div>
+          </div>
+          <div className="flex-1 space-y-6 pt-2">
+            <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 space-y-4">
+              <div className="flex gap-3">
+                {[1, 2, 3].map(i => <div key={i} className="w-11 h-11 rounded-full bg-white/5 animate-pulse" />)}
+              </div>
+              <div className="h-4 w-3/4 rounded bg-white/5 animate-pulse" />
+              <div className="h-3 w-1/2 rounded bg-white/[0.03] animate-pulse" />
+            </div>
+            <div className="rounded-3xl border border-white/5 bg-white/[0.02] p-6 space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="w-full h-14 rounded-2xl bg-white/5 animate-pulse" />)}
+            </div>
+          </div>
+        </div>
+        {/* Shimmer CSS intégré */}
+        <style>{`
+          .shimmer-bg {
+            background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.04) 50%, transparent 70%);
+            background-size: 200% 100%;
+            animation: shimmer 1.8s infinite;
+          }
+          @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-white flex flex-col relative overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-white flex flex-col relative" style={{ overflowX: 'clip' }}>
       {/* Desktop: Aurora animated background from top */}
       <div className="hidden sm:block fixed inset-0 z-0 pointer-events-none">
         <Aurora
@@ -992,9 +1065,12 @@ const CreatorPublic = () => {
 
           {/* Tab content — hidden when guest chat is active */}
           {!showGuestChat && <div className="flex-1 space-y-3">
-            {isLoading && <p className="text-sm text-white/60 text-center py-4">Loading content…</p>}
-
-            {!isLoading && activeTab === 'links' && (
+            {isContentLoading && (
+              <div className="space-y-3">
+                {[1, 2, 3].map(i => <div key={i} className="w-full h-14 rounded-full bg-white/5 animate-pulse" />)}
+              </div>
+            )}
+            {!isContentLoading && activeTab === 'links' && (
               <div className="space-y-3">
                 {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0) && (
                   <StarBorder
@@ -1048,7 +1124,7 @@ const CreatorPublic = () => {
               </div>
             )}
 
-            {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
+            {!isContentLoading && activeTab === 'content' && publicContent.length > 0 && (
               <div className="grid grid-cols-2 gap-3">
                 {publicContent.map((content, index) => {
                   const isVideo = content.mime_type?.startsWith('video/');
@@ -1077,11 +1153,11 @@ const CreatorPublic = () => {
                 })}
               </div>
             )}
-            {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
+            {!isContentLoading && activeTab === 'content' && publicContent.length === 0 && (
               <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No public content available yet.</div>
             )}
 
-            {!isLoading && activeTab === 'wishlist' && (
+            {!isContentLoading && activeTab === 'wishlist' && (
               <div className="grid grid-cols-2 gap-3">
                 {wishlistItems.map((item, index) => {
                   const isFullyGifted = item.max_quantity !== null && item.gifted_count >= item.max_quantity;
@@ -1121,29 +1197,21 @@ const CreatorPublic = () => {
               </div>
             )}
 
-            {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
+            {error && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
           </div>}
 
           {/* Tip, Request & Chat CTAs — hidden when guest chat is active */}
-          {!isLoading && !showGuestChat && (showTipsCta || showRequestsCta || showChatCta) && (
+          {!showGuestChat && (showTipsCta || showRequestsCta || showChatCta) && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }} className="mt-6 space-y-3">
               {showTipsCta && (
-                <StarBorder
-                  as="button"
+                <button
                   type="button"
                   onClick={handleTipCta}
-                  color1={gradientStops[0]}
-                  color2={gradientStops[1]}
-                  speed="4s"
-                  thickness={1}
-                  className="w-full"
-                  style={{ width: '100%' }}
+                  className="w-full h-12 rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-lg hover:brightness-110 active:scale-[0.98] transition-all"
+                  style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}
                 >
-                  <div className="h-12 w-full rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-lg"
-                    style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
-                    Send a Tip
-                  </div>
-                </StarBorder>
+                  Send a Tip
+                </button>
               )}
               {(showRequestsCta || showChatCta) && (
                 <div className="flex gap-3">
@@ -1332,7 +1400,7 @@ const CreatorPublic = () => {
                   )}
 
                   {/* Tip, Request & Chat CTAs */}
-                  {!isLoading && (showTipsCta || showRequestsCta || showChatCta) && (
+                  {(showTipsCta || showRequestsCta || showChatCta) && (
                     <div className="flex gap-3 pt-1">
                       {showRequestsCta && (
                         <button type="button" onClick={handleRequestCta}
@@ -1341,22 +1409,14 @@ const CreatorPublic = () => {
                         </button>
                       )}
                       {showTipsCta && (
-                        <StarBorder
-                          as="button"
+                        <button
                           type="button"
                           onClick={handleTipCta}
-                          color1={gradientStops[0]}
-                          color2={gradientStops[1]}
-                          speed="4s"
-                          thickness={1}
-                          className="flex-1"
-                          style={{ width: '100%' }}
+                          className="flex-1 h-11 rounded-2xl flex items-center justify-center text-sm font-bold text-white shadow-lg hover:brightness-110 active:scale-[0.98] transition-all"
+                          style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}
                         >
-                          <div className="h-11 w-full rounded-2xl flex items-center justify-center text-sm font-bold text-white shadow-lg"
-                            style={{ background: `linear-gradient(to right, ${gradientStops[0]}cc, ${gradientStops[1]}cc)` }}>
-                            Send a Tip
-                          </div>
-                        </StarBorder>
+                          Send a Tip
+                        </button>
                       )}
                       {showChatCta && (
                         <button type="button" onClick={handleMessageCta}
@@ -1433,10 +1493,13 @@ const CreatorPublic = () => {
 
                   {/* Content area */}
                   <div className="p-6 space-y-3">
-                    {isLoading && <p className="text-sm text-white/60 text-center py-8">Loading content…</p>}
-
+                    {isContentLoading && (
+                      <div className="space-y-3">
+                        {[1, 2, 3].map(i => <div key={i} className="w-full h-14 rounded-2xl bg-white/5 animate-pulse" />)}
+                      </div>
+                    )}
                     {/* Links Tab */}
-                    {!isLoading && activeTab === 'links' && (
+                    {!isContentLoading && activeTab === 'links' && (
                       <div className="space-y-3">
                         {profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0) && (
                           <StarBorder
@@ -1497,7 +1560,7 @@ const CreatorPublic = () => {
                     )}
 
                     {/* Content Tab */}
-                    {!isLoading && activeTab === 'content' && publicContent.length > 0 && (
+                    {!isContentLoading && activeTab === 'content' && publicContent.length > 0 && (
                       <div className="grid grid-cols-3 gap-3">
                         {publicContent.map((content, index) => {
                           const isVideo = content.mime_type?.startsWith('video/');
@@ -1526,12 +1589,12 @@ const CreatorPublic = () => {
                         })}
                       </div>
                     )}
-                    {!isLoading && activeTab === 'content' && publicContent.length === 0 && (
+                    {!isContentLoading && activeTab === 'content' && publicContent.length === 0 && (
                       <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50 text-center">No public content available yet.</div>
                     )}
 
                     {/* Wishlist Tab */}
-                    {!isLoading && activeTab === 'wishlist' && (
+                    {!isContentLoading && activeTab === 'wishlist' && (
                       <div className="grid grid-cols-3 gap-3">
                         {wishlistItems.map((item, index) => {
                           const isFullyGifted = item.max_quantity !== null && item.gifted_count >= item.max_quantity;
@@ -1582,7 +1645,7 @@ const CreatorPublic = () => {
                       </div>
                     )}
 
-                    {error && !isLoading && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
+                    {error && <p className="text-sm text-red-400 text-center py-4">{error}</p>}
                   </div>
                 </div>
               </motion.div>}

@@ -44,7 +44,7 @@ const AdminBlog = () => {
     if (!session) { setLoading(false); return; }
 
     const res = await supabase.functions.invoke('admin-blog-manage', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'list' },
     });
 
@@ -65,7 +65,7 @@ const AdminBlog = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-blog-manage', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'archive', id },
     });
     if (res.error) {
@@ -81,7 +81,7 @@ const AdminBlog = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-blog-manage', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'delete', id },
     });
     if (res.error) {

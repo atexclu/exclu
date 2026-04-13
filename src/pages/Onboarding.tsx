@@ -1,5 +1,4 @@
 import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Check, Camera, Loader2, Copy, CheckCircle2, Upload, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Plus, Timer, Play, Link2, ShoppingCart, DollarSign, Lock, ArrowUpRight } from 'lucide-react';
+import { Check, Camera, Loader2, Copy, CheckCircle2, Upload, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Plus, Timer, Play, Link2, ShoppingCart, DollarSign, Lock, ArrowUpRight, X } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
@@ -627,6 +626,7 @@ const Onboarding = () => {
 
       <Navbar
         user={currentUser}
+        hideDashboard
         centerContent={step !== 'welcome' ? (
           <div className="flex items-center gap-3">
             {CHECKLIST_STEPS.map((s, i) => {
@@ -687,7 +687,7 @@ const Onboarding = () => {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="fixed top-[7rem] sm:top-[6rem] left-0 right-0 z-40 hidden sm:flex justify-center pointer-events-none"
+            className="fixed top-[7rem] sm:top-[7rem] left-0 right-0 z-40 hidden sm:flex justify-center pointer-events-none"
           >
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 backdrop-blur-sm pointer-events-auto">
               <Timer className="w-3 h-3 text-amber-400" />
@@ -730,7 +730,7 @@ const Onboarding = () => {
 
         {/* STEP 1: Profile Setup */}
         {step === 'profile' && (
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-12">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-6">
             <div className="text-center space-y-2">
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-white">Set up your creator profile</h1>
               <p className="text-white/50 text-[13px] sm:text-sm max-w-md mx-auto">Choose how fans will see you on Exclu. You can change these details later.</p>
@@ -952,40 +952,53 @@ const Onboarding = () => {
 
         {/* STEP 2: Create First Link */}
         {step === 'link' && (
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-md space-y-6 mt-2 sm:mt-16">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-md space-y-6 mt-2 sm:mt-10">
             <div className="text-center space-y-2">
               <h1 className="text-[1.85rem] sm:text-[2.1rem] leading-tight font-extrabold text-white">Create your first link</h1>
               <p className="text-white/50 text-[13px] sm:text-sm max-w-md mx-auto">Upload a photo or video that fans can unlock.</p>
             </div>
 
-            {/* Upload zone — no card frame */}
-            <div className="relative rounded-2xl border-2 border-dashed border-white/15 hover:border-primary/40 bg-white/5 backdrop-blur-sm px-6 py-8 flex flex-col items-center justify-center text-center gap-4 transition-colors cursor-pointer" onClick={() => linkFileInputRef.current?.click()}>
-              <div className="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary">
-                <Plus className="w-7 h-7" />
+            {/* Upload zone — affiche le bouton + ou la preview avec suppression */}
+            {linkFilePreview ? (
+              <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-sm">
+                {linkFile?.type.startsWith('video/') ? (
+                  <video src={linkFilePreview} className="w-full max-h-80 object-contain bg-black" muted loop autoPlay playsInline />
+                ) : (
+                  <img src={linkFilePreview} alt="Preview" className="w-full max-h-80 object-contain bg-black" />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (linkFilePreview) URL.revokeObjectURL(linkFilePreview);
+                    setLinkFile(null);
+                    setLinkFilePreview(null);
+                    if (linkFileInputRef.current) linkFileInputRef.current.value = '';
+                  }}
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 border border-white/20 flex items-center justify-center transition-colors z-10"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
               </div>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">{linkFile ? linkFile.name : 'Upload file'}</p>
-                <p className="text-xs text-white/40">Any file type</p>
-              </div>
-              {linkFilePreview && (
-                <div className="mt-2 rounded-xl overflow-hidden border border-white/10 max-h-48 w-full">
-                  {linkFile?.type.startsWith('video/') ? (
-                    <video src={linkFilePreview} className="w-full h-48 object-cover" muted loop autoPlay />
-                  ) : (
-                    <img src={linkFilePreview} alt="Preview" className="w-full h-48 object-cover" />
-                  )}
+            ) : (
+              <div className="relative rounded-2xl border-2 border-dashed border-white/15 hover:border-primary/40 bg-white/5 backdrop-blur-sm px-6 py-8 flex flex-col items-center justify-center text-center gap-4 transition-colors cursor-pointer" onClick={() => linkFileInputRef.current?.click()}>
+                <div className="flex items-center justify-center w-14 h-14 rounded-full bg-primary/10 text-primary">
+                  <Plus className="w-7 h-7" />
                 </div>
-              )}
-              <input ref={linkFileInputRef} type="file" accept="image/*,video/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onClick={(e) => e.stopPropagation()} onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (file.size > 100 * 1024 * 1024) { toast.error('File must be less than 100MB'); return; }
-                const converted = await maybeConvertHeic(file);
-                setLinkFile(converted);
-                if (linkFilePreview) URL.revokeObjectURL(linkFilePreview);
-                setLinkFilePreview(URL.createObjectURL(converted));
-              }} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-white">Upload file</p>
+                  <p className="text-xs text-white/40">Photo or video</p>
+                </div>
+              </div>
+            )}
+            <input ref={linkFileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (file.size > 100 * 1024 * 1024) { toast.error('File must be less than 100MB'); return; }
+              const converted = await maybeConvertHeic(file);
+              setLinkFile(converted);
+              if (linkFilePreview) URL.revokeObjectURL(linkFilePreview);
+              setLinkFilePreview(URL.createObjectURL(converted));
+            }} />
 
             {/* Price — large text, minimal separator */}
             <div className="text-center space-y-2">
@@ -993,15 +1006,19 @@ const Onboarding = () => {
               <div className="border-t border-white/10 pt-4">
                 <div className="flex items-center justify-center">
                   <span className="text-4xl font-bold text-white/30 mr-1">$</span>
-                  <input type="number" min="5" step="0.01" value={linkPrice} onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val) && val < 5) {
+                  <input type="text" inputMode="decimal" value={linkPrice} onChange={(e) => {
+                      const raw = e.target.value;
+                      // Autoriser uniquement les chiffres avec max 2 décimales
+                      if (raw === '' || /^\d*\.?\d{0,2}$/.test(raw)) {
+                        setLinkPrice(raw);
+                      }
+                    }} onBlur={() => {
+                      const val = parseFloat(linkPrice);
+                      if (!isNaN(val) && val > 0 && val < 5) {
                         toast.error('Minimum price is $5.00');
                         setLinkPrice('5.00');
-                      } else {
-                        setLinkPrice(e.target.value);
                       }
-                    }} placeholder="0.00" className="text-4xl font-bold text-white bg-transparent border-none outline-none text-center w-40 placeholder:text-white/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                    }} placeholder="0.00" className="text-4xl font-bold text-white bg-transparent border-none outline-none text-center w-40 placeholder:text-white/20" />
                 </div>
               </div>
             </div>
@@ -1019,7 +1036,7 @@ const Onboarding = () => {
 
         {/* STEP 3: Chat Management */}
         {step === 'chatting' && (
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-16">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-10">
             <div className="text-center space-y-2">
               <h1 className="text-[1.6rem] sm:text-[2.1rem] leading-tight font-extrabold text-white">How do you want to manage your fan conversations?</h1>
               <p className="text-white/50 text-[13px] sm:text-sm max-w-md mx-auto">Choose how you want to interact with your fans on Exclu.</p>
@@ -1086,10 +1103,10 @@ const Onboarding = () => {
 
         {/* STEP 3bis: Instagram Bio Verification */}
         {step === 'instagram' && (
-          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-16">
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: 'easeOut' }} className="w-full max-w-lg space-y-6 mt-4 sm:mt-10">
             <div className="text-center space-y-3">
               <h1 className="text-[1.6rem] sm:text-[2.1rem] leading-tight font-extrabold text-white">
-                Add your <span className="text-primary">Exclu</span> link to your Instagram Bio – then verify
+                Add your link in bio
               </h1>
             </div>
 
@@ -1206,7 +1223,6 @@ const Onboarding = () => {
           </motion.div>
         )}
       </main>
-      <Footer />
     </div>
   );
 };

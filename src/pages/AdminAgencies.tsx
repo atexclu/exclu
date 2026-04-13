@@ -64,7 +64,7 @@ const AdminAgencies = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setLoading(false); return; }
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'list' },
     });
     if (res.data?.agencies) setAgencies(res.data.agencies);
@@ -93,7 +93,7 @@ const AdminAgencies = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { setSaving(false); return; }
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: payload,
     });
     if (res.error) {
@@ -112,7 +112,7 @@ const AdminAgencies = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'update', id: agency.id, is_visible: !agency.is_visible },
     });
     if (!res.error) {
@@ -126,7 +126,7 @@ const AdminAgencies = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'delete', id },
     });
     if (!res.error) {

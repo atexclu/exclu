@@ -255,7 +255,7 @@ const AdminUsers = () => {
       }
 
       const { data, error } = await supabase.functions.invoke('admin-get-users', {
-        headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+        headers: { 'x-supabase-auth': session.access_token },
         body: {
           page,
           pageSize,
@@ -311,7 +311,7 @@ const AdminUsers = () => {
 
     // Fetch directory agencies via edge function
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'list' },
     });
     const directoryAgencies: DirectoryAgency[] = (res.data?.agencies ?? []).map((a: DirectoryAgency) => ({
@@ -421,7 +421,7 @@ const AdminUsers = () => {
     };
 
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: payload,
     });
     if (res.error) {
@@ -440,7 +440,7 @@ const AdminUsers = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'update', id: agency.id, is_visible: !agency.is_visible },
     });
     if (!res.error) {
@@ -454,7 +454,7 @@ const AdminUsers = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
     const res = await supabase.functions.invoke('admin-manage-agencies', {
-      headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+      headers: { 'x-supabase-auth': session.access_token },
       body: { action: 'delete', id },
     });
     if (!res.error) { toast.success('Agency deleted'); fetchDirAgencies(); }
@@ -617,7 +617,7 @@ const AdminUsers = () => {
       if (!session) { toast.error('Not authenticated'); return; }
 
       const res = await supabase.functions.invoke('admin-export-users-csv', {
-        headers: { Authorization: '', 'x-supabase-auth': session.access_token },
+        headers: { 'x-supabase-auth': session.access_token },
         body: { columns: Array.from(exportColumns) },
       });
 

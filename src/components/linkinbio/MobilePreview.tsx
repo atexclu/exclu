@@ -89,7 +89,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
   const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
   const activeSocials = Object.entries(data.social_links).filter(([_, url]) => url && url.trim() !== '');
   const visibleLinks = links.filter((link) => link.show_on_profile);
-  const shouldShowJoinBanner = !isPremium || (isPremium && data.show_join_banner !== false);
+  const shouldShowJoinBanner = data.show_join_banner !== false && (!isPremium || data.show_join_banner === true);
 
   return (
     <div className="relative">

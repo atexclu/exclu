@@ -269,7 +269,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </AnimatePresence>
 
       {/* ── Main content area ───────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col lg:ml-[200px]">
+      <div className="flex-1 flex flex-col lg:ml-[200px] min-w-0 overflow-x-hidden">
         {/* Mobile topbar */}
         <header className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-2xl h-14 flex items-center justify-between px-4 lg:hidden">
           <Link to="/app" className="inline-flex items-center">

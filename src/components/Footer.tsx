@@ -31,6 +31,7 @@ const Footer = () => {
       { label: 'Privacy', href: '/privacy' },
       { label: 'Terms', href: '/terms' },
       { label: 'Cookies', href: '/cookies' },
+      { label: 'Anti-Slavery Policy', href: '/anti-slavery-policy' },
     ],
     support: [
       { label: 'Help Center', href: '/help-center' },

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import AgeVerificationGate from "@/components/AgeVerificationGate";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -20,6 +21,7 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
 import DMCA from "./pages/DMCA";
+import AntiSlaveryPolicy from "./pages/AntiSlaveryPolicy";
 import AppDashboard from "./pages/AppDashboard";
 import CreatorLinks from "./pages/CreatorLinks";
 import CreateLink from "./pages/CreateLink";
@@ -102,8 +104,9 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <ProfileProvider>
-          <TooltipProvider>
+        <AgeVerificationGate>
+          <ProfileProvider>
+            <TooltipProvider>
             <Toaster />
             <Sonner />
             <BrowserRouter>
@@ -303,7 +306,7 @@ const App = () => {
                   }
                 />
                 <Route
-                  path="/admin/blog/edit/:id"
+                  path="/admin/blog/:id/edit"
                   element={
                     <AdminRoute>
                       <AdminBlogEditor />
@@ -316,6 +319,7 @@ const App = () => {
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/cookies" element={<Cookies />} />
                 <Route path="/dmca" element={<DMCA />} />
+                <Route path="/anti-slavery-policy" element={<AntiSlaveryPolicy />} />
 
                 {/* Blog SPA pages (SSR handled by Vercel on first load for SEO) */}
                 <Route path="/blog" element={<BlogIndex />} />
@@ -332,8 +336,9 @@ const App = () => {
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
-          </TooltipProvider>
-        </ProfileProvider>
+            </TooltipProvider>
+          </ProfileProvider>
+        </AgeVerificationGate>
       </ThemeProvider>
     </QueryClientProvider>
   );

@@ -4,7 +4,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { User } from '@supabase/supabase-js';
-import { LogOut } from 'lucide-react';
+import { LogOut, LayoutDashboard } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { useEffect, useState } from 'react';
@@ -14,9 +14,10 @@ interface NavbarProps {
   variant?: 'default' | 'blog';
   centerContent?: React.ReactNode;
   mobileTopContent?: React.ReactNode;
+  hideDashboard?: boolean;
 }
 
-const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopContent }: NavbarProps) => {
+const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopContent, hideDashboard = false }: NavbarProps) => {
   const { resolvedTheme } = useTheme();
   const [sessionUser, setSessionUser] = useState<User | null>(null);
 
@@ -103,17 +104,31 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
           )}
 
           {/* CTA Buttons or User Menu */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {user ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
-                onClick={handleSignOut}
-              >
-                <LogOut className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">Sign out</span>
-              </Button>
+              <>
+                {!hideDashboard && (
+                  <Button
+                    variant="hero"
+                    size="sm"
+                    asChild
+                  >
+                    <a href="/app">
+                      <LayoutDashboard className="w-4 h-4 sm:mr-1.5" />
+                      <span className="hidden sm:inline">Dashboard</span>
+                    </a>
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Sign out</span>
+                </Button>
+              </>
             ) : (
               <>
                 <Button variant="ghost" size="sm" className="hidden sm:inline-flex text-exclu-space hover:text-exclu-cloud" asChild>

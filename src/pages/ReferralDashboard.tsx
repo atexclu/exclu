@@ -145,7 +145,6 @@ const ReferralDashboard = () => {
             const { error } = await supabase.functions.invoke('request-affiliate-payout', {
                 body: {},
                 headers: {
-                    Authorization: '',
                     'x-supabase-auth': session?.access_token ?? '',
                 },
             });
@@ -167,7 +166,6 @@ const ReferralDashboard = () => {
             const { error } = await supabase.functions.invoke('send-referral-invite', {
                 body: { to_email: inviteEmail },
                 headers: {
-                    Authorization: '',
                     'x-supabase-auth': session?.access_token ?? '',
                 },
             });
@@ -303,19 +301,19 @@ const ReferralDashboard = () => {
                     </div>
 
                     <div className="flex gap-2">
-                        <div className="flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-exclu-arsenic/50 bg-white dark:bg-black/30 px-3 py-2.5">
-                            <p className="text-xs text-black dark:text-exclu-space/80 font-mono truncate">{referralLink ?? 'Generating…'}</p>
+                        <div className="flex-1 min-w-0 rounded-xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 px-4 py-3 flex items-center">
+                            <p className="text-sm text-black dark:text-exclu-cloud font-mono truncate">{referralLink ?? 'Generating…'}</p>
                         </div>
                         <Button
-                            type="button" size="sm"
+                            type="button" size="lg"
                             variant={referralLinkCopied ? 'outline' : 'hero'}
-                            className="rounded-xl px-4 flex-shrink-0 transition-all"
+                            className="rounded-xl px-5 flex-shrink-0 transition-all text-sm font-semibold"
                             onClick={handleCopy}
                             disabled={!referralLink}
                         >
                             {referralLinkCopied
-                                ? <span className="flex items-center gap-1.5 text-green-400"><Check className="w-3.5 h-3.5" />Copied!</span>
-                                : <span className="flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" />Copy</span>}
+                                ? <span className="flex items-center gap-1.5 text-green-400"><Check className="w-4 h-4" />Copied!</span>
+                                : <span className="flex items-center gap-1.5"><Copy className="w-4 h-4" />Copy link</span>}
                         </Button>
                     </div>
 
@@ -343,7 +341,7 @@ const ReferralDashboard = () => {
 
                     <div>
                         <p className="text-[11px] text-exclu-space/60 mb-3">Share on social media</p>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {socialPlatformsList.map(({ p, label, icon, gradient }) => (
                                 <button
                                     key={p}
@@ -375,44 +373,73 @@ const ReferralDashboard = () => {
                     )}
 
                     {referrals.length > 0 && (
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full text-sm">
-                                <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
-                                    <tr>
-                                        <th className="px-5 py-2 text-left">Creator</th>
-                                        <th className="px-3 py-2 text-left">Date</th>
-                                        <th className="px-3 py-2 text-left">Status</th>
-                                        <th className="px-3 py-2 text-right">Commission</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {referrals.map((r: any) => (
-                                        <tr key={r.id} className="border-t border-exclu-arsenic/40 hover:bg-white/[0.02] transition-colors">
-                                            <td className="px-5 py-3 text-exclu-cloud font-medium">
-                                                {r.referred_display_name || r.referred_handle || 'Anonymous'}
-                                                {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
-                                            </td>
-                                            <td className="px-3 py-3 text-exclu-space/80 text-xs">
-                                                {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                            </td>
-                                            <td className="px-3 py-3">
-                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${r.status === 'converted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
-                                                    : r.status === 'inactive' ? 'bg-red-500/10 text-red-400 border border-red-500/40'
-                                                        : 'bg-blue-500/10 text-blue-300 border border-blue-500/40'
-                                                    }`}>
-                                                    {r.status === 'converted' ? 'Premium' : r.status === 'inactive' ? 'Inactive' : 'Free'}
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-3 text-right font-medium">
-                                                <span className={r.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}>
-                                                    {r.commission_earned_cents > 0 ? fmtAmt(r.commission_earned_cents) : '—'}
-                                                </span>
-                                            </td>
+                        <>
+                            {/* Desktop: table */}
+                            <div className="hidden sm:block overflow-x-auto">
+                                <table className="min-w-full text-sm">
+                                    <thead className="text-xs uppercase text-exclu-space/70 border-b border-exclu-arsenic/60">
+                                        <tr>
+                                            <th className="px-5 py-2 text-left">Creator</th>
+                                            <th className="px-3 py-2 text-left">Date</th>
+                                            <th className="px-3 py-2 text-left">Status</th>
+                                            <th className="px-3 py-2 text-right">Commission</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {referrals.map((r: any) => (
+                                            <tr key={r.id} className="border-t border-exclu-arsenic/40 hover:bg-white/[0.02] transition-colors">
+                                                <td className="px-5 py-3 text-exclu-cloud font-medium">
+                                                    {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                                                    {r.referred_handle && <span className="ml-1.5 text-[11px] text-exclu-space/60">@{r.referred_handle}</span>}
+                                                </td>
+                                                <td className="px-3 py-3 text-exclu-space/80 text-xs">
+                                                    {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${r.status === 'converted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                                        : r.status === 'inactive' ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                                            : 'bg-blue-500/10 text-blue-300 border border-blue-500/40'
+                                                        }`}>
+                                                        {r.status === 'converted' ? 'Premium' : r.status === 'inactive' ? 'Inactive' : 'Free'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-3 text-right font-medium">
+                                                    <span className={r.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}>
+                                                        {r.commission_earned_cents > 0 ? fmtAmt(r.commission_earned_cents) : '—'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Mobile: cards */}
+                            <div className="sm:hidden divide-y divide-exclu-arsenic/40">
+                                {referrals.map((r: any) => (
+                                    <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm text-exclu-cloud font-medium truncate">
+                                                {r.referred_display_name || r.referred_handle || 'Anonymous'}
+                                            </p>
+                                            <p className="text-[11px] text-exclu-space/60 mt-0.5">
+                                                {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${r.status === 'converted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40'
+                                                : r.status === 'inactive' ? 'bg-red-500/10 text-red-400 border border-red-500/40'
+                                                    : 'bg-blue-500/10 text-blue-300 border border-blue-500/40'
+                                                }`}>
+                                                {r.status === 'converted' ? 'Premium' : r.status === 'inactive' ? 'Inactive' : 'Free'}
+                                            </span>
+                                            <span className={`text-xs font-medium ${r.commission_earned_cents > 0 ? 'text-primary' : 'text-exclu-space/40'}`}>
+                                                {r.commission_earned_cents > 0 ? fmtAmt(r.commission_earned_cents) : '—'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
                     )}
                 </div>
             </main>
