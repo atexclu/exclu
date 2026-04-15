@@ -137,3 +137,6 @@ verify_jwt = false
 
 [functions.admin-export-users-csv]
 verify_jwt = false
+
+[functions.admin-email-templates]
+verify_jwt = false
