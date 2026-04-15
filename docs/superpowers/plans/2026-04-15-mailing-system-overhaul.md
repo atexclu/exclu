@@ -30,12 +30,21 @@
 
 After querying the prod DB (`qexnwezetjlbwltyccks`) the following corrections apply to every task below. They override any earlier text in this document.
 
-1. **Admin identity is `profiles.is_admin = true` (boolean column)**, NOT `profiles.role = 'admin'`. Two admin users exist. Every RLS policy written below uses `p.is_admin = true` — the plan has been patched accordingly.
+1. **Admin identity is `profiles.is_admin = true` (boolean column)**, NOT `profiles.role = 'admin'`. Two admin users exist. The DB also exposes a `public.is_admin()` SQL function (STABLE, SECURITY DEFINER, already defined in prod) that encapsulates the check. Every RLS policy written below uses `public.is_admin()` rather than an inline EXISTS — it matches the existing codebase convention and is cleaner.
 2. **Table `sales` does not exist**. The checkout flow uses **`purchases`**, which already has a **`buyer_email`** column. Do not create a `fan_email` column on purchases — reuse `buyer_email`.
 3. **`gift_purchases` has `fan_name` but NOT `fan_email`** — Task 3.3 adds the missing column only for gifts.
 4. **`creator_subscriptions` does not exist.** Subscription state lives on `profiles` directly: `is_creator_subscribed` (boolean), `subscription_expires_at` (timestamptz), `subscription_ugp_member_id`. The segment builder (Task 5.2) joins on `profiles` for subscription filters instead of a dedicated subscriptions table.
 5. **`mass_messages` table already exists for in-app mass chat messages** (unrelated to email newsletters). Do not touch it. The `email_campaigns` table in Phase 5 is the email-side companion, not a refactor.
-6. **Docker/OrbStack must be running** before any task that executes `supabase db reset` locally. If Docker is not running, use `supabase branches create` to spin up a preview DB, or `supabase db push --linked` against a staging environment — never apply unreviewed migrations directly to prod.
+6. **Local DB testing strategy:** the `supabase/migrations/` folder is NOT a clean-reset chain from zero — the earliest tracked migration is `043_fix_purchases_rls_security.sql` which references tables that were created outside version control. `supabase db reset` therefore fails mid-chain. Instead, every task in Phase 0+ that needs local verification uses this flow:
+   - `supabase db dump --linked --schema public -f /tmp/mailing-overhaul-dumps/prod_schema.sql` (once per session to refresh the baseline)
+   - `docker cp /tmp/mailing-overhaul-dumps/prod_schema.sql supabase_db_Exclu:/tmp/` and `docker exec supabase_db_Exclu psql -U postgres -d postgres -f /tmp/prod_schema.sql` to reseed the local DB from prod (idempotent — re-runs fine)
+   - `docker cp <new-migration.sql> supabase_db_Exclu:/tmp/ && docker exec supabase_db_Exclu psql -U postgres -d postgres -f /tmp/<new-migration.sql>` to apply the new migration on top
+   - Verify with `docker exec supabase_db_Exclu psql -U postgres -d postgres -c "<check query>"`
+   - For prod deployment at go-live: use `supabase db push --linked` which only pushes new migration files that aren't yet in the prod `schema_migrations` table. This is the Supabase-sanctioned path.
+7. **Connection details for local psql access:**
+   - Container name: `supabase_db_Exclu`
+   - Psql (inside container): `docker exec supabase_db_Exclu psql -U postgres -d postgres`
+   - Host port: `54322` (but local psql CLI is not installed — use `docker exec` instead)
 
 ---
 
@@ -139,25 +148,13 @@ alter table public.email_templates enable row level security;
 alter table public.email_template_versions enable row level security;
 
 create policy "admins read templates" on public.email_templates
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 
 create policy "admins write templates" on public.email_templates
-  for all using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  ) with check (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "admins read template versions" on public.email_template_versions
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 ```
 
 - [ ] **Step 2: Reset the local DB and confirm the migration applies cleanly**
@@ -1532,16 +1529,10 @@ alter table public.signup_attempts enable row level security;
 alter table public.disposable_email_domains enable row level security;
 
 create policy "admins read signup attempts" on public.signup_attempts
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 
 create policy "admins read disposable list" on public.disposable_email_domains
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 ```
 
 - [ ] **Step 2: Apply the migration**
@@ -2081,16 +2072,10 @@ alter table public.mailing_contacts enable row level security;
 alter table public.mailing_contact_events enable row level security;
 
 create policy "admins read contacts" on public.mailing_contacts
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 
 create policy "admins read contact events" on public.mailing_contact_events
-  for select using (
-    exists (select 1 from public.profiles p
-            where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 ```
 
 - [ ] **Step 2: Apply and verify**
@@ -2503,21 +2488,13 @@ alter table public.email_suppression_list enable row level security;
 alter table public.email_warmup_counters enable row level security;
 
 create policy "admins all on campaigns" on public.email_campaigns
-  for all using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true)
-  ) with check (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true)
-  );
+  for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "admins read sends" on public.email_campaign_sends
-  for select using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 
 create policy "admins read suppression" on public.email_suppression_list
-  for select using (
-    exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true)
-  );
+  for select using (public.is_admin());
 ```
 
 - [ ] **Step 2: Apply**
