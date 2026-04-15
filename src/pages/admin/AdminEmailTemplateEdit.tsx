@@ -1,7 +1,16 @@
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import Editor from "@monaco-editor/react";
+import { lazy, Suspense, useEffect, useState } from "react";
+
+const Editor = lazy(() => import("@monaco-editor/react"));
+
+function EditorFallback() {
+  return (
+    <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+      Loading editor…
+    </div>
+  );
+}
 import { adminEmails, type EmailTemplateRow } from "@/lib/adminEmails";
 import { renderEmailTemplate } from "@/lib/renderEmailTemplate";
 import { Button } from "@/components/ui/button";
@@ -122,77 +131,85 @@ export default function AdminEmailTemplateEdit() {
 
           <TabsContent value="html">
             <div className="h-[60vh] rounded border border-border overflow-hidden">
-              <Editor
-                height="100%"
-                defaultLanguage="html"
-                value={draft.html_body}
-                onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
-                theme="vs-dark"
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  wordWrap: "on",
-                }}
-              />
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="html"
+                  value={draft.html_body}
+                  onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    wordWrap: "on",
+                  }}
+                />
+              </Suspense>
             </div>
           </TabsContent>
 
           <TabsContent value="text">
             <div className="h-[60vh] rounded border border-border overflow-hidden">
-              <Editor
-                height="100%"
-                defaultLanguage="plaintext"
-                value={draft.text_body ?? ""}
-                onChange={(v) =>
-                  setDraft({ ...draft, text_body: v ?? null })
-                }
-                theme="vs-dark"
-                options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: "on" }}
-              />
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="plaintext"
+                  value={draft.text_body ?? ""}
+                  onChange={(v) =>
+                    setDraft({ ...draft, text_body: v ?? null })
+                  }
+                  theme="vs-dark"
+                  options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: "on" }}
+                />
+              </Suspense>
             </div>
           </TabsContent>
 
           <TabsContent value="vars" className="space-y-3">
             <Label>Declared variables (JSON)</Label>
             <div className="h-[30vh] rounded border border-border overflow-hidden">
-              <Editor
-                height="100%"
-                defaultLanguage="json"
-                value={JSON.stringify(draft.variables, null, 2)}
-                onChange={(v) => {
-                  try {
-                    const parsed = JSON.parse(v ?? "[]");
-                    if (Array.isArray(parsed)) {
-                      setDraft({ ...draft, variables: parsed });
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="json"
+                  value={JSON.stringify(draft.variables, null, 2)}
+                  onChange={(v) => {
+                    try {
+                      const parsed = JSON.parse(v ?? "[]");
+                      if (Array.isArray(parsed)) {
+                        setDraft({ ...draft, variables: parsed });
+                      }
+                    } catch {
+                      /* ignore until JSON is valid again */
                     }
-                  } catch {
-                    /* ignore until JSON is valid again */
-                  }
-                }}
-                theme="vs-dark"
-                options={{ minimap: { enabled: false }, fontSize: 13 }}
-              />
+                  }}
+                  theme="vs-dark"
+                  options={{ minimap: { enabled: false }, fontSize: 13 }}
+                />
+              </Suspense>
             </div>
 
             <Label>Sample data (drives the live preview)</Label>
             <div className="h-[20vh] rounded border border-border overflow-hidden">
-              <Editor
-                height="100%"
-                defaultLanguage="json"
-                value={JSON.stringify(draft.sample_data ?? {}, null, 2)}
-                onChange={(v) => {
-                  try {
-                    const parsed = JSON.parse(v ?? "{}");
-                    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                      setDraft({ ...draft, sample_data: parsed });
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="json"
+                  value={JSON.stringify(draft.sample_data ?? {}, null, 2)}
+                  onChange={(v) => {
+                    try {
+                      const parsed = JSON.parse(v ?? "{}");
+                      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                        setDraft({ ...draft, sample_data: parsed });
+                      }
+                    } catch {
+                      /* ignore until JSON is valid again */
                     }
-                  } catch {
-                    /* ignore until JSON is valid again */
-                  }
-                }}
-                theme="vs-dark"
-                options={{ minimap: { enabled: false }, fontSize: 13 }}
-              />
+                  }}
+                  theme="vs-dark"
+                  options={{ minimap: { enabled: false }, fontSize: 13 }}
+                />
+              </Suspense>
             </div>
           </TabsContent>
         </Tabs>

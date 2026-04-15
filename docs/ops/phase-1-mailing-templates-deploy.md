@@ -43,30 +43,44 @@ Before touching prod, verify locally:
 
 ## Pre-deploy verification
 
-Run the end-to-end integration test against a **local** Supabase stack (`supabase start` first). This exercises the full template load + render path for every seeded template and catches slug / variable drift before anything ships to prod.
+Run the end-to-end integration test against a **local** Supabase stack that
+has migrations 130–133 applied. **Important**: because this feature lives in a
+git worktree at `.worktrees/mailing-overhaul`, the Supabase CLI from the
+worktree looks for a container named `supabase_db_mailing-overhaul` which
+does NOT exist — the main repo's `supabase_db_Exclu` stack is what we've been
+using for local testing throughout development.
 
-Before running the integration test, export local credentials (the test reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment — the local service role key regenerates per `supabase start` and is not portable, so it is **not** hardcoded in the test file).
-
-On **Supabase CLI ≥ 2.90**, `status -o env` exports the correctly prefixed vars directly:
-
-```bash
-eval "$(supabase status -o env)"
-```
-
-On **older CLIs (≤ 2.67)**, `status -o env` emits unprefixed names (`API_URL`, `SERVICE_ROLE_KEY`). Set the vars manually instead:
+Run the test from the worktree, but get env vars from the main repo's stack:
 
 ```bash
-export SUPABASE_URL=http://127.0.0.1:54321
-export SUPABASE_SERVICE_ROLE_KEY=$(supabase status 2>/dev/null | awk '/service_role key/ {print $NF}')
-```
+# From the main repo directory, export local stack credentials
+pushd /Users/tb/Documents/TB\ Dev/Exclu.at/Exclu
+eval "$(supabase status -o env 2>/dev/null)" || {
+  # Fallback for Supabase CLI < 2.90 which emits unprefixed var names
+  export SUPABASE_URL="http://127.0.0.1:54321"
+  export SUPABASE_SERVICE_ROLE_KEY="$(supabase status 2>/dev/null | awk '/service_role key/ {print $NF}')"
+}
+popd
 
-Then run the test:
-
-```bash
+# Now run the test from the worktree using the exported env
+cd .worktrees/mailing-overhaul
 deno test --allow-all supabase/functions/_shared/email_templates.integration.test.ts
 ```
 
-Expected: all 9 integration cases pass. Requires the local DB to have migrations 130–133 applied (`supabase db reset` if unsure).
+Expected: all 9 integration cases pass. If the test fails with
+`SUPABASE_SERVICE_ROLE_KEY is required`, the env export step didn't land —
+re-run the export commands from the main repo dir.
+
+If the local DB doesn't have migrations 130–133 applied (e.g. fresh reset),
+apply them on top of the prod-schema baseline:
+
+```bash
+for m in 130 131 132 133; do
+  file=$(ls supabase/migrations/${m}_*.sql)
+  docker cp "$file" supabase_db_Exclu:/tmp/ && \
+  docker exec supabase_db_Exclu psql -U postgres -d postgres -f "/tmp/$(basename $file)"
+done
+```
 
 ---
 

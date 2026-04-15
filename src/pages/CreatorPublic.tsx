@@ -12,6 +12,7 @@ import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import GuestChat from '@/components/GuestChat';
 import { getAuroraGradient } from '@/lib/auroraGradients';
+import { getSignedUrl } from '@/lib/storageUtils';
 import {
   SiX,
   SiInstagram,
@@ -415,7 +416,6 @@ const CreatorPublic = () => {
           const withUrls = await Promise.all(
             publicData.map(async (item) => {
               if (!item.storage_path) return { ...item, previewUrl: null };
-              const { getSignedUrl } = await import('@/lib/storageUtils');
               const previewUrl = await getSignedUrl(item.storage_path);
               return { ...item, previewUrl };
             })

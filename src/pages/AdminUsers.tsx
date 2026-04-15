@@ -654,29 +654,46 @@ const AdminUsers = () => {
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
             </div>
             <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none">
-              {(['users', 'blog', 'agencies', 'payments'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => switchTab(tab)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex-shrink-0 ${
-                    activeTab === tab
-                      ? 'bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20'
-                      : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
-                  }`}
-                >
-                  {tab === 'users' ? 'Users' : tab === 'blog' ? 'Blog' : tab === 'agencies' ? 'Agencies' : 'Payments'}
-                  {tab === 'payments' && pendingPayoutsCount > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
-                      {pendingPayoutsCount}
-                    </span>
-                  )}
-                  {tab === 'agencies' && claimRequests.filter((c) => c.status === 'pending').length > 0 && (
-                    <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
-                      {claimRequests.filter((c) => c.status === 'pending').length}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {(['users', 'blog', 'agencies', 'payments', 'mailing'] as const).map((tab) => {
+                const isMailing = tab === 'mailing';
+                const isActive = !isMailing && activeTab === tab;
+                const labelMap = {
+                  users: 'Users',
+                  blog: 'Blog',
+                  agencies: 'Agencies',
+                  payments: 'Payments',
+                  mailing: 'Mailing',
+                } as const;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      if (isMailing) {
+                        navigate('/admin/emails');
+                      } else {
+                        switchTab(tab as AdminTab);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex-shrink-0 ${
+                      isActive
+                        ? 'bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20'
+                        : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
+                    }`}
+                  >
+                    {labelMap[tab]}
+                    {tab === 'payments' && pendingPayoutsCount > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
+                        {pendingPayoutsCount}
+                      </span>
+                    )}
+                    {tab === 'agencies' && claimRequests.filter((c) => c.status === 'pending').length > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-[9px] text-white font-bold">
+                        {claimRequests.filter((c) => c.status === 'pending').length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
