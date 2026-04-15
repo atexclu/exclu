@@ -4,19 +4,17 @@
 --
 -- Judgment calls documented (see task report):
 --  * Auth templates: `${STYLES}` and `${footerHtml(siteUrl)}` resolved inline to
---    their literal production values. `${siteUrl}` inside the footer hardcoded to
---    `https://exclu.at` (the only production value used).
---  * `auth_signup`: source HTML never interpolates user email; `user_email` stays
---    in the declared variables JSON as non-required but does not appear in the body.
+--    their literal production values. `${siteUrl}` in footers is now parameterized
+--    as `{{site_url}}` so dev/staging renders don't leak the prod hostname.
 --  * `link_content_delivery`: source HTML never interpolates creator name or link
 --    title today; declared variables include them for forward compatibility and the
 --    upcoming Task 1.2 refactor. `${linksListHtml}` → `{{{download_links_html}}}`
 --    (triple-brace to preserve pre-rendered safe HTML).
 --  * `chatter_invitation`: source has a ternary `${customMessage ? ... : ''}` and
---    references `${profileHandle}` and `${siteUrl}` that the task spec does not
---    include in the declared variable set. The ternary is flattened to the empty
---    branch (no custom message block), profile handle references removed or
---    collapsed into creator_name, and siteUrl hardcoded to https://exclu.at.
+--    references `${profileHandle}` that the task spec does not include in the
+--    declared variable set. The ternary is flattened to the empty branch (no
+--    custom message block) and profile handle references are removed or collapsed
+--    into creator_name. `${siteUrl}` is parameterized as `{{site_url}}`.
 --  * `agency_contact`: source wraps all variables in `escapeHtml(...)`; escaping
 --    happens in the renderer now, so `${escapeHtml(x)}` → `{{x}}` double-brace.
 
@@ -56,12 +54,12 @@ values
     </div>
     <div class="footer">
     © 2025 Exclu — All rights reserved<br>
-    <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+    <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
   </div>
   </div>
 </body></html>$html$,
-    '[{"key":"confirmation_url","required":true},{"key":"user_email","required":false}]'::jsonb,
-    '{"confirmation_url":"https://exclu.at/auth/callback?token=demo","user_email":"demo@example.com"}'::jsonb
+    '[{"key":"confirmation_url","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"confirmation_url":"https://exclu.at/auth/callback?token=demo","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'auth_recovery',
@@ -96,12 +94,12 @@ values
     </div>
     <div class="footer">
     © 2025 Exclu — All rights reserved<br>
-    <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+    <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
   </div>
   </div>
 </body></html>$html$,
-    '[{"key":"recovery_url","required":true}]'::jsonb,
-    '{"recovery_url":"https://exclu.at/auth/callback?token=demo&type=recovery"}'::jsonb
+    '[{"key":"recovery_url","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"recovery_url":"https://exclu.at/auth/callback?token=demo&type=recovery","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'auth_magiclink',
@@ -136,12 +134,12 @@ values
     </div>
     <div class="footer">
     © 2025 Exclu — All rights reserved<br>
-    <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+    <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
   </div>
   </div>
 </body></html>$html$,
-    '[{"key":"magic_link","required":true}]'::jsonb,
-    '{"magic_link":"https://exclu.at/auth/callback?token=demo&type=magiclink"}'::jsonb
+    '[{"key":"magic_link","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"magic_link":"https://exclu.at/auth/callback?token=demo&type=magiclink","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'auth_email_change',
@@ -176,12 +174,12 @@ values
     </div>
     <div class="footer">
     © 2025 Exclu — All rights reserved<br>
-    <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+    <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
   </div>
   </div>
 </body></html>$html$,
-    '[{"key":"change_url","required":true}]'::jsonb,
-    '{"change_url":"https://exclu.at/auth/callback?token=demo&type=email_change"}'::jsonb
+    '[{"key":"change_url","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"change_url":"https://exclu.at/auth/callback?token=demo&type=email_change","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'link_content_delivery',
@@ -232,13 +230,13 @@ values
     </div>
     <div class="footer">
       © 2025 Exclu — All rights reserved<br>
-      <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+      <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
     </div>
   </div>
 </body>
 </html>$html$,
-    '[{"key":"creator_name","required":true},{"key":"link_title","required":true},{"key":"download_links_html","required":true}]'::jsonb,
-    '{"creator_name":"Luna","link_title":"Exclusive photo set","download_links_html":"<li><a href=\"https://exclu.at/demo-1\">Download file 1</a></li><li><a href=\"https://exclu.at/demo-2\">Download file 2</a></li>"}'::jsonb
+    '[{"key":"creator_name","required":true},{"key":"link_title","required":true},{"key":"download_links_html","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"creator_name":"Luna","link_title":"Exclusive photo set","download_links_html":"<li><a href=\"https://exclu.at/demo-1\">Download file 1</a></li><li><a href=\"https://exclu.at/demo-2\">Download file 2</a></li>","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'chatter_invitation',
@@ -296,13 +294,13 @@ values
     </div>
     <div class="footer">
       © 2025 Exclu — All rights reserved<br>
-      <a href="https://exclu.at">exclu.at</a>
+      <a href="{{site_url}}">exclu.at</a>
     </div>
   </div>
 </body>
 </html>$html$,
-    '[{"key":"creator_name","required":true},{"key":"invitation_url","required":true},{"key":"invitee_email","required":false}]'::jsonb,
-    '{"creator_name":"Luna","invitation_url":"https://exclu.at/accept-chatter-invite?token=demo","invitee_email":"chatter@example.com"}'::jsonb
+    '[{"key":"creator_name","required":true},{"key":"invitation_url","required":true},{"key":"invitee_email","required":false},{"key":"site_url","required":true}]'::jsonb,
+    '{"creator_name":"Luna","invitation_url":"https://exclu.at/accept-chatter-invite?token=demo","invitee_email":"chatter@example.com","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'referral_invite',
@@ -360,13 +358,13 @@ values
     </div>
     <div class="footer">
       © 2025 Exclu — All rights reserved<br>
-      <a href="https://exclu.at">exclu</a> • <a href="https://exclu.at/terms">Terms of Service</a> • <a href="https://exclu.at/privacy">Privacy Policy</a>
+      <a href="{{site_url}}">exclu</a> • <a href="{{site_url}}/terms">Terms of Service</a> • <a href="{{site_url}}/privacy">Privacy Policy</a>
     </div>
   </div>
 </body>
 </html>$html$,
-    '[{"key":"sender_name","required":true},{"key":"referral_url","required":true}]'::jsonb,
-    '{"sender_name":"Luna","referral_url":"https://exclu.at/auth?mode=signup&ref=luna-abc123"}'::jsonb
+    '[{"key":"sender_name","required":true},{"key":"referral_url","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"sender_name":"Luna","referral_url":"https://exclu.at/auth?mode=signup&ref=luna-abc123","site_url":"https://exclu.at"}'::jsonb
   ),
   (
     'agency_contact',
@@ -419,12 +417,12 @@ values
     </div>
     <div class="footer">
       &copy; 2025 Exclu &mdash; All rights reserved<br>
-      <a href="https://exclu.at">exclu</a> &bull; <a href="https://exclu.at/terms">Terms of Service</a> &bull; <a href="https://exclu.at/privacy">Privacy Policy</a>
+      <a href="{{site_url}}">exclu</a> &bull; <a href="{{site_url}}/terms">Terms of Service</a> &bull; <a href="{{site_url}}/privacy">Privacy Policy</a>
     </div>
   </div>
 </body>
 </html>$html$,
-    '[{"key":"agency_name","required":true},{"key":"sender_name","required":true},{"key":"sender_email","required":true},{"key":"message","required":true}]'::jsonb,
-    '{"agency_name":"Moonlight Management","sender_name":"Alex Fan","sender_email":"alex@example.com","message":"Hi, I would love to discuss a potential collaboration with your agency."}'::jsonb
+    '[{"key":"agency_name","required":true},{"key":"sender_name","required":true},{"key":"sender_email","required":true},{"key":"message","required":true},{"key":"site_url","required":true}]'::jsonb,
+    '{"agency_name":"Moonlight Management","sender_name":"Alex Fan","sender_email":"alex@example.com","message":"Hi, I would love to discuss a potential collaboration with your agency.","site_url":"https://exclu.at"}'::jsonb
   )
 on conflict (slug) do nothing;
