@@ -46,6 +46,8 @@ After querying the prod DB (`qexnwezetjlbwltyccks`) the following corrections ap
    - Psql (inside container): `docker exec supabase_db_Exclu psql -U postgres -d postgres`
    - Host port: `54322` (but local psql CLI is not installed — use `docker exec` instead)
 
+8. **Phase 2 migration number drift (2026-04-15, Phase 2A preflight):** the original plan referred to `133_signup_hardening.sql`, but prod already has migration **133** = `update_chatter_invitation` (applied during Phase 1 deploy as Fix B). The signup hardening migration therefore takes slot **134** (`134_signup_hardening.sql`). All Task 2.2 references have been renumbered in place. Any future task that adds a migration must re-verify via `supabase migration list --linked` before picking a number.
+
 ---
 
 ## Conventions used in this plan
@@ -1497,12 +1499,12 @@ git commit -m "docs: research hoo.be signup flow as baseline for removing email 
 ### Task 2.2: Add the `signup_attempts` + `disposable_email_domains` tables
 
 **Files:**
-- Create: `supabase/migrations/133_signup_hardening.sql`
+- Create: `supabase/migrations/134_signup_hardening.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 133_signup_hardening.sql
+-- 134_signup_hardening.sql
 
 create table if not exists public.signup_attempts (
   id uuid primary key default gen_random_uuid(),
@@ -1540,12 +1542,12 @@ create policy "admins read disposable list" on public.disposable_email_domains
 ```bash
 supabase db reset
 ```
-Expected: 133 applies cleanly.
+Expected: 134 applies cleanly. (Prod already has 130–133 from Phase 1; 133 is `update_chatter_invitation`, so signup hardening takes slot 134.)
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add supabase/migrations/133_signup_hardening.sql
+git add supabase/migrations/134_signup_hardening.sql
 git commit -m "feat(db): add signup_attempts + disposable_email_domains tables"
 ```
 
