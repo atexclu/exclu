@@ -18,7 +18,8 @@ async function call<T>(action: string, body: Record<string, unknown> = {}): Prom
   );
   const json = await res.json().catch(() => ({ error: "invalid response" }));
   if (!res.ok) {
-    throw new Error(json.error ?? `admin-email-templates ${action} failed (${res.status})`);
+    const msg = json.detail ? `${json.error}: ${json.detail}` : json.error;
+    throw new Error(msg ?? `admin-email-templates ${action} failed (${res.status})`);
   }
   return json as T;
 }

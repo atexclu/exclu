@@ -19,96 +19,171 @@ interface RequestBody {
   version_id?: string;
 }
 
+class HttpError extends Error {
+  constructor(public status: number, public detail?: string) {
+    super(`HTTP ${status}`);
+  }
+}
+
+function mapHttpErrorMessage(status: number): string {
+  switch (status) {
+    case 400:
+      return "bad request";
+    case 401:
+      return "unauthorized";
+    case 403:
+      return "forbidden";
+    case 404:
+      return "not found";
+    default:
+      return "error";
+  }
+}
+
+function json(body: unknown, status: number, corsHeaders: Record<string, string>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "content-type": "application/json" },
+  });
+}
+
 async function requireAdmin(req: Request) {
   const authHeader = req.headers.get("authorization") ?? "";
   const jwt = authHeader.replace("Bearer ", "");
+  if (!jwt) throw new HttpError(401);
+
   const svc = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const { data: { user } } = await svc.auth.getUser(jwt);
-  if (!user) throw new Error("unauthorized");
-  const { data: profile } = await svc
-    .from("profiles").select("is_admin").eq("id", user.id).single();
-  if (!profile?.is_admin) throw new Error("forbidden");
+  const { data: { user }, error: userErr } = await svc.auth.getUser(jwt);
+  if (userErr || !user) throw new HttpError(401);
+
+  const { data: profile, error: profErr } = await svc
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profErr) throw profErr; // surfaces as 500
+  if (!profile?.is_admin) throw new HttpError(403);
+
   return { svc, user };
 }
 
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  function json(body: unknown, status = 200) {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { ...corsHeaders, "content-type": "application/json" },
-    });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: getCorsHeaders(req) });
   }
+  const corsHeaders = getCorsHeaders(req);
 
   try {
     const { svc, user } = await requireAdmin(req);
-    const body: RequestBody = await req.json();
+    const body: RequestBody = await req.json().catch(() => {
+      throw new HttpError(400, "invalid JSON body");
+    });
 
     switch (body.action) {
       case "list": {
         const { data, error } = await svc
           .from("email_templates")
           .select("id, slug, name, category, subject, is_active, updated_at")
-          .order("category").order("slug");
+          .order("category")
+          .order("slug");
         if (error) throw error;
-        return json({ templates: data });
+        return json({ templates: data }, 200, corsHeaders);
       }
       case "get": {
+        if (!body.slug) throw new HttpError(400, "slug is required");
         const { data, error } = await svc
-          .from("email_templates").select("*").eq("slug", body.slug!).single();
+          .from("email_templates")
+          .select("*")
+          .eq("slug", body.slug)
+          .maybeSingle();
         if (error) throw error;
-        return json({ template: data });
+        if (!data) throw new HttpError(404);
+        return json({ template: data }, 200, corsHeaders);
       }
       case "upsert": {
-        const p = body.payload!;
-        const { data, error } = await svc.from("email_templates").upsert({
-          slug: p.slug,
-          name: p.name,
-          category: p.category ?? "transactional",
-          subject: p.subject,
-          html_body: p.html_body,
-          text_body: p.text_body,
-          variables: p.variables ?? [],
-          sample_data: p.sample_data ?? {},
-          updated_by: user.id,
-        }, { onConflict: "slug" }).select().single();
+        if (!body.payload) throw new HttpError(400, "payload is required");
+        const p = body.payload;
+        if (!p.slug) throw new HttpError(400, "payload.slug is required");
+        if (!p.name) throw new HttpError(400, "payload.name is required");
+        if (!p.subject) throw new HttpError(400, "payload.subject is required");
+        if (!p.html_body) throw new HttpError(400, "payload.html_body is required");
+        const { data, error } = await svc
+          .from("email_templates")
+          .upsert(
+            {
+              slug: p.slug,
+              name: p.name,
+              category: p.category ?? "transactional",
+              subject: p.subject,
+              html_body: p.html_body,
+              text_body: p.text_body,
+              variables: p.variables ?? [],
+              sample_data: p.sample_data ?? {},
+              updated_by: user.id,
+            },
+            { onConflict: "slug" },
+          )
+          .select()
+          .single();
         if (error) throw error;
-        return json({ template: data });
+        return json({ template: data }, 200, corsHeaders);
       }
       case "versions": {
-        const { data: tpl } = await svc
-          .from("email_templates").select("id").eq("slug", body.slug!).single();
+        if (!body.slug) throw new HttpError(400, "slug is required");
+        const { data: tpl, error: tplErr } = await svc
+          .from("email_templates")
+          .select("id")
+          .eq("slug", body.slug)
+          .maybeSingle();
+        if (tplErr) throw tplErr;
+        if (!tpl) throw new HttpError(404);
         const { data, error } = await svc
           .from("email_template_versions")
-          .select("*").eq("template_id", tpl!.id)
-          .order("created_at", { ascending: false }).limit(50);
+          .select("*")
+          .eq("template_id", tpl.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
         if (error) throw error;
-        return json({ versions: data });
+        return json({ versions: data }, 200, corsHeaders);
       }
       case "restore": {
+        if (!body.version_id) throw new HttpError(400, "version_id is required");
         const { data: version, error: vErr } = await svc
-          .from("email_template_versions").select("*").eq("id", body.version_id!).single();
+          .from("email_template_versions")
+          .select("*")
+          .eq("id", body.version_id)
+          .maybeSingle();
         if (vErr) throw vErr;
-        const { data, error } = await svc.from("email_templates").update({
-          subject: version.subject,
-          html_body: version.html_body,
-          text_body: version.text_body,
-          variables: version.variables,
-          updated_by: user.id,
-        }).eq("id", version.template_id).select().single();
+        if (!version) throw new HttpError(404);
+        const { data, error } = await svc
+          .from("email_templates")
+          .update({
+            subject: version.subject,
+            html_body: version.html_body,
+            text_body: version.text_body,
+            variables: version.variables,
+            updated_by: user.id,
+          })
+          .eq("id", version.template_id)
+          .select()
+          .single();
         if (error) throw error;
-        return json({ template: data });
+        return json({ template: data }, 200, corsHeaders);
       }
     }
-    return json({ error: "unknown action" }, 400);
+    throw new HttpError(400, "unknown action");
   } catch (err) {
-    console.error(err);
-    return json({ error: (err as Error).message }, 500);
+    if (err instanceof HttpError) {
+      return json(
+        { error: mapHttpErrorMessage(err.status), detail: err.detail },
+        err.status,
+        getCorsHeaders(req),
+      );
+    }
+    console.error("[admin-email-templates] internal error:", err);
+    return json({ error: "internal" }, 500, getCorsHeaders(req));
   }
 });
