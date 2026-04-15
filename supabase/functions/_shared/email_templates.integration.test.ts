@@ -3,17 +3,14 @@
 // Integration test: validates the 8 seeded email templates load from the
 // local DB via loadTemplate() and render cleanly with their sample_data.
 //
-// Requires: local Supabase stack running with migrations 130–133 applied.
-// The local stack credentials MUST be provided via environment variables —
-// they are not hardcoded because the service role key regenerates per
-// `supabase start` and is not portable across machines / CI.
+// Requires: local Supabase stack running with migrations 132 (seed) and
+// 133 (chatter restore) applied.
 //
-// Run:
-//   eval "$(supabase status -o env)"    # Supabase CLI ≥ 2.90
-//   # OR for CLI ≤ 2.67:
-//   export SUPABASE_URL="http://127.0.0.1:54321"
-//   export SUPABASE_SERVICE_ROLE_KEY="$(supabase status 2>&1 | awk '/Secret/ {print $NF}')"
-//   deno test --allow-all supabase/functions/_shared/email_templates.integration.test.ts
+// These are read from the local Supabase stack — not hardcoded, because the
+// service role key regenerates per `supabase start` and is not portable.
+// Export before running: eval "$(supabase status -o env)"
+// Or manually:         export SUPABASE_URL=http://127.0.0.1:54321 \
+//                             SUPABASE_SERVICE_ROLE_KEY=<from supabase status>
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -25,9 +22,7 @@ const LOCAL_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 if (!LOCAL_SERVICE_ROLE_KEY) {
   throw new Error(
     "SUPABASE_SERVICE_ROLE_KEY is required to run the integration test.\n" +
-      "From the main repo directory, run:\n" +
-      '  eval "$(supabase status -o env)"\n' +
-      "then rerun `deno test`.",
+      "Run: eval \"$(supabase status -o env)\" then rerun `deno test`.",
   );
 }
 
@@ -113,13 +108,17 @@ for (const slug of EXPECTED_SLUGS) {
     assert(rendered.subject.length > 0, `${slug}: rendered subject is empty`);
     assert(rendered.html.length > 0, `${slug}: rendered html is empty`);
 
-    // No unresolved {{placeholder}} may survive in the rendered output.
+    // No unresolved {{placeholder}} or {{{placeholder}}} may survive in the
+    // rendered output. The optional inner/outer brace covers triple-brace
+    // Mustache-unsafe interpolations leaking through renderer bugs.
     const combined = rendered.subject + rendered.html + rendered.text;
-    const stillHasPlaceholders = /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/.test(combined);
+    const stillHasPlaceholders = /\{\{\{?\s*[a-zA-Z0-9_]+\s*\}?\}\}/.test(
+      combined,
+    );
     // Collect the keys that actually survived, for a helpful error message
     const surviving: string[] = [];
     if (stillHasPlaceholders) {
-      const re = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+      const re = /\{\{\{?\s*([a-zA-Z0-9_]+)\s*\}?\}\}/g;
       for (const m of combined.matchAll(re)) {
         surviving.push(m[1]);
       }

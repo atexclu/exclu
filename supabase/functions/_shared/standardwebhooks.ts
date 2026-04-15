@@ -2,6 +2,16 @@
  * Standard Webhooks HMAC-SHA256 signature verifier.
  *
  * Used by send-auth-email to verify the Supabase Auth "Send Email" hook call.
+ *
+ * KNOWN LIMITATION — NO REPLAY PROTECTION.
+ * This verifier validates the signature and the 5-minute timestamp window but
+ * does NOT maintain a message-id nonce cache. An intercepted valid payload can
+ * be replayed up to 4m59s later, causing duplicate email sends. For Supabase
+ * Auth `send-auth-email`, the impact is a duplicated reset/confirmation email —
+ * annoying but not a security compromise. A Phase 2+ follow-up should add a
+ * nonce cache keyed by `webhook-id` using the existing `rate_limit_buckets`
+ * table (migration 131) or Supabase KV.
+ *
  * Spec: https://www.standardwebhooks.com/
  *
  * Supabase webhook secrets come in the form `v1,whsec_<base64>`. We strip the

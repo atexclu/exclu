@@ -32,14 +32,18 @@ err() { echo "${RED}  ✗${NC} $*" >&2; }
 warn(){ echo "${YELLOW}  !${NC} $*"; }
 
 FORCE_BRANCH=false
+ALLOW_PROJECT_OVERRIDE=false
 for arg in "$@"; do
   case "$arg" in
     --force-branch) FORCE_BRANCH=true ;;
+    --allow-project-override) ALLOW_PROJECT_OVERRIDE=true ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
   esac
 done
+
+EXPECTED_PROJECT_REF="qexnwezetjlbwltyccks"
 
 # ── Preconditions ─────────────────────────────────────────────────────
 log "Checking preconditions…"
@@ -74,10 +78,23 @@ ok "git status clean"
 # Verify supabase linked project
 LINKED_REF=$(supabase projects list 2>/dev/null | awk '/●/ {print $6}' | head -1 || true)
 if [[ -z "$LINKED_REF" ]]; then
-  err "Could not determine linked project ref. Run: supabase link --project-ref qexnwezetjlbwltyccks"
+  err "Could not determine linked project ref. Run: supabase link --project-ref $EXPECTED_PROJECT_REF"
   exit 1
 fi
 log "Linked project: $LINKED_REF"
+
+if [[ "$LINKED_REF" != "$EXPECTED_PROJECT_REF" ]]; then
+  if [[ "$ALLOW_PROJECT_OVERRIDE" == "true" ]]; then
+    warn "Linked to $LINKED_REF (expected $EXPECTED_PROJECT_REF) — override enabled"
+  else
+    err "Linked to project $LINKED_REF, expected $EXPECTED_PROJECT_REF"
+    err "Run: supabase link --project-ref $EXPECTED_PROJECT_REF"
+    err "Or pass --allow-project-override to bypass (staging deploys only)"
+    exit 1
+  fi
+else
+  ok "linked to $LINKED_REF (matches expected)"
+fi
 
 # ── Confirmation ──────────────────────────────────────────────────────
 echo
@@ -122,9 +139,14 @@ for slug in "${REQUIRED_SLUGS[@]}"; do
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     "$SUPABASE_URL/rest/v1/email_templates?select=slug&slug=eq.$slug")
+  if ! echo "$response" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    err "Unexpected PostgREST response for $slug: $response"
+    err "Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars."
+    exit 1
+  fi
   count=$(echo "$response" | jq 'length')
   if [[ "$count" != "1" ]]; then
-    err "template $slug missing in prod DB (got: $response)"
+    err "template $slug missing in prod DB (count=$count, response=$response)"
     err "Check migration 132 application. Aborting before edge function deploy."
     exit 1
   fi
@@ -132,11 +154,16 @@ for slug in "${REQUIRED_SLUGS[@]}"; do
 done
 
 # Sanity-check that chatter_invitation has the new variables from migration 133
-chatter_vars=$(curl -sS \
+chatter_response=$(curl -sS \
   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-  "$SUPABASE_URL/rest/v1/email_templates?select=variables&slug=eq.chatter_invitation" \
-  | jq '.[0].variables')
+  "$SUPABASE_URL/rest/v1/email_templates?select=variables&slug=eq.chatter_invitation")
+if ! echo "$chatter_response" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  err "Unexpected PostgREST response for chatter_invitation: $chatter_response"
+  err "Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars."
+  exit 1
+fi
+chatter_vars=$(echo "$chatter_response" | jq '.[0].variables')
 if ! echo "$chatter_vars" | jq -e '.[] | select(.key == "custom_message_html")' >/dev/null; then
   err "chatter_invitation missing custom_message_html variable — migration 133 didn't apply?"
   exit 1
@@ -144,12 +171,28 @@ fi
 ok "chatter_invitation has restored variables (migration 133 applied)"
 
 # ── Step 3: verify public.is_admin() ──────────────────────────────────
-log "Step 3/5: verifying public.is_admin() exists…"
-# We can't call RPC without auth as admin, but we can check by querying pg_proc via postgres meta:
-# Fall back to listing functions via the management REST API if available.
-# Simpler: rely on the templates working (they use is_admin in RLS, so successful SELECT above
-# via service role proves the policies at least compile).
-ok "is_admin() assumed present (RLS queries above succeeded)"
+log "Step 3/5: verifying public.is_admin() function exists…"
+# Invoke the function via the PostgREST RPC endpoint. is_admin() takes no args
+# and returns a boolean. We expect either `true`/`false` (function works, returns
+# false because service-role auth.uid() is null) or a 400/404 with an error
+# (function missing). We accept any successful HTTP response as proof the
+# function is callable.
+rpc_response=$(curl -sS -w $'\nHTTP_STATUS:%{http_code}' \
+  -X POST \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "$SUPABASE_URL/rest/v1/rpc/is_admin")
+rpc_body="${rpc_response%$'\n'HTTP_STATUS:*}"
+rpc_status="${rpc_response##*HTTP_STATUS:}"
+
+if [[ "$rpc_status" != "200" ]]; then
+  err "public.is_admin() RPC failed (HTTP $rpc_status): $rpc_body"
+  err "Check migration 122 / 123 application on prod."
+  exit 1
+fi
+ok "public.is_admin() callable (returned $rpc_body)"
 
 # ── Step 4: deploy refactored edge functions ──────────────────────────
 log "Step 4/5: deploying refactored edge functions…"

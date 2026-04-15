@@ -70,8 +70,11 @@ export async function loadTemplate(
     .select("slug, subject, html_body, text_body, variables, is_active")
     .eq("slug", slug)
     .eq("is_active", true)
-    .single();
-  if (error || !data) {
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Template load failed for "${slug}": ${error.message}`);
+  }
+  if (!data) {
     throw new Error(`Template not found: ${slug}`);
   }
   return data as EmailTemplateRow;

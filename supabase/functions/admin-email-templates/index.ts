@@ -19,13 +19,19 @@ interface RequestBody {
   version_id?: string;
 }
 
+/**
+ * HTTP error that maps to a known client-visible status code.
+ * Only 4xx values are valid — 5xx should always go through the outer catch
+ * as unhandled exceptions so the error is logged and surfaced as a generic
+ * `{error: "internal"}` 500 response.
+ */
 class HttpError extends Error {
-  constructor(public status: number, public detail?: string) {
+  constructor(public status: 400 | 401 | 403 | 404, public detail?: string) {
     super(`HTTP ${status}`);
   }
 }
 
-function mapHttpErrorMessage(status: number): string {
+function mapHttpErrorMessage(status: 400 | 401 | 403 | 404): string {
   switch (status) {
     case 400:
       return "bad request";
@@ -35,8 +41,6 @@ function mapHttpErrorMessage(status: number): string {
       return "forbidden";
     case 404:
       return "not found";
-    default:
-      return "error";
   }
 }
 

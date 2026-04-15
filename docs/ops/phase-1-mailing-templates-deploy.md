@@ -45,6 +45,23 @@ Before touching prod, verify locally:
 
 Run the end-to-end integration test against a **local** Supabase stack (`supabase start` first). This exercises the full template load + render path for every seeded template and catches slug / variable drift before anything ships to prod.
 
+Before running the integration test, export local credentials (the test reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the environment — the local service role key regenerates per `supabase start` and is not portable, so it is **not** hardcoded in the test file).
+
+On **Supabase CLI ≥ 2.90**, `status -o env` exports the correctly prefixed vars directly:
+
+```bash
+eval "$(supabase status -o env)"
+```
+
+On **older CLIs (≤ 2.67)**, `status -o env` emits unprefixed names (`API_URL`, `SERVICE_ROLE_KEY`). Set the vars manually instead:
+
+```bash
+export SUPABASE_URL=http://127.0.0.1:54321
+export SUPABASE_SERVICE_ROLE_KEY=$(supabase status 2>/dev/null | awk '/service_role key/ {print $NF}')
+```
+
+Then run the test:
+
 ```bash
 deno test --allow-all supabase/functions/_shared/email_templates.integration.test.ts
 ```
