@@ -175,10 +175,14 @@ export async function handleSignupPreflight(
     return failClosed("internal_error");
   }
 
-  return result.allowed
-    ? ok()
-    : Response.json(
-        { allowed: false, reason: result.reason },
-        { status: 200 },
-      );
+  // Explicit narrowing (not a ternary) because Vercel's strict tsc doesn't
+  // narrow the discriminated union through a conditional expression in all
+  // cases. `if (result.allowed)` narrows cleanly in both branches.
+  if (result.allowed) {
+    return ok();
+  }
+  return Response.json(
+    { allowed: false, reason: result.reason },
+    { status: 200 },
+  );
 }
