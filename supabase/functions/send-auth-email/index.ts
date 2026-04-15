@@ -1,6 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadTemplate, renderTemplate } from '../_shared/email_templates.ts';
 import { sendBrevoEmail } from '../_shared/brevo.ts';
+import {
+  verifyStandardWebhook,
+  WebhookVerificationError,
+} from '../_shared/standardwebhooks.ts';
 
 // PUBLIC_SITE_URL is always https://exclu.at — never trust site_url from payload
 // which Supabase sets to its internal GoTrue URL (qexnwezetjlbwltyccks.supabase.co/auth/v1)
@@ -9,6 +13,7 @@ const SITE_URL = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('PROJECT_URL');
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SERVICE_ROLE_KEY');
+const SEND_EMAIL_HOOK_SECRET = Deno.env.get('SEND_EMAIL_HOOK_SECRET');
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
@@ -60,6 +65,48 @@ Deno.serve(async (req) => {
   }
 
   const payload = await req.text();
+
+  // ── Standard Webhooks signature verification ──
+  // The Supabase Auth "Send Email" hook signs every request with HMAC-SHA256.
+  // Configure the secret in the Supabase dashboard and mirror it here:
+  //   supabase secrets set SEND_EMAIL_HOOK_SECRET="v1,whsec_..."
+  // We FAIL CLOSED if the secret isn't configured — refusing to process any
+  // request is safer than silently accepting unsigned calls.
+  if (!SEND_EMAIL_HOOK_SECRET) {
+    console.error(
+      '[send-auth-email] SEND_EMAIL_HOOK_SECRET is not configured; refusing all requests.',
+    );
+    return new Response(
+      JSON.stringify({
+        error: {
+          http_code: 500,
+          message: 'Hook secret not configured',
+        },
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
+  try {
+    await verifyStandardWebhook({
+      headers: req.headers,
+      rawBody: payload,
+      secret: SEND_EMAIL_HOOK_SECRET,
+    });
+  } catch (err) {
+    if (err instanceof WebhookVerificationError) {
+      console.warn(
+        `[send-auth-email] Webhook verification failed: ${err.message}`,
+      );
+      return new Response(
+        JSON.stringify({
+          error: { http_code: 401, message: 'Unauthorized webhook' },
+        }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    throw err;
+  }
 
   let parsed: HookPayload;
   try {
