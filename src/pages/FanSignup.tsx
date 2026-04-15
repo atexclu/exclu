@@ -10,6 +10,7 @@ import { Mail, Lock, Heart, ArrowLeft, User, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 
 interface CreatorPreview {
   id: string;
@@ -84,6 +85,14 @@ const FanSignup = () => {
 
         if (!ageConfirmed) {
           toast.error('You must confirm that you are at least 18 years old');
+          return;
+        }
+
+        // Phase 2 signup preflight: rate limit / disposable / BotID check.
+        // No-op unless VITE_SIGNUP_PREFLIGHT_ENABLED === 'true'.
+        const preflight = await preflightSignup(email);
+        if (!preflight.ok) {
+          toast.error(humanizeReason(preflight.reason));
           return;
         }
 
