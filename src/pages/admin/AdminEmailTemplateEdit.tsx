@@ -1,6 +1,7 @@
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 
 const Editor = lazy(() => import("@monaco-editor/react"));
 
@@ -105,137 +106,175 @@ export default function AdminEmailTemplateEdit() {
   );
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr] lg:h-[calc(100vh-14rem)]">
-      {/* Left: editor */}
-      <div className="space-y-3 overflow-y-auto pr-2">
-        <div>
-          <Label>Name</Label>
-          <Input
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-        </div>
-        <div>
-          <Label>Subject</Label>
-          <Input
-            value={draft.subject}
-            onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
-          />
-        </div>
-        <Tabs defaultValue="html">
-          <TabsList>
-            <TabsTrigger value="html">HTML</TabsTrigger>
-            <TabsTrigger value="text">Plain text</TabsTrigger>
-            <TabsTrigger value="vars">Variables & sample</TabsTrigger>
-          </TabsList>
+    <div className="space-y-4 pb-24 lg:pb-0">
+      {/* Back link — only shows on mobile where nav context is cramped */}
+      <Link
+        to="/admin/emails/templates"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground lg:hidden"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to templates
+      </Link>
 
-          <TabsContent value="html">
-            <div className="h-[60vh] rounded border border-border overflow-hidden">
-              <Suspense fallback={<EditorFallback />}>
-                <Editor
-                  height="100%"
-                  defaultLanguage="html"
-                  value={draft.html_body}
-                  onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
-                  theme="vs-dark"
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    wordWrap: "on",
-                  }}
-                />
-              </Suspense>
-            </div>
-          </TabsContent>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr] lg:h-[calc(100vh-14rem)]">
+        {/* Left: editor */}
+        <div className="space-y-3 lg:overflow-y-auto lg:pr-2 min-w-0">
+          <div>
+            <Label>Name</Label>
+            <Input
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label>Subject</Label>
+            <Input
+              value={draft.subject}
+              onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
+            />
+          </div>
+          <Tabs defaultValue="html">
+            <TabsList className="w-full justify-start overflow-x-auto">
+              <TabsTrigger value="html">HTML</TabsTrigger>
+              <TabsTrigger value="text">Plain text</TabsTrigger>
+              <TabsTrigger value="vars" className="whitespace-nowrap">Variables & sample</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="text">
-            <div className="h-[60vh] rounded border border-border overflow-hidden">
-              <Suspense fallback={<EditorFallback />}>
-                <Editor
-                  height="100%"
-                  defaultLanguage="plaintext"
-                  value={draft.text_body ?? ""}
-                  onChange={(v) =>
-                    setDraft({ ...draft, text_body: v ?? null })
-                  }
-                  theme="vs-dark"
-                  options={{ minimap: { enabled: false }, fontSize: 13, wordWrap: "on" }}
-                />
-              </Suspense>
-            </div>
-          </TabsContent>
+            <TabsContent value="html">
+              <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded border border-border overflow-hidden">
+                <Suspense fallback={<EditorFallback />}>
+                  <Editor
+                    height="100%"
+                    defaultLanguage="html"
+                    value={draft.html_body}
+                    onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      wordWrap: "on",
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </Suspense>
+              </div>
+            </TabsContent>
 
-          <TabsContent value="vars" className="space-y-3">
-            <Label>Declared variables (JSON)</Label>
-            <div className="h-[30vh] rounded border border-border overflow-hidden">
-              <Suspense fallback={<EditorFallback />}>
-                <Editor
-                  height="100%"
-                  defaultLanguage="json"
-                  value={JSON.stringify(draft.variables, null, 2)}
-                  onChange={(v) => {
-                    try {
-                      const parsed = JSON.parse(v ?? "[]");
-                      if (Array.isArray(parsed)) {
-                        setDraft({ ...draft, variables: parsed });
-                      }
-                    } catch {
-                      /* ignore until JSON is valid again */
+            <TabsContent value="text">
+              <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded border border-border overflow-hidden">
+                <Suspense fallback={<EditorFallback />}>
+                  <Editor
+                    height="100%"
+                    defaultLanguage="plaintext"
+                    value={draft.text_body ?? ""}
+                    onChange={(v) =>
+                      setDraft({ ...draft, text_body: v ?? null })
                     }
-                  }}
-                  theme="vs-dark"
-                  options={{ minimap: { enabled: false }, fontSize: 13 }}
-                />
-              </Suspense>
-            </div>
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      wordWrap: "on",
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </Suspense>
+              </div>
+            </TabsContent>
 
-            <Label>Sample data (drives the live preview)</Label>
-            <div className="h-[20vh] rounded border border-border overflow-hidden">
-              <Suspense fallback={<EditorFallback />}>
-                <Editor
-                  height="100%"
-                  defaultLanguage="json"
-                  value={JSON.stringify(draft.sample_data ?? {}, null, 2)}
-                  onChange={(v) => {
-                    try {
-                      const parsed = JSON.parse(v ?? "{}");
-                      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-                        setDraft({ ...draft, sample_data: parsed });
+            <TabsContent value="vars" className="space-y-3">
+              <Label>Declared variables (JSON)</Label>
+              <div className="h-[25vh] sm:h-[30vh] rounded border border-border overflow-hidden">
+                <Suspense fallback={<EditorFallback />}>
+                  <Editor
+                    height="100%"
+                    defaultLanguage="json"
+                    value={JSON.stringify(draft.variables, null, 2)}
+                    onChange={(v) => {
+                      try {
+                        const parsed = JSON.parse(v ?? "[]");
+                        if (Array.isArray(parsed)) {
+                          setDraft({ ...draft, variables: parsed });
+                        }
+                      } catch {
+                        /* ignore until JSON is valid again */
                       }
-                    } catch {
-                      /* ignore until JSON is valid again */
-                    }
-                  }}
-                  theme="vs-dark"
-                  options={{ minimap: { enabled: false }, fontSize: 13 }}
-                />
-              </Suspense>
-            </div>
-          </TabsContent>
-        </Tabs>
+                    }}
+                    theme="vs-dark"
+                    options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+                  />
+                </Suspense>
+              </div>
 
-        <div className="flex items-center gap-2">
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? "Saving…" : "Save"}
-          </Button>
-          {saveError && (
-            <span className="text-xs text-destructive">{saveError}</span>
-          )}
+              <Label>Sample data (drives the live preview)</Label>
+              <div className="h-[20vh] rounded border border-border overflow-hidden">
+                <Suspense fallback={<EditorFallback />}>
+                  <Editor
+                    height="100%"
+                    defaultLanguage="json"
+                    value={JSON.stringify(draft.sample_data ?? {}, null, 2)}
+                    onChange={(v) => {
+                      try {
+                        const parsed = JSON.parse(v ?? "{}");
+                        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                          setDraft({ ...draft, sample_data: parsed });
+                        }
+                      } catch {
+                        /* ignore until JSON is valid again */
+                      }
+                    }}
+                    theme="vs-dark"
+                    options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+                  />
+                </Suspense>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {/* Desktop-only inline Save button */}
+          <div className="hidden lg:flex items-center gap-2">
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending ? "Saving…" : "Save"}
+            </Button>
+            {saveError && (
+              <span className="text-xs text-destructive">{saveError}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: preview */}
+        <div className="flex min-h-[50vh] lg:min-h-0 flex-col rounded border border-border bg-white">
+          <div className="border-b border-border p-3 text-sm font-medium text-foreground">
+            <span className="text-muted-foreground mr-1">Subject:</span>
+            <span className="break-words">{rendered.subject}</span>
+          </div>
+          <iframe
+            title="email preview"
+            className="flex-1 bg-white min-h-[40vh] lg:min-h-0"
+            srcDoc={rendered.html}
+            sandbox=""
+          />
         </div>
       </div>
 
-      {/* Right: preview */}
-      <div className="flex min-h-[60vh] flex-col rounded border border-border bg-white">
-        <div className="border-b border-border p-3 text-sm font-medium text-foreground">
-          <span className="text-muted-foreground mr-1">Subject:</span>
-          {rendered.subject}
+      {/* Sticky Save bar — mobile only. Fixed bottom so the user never
+          has to scroll back to the top to save. Desktop uses the inline
+          button inside the editor column above. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur px-4 py-3 lg:hidden">
+        <div className="mx-auto flex max-w-6xl items-center gap-2">
+          <Button
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="flex-1"
+          >
+            {save.isPending ? "Saving…" : "Save template"}
+          </Button>
+          {saveError && (
+            <span className="text-[11px] text-destructive line-clamp-2 max-w-[40%]">
+              {saveError}
+            </span>
+          )}
         </div>
-        <iframe
-          title="email preview"
-          className="flex-1 bg-white"
-          srcDoc={rendered.html}
-          sandbox=""
-        />
       </div>
     </div>
   );

@@ -23,13 +23,13 @@ export default function AdminEmails() {
 
   return (
     <AppShell>
-      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-6">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-6 overflow-x-hidden">
         {/* Top-level admin tabs — mirror of AdminUsers, keeps "Mailing" active here */}
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
           </div>
-          <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none">
+          <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none min-w-0">
             {topLevelTabs.map((t) => {
               const isActive = t.key === "mailing";
               return (
