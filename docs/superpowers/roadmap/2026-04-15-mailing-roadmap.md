@@ -99,6 +99,55 @@ These corrections were discovered during Phase 1 preflight and are baked into th
 
 ---
 
+## Phase 2 — confirmed product decisions (2026-04-15)
+
+These decisions override the "questions to investigate" framing in the master plan for Phase 2. They come from the product owner directly and are final for the next session.
+
+### hoo.be signup flow — observed behavior
+
+Manually tested by the product owner on 2026-04-15 from a browser:
+
+> **Signup = email + password only. No email verification sent. No confirmation step. Immediate redirect to onboarding.**
+
+**Product decision:** reproduce this flow exactly. **Accept the impersonation risk** (an attacker could create accounts on emails they don't own — e.g., signing up `victim@gmail.com` without ever controlling that inbox). The trade-off in favor of signup conversion speed is deliberate.
+
+This means **Task 2.1 is no longer a research task**. The findings doc should just capture:
+- hoo.be ships this flow
+- We're mirroring it
+- The impersonation risk is acknowledged and accepted
+- Mitigations that remain in place: password-reset still requires access to the real inbox (so impersonators can't lock out real users), rate limiting / fingerprint / disposable blacklist prevent mass automation
+
+### Vercel BotID — confirmed available
+
+The product owner is on the **Vercel Pro plan**. Vercel BotID is included in Pro (announced as part of the 2025 GA). No separate subscription needed. Task 2.6 proceeds with BotID as the primary bot-protection layer; no fallback to Turnstile/hCaptcha required unless implementation hits a blocker.
+
+### Supabase Auth email provider — current settings baseline
+
+Current state of `Authentication → Providers → Email` as of 2026-04-15:
+
+- Email enabled ✅
+- Secure email change — state unclear from screenshot, must be verified (recommended ON)
+- Secure password change — recommended ON
+- Require current password when updating — recommended ON
+- Prevent use of leaked passwords (HIBP) — **must be turned ON** (free, gratuit, catches reused/leaked passwords)
+- **Minimum password length: 6** → must be raised to **10** before Phase 2 ships
+- **Password requirements: No required characters** → must be changed to **"Lowercase, uppercase, digits and symbols"** before Phase 2 ships
+- Email OTP expiration: 3600 → should be lowered to **900 seconds (15 min)**
+- **Email OTP length: 8** → should be lowered to **6** (standard)
+
+The Phase 2 toggle of interest — `Confirm email` (enable_confirmations) — is the **last action** of Task 2.7 and is flipped manually in the Supabase dashboard, not via the CLI.
+
+### Test email accounts (for Phase 2 signup flow validation)
+
+The product owner controls these real Gmail inboxes for testing:
+- `tbdevpro@gmail.com`
+- `testeuroutil@gmail.com`
+- `t.berthou9@gmail.com`
+
+Use these (not randomly generated addresses) for any manual signup flow verification during Phase 2 — they're real deliverable addresses where the owner can confirm whether emails arrived or not.
+
+---
+
 ## Remaining work — 5 phases (28 tasks)
 
 ### Priority order
