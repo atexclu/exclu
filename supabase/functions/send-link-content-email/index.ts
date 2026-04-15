@@ -1,24 +1,16 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { loadTemplate, renderTemplate } from '../_shared/email_templates.ts';
+import { sendBrevoEmail } from '../_shared/brevo.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const brevoApiKey = Deno.env.get('BREVO_API_KEY');
-const brevoSenderEmail = Deno.env.get('BREVO_SENDER_EMAIL');
-const brevoSenderName = Deno.env.get('BREVO_SENDER_NAME') ?? 'Exclu';
 const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY environment variables');
 }
 
-if (!brevoApiKey) {
-  throw new Error('Missing BREVO_API_KEY environment variable');
-}
-
-if (!brevoSenderEmail) {
-  throw new Error('Missing BREVO_SENDER_EMAIL environment variable');
-}
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 // CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
@@ -74,6 +66,7 @@ interface LinkRow {
   title: string;
   description: string | null;
   storage_path: string | null;
+  creator_id: string | null;
 }
 
 interface LinkMediaRow {
@@ -151,7 +144,7 @@ serve(async (req) => {
     // Fetch link information
     const { data: link, error: linkError } = await supabase
       .from('links')
-      .select('id, title, description, storage_path')
+      .select('id, title, description, storage_path, creator_id')
       .eq('id', purchase.link_id)
       .single<LinkRow>();
 
@@ -210,84 +203,40 @@ serve(async (req) => {
       });
     }
 
-    const linksListHtml = downloadLinks
+    // Fetch creator display name / handle for the template header.
+    let creatorName = 'Exclu';
+    if (link.creator_id) {
+      const { data: creator } = await supabase
+        .from('profiles')
+        .select('display_name, handle')
+        .eq('id', link.creator_id)
+        .maybeSingle();
+      if (creator) {
+        creatorName = creator.display_name || creator.handle || 'Exclu';
+      }
+    }
+
+    const downloadLinksHtml = downloadLinks
       .map((url, index) => `<li><a href="${url}">Download file ${index + 1}</a></li>`)
       .join('');
 
-    const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Your Exclu content is ready</title>
-<style>
-  body { margin:0; padding:0; background-color:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#e2e8f0; text-align:left; }
-  .container { max-width:600px; margin:0 auto; background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%); border-radius:16px; border:1px solid #1e293b; box-shadow:0 12px 30px rgba(0,0,0,0.55); overflow:hidden; }
-  .header { padding:28px 28px 18px 28px; border-bottom:1px solid #1e293b; }
-  .header h1 { font-size:26px; color:#f9fafb; margin:0; line-height:1.3; font-weight:700; }
-  .content { padding:26px 28px 30px 28px; }
-  .content p { font-size:15px; line-height:1.7; color:#cbd5e1; margin:0 0 16px 0; }
-  .content strong { color:#ffffff; font-weight:600; }
-  .features { background-color:#020617; border-radius:10px; padding:18px; margin:20px 0; border:1px solid #1e293b; }
-  .features h3 { font-size:16px; color:#f9fafb; margin:0 0 10px 0; font-weight:600; }
-  .features ul { margin:0; padding:0; list-style:none; }
-  .features li { font-size:14px; color:#cbd5e1; margin-bottom:8px; position:relative; padding-left:20px; }
-  .features li:before { content:"↓"; position:absolute; left:0; color:#a3e635; font-weight:bold; }
-  .features li a { color:#a3e635; text-decoration:none; }
-  .features li a:hover { text-decoration:underline; }
-  .footer { font-size:12px; color:#64748b; text-align:center; padding:18px; border-top:1px solid #1e293b; background-color:#020617; }
-  .footer a { color:#a3e635; text-decoration:none; }
-  .footer a:hover { text-decoration:underline; }
-  @media (max-width:480px) { .container { margin:0 10px; } .content { padding:20px; } .header { padding:20px 20px 16px 20px; } .header h1 { font-size:22px; } .content p { font-size:14px; } }
-</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Your Exclu content is ready 🎉</h1>
-    </div>
-    <div class="content">
-      <p>Thank you for your purchase on <strong>Exclu</strong>. Your premium content is now unlocked and ready to download.</p>
-      <div class="features">
-        <h3>Your download links:</h3>
-        <ul>
-          ${linksListHtml}
-        </ul>
-      </div>
-      <p style="margin-top:20px; font-size:13px; color:#94a3b8;">If you did not make this purchase, you can safely ignore this email.</p>
-    </div>
-    <div class="footer">
-      © 2025 Exclu — All rights reserved<br>
-      <a href="${siteUrl}">exclu</a> • <a href="${siteUrl}/terms">Terms of Service</a> • <a href="${siteUrl}/privacy">Privacy Policy</a>
-    </div>
-  </div>
-</body>
-</html>`;
-
-    const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': brevoApiKey,
-      },
-      body: JSON.stringify({
-        sender: {
-          email: brevoSenderEmail,
-          name: brevoSenderName,
-        },
-        to: [
-          {
-            email: finalEmail,
-          },
-        ],
-        subject: `Votre contenu Exclu est disponible`,
-        htmlContent,
-      }),
+    const template = await loadTemplate(supabase, 'link_content_delivery');
+    const rendered = renderTemplate(template, {
+      creator_name: creatorName,
+      link_title: link.title,
+      // Template already wraps this in <ul>...</ul>, so we only emit <li> items.
+      download_links_html: downloadLinksHtml,
+      site_url: siteUrl,
     });
 
-    if (!brevoResponse.ok) {
-      const text = await brevoResponse.text();
-      console.error('Error sending email via Brevo:', text);
+    const sent = await sendBrevoEmail({
+      to: finalEmail,
+      subject: rendered.subject,
+      htmlContent: rendered.html,
+    });
+
+    if (!sent) {
+      console.error('Error sending email via Brevo');
       return new Response(JSON.stringify({ error: 'Failed to send email' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
