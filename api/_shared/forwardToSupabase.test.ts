@@ -36,7 +36,7 @@ describe("forwardToSupabase", () => {
     expect(parsedBody.user_agent).toBe("ua/1.0");
   });
 
-  it("forwards x-forwarded-for when clientIp is provided", async () => {
+  it("forwards x-client-ip when clientIp is provided", async () => {
     const fetchSpy = makeFetch(
       () => new Response(JSON.stringify({ allowed: true }), { status: 200 }),
     );
@@ -49,10 +49,10 @@ describe("forwardToSupabase", () => {
     const calls = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const [, init] = calls[0] as [string, RequestInit];
     const sentHeaders = init.headers as Record<string, string>;
-    expect(sentHeaders["x-forwarded-for"]).toBe("203.0.113.42");
+    expect(sentHeaders["x-client-ip"]).toBe("203.0.113.42");
   });
 
-  it("omits x-forwarded-for when clientIp is absent", async () => {
+  it("omits x-client-ip when clientIp is absent", async () => {
     const fetchSpy = makeFetch(
       () => new Response(JSON.stringify({ allowed: true }), { status: 200 }),
     );
@@ -65,7 +65,7 @@ describe("forwardToSupabase", () => {
     const calls = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock.calls;
     const [, init] = calls[0] as [string, RequestInit];
     const sentHeaders = init.headers as Record<string, string>;
-    expect(sentHeaders["x-forwarded-for"]).toBeUndefined();
+    expect(sentHeaders["x-client-ip"]).toBeUndefined();
   });
 
   it("passes through Supabase's {allowed:false, reason} verbatim", async () => {

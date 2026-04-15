@@ -208,18 +208,26 @@ export async function handleSignupCheck(
     );
   }
   const body = parsed.value;
-  // IP is pulled from the x-forwarded-for header chain, which is trusted
-  // ONLY because the Vercel Function wrapper (api/check-signup-allowed.ts)
-  // controls the header path. The Supabase edge function is publicly
-  // reachable, so a caller with the shared secret can forge this header
-  // and rotate IPs to bypass the IP rate limit. IP rate-limiting strength
-  // is therefore conditional on:
-  //   1. Secret confidentiality (rotated via `supabase secrets set`)
-  //   2. Phase 2B shipping the Vercel Function as the trusted IP forwarder
-  //      AND restricting calls to come through it.
-  // The FP rate limit + cooldown checks provide defense-in-depth that does
-  // not rely on IP integrity.
-  const ip = extractClientIp(req);
+  // IP extraction — read the TRUSTED `x-client-ip` header set by our
+  // Vercel Function wrapper FIRST. This header is a custom name that
+  // Cloudflare (in front of Supabase edge runtime) does NOT touch.
+  //
+  // PROD INCIDENT 2026-04-15: we used to read `x-forwarded-for` here,
+  // but Cloudflare prepends the connecting IP (Vercel's egress IP) to
+  // the chain. `extractClientIp(req)` does `split(",")[0]` which picks
+  // up the Vercel egress IP — effectively keying the IP rate limit on
+  // a single shared platform IP. Real users hit `too_many_signups_ip`
+  // after 5 total signups anywhere on the platform.
+  //
+  // The Vercel Function wrapper (api/_shared/forwardToSupabase.ts) now
+  // sends the real browser IP as `x-client-ip`. We read that first and
+  // fall back to `extractClientIp` only for direct callers (which are
+  // blocked by the shared secret gate above anyway — this fallback
+  // exists just for future-proofing in case some legitimate caller
+  // skips the wrapper).
+  const ip =
+    req.headers.get("x-client-ip") ??
+    extractClientIp(req);
 
   const fullEnv = env as HandlerEnv;
   const svc = serviceClient(fullEnv);
