@@ -57,8 +57,15 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { checkBotId } from "botid/server";
-import { forwardToSupabase } from "./_shared/forwardToSupabase";
-import { handleSignupPreflight } from "./_shared/signupPreflightHandler";
+// Vercel's build-time tsc uses node16/nodenext module resolution, which
+// requires explicit `.js` extensions on relative ESM imports. The source
+// files are `.ts`, but the emitted JS files will be `.js`, so the import
+// path must reference the compiled file name. Without this, the build
+// emits broken JS and the function crashes at runtime with
+// FUNCTION_INVOCATION_FAILED. Our local tsconfigs use `bundler` resolution
+// so the errors weren't caught locally — see the Phase 2B hotfix commits.
+import { forwardToSupabase } from "./_shared/forwardToSupabase.js";
+import { handleSignupPreflight } from "./_shared/signupPreflightHandler.js";
 
 const DEFAULT_SUPABASE_URL =
   "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/check-signup-allowed";
