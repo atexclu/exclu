@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { LogOut, LayoutDashboard, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus, Mail } from 'lucide-react';
+import { LogOut, LayoutDashboard, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -49,7 +49,6 @@ const navSections: { label: string; items: NavItem[] }[] = [
     items: [
       { path: 'https://telegram.me/exclu_support', label: 'Support', icon: HelpCircle, external: true },
       { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
-      { path: '/admin/emails', label: 'Emails', icon: Mail, adminOnly: true },
     ],
   },
 ];
@@ -95,7 +94,6 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
     if (path === '/app/agency') return location.pathname === '/app/agency';
     if (path === '/app/referral') return location.pathname === '/app/referral';
     if (path === '/admin/users') return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
-    if (path === '/admin/emails') return location.pathname.startsWith('/admin/emails');
     return location.pathname === path;
   };
 
