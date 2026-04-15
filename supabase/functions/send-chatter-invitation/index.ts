@@ -17,7 +17,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { loadTemplate, renderTemplate } from '../_shared/email_templates.ts';
-import { sendBrevoEmail } from '../_shared/brevo.ts';
+import { escapeHtml, sendBrevoEmail } from '../_shared/brevo.ts';
 
 // ── Variables d'environnement ─────────────────────────────────────────────────
 const supabaseUrl            = Deno.env.get('PROJECT_URL') ?? Deno.env.get('SUPABASE_URL');
@@ -231,18 +231,34 @@ serve(async (req: Request) => {
     // ── Construire le lien d'acceptation ─────────────────────────────────────
     const acceptUrl    = `${normalizedSiteOrigin}/accept-chatter-invite?token=${invitation.token}`;
     const creatorName  = creatorAccount.display_name || creatorAccount.handle || 'Un créateur';
-    // Note: the DB template `chatter_invitation` does not support `custom_message`
-    // or a "view creator profile" link, so those extras from the legacy inline
-    // template are dropped in this refactor. If we need them back, add a new
-    // template variant rather than reviving inline HTML.
-    void custom_message;
+    const profileHandle = creatorAccount.handle?.trim() ?? '';
+
+    // ── Build optional HTML blocks for the email template ───────────────────
+    // The `chatter_invitation` DB template exposes two raw-HTML variables
+    // (`custom_message_html`, `profile_link_html`) injected via triple-brace
+    // substitution. We pre-render them here so the template doesn't need
+    // conditional logic: empty string = block is invisible. All user-supplied
+    // text is HTML-escaped; the creator name and profile handle are escaped
+    // before interpolation too.
+    const escapedCreatorName = escapeHtml(creatorName);
+
+    const trimmedCustomMessage = custom_message?.trim() ?? '';
+    const customMessageHtml = trimmedCustomMessage.length > 0
+      ? `<div class="info-box" style="background-color:#0b1120; border-color:#334155;"><h3>Message de ${escapedCreatorName} :</h3><p style="font-size:14px; line-height:1.6; color:#cbd5e1; margin:0; white-space:pre-wrap;">${escapeHtml(trimmedCustomMessage)}</p></div>`
+      : '';
+
+    const profileLinkHtml = profileHandle.length > 0
+      ? `<p style="margin-top:16px; margin-bottom:8px;"><a href="${normalizedSiteOrigin}/${encodeURIComponent(profileHandle)}" style="color:#a3e635; text-decoration:none; font-size:14px;">Voir le profil de ${escapedCreatorName} →</a></p>`
+      : '';
 
     const template = await loadTemplate(supabaseAdmin, 'chatter_invitation');
     const rendered = renderTemplate(template, {
-      creator_name:   creatorName,
-      invitation_url: acceptUrl,
-      invitee_email:  to_email,
-      site_url:       normalizedSiteOrigin,
+      creator_name:        creatorName,
+      invitation_url:      acceptUrl,
+      invitee_email:       to_email,
+      site_url:            normalizedSiteOrigin,
+      custom_message_html: customMessageHtml,
+      profile_link_html:   profileLinkHtml,
     });
 
     // ── Envoyer l'email via Brevo ─────────────────────────────────────────────
