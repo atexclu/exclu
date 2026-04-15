@@ -9,7 +9,10 @@
  * The actual pipeline (BotID check → body parse → forward to Supabase)
  * lives in `_shared/signupPreflightHandler.ts` so it can be unit-tested
  * with mocked dependencies. This file just binds the real `checkBotId`
- * and `forwardToSupabase` and reads env vars from `process.env`.
+ * and `forwardToSupabase`, adapts between the legacy `@vercel/node`
+ * `(req, res)` handler signature and the modern Web-API `Request/Response`
+ * shape that the testable handler speaks, and reads env vars from
+ * `process.env`.
  *
  * =========================================================================
  * ⚠️  DO NOT add a vercel.json rewrite for `/api/check-signup-allowed`.
@@ -30,6 +33,15 @@
  *
  * =========================================================================
  *
+ * Legacy handler signature — not the named `POST(request: Request)` style.
+ * The rest of this project uses `@vercel/node` `(req, res)` handlers
+ * (api/og-proxy.ts, api/sitemap.ts, etc.). Vercel auto-detects the runtime
+ * from that pattern and does NOT route named method exports when the
+ * legacy pattern is present elsewhere, which caused a 500
+ * FUNCTION_INVOCATION_FAILED in the first Phase 2B deploy. We use the
+ * legacy signature here and build a minimal Fetch API `Request` inside
+ * the handler so the testable core can stay framework-agnostic.
+ *
  * IMPORTANT: BotID actively runs JavaScript on the client and attaches
  * challenge headers to every protected request. A direct `curl` call
  * to this endpoint in production WILL be classified as a bot. The only
@@ -43,6 +55,7 @@
  * challenge-required branch (no isBot) → we fail closed.
  */
 
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { checkBotId } from "botid/server";
 import { forwardToSupabase } from "./_shared/forwardToSupabase";
 import { handleSignupPreflight } from "./_shared/signupPreflightHandler";
@@ -50,14 +63,76 @@ import { handleSignupPreflight } from "./_shared/signupPreflightHandler";
 const DEFAULT_SUPABASE_URL =
   "https://qexnwezetjlbwltyccks.supabase.co/functions/v1/check-signup-allowed";
 
-export async function POST(request: Request): Promise<Response> {
-  return handleSignupPreflight(
-    request,
-    {
-      secret: process.env.SIGNUP_CHECK_INTERNAL_SECRET,
-      supabaseUrl:
-        process.env.SUPABASE_CHECK_SIGNUP_URL ?? DEFAULT_SUPABASE_URL,
-    },
-    { checkBotId, forwardToSupabase },
-  );
+/**
+ * Build a Fetch API `Request` from a legacy `VercelRequest` so the
+ * testable handler can consume it without knowing about `@vercel/node`.
+ * Preserves the body (as a JSON string — `req.body` is already parsed by
+ * the Node runtime when the content-type is application/json) and the
+ * headers we care about (content-type + forwarding chain).
+ */
+function buildFetchRequest(req: VercelRequest): Request {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers ?? {})) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      headers.set(key, value.join(", "));
+    } else {
+      headers.set(key, value);
+    }
+  }
+
+  // `req.body` can be a parsed object, a string, or undefined depending on
+  // content-type. Serialize back to JSON for the Fetch API Request body.
+  let body: string | undefined;
+  if (req.body === undefined || req.body === null) {
+    body = undefined;
+  } else if (typeof req.body === "string") {
+    body = req.body;
+  } else {
+    body = JSON.stringify(req.body);
+  }
+
+  const url =
+    (req.url && req.url.startsWith("http")
+      ? req.url
+      : `https://local.invalid${req.url ?? "/"}`);
+
+  return new Request(url, {
+    method: req.method ?? "POST",
+    headers,
+    body,
+  });
+}
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<void> {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "method_not_allowed" });
+    return;
+  }
+
+  const fetchRequest = buildFetchRequest(req);
+
+  let response: Response;
+  try {
+    response = await handleSignupPreflight(
+      fetchRequest,
+      {
+        secret: process.env.SIGNUP_CHECK_INTERNAL_SECRET,
+        supabaseUrl:
+          process.env.SUPABASE_CHECK_SIGNUP_URL ?? DEFAULT_SUPABASE_URL,
+      },
+      { checkBotId, forwardToSupabase },
+    );
+  } catch (err) {
+    console.error("[check-signup-allowed] handler threw", err);
+    res.status(200).json({ allowed: false, reason: "internal_error" });
+    return;
+  }
+
+  // Bridge the Fetch Response back to the legacy VercelResponse.
+  const payload = (await response.json()) as Record<string, unknown>;
+  res.status(response.status).json(payload);
 }
