@@ -4,7 +4,10 @@
  * Forwards a signup preflight request from the Vercel Function wrapper
  * to the Supabase edge function `check-signup-allowed`, attaching the
  * shared `x-internal-secret` header and preserving the original client
- * IP via `x-forwarded-for`.
+ * IP via a custom `x-client-ip` header. (NOT `x-forwarded-for` — that
+ * header gets prepended by Cloudflare on the way into Supabase, which
+ * pollutes the downstream `extractClientIp` call with our Vercel egress
+ * IP. See the comment inside `forwardToSupabase` for the full history.)
  *
  * Kept in api/_shared/ (underscore prefix = excluded from Vercel Function
  * routing) so it can be imported by the real handler AND unit-tested
@@ -28,7 +31,12 @@ export interface ForwardOptions {
   url: string;
   /** Shared secret, must match SIGNUP_CHECK_INTERNAL_SECRET set in the Supabase project secrets. */
   secret: string;
-  /** x-forwarded-for header value to forward (preserves the real browser IP for rate limiting). */
+  /**
+   * Real browser IP to forward to the Supabase edge function via the
+   * custom `x-client-ip` header. Do NOT send this as `x-forwarded-for`
+   * because Cloudflare prepends its own connecting IP to that chain
+   * (see the PROD INCIDENT comment below).
+   */
   clientIp?: string;
   /** Injectable fetch for testing. Defaults to the global `fetch` available in Vercel Node runtime. */
   fetchImpl?: typeof fetch;
@@ -60,7 +68,23 @@ export async function forwardToSupabase(
     "x-internal-secret": opts.secret,
   };
   if (opts.clientIp) {
-    headers["x-forwarded-for"] = opts.clientIp;
+    // PROD INCIDENT 2026-04-15: do NOT use `x-forwarded-for` here.
+    // Cloudflare (in front of Supabase edge functions) PREPENDS its own
+    // connecting-client IP (our Vercel egress IP) to the chain, so the
+    // Supabase edge fn's `extractClientIp` — which takes `split(",")[0]`
+    // — picks up the Vercel egress IP instead of the real browser IP.
+    // Consequence: every signup from any user ends up keyed on the same
+    // shared Vercel egress IP, the 5/hour IP rate limit becomes a
+    // platform-wide cap, and real users get blocked after 5 total
+    // signups anywhere.
+    //
+    // Fix: use a custom header `x-client-ip` that Cloudflare does NOT
+    // prepend or touch. The Supabase edge fn reads this custom header
+    // first (via its own extractor) and only falls back to
+    // `x-forwarded-for` if `x-client-ip` is absent (e.g. direct caller
+    // not going through the Vercel wrapper — which is blocked by the
+    // shared secret gate anyway).
+    headers["x-client-ip"] = opts.clientIp;
   }
 
   let res: Response;
