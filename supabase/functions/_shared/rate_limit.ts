@@ -6,6 +6,25 @@ export interface RateLimitOptions {
   limit: number;
   windowSeconds: number;
   subKey?: string;
+  /**
+   * When the `rate_limit_check` RPC errors, should we block the caller
+   * (`failClosed: true`) or let it through (`failClosed: false`)?
+   *
+   * Default is **fail open** (`false`) for backward compatibility with
+   * non-security callers like campaign-send throttling — where a transient
+   * DB error blocking all sends would be worse than letting a burst through.
+   *
+   * Security boundaries (signup, auth preflight, anything gating account
+   * creation) MUST pass `failClosed: true`. The caller is responsible for
+   * making that choice explicit.
+   */
+  failClosed?: boolean;
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  key: string;
+  errored: boolean;
 }
 
 export function buildBucketKey(
@@ -21,7 +40,7 @@ export function buildBucketKey(
 export async function checkRateLimit(
   supabase: SupabaseClient,
   opts: RateLimitOptions,
-): Promise<{ allowed: boolean; key: string }> {
+): Promise<RateLimitResult> {
   const key = buildBucketKey(opts);
   const { data, error } = await supabase.rpc("rate_limit_check", {
     p_key: key,
@@ -29,10 +48,11 @@ export async function checkRateLimit(
     p_window_seconds: opts.windowSeconds,
   });
   if (error) {
-    console.error("rate_limit_check RPC failed", error);
-    return { allowed: true, key }; // fail open
+    console.error("rate_limit_check RPC failed", { key, error });
+    const failClosed = opts.failClosed === true;
+    return { allowed: !failClosed, key, errored: true };
   }
-  return { allowed: data === true, key };
+  return { allowed: data === true, key, errored: false };
 }
 
 export function extractClientIp(req: Request): string {
