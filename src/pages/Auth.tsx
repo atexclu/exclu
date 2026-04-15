@@ -179,6 +179,16 @@ const Auth = () => {
           throw error;
         }
 
+        // Phase 2B: if Supabase Auth returned a session, the user is
+        // logged in immediately (happens when Confirm email = OFF in the
+        // dashboard). Navigate straight to the destination. Otherwise
+        // (legacy Confirm email = ON path, backward compat) fall back to
+        // the "check inbox" message.
+        if (signUpData?.session) {
+          toast.success('Welcome to Exclu!');
+          navigate(accountType === 'creator' ? '/app/profile' : '/fan', { replace: true });
+          return;
+        }
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
       } else {

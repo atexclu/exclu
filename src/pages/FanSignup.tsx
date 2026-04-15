@@ -131,9 +131,17 @@ const FanSignup = () => {
           throw error;
         }
 
-        // Auto-favorite happens after email confirmation via the FanDashboard
-        // redirect URL which includes ?creator={handle}
-
+        // Phase 2B: if Supabase Auth returned a session, the fan is
+        // logged in immediately (Confirm email = OFF). Navigate straight
+        // to the fan dashboard (with the optional creator auto-favorite
+        // query param preserved). Otherwise (legacy Confirm email = ON
+        // path, backward compat) fall back to the "check inbox" message.
+        if (signUpData?.session) {
+          toast.success('Welcome to Exclu!');
+          const fanPath = creatorHandle ? `/fan?creator=${creatorHandle}` : '/fan';
+          navigate(fanPath, { replace: true });
+          return;
+        }
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
       } else {
