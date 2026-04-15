@@ -18,7 +18,6 @@ create table if not exists public.email_templates (
   updated_at timestamptz not null default now()
 );
 
-create index email_templates_slug_idx on public.email_templates(slug);
 create index email_templates_category_idx on public.email_templates(category);
 
 create table if not exists public.email_template_versions (
@@ -43,12 +42,17 @@ begin
 end;
 $$;
 
+drop trigger if exists email_templates_touch_trg on public.email_templates;
 create trigger email_templates_touch_trg
   before update on public.email_templates
   for each row execute function public.email_templates_touch();
 
 create or replace function public.email_templates_snapshot()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
   if (TG_OP = 'UPDATE') and (
     old.subject is distinct from new.subject
@@ -65,6 +69,7 @@ begin
 end;
 $$;
 
+drop trigger if exists email_templates_snapshot_trg on public.email_templates;
 create trigger email_templates_snapshot_trg
   before update on public.email_templates
   for each row execute function public.email_templates_snapshot();
@@ -72,11 +77,8 @@ create trigger email_templates_snapshot_trg
 alter table public.email_templates enable row level security;
 alter table public.email_template_versions enable row level security;
 
-create policy "admins read templates" on public.email_templates
-  for select using (public.is_admin());
-
 create policy "admins write templates" on public.email_templates
-  for all using (public.is_admin()) with check (public.is_admin());
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 create policy "admins read template versions" on public.email_template_versions
-  for select using (public.is_admin());
+  for select to authenticated using (public.is_admin());
