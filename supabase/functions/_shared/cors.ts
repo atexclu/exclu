@@ -16,13 +16,34 @@ const allowedOrigins = [
   'http://localhost:5173',
 ];
 
+/**
+ * Matches Vercel preview deployments of the `exclu` project under the
+ * `atexclus-projects` team, e.g.:
+ *   https://exclu-git-feature-mailing-overhaul-atexclus-projects.vercel.app
+ *   https://exclu-abc123-atexclus-projects.vercel.app
+ *
+ * Scoped to our team prefix (`atexclus-projects`) so unrelated Vercel
+ * apps cannot pass CORS by accident. Does NOT match unrelated projects
+ * under the same team (must start with `exclu-`).
+ */
+const vercelPreviewRegex =
+  /^https:\/\/exclu-[a-z0-9-]+-atexclus-projects\.vercel\.app$/;
+
+function isOriginAllowed(origin: string): boolean {
+  if (!origin) return false;
+  if (allowedOrigins.includes(origin)) return true;
+  if (vercelPreviewRegex.test(origin)) return true;
+  return false;
+}
+
 export function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+  const allowedOrigin = isOriginAllowed(origin) ? origin : normalizedSiteOrigin;
 
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
+    'Vary': 'Origin',
   };
 }
 

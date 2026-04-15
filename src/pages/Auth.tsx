@@ -10,6 +10,7 @@ import { Mail, Lock, Sparkles, AtSign, User, Palette, Eye, EyeOff } from 'lucide
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 
 const isValidEmail = (email: string) =>
   /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
@@ -122,6 +123,14 @@ const Auth = () => {
             toast.error('This username is already taken');
             return;
           }
+        }
+
+        // Phase 2 signup preflight: rate limit / disposable / BotID check.
+        // No-op unless VITE_SIGNUP_PREFLIGHT_ENABLED === 'true'.
+        const preflight = await preflightSignup(email);
+        if (!preflight.ok) {
+          toast.error(humanizeReason(preflight.reason));
+          return;
         }
 
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
