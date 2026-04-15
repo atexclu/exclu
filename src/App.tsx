@@ -56,6 +56,13 @@ import ChatterContracts from './pages/ChatterContracts';
 import ChatterClientSelector from './pages/ChatterClientSelector';
 import ChatterAuth from './pages/ChatterAuth';
 import AdminPayments from './pages/AdminPayments';
+import AdminEmails from "@/pages/AdminEmails";
+import AdminEmailTemplates from "@/pages/admin/AdminEmailTemplates";
+import AdminEmailTemplateEdit from "@/pages/admin/AdminEmailTemplateEdit";
+import AdminEmailCampaigns from "@/pages/admin/AdminEmailCampaigns";
+import AdminEmailCampaignEdit from "@/pages/admin/AdminEmailCampaignEdit";
+import AdminEmailContacts from "@/pages/admin/AdminEmailContacts";
+import AdminEmailLogs from "@/pages/admin/AdminEmailLogs";
 import DirectoryHub from './pages/DirectoryHub';
 import DirectoryCreators from './pages/DirectoryCreators';
 import DirectoryAgencies from './pages/DirectoryAgencies';
@@ -151,6 +158,23 @@ const App = () => {
                     </AdminRoute>
                   }
                 />
+                <Route
+                  path="/admin/emails"
+                  element={
+                    <AdminRoute>
+                      <AdminEmails />
+                    </AdminRoute>
+                  }
+                >
+                  <Route index element={<Navigate to="templates" replace />} />
+                  <Route path="templates" element={<AdminEmailTemplates />} />
+                  <Route path="templates/:slug" element={<AdminEmailTemplateEdit />} />
+                  <Route path="campaigns" element={<AdminEmailCampaigns />} />
+                  <Route path="campaigns/new" element={<AdminEmailCampaignEdit />} />
+                  <Route path="campaigns/:id" element={<AdminEmailCampaignEdit />} />
+                  <Route path="contacts" element={<AdminEmailContacts />} />
+                  <Route path="logs" element={<AdminEmailLogs />} />
+                </Route>
                 <Route
                   path="/app"
                   element={
