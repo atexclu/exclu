@@ -39,3 +39,17 @@ Deno.test("raw block skips escaping for known-safe HTML", () => {
   const out = renderTemplate(tpl, { html_block: "<b>bold</b>" });
   assertEquals(out.html, "<div><b>bold</b></div>");
 });
+
+Deno.test("dot-notation placeholder is not resolved and survives literally", () => {
+  const tpl: EmailTemplateRow = {
+    slug: "dot",
+    subject: "hi",
+    html_body: "<p>{{user.name}}</p>",
+    text_body: null,
+    variables: [],
+  };
+  // No variable matches {{user.name}} — it must survive literally,
+  // not silently become an empty string.
+  const out = renderTemplate(tpl, { "user.name": "Alice" });
+  assertEquals(out.html, "<p>{{user.name}}</p>");
+});

@@ -20,8 +20,6 @@ export interface RenderedEmail {
   text: string;
 }
 
-const VAR_RE = /\{\{\{?\s*([a-zA-Z0-9_.]+)\s*\}?\}\}/g;
-
 function validateRequired(
   template: EmailTemplateRow,
   data: Record<string, unknown>,
@@ -38,7 +36,7 @@ function substitute(
   data: Record<string, unknown>,
   escape: boolean,
 ): string {
-  return source.replace(VAR_RE, (match, key) => {
+  return source.replace(/\{\{\{?\s*([a-zA-Z0-9_]+)\s*\}?\}\}/g, (match, key) => {
     const raw = match.startsWith("{{{"); // triple = no escape
     const value = data[key];
     if (value === undefined || value === null) return "";
