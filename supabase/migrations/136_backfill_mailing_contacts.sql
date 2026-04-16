@@ -9,11 +9,17 @@
 --   2. purchases        → role = fan, first_source = 'backfill_link_purchase'
 --   3. tips             → role = fan, first_source = 'backfill_tip'
 --   4. custom_requests  → role = fan, first_source = 'backfill_custom_request'
---   5. guest_sessions   → role = fan, first_source = 'backfill_guest_chat'
 --
 -- `gift_purchases.fan_email` is brand-new (added in 135), so there's
 -- nothing to backfill from gifts in this run. Going forward,
--- ugp-listener captures it.
+-- ugp-confirm captures it.
+--
+-- NOTE: guest_sessions.email is INTENTIONALLY NOT backfilled. Fans who
+-- only chatted with a creator via the public-profile chat widget did
+-- not consent to marketing — their emails (if any were captured) stay
+-- in guest_sessions for chat-notification purposes only. Only fans who
+-- completed a paid transaction (link purchase, tip, gift, custom
+-- request) or created an account end up in the mailing registry.
 --
 -- A single 'backfill' event is written per contact so the admin UI shows
 -- a "seeded from migration 136" marker in the events log. Post-deploy,
@@ -104,26 +110,6 @@ from public.custom_requests
 where fan_email is not null
   and length(trim(fan_email)) > 0
 group by lower(trim(fan_email))
-on conflict (email) do update set
-  last_seen_at = greatest(public.mailing_contacts.last_seen_at, excluded.last_seen_at);
-
--- ======================================================================
--- Pass 5: guest_sessions.email
--- ======================================================================
-insert into public.mailing_contacts
-  (email, display_name, role, first_source, last_source, first_seen_at, last_seen_at)
-select
-  lower(trim(email)),
-  null,
-  'fan',
-  'backfill_guest_chat',
-  'backfill_guest_chat',
-  min(created_at),
-  max(created_at)
-from public.guest_sessions
-where email is not null
-  and length(trim(email)) > 0
-group by lower(trim(email))
 on conflict (email) do update set
   last_seen_at = greatest(public.mailing_contacts.last_seen_at, excluded.last_seen_at);
 
