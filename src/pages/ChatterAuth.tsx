@@ -15,14 +15,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { Mail, Lock, Sparkles, User } from 'lucide-react';
+import { Mail, Lock, Sparkles, User, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
+
+const isValidEmail = (email: string) =>
+  /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
 
 const ChatterAuth = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -58,6 +64,11 @@ const ChatterAuth = () => {
       return;
     }
 
+    if (!isValidEmail(email)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (mode === 'reset') {
@@ -77,8 +88,21 @@ const ChatterAuth = () => {
           return;
         }
 
+        if (!ageConfirmed) {
+          toast.error('You must confirm that you are at least 18 years old');
+          return;
+        }
+
+        // Phase 2 signup preflight: rate limit / disposable / BotID check.
+        // No-op unless VITE_SIGNUP_PREFLIGHT_ENABLED === 'true'.
+        const preflight = await preflightSignup(email);
+        if (!preflight.ok) {
+          toast.error(humanizeReason(preflight.reason));
+          return;
+        }
+
         const siteUrl = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -101,6 +125,15 @@ const ChatterAuth = () => {
           throw error;
         }
 
+        // Phase 2B: if Supabase Auth returned a session, the chatter is
+        // logged in immediately (Confirm email = OFF). Navigate straight to
+        // the chatter dashboard. Otherwise (legacy Confirm email = ON path,
+        // backward compat) fall back to the "check inbox" message.
+        if (signUpData?.session) {
+          toast.success('Welcome to Exclu!');
+          navigate('/app/chatter', { replace: true });
+          return;
+        }
         toast.success('Check your inbox to confirm your account, then log in.');
         setMode('login');
       } else {
@@ -266,17 +299,43 @@ const ChatterAuth = () => {
                       <Lock className="h-3.5 w-3.5 text-exclu-space/80" />
                       Password
                     </label>
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
-                      className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                      minLength={6}
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                        placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
+                        className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pr-10"
+                        minLength={6}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
+                )}
+
+                {mode === 'signup' && (
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={ageConfirmed}
+                      onChange={(e) => setAgeConfirmed(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-white/30 bg-black/40 text-primary focus:ring-primary/50 accent-[#CFFF16]"
+                    />
+                    <span className="text-[11px] text-exclu-space/80 leading-relaxed group-hover:text-exclu-space transition-colors">
+                      I confirm that I am at least <strong className="text-exclu-cloud">18 years old</strong> and agree to the{' '}
+                      <a href="/terms" target="_blank" className="text-primary hover:underline">Terms of Service</a> and{' '}
+                      <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>, including receiving transactional and marketing emails from Exclu (unsubscribe anytime).
+                    </span>
+                  </label>
                 )}
 
                 <Button
@@ -284,7 +343,7 @@ const ChatterAuth = () => {
                   variant="hero"
                   size="lg"
                   className="w-full mt-1 inline-flex items-center justify-center gap-2"
-                  disabled={isLoading}
+                  disabled={isLoading || (mode === 'signup' && !ageConfirmed)}
                 >
                   {isLoading
                     ? 'Please wait...'
