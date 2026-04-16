@@ -1397,7 +1397,26 @@ const AdminUsers = () => {
                     {filteredDirAgencies.map((agency) => (
                       <div
                         key={agency.id}
-                        className="group px-4 py-3 flex items-center justify-between gap-4 hover:bg-exclu-ink/80 transition-colors"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          if ((agency as any)._source === 'profile') {
+                            navigate(`/admin/users/${agency.id.replace('profile-', '')}?returnTo=/admin/users`);
+                          } else {
+                            startEditAgency(agency);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if ((agency as any)._source === 'profile') {
+                              navigate(`/admin/users/${agency.id.replace('profile-', '')}?returnTo=/admin/users`);
+                            } else {
+                              startEditAgency(agency);
+                            }
+                          }
+                        }}
+                        className="group px-4 py-3 flex items-center justify-between gap-4 hover:bg-exclu-ink/80 transition-colors duration-200 cursor-pointer"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {agency.logo_url ? (
@@ -1423,7 +1442,10 @@ const AdminUsers = () => {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <div
+                          className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {(agency as any)._source === 'profile' ? (
                             <button
                               onClick={() => navigate(`/admin/users/${agency.id.replace('profile-', '')}?returnTo=/admin/users`)}
@@ -1448,7 +1470,7 @@ const AdminUsers = () => {
                               >
                                 {agency.is_visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                               </button>
-                              <a href={`/directory/agencies/${agency.slug}`} target="_blank" rel="noopener noreferrer">
+                              <a href={`/directory/agencies/${agency.slug}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
                                 <button className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-exclu-arsenic/70 text-exclu-space hover:text-exclu-cloud transition-colors" title="View">
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </button>

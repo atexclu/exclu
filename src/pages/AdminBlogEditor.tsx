@@ -1069,7 +1069,7 @@ const AdminBlogEditor = () => {
                   const val = e.target.value;
                   setArticle((prev) => ({ ...prev, scheduled_at: val ? new Date(val).toISOString() : null }));
                 }}
-                className="w-full h-9 rounded-lg border border-exclu-arsenic/50 bg-exclu-ink/80 px-3 text-xs text-exclu-cloud focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="w-full h-9 rounded-lg border border-exclu-arsenic/50 bg-exclu-ink/80 px-3 text-xs text-foreground dark:text-exclu-cloud [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
               <p className="text-[10px] text-exclu-space/50 mt-1.5">Set a date to auto-publish this article</p>
             </div>

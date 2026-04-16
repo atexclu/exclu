@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { adminEmails, type EmailTemplateListRow } from "@/lib/adminEmails";
 import {
   Table,
@@ -12,12 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
-function formatRelative(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString();
-}
-
 export default function AdminEmailTemplates() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-email-templates"],
     queryFn: () => adminEmails.list(),
@@ -49,19 +45,21 @@ export default function AdminEmailTemplates() {
     );
   }
 
+  const openTemplate = (slug: string) => navigate(`/admin/emails/templates/${slug}`);
+
   return (
     <>
       {/* Mobile: stacked cards */}
       <div className="space-y-3 md:hidden">
         {templates.map((t) => (
-          <Link
+          <button
             key={t.id}
-            to={`/admin/emails/templates/${t.slug}`}
-            className="block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-4 transition-colors hover:bg-exclu-ink"
+            onClick={() => openTemplate(t.slug)}
+            className="block w-full text-left rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-4 transition-colors duration-200 hover:bg-exclu-ink"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <div className="font-semibold truncate">{t.name}</div>
+                <div className="font-semibold truncate text-exclu-cloud">{t.name}</div>
                 <code className="text-[11px] text-muted-foreground break-all">{t.slug}</code>
               </div>
               <Badge variant="secondary" className="flex-shrink-0 text-[10px]">
@@ -69,15 +67,11 @@ export default function AdminEmailTemplates() {
               </Badge>
             </div>
             <div className="mt-2 text-sm text-muted-foreground line-clamp-2">{t.subject}</div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>Updated {formatRelative(t.updated_at)}</span>
-              <span className="text-primary font-medium">Edit →</span>
-            </div>
-          </Link>
+          </button>
         ))}
       </div>
 
-      {/* Desktop: rounded table — matches AdminUsers style */}
+      {/* Desktop: clickable rows, no Updated/Edit columns */}
       <div className="hidden md:block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
         <Table>
           <TableHeader>
@@ -86,15 +80,14 @@ export default function AdminEmailTemplates() {
               <TableHead className="text-exclu-space">Slug</TableHead>
               <TableHead className="text-exclu-space">Category</TableHead>
               <TableHead className="text-exclu-space">Subject</TableHead>
-              <TableHead className="text-exclu-space">Updated</TableHead>
-              <TableHead className="text-right text-exclu-space">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {templates.map((t, i) => (
               <TableRow
                 key={t.id}
-                className={`border-b border-exclu-arsenic/30 hover:bg-exclu-ink/50 transition-colors ${
+                onClick={() => openTemplate(t.slug)}
+                className={`cursor-pointer border-b border-exclu-arsenic/30 hover:bg-exclu-ink/50 transition-colors duration-200 ${
                   i === templates.length - 1 ? "border-b-0" : ""
                 }`}
               >
@@ -109,17 +102,6 @@ export default function AdminEmailTemplates() {
                 </TableCell>
                 <TableCell className="max-w-xs truncate text-muted-foreground">
                   {t.subject}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {formatRelative(t.updated_at)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Link
-                    to={`/admin/emails/templates/${t.slug}`}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Edit
-                  </Link>
                 </TableCell>
               </TableRow>
             ))}

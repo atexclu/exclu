@@ -1,5 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AppShell from "@/components/AppShell";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 const topLevelTabs = [
   { key: "users", label: "Users", path: "/admin/users?tab=users" },
@@ -16,15 +18,41 @@ const subTabs = [
   { to: "/admin/emails/logs", label: "Logs" },
 ] as const;
 
+/**
+ * Flatten top-level tabs + mailing subtabs into one list for the mobile
+ * dropdown so admins can jump anywhere in one interaction instead of two.
+ */
+const mobileRoutes = [
+  ...topLevelTabs.slice(0, 4).map((t) => ({ value: t.path, label: t.label })),
+  ...subTabs.map((s) => ({ value: s.to, label: `Mailing · ${s.label}` })),
+];
+
 export default function AdminEmails() {
   const loc = useLocation();
   const navigate = useNavigate();
+  const isOnCampaigns = loc.pathname.startsWith("/admin/emails/campaigns");
 
   return (
     <AppShell>
-      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-6 overflow-x-hidden">
-        {/* Top-level admin tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
+      <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-4 overflow-x-hidden">
+        {/* Mobile: single unified dropdown nav ────────────────────────── */}
+        <div className="sm:hidden">
+          <h1 className="text-xl font-extrabold tracking-tight mb-2">Admin</h1>
+          <select
+            value={loc.pathname + loc.search}
+            onChange={(e) => navigate(e.target.value)}
+            className="h-10 w-full rounded-lg border border-exclu-arsenic/60 bg-exclu-ink/80 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            {mobileRoutes.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Desktop: 2-row nav ─────────────────────────────────────────── */}
+        <div className="hidden sm:flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
           </div>
@@ -48,25 +76,53 @@ export default function AdminEmails() {
           </div>
         </div>
 
-        {/* Sub-tabs — pill style matching AdminPayments status filter */}
-        <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
-          {subTabs.map((t) => {
-            const isActive = loc.pathname.startsWith(t.to);
-            return (
-              <button
-                key={t.to}
-                onClick={() => navigate(t.to)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
-                  isActive
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
+        {/* Sub-tabs row with inline action button (New campaign on /campaigns) */}
+        <div className="hidden sm:flex items-center justify-between gap-2">
+          <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
+            {subTabs.map((t) => {
+              const isActive = loc.pathname.startsWith(t.to);
+              return (
+                <button
+                  key={t.to}
+                  onClick={() => navigate(t.to)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                    isActive
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          {isOnCampaigns && !loc.pathname.includes("/new") && !loc.pathname.match(/campaigns\/[^/]+$/) && (
+            <Button
+              onClick={() => navigate("/admin/emails/campaigns/new")}
+              variant="hero"
+              size="sm"
+              className="flex-shrink-0"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              New campaign
+            </Button>
+          )}
         </div>
+
+        {/* Mobile "New campaign" — below nav dropdown when on campaigns list */}
+        {isOnCampaigns && !loc.pathname.includes("/new") && !loc.pathname.match(/campaigns\/[^/]+$/) && (
+          <div className="sm:hidden">
+            <Button
+              onClick={() => navigate("/admin/emails/campaigns/new")}
+              variant="hero"
+              size="sm"
+              className="w-full"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              New campaign
+            </Button>
+          </div>
+        )}
 
         <Outlet />
       </main>

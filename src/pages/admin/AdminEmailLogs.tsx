@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminCampaigns, type CampaignEvent } from "@/lib/adminCampaigns";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 function eventTone(eventType: string): string {
   switch (eventType) {
@@ -39,7 +38,7 @@ function formatTime(iso: string): string {
 export default function AdminEmailLogs() {
   const [eventFilter, setEventFilter] = useState<string>("all");
 
-  const { data, isLoading, isFetching, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["admin-campaign-events"],
     queryFn: () => adminCampaigns.listRecentEvents(200),
     refetchInterval: 10_000,
@@ -55,28 +54,6 @@ export default function AdminEmailLogs() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-exclu-cloud">Recent events</h2>
-          <p className="text-xs text-muted-foreground">
-            Last 200 Brevo webhook events across all campaigns. Live refresh every 10s.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          {isFetching ? (
-            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 mr-1.5" />
-          )}
-          Refresh
-        </Button>
-      </div>
-
       {/* Filters */}
       <div className="flex flex-wrap gap-1.5">
         <FilterPill
@@ -113,9 +90,9 @@ export default function AdminEmailLogs() {
           No events yet. Send a campaign to populate this feed.
         </div>
       ) : (
-        <div className="rounded border border-border overflow-hidden">
-          {filtered.map((event) => (
-            <EventRow key={event.id} event={event} />
+        <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
+          {filtered.map((event, i) => (
+            <EventRow key={event.id} event={event} isLast={i === filtered.length - 1} />
           ))}
         </div>
       )}
@@ -123,14 +100,18 @@ export default function AdminEmailLogs() {
   );
 }
 
-function EventRow({ event }: { event: CampaignEvent }) {
+function EventRow({ event, isLast }: { event: CampaignEvent; isLast?: boolean }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 hover:bg-muted/30 transition-colors text-xs">
+    <div
+      className={`flex items-center gap-3 px-4 py-2.5 hover:bg-exclu-ink/50 transition-colors duration-200 text-xs ${
+        isLast ? "" : "border-b border-exclu-arsenic/30"
+      }`}
+    >
       <Badge className={`${eventTone(event.event_type)} text-[10px] w-24 justify-center`}>
         {event.event_type}
       </Badge>
       <div className="flex-1 min-w-0">
-        <div className="font-mono truncate">{event.send?.email ?? "—"}</div>
+        <div className="font-mono truncate text-exclu-cloud">{event.send?.email ?? "—"}</div>
         <div className="text-muted-foreground text-[10px] truncate">
           {event.send?.campaign?.name ?? "(unknown campaign)"}
         </div>

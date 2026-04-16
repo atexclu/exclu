@@ -92,24 +92,6 @@ export default function AdminEmailContacts() {
 
   return (
     <div className="space-y-4">
-      {/* Facet summary */}
-      {facets && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-lg border border-border bg-card px-3 py-1.5">
-            <span className="text-muted-foreground">With account:</span>{" "}
-            <strong>{facets.withAccount.toLocaleString()}</strong>
-          </span>
-          <span className="rounded-lg border border-border bg-card px-3 py-1.5">
-            <span className="text-muted-foreground">Email only (no account):</span>{" "}
-            <strong>{facets.emailOnly.toLocaleString()}</strong>
-          </span>
-          <span className="rounded-lg border border-border bg-card px-3 py-1.5">
-            <span className="text-muted-foreground">Total matching filter:</span>{" "}
-            <strong>{total.toLocaleString()}</strong>
-          </span>
-        </div>
-      )}
-
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
         <div className="relative flex-1 min-w-[180px]">
@@ -210,23 +192,28 @@ export default function AdminEmailContacts() {
             ))}
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden md:block rounded border border-border overflow-hidden">
+          {/* Desktop table — rounded card matching AdminUsers/AdminEmailTemplates */}
+          <div className="hidden md:block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>First source</TableHead>
-                  <TableHead>Last seen</TableHead>
-                  <TableHead>First seen</TableHead>
+                <TableRow className="border-b border-exclu-arsenic/40 hover:bg-transparent">
+                  <TableHead className="text-exclu-space">Email</TableHead>
+                  <TableHead className="text-exclu-space">Status</TableHead>
+                  <TableHead className="text-exclu-space">Role</TableHead>
+                  <TableHead className="text-exclu-space">First source</TableHead>
+                  <TableHead className="text-exclu-space">Last seen</TableHead>
+                  <TableHead className="text-exclu-space">First seen</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((c) => (
-                  <TableRow key={c.email}>
-                    <TableCell className="font-mono text-xs">
+                {rows.map((c, i) => (
+                  <TableRow
+                    key={c.email}
+                    className={`border-b border-exclu-arsenic/30 hover:bg-exclu-ink/50 transition-colors duration-200 ${
+                      i === rows.length - 1 ? "border-b-0" : ""
+                    }`}
+                  >
+                    <TableCell className="font-mono text-xs text-exclu-cloud">
                       {c.email}
                       {c.display_name && (
                         <div className="text-[11px] text-muted-foreground font-sans">
@@ -246,7 +233,7 @@ export default function AdminEmailContacts() {
                     <TableCell className="text-xs text-muted-foreground">
                       {formatSource(c.first_source)}
                     </TableCell>
-                    <TableCell className="text-xs">{formatRelative(c.last_seen_at)}</TableCell>
+                    <TableCell className="text-xs text-exclu-cloud">{formatRelative(c.last_seen_at)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatRelative(c.first_seen_at)}
                     </TableCell>

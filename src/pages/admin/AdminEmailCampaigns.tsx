@@ -84,20 +84,6 @@ export default function AdminEmailCampaigns() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-exclu-cloud">Campaigns</h2>
-          <p className="text-xs text-muted-foreground">
-            Bulk emails sent via Brevo transactional API. Every recipient gets a per-user HMAC unsubscribe link.
-          </p>
-        </div>
-        <Button onClick={() => navigate("/admin/emails/campaigns/new")} variant="hero" size="sm">
-          <Plus className="w-4 h-4 mr-1.5" />
-          New campaign
-        </Button>
-      </div>
-
       {isLoading && !data ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
