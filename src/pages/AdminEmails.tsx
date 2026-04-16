@@ -1,3 +1,4 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AppShell from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -25,24 +26,38 @@ const subTabs = [
   { to: "/admin/emails/logs", label: "Logs" },
 ] as const;
 
-/**
- * Flatten top-level tabs + mailing subtabs into one list for the mobile
- * dropdown so admins can jump anywhere in one interaction instead of two.
- */
 const mobileRoutes = [
   ...topLevelTabs.slice(0, 4).map((t) => ({ value: t.path, label: t.label })),
   ...subTabs.map((s) => ({ value: s.to, label: `Mailing · ${s.label}` })),
 ];
 
+// ═══════════════════════════════════════════════════════════════════════
+// Subnav right-slot — lets child pages inject UI into the subtab row
+// (filters, action buttons…) while staying aligned on the same
+// horizontal line as the Templates/Campaigns/Contacts/Logs pills.
+// ═══════════════════════════════════════════════════════════════════════
+
+type SlotSetter = (node: ReactNode) => void;
+const SubnavRightSlotContext = createContext<SlotSetter>(() => {});
+
+export function useSubnavRightSlot(content: ReactNode): void {
+  const set = useContext(SubnavRightSlotContext);
+  useEffect(() => {
+    set(content);
+    return () => set(null);
+  }, [content, set]);
+}
+
 export default function AdminEmails() {
   const loc = useLocation();
   const navigate = useNavigate();
   const isOnCampaigns = loc.pathname.startsWith("/admin/emails/campaigns");
+  const [rightSlot, setRightSlot] = useState<ReactNode>(null);
 
   return (
     <AppShell>
       <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-4 overflow-x-hidden">
-        {/* Mobile: shadcn Select unified nav ─────────────────────────── */}
+        {/* Mobile: shadcn Select unified nav */}
         <div className="sm:hidden">
           <h1 className="text-xl font-extrabold tracking-tight mb-2">Admin</h1>
           <Select
@@ -62,7 +77,7 @@ export default function AdminEmails() {
           </Select>
         </div>
 
-        {/* Desktop: 2-row nav ─────────────────────────────────────────── */}
+        {/* Desktop: 2-row nav */}
         <div className="hidden sm:flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
@@ -87,8 +102,9 @@ export default function AdminEmails() {
           </div>
         </div>
 
-        {/* Sub-tabs row with inline action button (New campaign on /campaigns) */}
-        <div className="hidden sm:flex items-center justify-between gap-2">
+        {/* Sub-tabs row with inline action button (New campaign on /campaigns)
+            OR child-page right-slot (filters on /logs, etc.). */}
+        <div className="hidden sm:flex items-center justify-between gap-2 flex-wrap">
           <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
             {subTabs.map((t) => {
               const isActive = loc.pathname.startsWith(t.to);
@@ -107,35 +123,48 @@ export default function AdminEmails() {
               );
             })}
           </div>
-          {isOnCampaigns && !loc.pathname.includes("/new") && !loc.pathname.match(/campaigns\/[^/]+$/) && (
-            <Button
-              onClick={() => navigate("/admin/emails/campaigns/new")}
-              variant="hero"
-              size="sm"
-              className="flex-shrink-0"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              New campaign
-            </Button>
-          )}
+
+          {/* Right side: "New campaign" button OR child-injected slot */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {rightSlot}
+            {isOnCampaigns &&
+              !loc.pathname.includes("/new") &&
+              !loc.pathname.match(/campaigns\/[^/]+$/) && (
+                <Button
+                  onClick={() => navigate("/admin/emails/campaigns/new")}
+                  variant="hero"
+                  size="sm"
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  New campaign
+                </Button>
+              )}
+          </div>
         </div>
 
-        {/* Mobile "New campaign" — below nav dropdown when on campaigns list */}
-        {isOnCampaigns && !loc.pathname.includes("/new") && !loc.pathname.match(/campaigns\/[^/]+$/) && (
-          <div className="sm:hidden">
-            <Button
-              onClick={() => navigate("/admin/emails/campaigns/new")}
-              variant="hero"
-              size="sm"
-              className="w-full"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              New campaign
-            </Button>
-          </div>
-        )}
+        {/* Mobile "New campaign" */}
+        {isOnCampaigns &&
+          !loc.pathname.includes("/new") &&
+          !loc.pathname.match(/campaigns\/[^/]+$/) && (
+            <div className="sm:hidden">
+              <Button
+                onClick={() => navigate("/admin/emails/campaigns/new")}
+                variant="hero"
+                size="sm"
+                className="w-full"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                New campaign
+              </Button>
+            </div>
+          )}
 
-        <Outlet />
+        {/* Mobile: also render the right-slot BELOW nav so filters are still reachable */}
+        {rightSlot && <div className="sm:hidden">{rightSlot}</div>}
+
+        <SubnavRightSlotContext.Provider value={setRightSlot}>
+          <Outlet />
+        </SubnavRightSlotContext.Provider>
       </main>
     </AppShell>
   );

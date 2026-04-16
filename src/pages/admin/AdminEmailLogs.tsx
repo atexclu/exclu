@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { adminCampaigns, type CampaignEvent } from "@/lib/adminCampaigns";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
+import { useSubnavRightSlot } from "@/pages/AdminEmails";
 
 function eventTone(eventType: string): string {
   switch (eventType) {
@@ -45,17 +46,18 @@ export default function AdminEmailLogs() {
   });
 
   const events = data?.events ?? [];
-  const filtered = eventFilter === "all" ? events : events.filter((e) => e.event_type === eventFilter);
+  const filtered =
+    eventFilter === "all" ? events : events.filter((e) => e.event_type === eventFilter);
 
   const typeCounts = events.reduce<Record<string, number>>((acc, e) => {
     acc[e.event_type] = (acc[e.event_type] ?? 0) + 1;
     return acc;
   }, {});
 
-  return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap gap-1.5">
+  // Inject filter pills into the parent subnav row (right-aligned) via context.
+  const filterPills = useMemo(
+    () => (
+      <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none">
         <FilterPill
           active={eventFilter === "all"}
           onClick={() => setEventFilter("all")}
@@ -69,11 +71,16 @@ export default function AdminEmailLogs() {
               active={eventFilter === t}
               onClick={() => setEventFilter(t)}
               label={`${t} (${count})`}
-              tone={eventTone(t)}
             />
           ))}
       </div>
+    ),
+    [events.length, typeCounts, eventFilter],
+  );
+  useSubnavRightSlot(filterPills);
 
+  return (
+    <div className="space-y-4">
       {error && (
         <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {(error as Error).message}
@@ -86,7 +93,7 @@ export default function AdminEmailLogs() {
           Loading events…
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded border border-border p-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-8 text-center text-sm text-muted-foreground">
           No events yet. Send a campaign to populate this feed.
         </div>
       ) : (
@@ -103,7 +110,7 @@ export default function AdminEmailLogs() {
 function EventRow({ event, isLast }: { event: CampaignEvent; isLast?: boolean }) {
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-2.5 hover:bg-exclu-ink/50 transition-colors duration-200 text-xs ${
+      className={`flex items-center gap-3 px-4 py-2.5 hover:bg-exclu-arsenic/30 transition-colors duration-200 text-xs ${
         isLast ? "" : "border-b border-exclu-arsenic/30"
       }`}
     >
@@ -127,20 +134,18 @@ function FilterPill({
   active,
   onClick,
   label,
-  tone,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
-  tone?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors ${
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
         active
-          ? tone || "bg-primary/20 border-primary text-primary"
-          : "bg-card border-border text-muted-foreground hover:border-primary/40"
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
       {label}

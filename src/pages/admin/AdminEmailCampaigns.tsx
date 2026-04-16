@@ -261,14 +261,9 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
 
       {/* Metrics grid */}
       {showStats && s && (
-        <div className="border-t border-exclu-arsenic/40 px-5 py-4 bg-exclu-phantom/10">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            <MetricTile
-              Icon={Users}
-              label="Recipients"
-              value={total.toLocaleString()}
-              tone="neutral"
-            />
+        <div className="border-t border-exclu-arsenic/40 px-5 py-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <MetricTile Icon={Users} label="Recipients" value={total.toLocaleString()} />
             <MetricTile
               Icon={Send}
               label="Sent"
@@ -278,28 +273,27 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
                   ? `${s.queued_count.toLocaleString()} queued`
                   : undefined
               }
-              tone="blue"
             />
             <MetricTile
               Icon={CheckCircle2}
               label="Delivered"
               value={s.delivered_count.toLocaleString()}
               percent={rate(s.delivered_count, s.sent_count)}
-              tone="emerald"
+              tone="good"
             />
             <MetricTile
               Icon={MailOpen}
               label="Opens"
               value={s.opened_count.toLocaleString()}
               percent={rate(s.opened_count, s.delivered_count)}
-              tone="cyan"
+              tone="good"
             />
             <MetricTile
               Icon={MousePointerClick}
               label="Clicks"
               value={s.clicked_count.toLocaleString()}
               percent={rate(s.clicked_count, s.delivered_count)}
-              tone="violet"
+              tone="good"
             />
             <MetricTile
               Icon={AlertTriangle}
@@ -308,8 +302,13 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
               percent={rate(s.bounced_count, s.sent_count)}
               tone={
                 s.sent_count > 0 && s.bounced_count / s.sent_count > 0.05
-                  ? "red"
-                  : "amber"
+                  ? "bad"
+                  : "warn"
+              }
+              emphasizeValue={
+                s.sent_count > 0 && s.bounced_count / s.sent_count > 0.05
+                  ? "bad"
+                  : undefined
               }
             />
             {s.complained_count > 0 && (
@@ -317,7 +316,7 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
                 Icon={ShieldAlert}
                 label="Complaints"
                 value={s.complained_count.toLocaleString()}
-                tone="red"
+                emphasizeValue="bad"
               />
             )}
             {s.unsubscribed_count > 0 && (
@@ -325,7 +324,6 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
                 Icon={UserMinus}
                 label="Unsubs"
                 value={s.unsubscribed_count.toLocaleString()}
-                tone="amber"
               />
             )}
             {s.failed_count > 0 && (
@@ -333,7 +331,7 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
                 Icon={AlertTriangle}
                 label="Failed"
                 value={s.failed_count.toLocaleString()}
-                tone="red"
+                emphasizeValue="bad"
               />
             )}
           </div>
@@ -358,57 +356,18 @@ function CampaignCard({ campaign, onEdit, onDelete, onCancel, deleting, cancelli
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// MetricTile — modern SaaS-style card with icon + percent bar
+// MetricTile — minimal SaaS-style card: neutral icon, big number,
+// single semantic-colored progress bar. Color is used sparingly (only
+// on the bar + bad-case values) so the grid stays calm and scannable.
 // ═══════════════════════════════════════════════════════════════════════
 
-type Tone = "neutral" | "blue" | "emerald" | "cyan" | "violet" | "amber" | "red";
+type BarTone = "neutral" | "good" | "warn" | "bad";
 
-const TONE_MAP: Record<
-  Tone,
-  { iconBg: string; iconColor: string; bar: string; percentText: string }
-> = {
-  neutral: {
-    iconBg: "bg-muted/60",
-    iconColor: "text-muted-foreground",
-    bar: "bg-muted-foreground/40",
-    percentText: "text-muted-foreground",
-  },
-  blue: {
-    iconBg: "bg-blue-500/15",
-    iconColor: "text-blue-400",
-    bar: "bg-blue-500/70",
-    percentText: "text-blue-400",
-  },
-  emerald: {
-    iconBg: "bg-emerald-500/15",
-    iconColor: "text-emerald-400",
-    bar: "bg-emerald-500/70",
-    percentText: "text-emerald-400",
-  },
-  cyan: {
-    iconBg: "bg-cyan-500/15",
-    iconColor: "text-cyan-400",
-    bar: "bg-cyan-500/70",
-    percentText: "text-cyan-400",
-  },
-  violet: {
-    iconBg: "bg-violet-500/15",
-    iconColor: "text-violet-400",
-    bar: "bg-violet-500/70",
-    percentText: "text-violet-400",
-  },
-  amber: {
-    iconBg: "bg-amber-500/15",
-    iconColor: "text-amber-400",
-    bar: "bg-amber-500/70",
-    percentText: "text-amber-400",
-  },
-  red: {
-    iconBg: "bg-red-500/15",
-    iconColor: "text-red-400",
-    bar: "bg-red-500/70",
-    percentText: "text-red-400",
-  },
+const BAR_CLASS: Record<BarTone, string> = {
+  neutral: "bg-foreground/25",
+  good: "bg-emerald-500/70",
+  warn: "bg-amber-500/70",
+  bad: "bg-red-500/70",
 };
 
 function MetricTile({
@@ -417,47 +376,50 @@ function MetricTile({
   value,
   subValue,
   percent,
-  tone,
+  tone = "neutral",
+  emphasizeValue,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   subValue?: string;
   percent?: number | null;
-  tone: Tone;
+  tone?: BarTone;
+  emphasizeValue?: "warn" | "bad";
 }) {
-  const t = TONE_MAP[tone];
   const pct = typeof percent === "number" && Number.isFinite(percent) ? percent : null;
+  const valueColor =
+    emphasizeValue === "bad"
+      ? "text-red-400"
+      : emphasizeValue === "warn"
+        ? "text-amber-400"
+        : "text-exclu-cloud";
 
   return (
-    <div className="rounded-xl border border-exclu-arsenic/40 bg-card p-3 min-w-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <div
-          className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${t.iconBg}`}
-        >
-          <Icon className={`w-3.5 h-3.5 ${t.iconColor}`} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground/80 font-medium truncate">
-            {label}
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-base font-bold text-exclu-cloud truncate">{value}</span>
-            {pct !== null && (
-              <span className={`text-[10px] font-semibold ${t.percentText}`}>
-                {pct.toFixed(1)}%
-              </span>
-            )}
-          </div>
-          {subValue && (
-            <div className="text-[9px] text-muted-foreground/70 truncate">{subValue}</div>
-          )}
-        </div>
+    <div className="rounded-xl bg-exclu-ink/40 px-3.5 py-3 min-w-0 border border-transparent hover:border-exclu-arsenic/50 transition-colors duration-200">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <Icon className="w-3.5 h-3.5 text-muted-foreground/60 flex-shrink-0" />
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium truncate">
+          {label}
+        </span>
       </div>
+      <div className="flex items-baseline gap-1.5 min-w-0">
+        <span className={`text-xl font-semibold tabular-nums truncate ${valueColor}`}>
+          {value}
+        </span>
+        {pct !== null && (
+          <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+            {pct.toFixed(1)}%
+          </span>
+        )}
+      </div>
+      {subValue && (
+        <div className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{subValue}</div>
+      )}
       {pct !== null && (
-        <div className="mt-2 h-1 rounded-full bg-muted/40 overflow-hidden">
+        <div className="mt-2 h-1 rounded-full bg-foreground/5 overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${t.bar}`}
+            className={`h-full rounded-full transition-all duration-500 ${BAR_CLASS[tone]}`}
             style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
           />
         </div>
