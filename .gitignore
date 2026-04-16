@@ -28,6 +28,9 @@ build/
 *.swo
 *~
 .project
+
+# Claude Code local state
+.claude/
 .classpath
 .settings/
 *.sublime-workspace
