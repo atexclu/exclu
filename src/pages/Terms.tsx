@@ -161,7 +161,13 @@ const Terms = () => {
           <p>Subject to these Terms, we grant you a conditional, revocable, non-transferable, non-sublicensable, non-exclusive, limited license to access and use Exclu for your own lawful and personal use. This license may be revoked at any time for any reason, including violation of these Terms. All rights not expressly granted are reserved by FRANCEPRODUCT SAS.</p>
 
           <h2>14. Electronic Communications</h2>
-          <p>By creating an account on Exclu, you consent to receive electronic communications from us, including transactional emails (purchase confirmations, tip notifications, custom request updates, account verification), and service announcements. These communications are part of your relationship with us and you may not opt out of transactional communications while maintaining an active account.</p>
+          <p>By creating an account on Exclu or by completing a paid transaction on the Platform (including paid links, tips, gifts, and custom requests), you consent to receive electronic communications from us, including:</p>
+          <ul>
+            <li><strong>Transactional emails</strong> — purchase confirmations, tip notifications, custom request updates, account verification, payout notifications, and security alerts. These are necessary for the operation of your account and for our contractual obligations under Section 3. You may not opt out of transactional communications while maintaining an active account.</li>
+            <li><strong>Service announcements</strong> — material changes to these Terms, the Privacy Policy, or the Platform itself.</li>
+            <li><strong>Marketing communications</strong> — product updates, new features, creator tips, promotional offers, and the Exclu newsletter. You may opt out of marketing communications at any time via (a) the "Communications" toggle in your account Settings or (b) the unsubscribe link included in every marketing email. Opting out of marketing does not affect transactional or service communications.</li>
+          </ul>
+          <p>This consent to marketing is given pursuant to Article 13(2) of the ePrivacy Directive (2002/58/EC as amended), which permits soft opt-in for customers and registered users of the Platform, subject to a clear and free opt-out right.</p>
 
           <h2>15. Inactive Accounts</h2>
           <p>If you do not log into your Exclu account for twelve (12) consecutive months, your account may be considered inactive. We reserve the right to deactivate inactive accounts after providing reasonable notice to the email address on file. Any remaining wallet balance will be available for withdrawal for 90 days following deactivation notice.</p>

@@ -461,7 +461,7 @@ const FanSignup = () => {
                     <span className="text-[11px] text-exclu-space/80 leading-relaxed group-hover:text-exclu-space transition-colors">
                       I confirm that I am at least <strong className="text-exclu-cloud">18 years old</strong> and agree to the{' '}
                       <a href="/terms" target="_blank" className="text-primary hover:underline">Terms of Service</a> and{' '}
-                      <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
+                      <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>, including receiving transactional and marketing emails from Exclu (unsubscribe anytime).
                     </span>
                   </label>
                 )}

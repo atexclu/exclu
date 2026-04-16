@@ -1,29 +1,28 @@
 import { supabase } from './supabaseClient';
 
-/**
- * Generate a signed URL for an asset in the 'paid-content' bucket.
- * Handles the path prefix inconsistency: some storage_path values in DB
- * include 'paid-content/' prefix, some don't. This tries both variants.
- */
+const BUCKET = 'paid-content';
+const BUCKET_PREFIX = `${BUCKET}/`;
+
 export async function getSignedUrl(
   storagePath: string,
   expiresIn = 3600,
 ): Promise<string | null> {
-  // Try as-is first
+  const normalized = storagePath.startsWith(BUCKET_PREFIX)
+    ? storagePath.slice(BUCKET_PREFIX.length)
+    : storagePath;
+
   const { data, error } = await supabase.storage
-    .from('paid-content')
-    .createSignedUrl(storagePath, expiresIn);
+    .from(BUCKET)
+    .createSignedUrl(normalized, expiresIn);
 
   if (!error && data?.signedUrl) return data.signedUrl;
 
-  // Fallback: try with/without 'paid-content/' prefix
-  const alt = storagePath.startsWith('paid-content/')
-    ? storagePath.slice('paid-content/'.length)
-    : 'paid-content/' + storagePath;
+  if (normalized !== storagePath) {
+    const { data: data2 } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, expiresIn);
+    return data2?.signedUrl ?? null;
+  }
 
-  const { data: data2 } = await supabase.storage
-    .from('paid-content')
-    .createSignedUrl(alt, expiresIn);
-
-  return data2?.signedUrl ?? null;
+  return null;
 }

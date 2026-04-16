@@ -31,6 +31,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
+import { Switch } from '@/components/ui/switch';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { AgencyCategoryConfig, EMPTY_AGENCY_CATEGORIES, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
 
@@ -83,6 +84,11 @@ const Profile = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // Marketing communications opt-in
+  const [marketingOptedIn, setMarketingOptedIn] = useState<boolean>(true);
+  const [isLoadingMarketing, setIsLoadingMarketing] = useState<boolean>(false);
+  const [isSavingMarketing, setIsSavingMarketing] = useState<boolean>(false);
 
   const publicProfileUrl = handle ? `${window.location.origin}/${handle}` : null;
 
@@ -224,6 +230,52 @@ const Profile = () => {
 
     fetchProfile();
   }, [activeProfile?.id, isAgency]);
+
+  // Fetch marketing opt-in state once the user is loaded
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+
+    const fetchMarketing = async () => {
+      setIsLoadingMarketing(true);
+      const { data, error } = await supabase.rpc('get_my_mailing_opt_in');
+      if (!cancelled) {
+        if (error) {
+          console.error('Error loading marketing opt-in state', error);
+        } else if (typeof data === 'boolean') {
+          setMarketingOptedIn(data);
+        }
+        setIsLoadingMarketing(false);
+      }
+    };
+
+    fetchMarketing();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const handleToggleMarketing = async (next: boolean) => {
+    const previous = marketingOptedIn;
+    setMarketingOptedIn(next);
+    setIsSavingMarketing(true);
+
+    const { error } = await supabase.rpc('set_mailing_opt_in', { p_opted_in: next });
+
+    setIsSavingMarketing(false);
+    if (error) {
+      setMarketingOptedIn(previous);
+      console.error('Failed to update marketing opt-in', error);
+      toast.error('Could not update your preferences. Please try again.');
+      return;
+    }
+
+    toast.success(
+      next
+        ? 'You will receive Exclu newsletters and product updates.'
+        : 'You have been unsubscribed from marketing emails.',
+    );
+  };
 
   const handleAvatarClick = () => {
     avatarInputRef.current?.click();
@@ -1369,6 +1421,29 @@ const Profile = () => {
                         <Lock className="w-4 h-4 mr-2" />
                         {isChangingPassword ? 'Changing...' : 'Change password'}
                       </Button>
+                    </div>
+                  </div>
+
+                  {/* Communications preferences */}
+                  <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+                    <h2 className="text-lg font-semibold text-exclu-cloud mb-1">Communications</h2>
+                    <p className="text-xs text-exclu-space/70 mb-5">
+                      Choose what you receive from Exclu. Transactional emails (purchases, tips, payouts) cannot be disabled while your account is active.
+                    </p>
+
+                    <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-primary/5 border border-border">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-exclu-cloud">Marketing emails</p>
+                        <p className="text-xs text-exclu-space/70 mt-0.5">
+                          Newsletter, product updates, creator tips, and promotional offers from Exclu.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={marketingOptedIn}
+                        onCheckedChange={handleToggleMarketing}
+                        disabled={isLoadingMarketing || isSavingMarketing}
+                        aria-label="Toggle marketing emails"
+                      />
                     </div>
                   </div>
 

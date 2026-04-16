@@ -60,17 +60,18 @@ const Privacy = () => {
             <li><strong>Account management:</strong> To create and maintain your account, authenticate your identity, and provide customer support.</li>
             <li><strong>Platform operation:</strong> To display creator profiles, process purchases, deliver content, and facilitate communication between users.</li>
             <li><strong>Payment processing:</strong> To process payments, calculate commissions, manage creator wallets, and facilitate withdrawals.</li>
-            <li><strong>Notifications:</strong> To send transactional emails (purchase confirmations, tip notifications, custom request updates, account verification).</li>
+            <li><strong>Transactional notifications:</strong> To send emails related to your account and transactions (purchase confirmations, tip notifications, custom request updates, account verification, payout notifications, security alerts). These are necessary for the operation of your account.</li>
+            <li><strong>Marketing communications:</strong> To send product updates, new feature announcements, creator tips, promotional offers, and the Exclu newsletter to users who have either created an account (accepting our Terms of Service) or completed a paid transaction on the Platform. You may opt out at any time via the "Communications" toggle in your account Settings or the unsubscribe link in any marketing email.</li>
             <li><strong>Security:</strong> To detect and prevent fraud, abuse, and unauthorized access.</li>
             <li><strong>Legal compliance:</strong> To comply with applicable laws, regulations, and legal processes.</li>
           </ul>
 
           <h2>4. Legal Basis for Processing (GDPR)</h2>
           <ul>
-            <li><strong>Contract performance:</strong> Processing necessary to provide the services you requested.</li>
-            <li><strong>Legitimate interests:</strong> Processing necessary for fraud prevention, security, and Platform improvement.</li>
-            <li><strong>Legal obligation:</strong> Processing required by law (tax reporting, financial regulations).</li>
-            <li><strong>Consent:</strong> Where required, we obtain your explicit consent.</li>
+            <li><strong>Contract performance (Art. 6(1)(b)):</strong> Processing necessary to provide the services you requested, including transactional emails tied to purchases, tips, custom requests, and payouts.</li>
+            <li><strong>Legitimate interests (Art. 6(1)(f)):</strong> Processing necessary for fraud prevention, security, Platform improvement, and — pursuant to Article 13(2) of the ePrivacy Directive — sending marketing communications to our existing customers and registered users regarding similar services, subject to a clear and free opt-out right exercisable at any time.</li>
+            <li><strong>Legal obligation (Art. 6(1)(c)):</strong> Processing required by law (tax reporting, financial regulations, record-keeping).</li>
+            <li><strong>Consent (Art. 6(1)(a)):</strong> Where required, we obtain your explicit consent. You may withdraw consent at any time without affecting the lawfulness of prior processing.</li>
           </ul>
 
           <h2>5. Third-Party Service Providers</h2>
