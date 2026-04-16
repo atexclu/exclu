@@ -175,14 +175,15 @@ export async function handleSignupPreflight(
     return failClosed("internal_error");
   }
 
-  // Explicit narrowing (not a ternary) because Vercel's strict tsc doesn't
-  // narrow the discriminated union through a conditional expression in all
-  // cases. `if (result.allowed)` narrows cleanly in both branches.
+  // Explicit narrowing + destructuring. Vercel's strict tsc sometimes fails
+  // to narrow a `let`-bound discriminated union across an if-return boundary,
+  // even when semantically sound. Binding `reason` via destructuring after
+  // the guard removes all ambiguity — the compiler sees the narrow on the
+  // destructuring itself rather than on `result.reason` in the middle of
+  // another expression.
   if (result.allowed) {
     return ok();
   }
-  return Response.json(
-    { allowed: false, reason: result.reason },
-    { status: 200 },
-  );
+  const { reason } = result;
+  return Response.json({ allowed: false, reason }, { status: 200 });
 }
