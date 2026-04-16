@@ -21,6 +21,7 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Cookies from "./pages/Cookies";
 import DMCA from "./pages/DMCA";
+import Unsubscribe from "./pages/Unsubscribe";
 import AntiSlaveryPolicy from "./pages/AntiSlaveryPolicy";
 import AppDashboard from "./pages/AppDashboard";
 import CreatorLinks from "./pages/CreatorLinks";
@@ -341,6 +342,7 @@ const App = () => {
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
+                <Route path="/unsubscribe" element={<Unsubscribe />} />
                 <Route path="/cookies" element={<Cookies />} />
                 <Route path="/dmca" element={<DMCA />} />
                 <Route path="/anti-slavery-policy" element={<AntiSlaveryPolicy />} />
