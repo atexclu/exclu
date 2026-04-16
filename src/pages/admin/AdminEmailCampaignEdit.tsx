@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { useDebounce } from "use-debounce";
 import { adminCampaigns, type Campaign, type SegmentRules } from "@/lib/adminCampaigns";
 import {
   renderSimpleTemplate,
@@ -42,6 +43,34 @@ import {
   Mail,
   MonitorSmartphone,
 } from "lucide-react";
+
+// ═══════════════════════════════════════════════════════════════════════
+// CTA preset destinations
+// ═══════════════════════════════════════════════════════════════════════
+
+const CTA_PRESETS: Array<{ key: string; label: string; url: string }> = [
+  { key: "dashboard", label: "Creator dashboard", url: "https://exclu.at/app/dashboard" },
+  { key: "profile", label: "Profile editor (Link-in-bio)", url: "https://exclu.at/app/profile" },
+  { key: "links", label: "Paid links", url: "https://exclu.at/app/links" },
+  { key: "content", label: "Content library", url: "https://exclu.at/app/content" },
+  { key: "chat", label: "Chat inbox", url: "https://exclu.at/app/chat" },
+  { key: "earnings", label: "Earnings / wallet", url: "https://exclu.at/app/earnings" },
+  { key: "referral", label: "Referral dashboard", url: "https://exclu.at/app/referral" },
+  { key: "settings", label: "Profile settings", url: "https://exclu.at/app/profile" },
+  { key: "fan", label: "Fan dashboard", url: "https://exclu.at/fan" },
+  { key: "signup", label: "Creator sign up", url: "https://exclu.at/auth?mode=signup" },
+  { key: "help", label: "Help center", url: "https://exclu.at/help-center" },
+  { key: "directory", label: "Directory", url: "https://exclu.at/directory" },
+  { key: "blog", label: "Blog", url: "https://exclu.at/blog" },
+  { key: "home", label: "Home page", url: "https://exclu.at/" },
+];
+
+function matchPresetKey(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  const hit = CTA_PRESETS.find((p) => p.url === trimmed);
+  return hit ? hit.key : null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // Form state
@@ -111,7 +140,7 @@ export default function AdminEmailCampaignEdit() {
     4: null,
   });
 
-  // Live-sync simple → HTML whenever simple content or preheader changes (simple mode only).
+  // Live sync simple → HTML
   useEffect(() => {
     if (form.contentMode === "simple") {
       setForm((prev) => ({
@@ -130,8 +159,7 @@ export default function AdminEmailCampaignEdit() {
   });
   useEffect(() => {
     if (getData?.campaign) {
-      const parsed = campaignToForm(getData.campaign);
-      setForm(parsed);
+      setForm(campaignToForm(getData.campaign));
       setLoaded(getData.campaign);
       setCompletedSteps(new Set([1, 2, 3, 4]));
       setCurrentStep(1);
@@ -144,6 +172,61 @@ export default function AdminEmailCampaignEdit() {
   const step3Valid =
     form.htmlContent.trim().length > 0 &&
     (form.contentMode === "html" || form.simpleContent.headline.trim().length > 0);
+
+  // Save mutation — invoked both by auto-save and manual save
+  const [lastSavedKey, setLastSavedKey] = useState<string>("");
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      adminCampaigns.upsertCampaign({
+        id: loaded?.id,
+        name: form.name.trim(),
+        subject: form.subject.trim(),
+        preheader: form.preheader.trim() || null,
+        html_content: form.htmlContent,
+        tag: form.tag.trim() || null,
+        segment_id: null,
+        inline_rules: form.rules,
+        scheduled_at: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
+      }),
+    onSuccess: ({ campaign }) => {
+      qc.invalidateQueries({ queryKey: ["admin-campaigns"] });
+      if (isNew && !loaded) {
+        navigate(`/admin/emails/campaigns/${campaign.id}`, { replace: true });
+      } else {
+        qc.invalidateQueries({ queryKey: ["admin-campaign", id] });
+      }
+      setLoaded(campaign);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
+  // Auto-save: debounce 1.5s after any change while step 1 is valid.
+  const [debouncedForm] = useDebounce(form, 1500);
+  const debouncedKey = JSON.stringify({
+    n: debouncedForm.name,
+    s: debouncedForm.subject,
+    p: debouncedForm.preheader,
+    t: debouncedForm.tag,
+    r: debouncedForm.rules,
+    h: debouncedForm.htmlContent,
+    sa: debouncedForm.scheduledAt,
+  });
+  useEffect(() => {
+    if (!step1Valid) return;
+    if (saveMutation.isPending) return;
+    if (debouncedKey === lastSavedKey) return;
+    setIsAutoSaving(true);
+    saveMutation.mutate(undefined, {
+      onSettled: () => {
+        setLastSavedKey(debouncedKey);
+        setIsAutoSaving(false);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedKey, step1Valid]);
 
   // Navigation
   const goToStep = useCallback((step: StepNumber) => {
@@ -161,43 +244,14 @@ export default function AdminEmailCampaignEdit() {
     [goToStep],
   );
 
-  // Save / mutations
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      adminCampaigns.upsertCampaign({
-        id: loaded?.id,
-        name: form.name.trim(),
-        subject: form.subject.trim(),
-        preheader: form.preheader.trim() || null,
-        html_content: form.htmlContent,
-        tag: form.tag.trim() || null,
-        segment_id: null,
-        inline_rules: form.rules,
-        scheduled_at: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
-      }),
-    onSuccess: ({ campaign }) => {
-      toast.success(isNew ? "Brouillon créé" : "Enregistré");
-      qc.invalidateQueries({ queryKey: ["admin-campaigns"] });
-      if (isNew) {
-        navigate(`/admin/emails/campaigns/${campaign.id}`, { replace: true });
-      } else {
-        qc.invalidateQueries({ queryKey: ["admin-campaign", id] });
-        setLoaded(campaign);
-      }
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
   const startMutation = useMutation({
     mutationFn: (scheduledAt: string | null) =>
       adminCampaigns.startCampaign(loaded!.id, scheduledAt),
     onSuccess: (res) => {
       if (res.scheduled) {
-        toast.success("Campagne programmée — l'envoi démarrera à l'heure choisie.");
+        toast.success("Campaign scheduled — sending will start at the chosen time.");
       } else {
-        toast.success(
-          `Campagne lancée — ${res.enqueued ?? 0} destinataires en file d'attente.`,
-        );
+        toast.success(`Campaign launched — ${res.enqueued ?? 0} recipients queued.`);
       }
       qc.invalidateQueries({ queryKey: ["admin-campaigns"] });
       qc.invalidateQueries({ queryKey: ["admin-campaign", id] });
@@ -206,7 +260,6 @@ export default function AdminEmailCampaignEdit() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const canSave = step1Valid;
   const canLaunch = Boolean(loaded && step1Valid && step2Valid && step3Valid);
   const isEditable = !loaded || loaded.status === "draft" || loaded.status === "scheduled";
 
@@ -214,13 +267,13 @@ export default function AdminEmailCampaignEdit() {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        Chargement de la campagne…
+        Loading campaign…
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-5 pb-24">
       {/* Top bar */}
       <div className="flex items-center gap-3">
         <Button
@@ -233,30 +286,20 @@ export default function AdminEmailCampaignEdit() {
         </Button>
         <div className="min-w-0 flex-1">
           <h2 className="text-xl sm:text-2xl font-bold text-foreground truncate">
-            {isNew ? "Nouvelle campagne" : form.name || "Campagne sans titre"}
+            {isNew && !loaded ? "New campaign" : form.name || "Untitled campaign"}
           </h2>
-          {loaded && (
-            <Badge variant="outline" className="capitalize mt-0.5 text-[10px]">
-              {loaded.status}
-            </Badge>
-          )}
-        </div>
-        {isEditable && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => saveMutation.mutate()}
-            disabled={!canSave || saveMutation.isPending}
-            className="flex-shrink-0"
-          >
-            {saveMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-1.5" />
+          <div className="flex items-center gap-2 mt-0.5">
+            {loaded && (
+              <Badge variant="outline" className="capitalize text-[10px]">
+                {loaded.status}
+              </Badge>
             )}
-            <span className="hidden sm:inline">Enregistrer</span>
-          </Button>
-        )}
+            <SaveIndicator
+              isAutoSaving={isAutoSaving}
+              saved={Boolean(loaded) && lastSavedKey === debouncedKey}
+            />
+          </div>
+        </div>
       </div>
 
       {loaded?.last_error && (
@@ -265,17 +308,11 @@ export default function AdminEmailCampaignEdit() {
         </div>
       )}
 
-      <ProgressIndicator
-        currentStep={currentStep}
-        completedSteps={completedSteps}
-        onStepClick={goToStep}
-      />
-
       <StepCard
         stepRef={(el) => (stepRefs.current[1] = el)}
         number={1}
-        title="Infos de la campagne"
-        subtitle="Ce que voient les destinataires avant d'ouvrir l'email"
+        title="Campaign info"
+        subtitle="What recipients see in their inbox before opening"
         icon={<Sparkles className="w-5 h-5" />}
         isActive={currentStep === 1}
         isCompleted={completedSteps.has(1)}
@@ -286,11 +323,11 @@ export default function AdminEmailCampaignEdit() {
             <div className="space-y-1">
               <div className="text-sm font-medium text-foreground truncate">{form.name}</div>
               <div className="text-xs text-muted-foreground truncate">
-                <span className="font-medium text-foreground">Objet :</span> {form.subject}
+                <span className="font-medium text-foreground">Subject:</span> {form.subject}
               </div>
               {form.preheader && (
                 <div className="text-xs text-muted-foreground truncate">
-                  <span className="font-medium text-foreground">Aperçu :</span> {form.preheader}
+                  <span className="font-medium text-foreground">Preview:</span> {form.preheader}
                 </div>
               )}
             </div>
@@ -309,7 +346,7 @@ export default function AdminEmailCampaignEdit() {
         stepRef={(el) => (stepRefs.current[2] = el)}
         number={2}
         title="Audience"
-        subtitle="Qui va recevoir cette campagne"
+        subtitle="Who receives this campaign"
         icon={<Users className="w-5 h-5" />}
         isActive={currentStep === 2}
         isCompleted={completedSteps.has(2)}
@@ -329,8 +366,8 @@ export default function AdminEmailCampaignEdit() {
       <StepCard
         stepRef={(el) => (stepRefs.current[3] = el)}
         number={3}
-        title="Contenu de l'email"
-        subtitle="Rédige ton message, l'aperçu se met à jour en direct"
+        title="Email content"
+        subtitle="Write your message — preview updates live"
         icon={<Mail className="w-5 h-5" />}
         isActive={currentStep === 3}
         isCompleted={completedSteps.has(3)}
@@ -350,8 +387,8 @@ export default function AdminEmailCampaignEdit() {
       <StepCard
         stepRef={(el) => (stepRefs.current[4] = el)}
         number={4}
-        title="Envoi"
-        subtitle="Dernière étape — choisir quand l'email part"
+        title="Send"
+        subtitle="Last step — choose when the email goes out"
         icon={<Rocket className="w-5 h-5" />}
         isActive={currentStep === 4}
         isCompleted={completedSteps.has(4)}
@@ -365,10 +402,9 @@ export default function AdminEmailCampaignEdit() {
           setForm={setForm}
           loaded={loaded}
           canLaunch={canLaunch}
-          saveMutation={saveMutation}
           startMutation={startMutation}
           isEditable={isEditable}
-          onSaveFirst={() => saveMutation.mutate()}
+          isSaved={Boolean(loaded)}
         />
       </StepCard>
     </div>
@@ -376,82 +412,31 @@ export default function AdminEmailCampaignEdit() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Progress indicator
+// Save indicator
 // ═══════════════════════════════════════════════════════════════════════
 
-const STEP_LABELS: Record<StepNumber, string> = {
-  1: "Infos",
-  2: "Audience",
-  3: "Contenu",
-  4: "Envoi",
-};
-
-function ProgressIndicator({
-  currentStep,
-  completedSteps,
-  onStepClick,
-}: {
-  currentStep: StepNumber;
-  completedSteps: Set<StepNumber>;
-  onStepClick: (step: StepNumber) => void;
-}) {
-  const steps: StepNumber[] = [1, 2, 3, 4];
-  return (
-    <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-1 sm:gap-2">
-        {steps.map((step, idx) => {
-          const done = completedSteps.has(step);
-          const active = currentStep === step;
-          const clickable = done || active;
-          return (
-            <div key={step} className="flex items-center flex-1 min-w-0">
-              <button
-                type="button"
-                disabled={!clickable}
-                onClick={() => clickable && onStepClick(step)}
-                className={`flex items-center gap-2 min-w-0 group transition-colors ${
-                  clickable ? "cursor-pointer" : "cursor-not-allowed"
-                }`}
-              >
-                <motion.div
-                  layout
-                  initial={false}
-                  animate={{ scale: active ? 1.05 : 1 }}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 transition-colors ${
-                    done
-                      ? "bg-primary text-primary-foreground"
-                      : active
-                        ? "bg-primary/15 border-2 border-primary text-primary"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {done ? <Check className="w-4 h-4" /> : step}
-                </motion.div>
-                <span
-                  className={`text-xs sm:text-sm font-medium truncate hidden sm:block ${
-                    done || active ? "text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {STEP_LABELS[step]}
-                </span>
-              </button>
-              {idx < steps.length - 1 && (
-                <div
-                  className={`flex-1 h-px mx-2 sm:mx-3 transition-colors ${
-                    completedSteps.has(step) ? "bg-primary" : "bg-border"
-                  }`}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+function SaveIndicator({ isAutoSaving, saved }: { isAutoSaving: boolean; saved: boolean }) {
+  if (isAutoSaving) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Saving…
+      </span>
+    );
+  }
+  if (saved) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
+        <Check className="w-3 h-3" />
+        Saved
+      </span>
+    );
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Step card container
+// Step card
 // ═══════════════════════════════════════════════════════════════════════
 
 interface StepCardProps {
@@ -512,7 +497,7 @@ function StepCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold text-muted-foreground tracking-wider">
-              ÉTAPE {number}
+              STEP {number}
             </span>
             {isCompleted && !isActive && (
               <Badge className="bg-emerald-500/15 text-emerald-500 text-[9px] border-0 h-4 px-1.5">
@@ -528,7 +513,7 @@ function StepCard({
         {showSummary && isEditable && (
           <Button variant="ghost" size="sm" onClick={onEdit} className="flex-shrink-0">
             <Pencil className="w-3.5 h-3.5 mr-1.5" />
-            Modifier
+            Edit
           </Button>
         )}
       </div>
@@ -581,43 +566,39 @@ function StepBasics({
 
   return (
     <div className="space-y-5">
-      <Field
-        label="Nom interne"
-        hint="Juste pour toi — n'apparaît pas dans l'email"
-        required
-      >
+      <Field label="Internal name" hint="Just for you — not shown in the email" required>
         <Input
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="Ex: Relance onboarding — avril"
+          placeholder="e.g. Onboarding nudge — April"
           className="h-11"
         />
       </Field>
 
       <Field
-        label="Objet de l'email"
-        hint="Le premier truc que voient les destinataires dans leur boîte"
+        label="Email subject"
+        hint="The first thing recipients see in their inbox"
         required
         meta={`${form.subject.length}/150`}
       >
         <Input
           value={form.subject}
           onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
-          placeholder="Ex: On a quelque chose à te montrer"
+          placeholder="e.g. We have something to show you"
           maxLength={150}
           className="h-11"
         />
       </Field>
 
       <Field
-        label="Texte d'aperçu (preheader)"
-        hint="Petit extrait visible dans la liste des emails, après l'objet. Optionnel mais très recommandé."
+        label="Preview text (preheader)"
+        hint="Small snippet visible in the inbox list after the subject. Optional but highly recommended."
         meta={`${form.preheader.length}/200`}
       >
         <Input
           value={form.preheader}
           onChange={(e) => setForm((f) => ({ ...f, preheader: e.target.value }))}
-          placeholder="Ex: 3 conseils pour optimiser ton profil en 5 minutes"
+          placeholder="e.g. 3 tips to optimize your profile in 5 minutes"
           maxLength={200}
           className="h-11"
         />
@@ -631,7 +612,7 @@ function StepBasics({
         <ChevronDown
           className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
         />
-        Options avancées
+        Advanced options
       </button>
 
       <AnimatePresence initial={false}>
@@ -643,8 +624,8 @@ function StepBasics({
             className="overflow-hidden"
           >
             <Field
-              label="Tag (regroupement stats)"
-              hint="Utilisé pour UTM + regrouper les campagnes dans les statistiques. Ex: onboarding, relance, newsletter."
+              label="Tag (stats grouping)"
+              hint="Used for UTM + grouping campaigns in stats. e.g. onboarding, nudge, newsletter."
             >
               <Input
                 value={form.tag}
@@ -659,7 +640,7 @@ function StepBasics({
 
       <div className="flex justify-end pt-3">
         <Button variant="hero" size="lg" onClick={onContinue} disabled={!canContinue}>
-          Continuer
+          Continue
           <ChevronDown className="w-4 h-4 ml-2" />
         </Button>
       </div>
@@ -684,18 +665,11 @@ function StepAudience({
 }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-lg bg-muted/30 border border-border/60 p-3 text-xs text-muted-foreground leading-relaxed">
-        Choisis qui va recevoir la campagne.{" "}
-        <strong className="text-foreground">Ajoute au moins un filtre</strong> — c'est obligatoire
-        pour éviter d'envoyer à tous les contacts par accident. Seuls les contacts{" "}
-        <strong className="text-foreground">opt-in marketing</strong> sont inclus automatiquement.
-      </div>
-
       <SegmentBuilder value={rules} onChange={setRules} />
 
       <div className="flex justify-end pt-3">
         <Button variant="hero" size="lg" onClick={onContinue} disabled={!canContinue}>
-          Continuer
+          Continue
           <ChevronDown className="w-4 h-4 ml-2" />
         </Button>
       </div>
@@ -705,11 +679,11 @@ function StepAudience({
 
 function AudienceSummary({ rules }: { rules: SegmentRules }) {
   const parts: string[] = [];
-  if (rules.role && rules.role.length > 0) parts.push(`Type : ${rules.role.join(", ")}`);
+  if (rules.role && rules.role.length > 0) parts.push(`Type: ${rules.role.join(", ")}`);
   if (typeof rules.has_account === "boolean")
-    parts.push(rules.has_account ? "Avec compte Exclu" : "Email seul (pas de compte)");
-  if (rules.last_seen_after) parts.push(`Actif après ${rules.last_seen_after.slice(0, 10)}`);
-  if (rules.email_contains) parts.push(`Email contient "${rules.email_contains}"`);
+    parts.push(rules.has_account ? "With Exclu account" : "Email only (no account)");
+  if (rules.last_seen_after) parts.push(`Active after ${rules.last_seen_after.slice(0, 10)}`);
+  if (rules.email_contains) parts.push(`Email contains "${rules.email_contains}"`);
   return (
     <div className="text-xs text-muted-foreground">
       {parts.length > 0 ? (
@@ -721,7 +695,7 @@ function AudienceSummary({ rules }: { rules: SegmentRules }) {
           ))}
         </div>
       ) : (
-        <span className="text-amber-500">Aucun filtre défini</span>
+        <span className="text-amber-500">No filter set</span>
       )}
     </div>
   );
@@ -756,7 +730,7 @@ function StepContent({
         }));
       } else {
         const ok = confirm(
-          "Ton HTML a été modifié manuellement. Revenir au mode simple va écraser tes changements. Continuer ?",
+          "Your HTML has been edited manually. Switching back to simple mode will overwrite those changes. Continue?",
         );
         if (ok) {
           setForm((f) => ({
@@ -810,7 +784,7 @@ function StepContent({
           }`}
         >
           <Code2 className="w-4 h-4" />
-          HTML avancé
+          HTML advanced
         </button>
       </div>
 
@@ -819,48 +793,40 @@ function StepContent({
         <div className="space-y-4 min-w-0">
           {form.contentMode === "simple" ? (
             <>
-              <Field label="Titre principal" required>
+              <Field label="Main heading" required>
                 <Input
                   value={form.simpleContent.headline}
                   onChange={(e) => patchSimple({ headline: e.target.value })}
-                  placeholder="Bonjour Maria 👋"
+                  placeholder="Hi Maria 👋"
                   className="h-11 text-base"
                 />
               </Field>
 
-              <Field label="Message" hint="Saute 2 lignes pour créer un nouveau paragraphe">
+              <Field label="Message" hint="Double line break creates a new paragraph">
                 <Textarea
                   value={form.simpleContent.intro}
                   onChange={(e) => patchSimple({ intro: e.target.value })}
                   placeholder={
-                    "On vient de lancer une nouvelle fonctionnalité qu'on voulait te montrer…\n\nÇa te permet de gagner du temps sur ton profil, en 1 clic."
+                    "We just shipped a new feature we wanted to show you…\n\nIt lets you speed up your profile setup in one click."
                   }
                   className="min-h-[120px] text-sm resize-y"
                 />
               </Field>
 
-              <Field label="Bouton d'action" hint="Optionnel — laisse vide si tu n'en veux pas">
-                <div className="grid grid-cols-5 gap-2">
-                  <Input
-                    value={form.simpleContent.cta?.text ?? ""}
-                    onChange={(e) => patchCta({ text: e.target.value })}
-                    placeholder="Ouvrir mon tableau de bord"
-                    className="col-span-2 h-11"
-                  />
-                  <Input
-                    value={form.simpleContent.cta?.url ?? ""}
-                    onChange={(e) => patchCta({ url: e.target.value })}
-                    placeholder="https://exclu.at/app/dashboard"
-                    className="col-span-3 h-11 font-mono text-xs"
-                  />
-                </div>
+              <Field label="Call-to-action button" hint="Optional — leave empty if you don't want one">
+                <CtaEditor
+                  text={form.simpleContent.cta?.text ?? ""}
+                  url={form.simpleContent.cta?.url ?? ""}
+                  onTextChange={(t) => patchCta({ text: t })}
+                  onUrlChange={(u) => patchCta({ url: u })}
+                />
               </Field>
 
-              <Field label="Conclusion" hint="Optionnel — texte après le bouton">
+              <Field label="Closing" hint="Optional — text after the button">
                 <Textarea
                   value={form.simpleContent.outro}
                   onChange={(e) => patchSimple({ outro: e.target.value })}
-                  placeholder={"Si tu as des questions, réponds à cet email — je lis tout."}
+                  placeholder={"If you have any questions, just reply — I read everything."}
                   className="min-h-[80px] text-sm resize-y"
                 />
               </Field>
@@ -869,15 +835,15 @@ function StepContent({
                 <Textarea
                   value={form.simpleContent.signature}
                   onChange={(e) => patchSimple({ signature: e.target.value })}
-                  placeholder="— Maria, équipe Exclu"
+                  placeholder="— Maria, Exclu team"
                   className="min-h-[60px] text-sm resize-y"
                 />
               </Field>
             </>
           ) : (
             <Field
-              label="HTML complet"
-              hint="Les placeholders {{ unsubscribe }}, {{ email }}, {{ preheader }} sont substitués à l'envoi. Les liens absolus reçoivent automatiquement les UTM."
+              label="Full HTML"
+              hint="Placeholders {{ unsubscribe }}, {{ email }}, {{ preheader }} are replaced at send time. Absolute links get UTM params appended automatically."
             >
               <Textarea
                 value={form.htmlContent}
@@ -893,7 +859,7 @@ function StepContent({
         <div className="space-y-2 min-w-0">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <MonitorSmartphone className="w-3.5 h-3.5" />
-            Aperçu en direct
+            Live preview
           </div>
           <div className="rounded-lg border border-border bg-white overflow-hidden lg:sticky lg:top-4">
             <iframe
@@ -902,7 +868,7 @@ function StepContent({
                 .replace(/\{\{\s*unsubscribe\s*\}\}/gi, "https://exclu.at/unsubscribe?t=PREVIEW")
                 .replace(/\{\{\s*email\s*\}\}/gi, "preview@exclu.at")
                 .replace(/\{\{\s*preheader\s*\}\}/gi, form.preheader || "")}
-              title="Aperçu"
+              title="Preview"
               className="w-full h-[calc(100vh-240px)] min-h-[500px] max-h-[720px] border-0"
               sandbox=""
             />
@@ -912,7 +878,7 @@ function StepContent({
 
       <div className="flex justify-end pt-3">
         <Button variant="hero" size="lg" onClick={onContinue} disabled={!canContinue}>
-          Continuer
+          Continue
           <ChevronDown className="w-4 h-4 ml-2" />
         </Button>
       </div>
@@ -923,8 +889,8 @@ function StepContent({
 function ContentSummary({ form }: { form: FormState }) {
   const preview =
     form.contentMode === "simple"
-      ? form.simpleContent.headline || "(pas de titre)"
-      : "HTML personnalisé";
+      ? form.simpleContent.headline || "(no heading)"
+      : "Custom HTML";
   return (
     <div className="text-xs text-muted-foreground truncate">
       <span className="text-foreground font-medium">{preview}</span>
@@ -940,6 +906,100 @@ function ContentSummary({ form }: { form: FormState }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// CTA Editor — smart destination dropdown + fallback custom URL
+// ═══════════════════════════════════════════════════════════════════════
+
+function CtaEditor({
+  text,
+  url,
+  onTextChange,
+  onUrlChange,
+}: {
+  text: string;
+  url: string;
+  onTextChange: (v: string) => void;
+  onUrlChange: (v: string) => void;
+}) {
+  const matchedKey = matchPresetKey(url);
+  // Show preset picker if URL is empty OR matches a known preset.
+  // Show raw input if URL is custom (not in presets).
+  const [forceCustom, setForceCustom] = useState(false);
+  const isUsingPreset = !forceCustom && (url.trim() === "" || matchedKey !== null);
+
+  // If user clears the URL while in custom mode, auto-reset to preset picker
+  useEffect(() => {
+    if (forceCustom && url.trim() === "") {
+      setForceCustom(false);
+    }
+  }, [url, forceCustom]);
+
+  return (
+    <div className="space-y-2">
+      <Input
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        placeholder="Open my dashboard"
+        className="h-11"
+      />
+
+      {isUsingPreset ? (
+        <div className="flex items-center gap-2">
+          <select
+            value={matchedKey ?? ""}
+            onChange={(e) => {
+              const preset = CTA_PRESETS.find((p) => p.key === e.target.value);
+              if (preset) onUrlChange(preset.url);
+              else onUrlChange("");
+            }}
+            className="h-11 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">-- Where does this button go? --</option>
+            {CTA_PRESETS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setForceCustom(true)}
+            className="text-xs text-muted-foreground hover:text-foreground underline whitespace-nowrap"
+          >
+            Custom URL
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Input
+            value={url}
+            onChange={(e) => onUrlChange(e.target.value)}
+            placeholder="https://…"
+            className="h-11 font-mono text-xs flex-1"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setForceCustom(false);
+              onUrlChange("");
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground underline whitespace-nowrap"
+          >
+            Use preset
+          </button>
+        </div>
+      )}
+
+      {url && !isUsingPreset && (
+        <p className="text-[10px] text-muted-foreground">
+          Using a custom URL. Clear the field to pick a preset destination again.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Step 4 — Send
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -948,37 +1008,35 @@ function StepSend({
   setForm,
   loaded,
   canLaunch,
-  saveMutation,
   startMutation,
   isEditable,
-  onSaveFirst,
+  isSaved,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   loaded: Campaign | null;
   canLaunch: boolean;
-  saveMutation: { isPending: boolean };
   startMutation: { isPending: boolean; mutate: (scheduledAt: string | null) => void };
   isEditable: boolean;
-  onSaveFirst: () => void;
+  isSaved: boolean;
 }) {
   const [testEmail, setTestEmail] = useState("");
   const [testSending, setTestSending] = useState(false);
 
   const handleTestSend = async () => {
     if (!loaded) {
-      toast.error("Enregistre d'abord la campagne pour envoyer un test.");
+      toast.error("Fill the campaign info first — we'll auto-save before sending a test.");
       return;
     }
     const t = testEmail.trim();
     if (!t || !t.includes("@")) {
-      toast.error("Entre un email valide");
+      toast.error("Enter a valid email");
       return;
     }
     setTestSending(true);
     try {
       await adminCampaigns.testSend(loaded.id, t);
-      toast.success(`Test envoyé à ${t}`);
+      toast.success(`Test sent to ${t}`);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -986,8 +1044,6 @@ function StepSend({
     }
   };
 
-  const isSaved = Boolean(loaded);
-  const needsSave = !isSaved || saveMutation.isPending;
   const scheduled = form.scheduledAt ? new Date(form.scheduledAt) : null;
   const isFuture = scheduled ? scheduled.getTime() > Date.now() + 30_000 : false;
 
@@ -996,23 +1052,23 @@ function StepSend({
       <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <TestTube className="w-4 h-4 text-primary" />
-          Envoi de test
+          Test send
         </div>
         <div className="text-xs text-muted-foreground">
-          Envoie la version complète à ton adresse pour vérifier le rendu dans ta boîte.
+          Send the final version to your address to double-check how it looks in your inbox.
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
           <Input
             type="email"
             value={testEmail}
             onChange={(e) => setTestEmail(e.target.value)}
-            placeholder="toi@example.com"
+            placeholder="you@example.com"
             className="h-10 flex-1"
           />
           <Button
             onClick={handleTestSend}
             variant="outline"
-            disabled={testSending || !loaded}
+            disabled={testSending || !isSaved}
             className="sm:flex-shrink-0"
           >
             {testSending ? (
@@ -1020,19 +1076,14 @@ function StepSend({
             ) : (
               <Send className="w-4 h-4 mr-1.5" />
             )}
-            Envoyer le test
+            Send test
           </Button>
         </div>
-        {!loaded && (
-          <div className="text-[11px] text-amber-500">
-            Enregistre la campagne (bouton en haut) pour débloquer l'envoi de test.
-          </div>
-        )}
       </div>
 
       <Field
-        label="Programmer l'envoi"
-        hint="Laisse vide pour envoyer tout de suite. Horaires en heure locale."
+        label="Schedule send"
+        hint="Leave empty to send right away. Times are in your local timezone."
       >
         <Input
           type="datetime-local"
@@ -1043,51 +1094,52 @@ function StepSend({
       </Field>
 
       <div className="rounded-lg border border-border bg-muted/20 p-3 text-[11px] text-muted-foreground leading-relaxed">
-        <strong className="text-foreground">Quota warmup :</strong> la plateforme est en période
-        de montée en charge. Les envois sont limités par jour glissant — si ta campagne dépasse le
-        quota, elle reprend automatiquement le lendemain.
+        <strong className="text-foreground">Warmup quota:</strong> the platform is in its warmup
+        window. Daily sending is capped — if your campaign exceeds the quota it resumes the next
+        day automatically.
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-end gap-2 pt-3">
-        {!isSaved && (
-          <Button variant="outline" onClick={onSaveFirst} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-1.5" />
-            )}
-            Enregistrer comme brouillon
-          </Button>
-        )}
+      {/* Bottom action row: draft on the left, launch on the right, same height */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-3">
+        <Button
+          variant="outline"
+          size="lg"
+          disabled
+          className="sm:w-auto w-full cursor-default opacity-80"
+        >
+          <Save className="w-4 h-4 mr-1.5" />
+          Saved as draft
+        </Button>
 
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
               variant="hero"
               size="lg"
-              disabled={!canLaunch || startMutation.isPending || !isEditable || needsSave}
+              disabled={!canLaunch || startMutation.isPending || !isEditable}
+              className="sm:w-auto w-full"
             >
               {startMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
               ) : (
                 <Rocket className="w-4 h-4 mr-1.5" />
               )}
-              {isFuture ? "Programmer l'envoi" : "Envoyer maintenant"}
+              {isFuture ? "Schedule send" : "Send now"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {isFuture ? "Programmer cette campagne ?" : "Envoyer cette campagne maintenant ?"}
+                {isFuture ? "Schedule this campaign?" : "Send this campaign now?"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                Une fois lancée, le contenu et l'audience sont figés. Le quota warmup s'applique
-                (envoi étalé sur plusieurs jours si besoin).
-                {isFuture && scheduled && <> L'envoi démarrera le {scheduled.toLocaleString()}.</>}
+                Once started, the content and audience are locked. Warmup quota applies — the
+                campaign may resume the next day if today's cap is reached.
+                {isFuture && scheduled && <> Sending will start on {scheduled.toLocaleString()}.</>}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() =>
                   startMutation.mutate(
@@ -1096,7 +1148,7 @@ function StepSend({
                 }
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {isFuture ? "Programmer" : "Lancer l'envoi"}
+                {isFuture ? "Schedule" : "Launch send"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

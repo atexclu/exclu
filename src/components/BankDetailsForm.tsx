@@ -172,27 +172,73 @@ export default function BankDetailsForm({ initialData, payoutSetupComplete, onSa
     }
   };
 
-  const ACCOUNT_TYPE_OPTIONS: { value: BankAccountType; label: string }[] = [
-    { value: 'iban', label: 'IBAN (Europe, UK, etc.)' },
-    { value: 'us', label: 'US Bank Account' },
-    { value: 'au', label: 'Australian Bank Account' },
-    { value: 'other', label: 'International Wire' },
+  const COUNTRY_OPTIONS: { code: string; label: string }[] = [
+    { code: 'US', label: 'United States' },
+    { code: 'GB', label: 'United Kingdom' },
+    { code: 'CA', label: 'Canada' },
+    { code: 'AU', label: 'Australia' },
+    { code: 'NZ', label: 'New Zealand' },
+    { code: 'FR', label: 'France' },
+    { code: 'DE', label: 'Germany' },
+    { code: 'ES', label: 'Spain' },
+    { code: 'IT', label: 'Italy' },
+    { code: 'NL', label: 'Netherlands' },
+    { code: 'BE', label: 'Belgium' },
+    { code: 'CH', label: 'Switzerland' },
+    { code: 'AT', label: 'Austria' },
+    { code: 'IE', label: 'Ireland' },
+    { code: 'PT', label: 'Portugal' },
+    { code: 'PL', label: 'Poland' },
+    { code: 'CZ', label: 'Czech Republic' },
+    { code: 'DK', label: 'Denmark' },
+    { code: 'FI', label: 'Finland' },
+    { code: 'NO', label: 'Norway' },
+    { code: 'SE', label: 'Sweden' },
+    { code: 'BR', label: 'Brazil' },
+    { code: 'MX', label: 'Mexico' },
+    { code: 'OTHER', label: 'Other country (international wire)' },
   ];
+
+  const [countryCode, setCountryCode] = useState<string>(
+    initialData?.bank_country ?? (existingType === 'us' ? 'US' : existingType === 'au' ? 'AU' : existingType === 'iban' ? '' : 'OTHER'),
+  );
+
+  // Keep accountType in sync with country choice.
+  const handleCountryChange = (code: string) => {
+    setCountryCode(code);
+    if (code === 'OTHER') {
+      setAccountType('other');
+    } else {
+      setAccountType(detectAccountType(code));
+    }
+  };
+
+  const accountTypeLabel =
+    accountType === 'iban' ? 'IBAN'
+    : accountType === 'us' ? 'US routing + account'
+    : accountType === 'au' ? 'Australian BSB + account'
+    : 'International wire';
 
   return (
     <div className="space-y-3">
-      {/* Account type selector */}
+      {/* Country selector — drives the account type auto-magically */}
       <div>
-        <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Account type</label>
+        <label className="text-xs font-medium text-foreground ml-1 mb-1 block">Country</label>
         <select
-          value={accountType}
-          onChange={(e) => setAccountType(e.target.value as BankAccountType)}
+          value={countryCode}
+          onChange={(e) => handleCountryChange(e.target.value)}
           className="h-10 w-full rounded-xl border border-border bg-muted/50 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
         >
-          {ACCOUNT_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          <option value="">Select your country</option>
+          {COUNTRY_OPTIONS.map((opt) => (
+            <option key={opt.code} value={opt.code}>{opt.label}</option>
           ))}
         </select>
+        {countryCode && (
+          <p className="text-[10px] text-muted-foreground mt-1 ml-1">
+            Account format: <strong className="text-foreground">{accountTypeLabel}</strong>
+          </p>
+        )}
       </div>
 
       {/* IBAN fields */}

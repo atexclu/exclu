@@ -352,11 +352,6 @@ const Onboarding = () => {
       return;
     }
 
-    if (!country) {
-      toast.error('Please select your country.');
-      return;
-    }
-
     if (!avatarPreview && !avatarUrl) {
       toast.error('Please upload a profile photo.');
       return;
@@ -422,7 +417,6 @@ const Onboarding = () => {
             display_name: displayName.trim(),
             handle: trimmedHandle,
             is_creator: true,
-            country,
             bio: bio.trim() || null,
             aurora_gradient: auroraGradient,
             social_links: socialLinksObj,
@@ -788,16 +782,6 @@ const Onboarding = () => {
                   <label htmlFor="bio" className="text-sm font-medium text-white/80">Bio <span className="text-white/30 font-normal">(optional)</span></label>
                   <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell people a bit about yourself" rows={3} maxLength={500} className="min-h-[80px] bg-white/5 border-white/10 text-white placeholder:text-white/30 resize-none" />
                 </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="country" className="text-sm font-medium text-white/80">Country of residence</label>
-                  <select id="country" value={country} onChange={(e) => setCountry(e.target.value)} className="h-11 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/60" required>
-                    <option value="">Select your country</option>
-                    {filteredCountries.map((c) => (<option key={c.code} value={c.code}>{c.label}</option>))}
-                  </select>
-                  <p className="text-[11px] text-white/30">Must match the country where you pay taxes.</p>
-                </div>
-
 
                 {/* Exclusive content button — label + text input + cover image + live preview */}
                 <div className="space-y-3 pt-2">

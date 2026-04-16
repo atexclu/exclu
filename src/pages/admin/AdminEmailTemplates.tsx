@@ -10,6 +10,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 
 function formatRelative(iso: string): string {
   const d = new Date(iso);
@@ -23,7 +24,12 @@ export default function AdminEmailTemplates() {
   });
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading templates…</div>;
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading templates…
+      </div>
+    );
   }
   if (error) {
     return (
@@ -37,21 +43,21 @@ export default function AdminEmailTemplates() {
 
   if (templates.length === 0) {
     return (
-      <div className="rounded border border-border p-6 text-sm text-muted-foreground">
-        No templates yet. Seed migration 132 should have inserted the defaults.
+      <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-6 text-sm text-muted-foreground">
+        No templates yet.
       </div>
     );
   }
 
   return (
     <>
-      {/* Mobile: stacked cards (< md) */}
+      {/* Mobile: stacked cards */}
       <div className="space-y-3 md:hidden">
         {templates.map((t) => (
           <Link
             key={t.id}
             to={`/admin/emails/templates/${t.slug}`}
-            className="block rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50 active:bg-accent"
+            className="block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-4 transition-colors hover:bg-exclu-ink"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -62,9 +68,7 @@ export default function AdminEmailTemplates() {
                 {t.category}
               </Badge>
             </div>
-            <div className="mt-2 text-sm text-muted-foreground line-clamp-2">
-              {t.subject}
-            </div>
+            <div className="mt-2 text-sm text-muted-foreground line-clamp-2">{t.subject}</div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
               <span>Updated {formatRelative(t.updated_at)}</span>
               <span className="text-primary font-medium">Edit →</span>
@@ -73,28 +77,35 @@ export default function AdminEmailTemplates() {
         ))}
       </div>
 
-      {/* Desktop: table (md and up) */}
-      <div className="hidden md:block rounded border border-border">
+      {/* Desktop: rounded table — matches AdminUsers style */}
+      <div className="hidden md:block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Slug</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead className="text-right">Action</TableHead>
+            <TableRow className="border-b border-exclu-arsenic/40 hover:bg-transparent">
+              <TableHead className="text-exclu-space">Name</TableHead>
+              <TableHead className="text-exclu-space">Slug</TableHead>
+              <TableHead className="text-exclu-space">Category</TableHead>
+              <TableHead className="text-exclu-space">Subject</TableHead>
+              <TableHead className="text-exclu-space">Updated</TableHead>
+              <TableHead className="text-right text-exclu-space">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {templates.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="font-medium">{t.name}</TableCell>
+            {templates.map((t, i) => (
+              <TableRow
+                key={t.id}
+                className={`border-b border-exclu-arsenic/30 hover:bg-exclu-ink/50 transition-colors ${
+                  i === templates.length - 1 ? "border-b-0" : ""
+                }`}
+              >
+                <TableCell className="font-medium text-exclu-cloud">{t.name}</TableCell>
                 <TableCell>
-                  <code className="text-xs">{t.slug}</code>
+                  <code className="text-xs text-muted-foreground">{t.slug}</code>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{t.category}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {t.category}
+                  </Badge>
                 </TableCell>
                 <TableCell className="max-w-xs truncate text-muted-foreground">
                   {t.subject}
@@ -105,7 +116,7 @@ export default function AdminEmailTemplates() {
                 <TableCell className="text-right">
                   <Link
                     to={`/admin/emails/templates/${t.slug}`}
-                    className="text-sm text-primary underline"
+                    className="text-sm text-primary hover:underline"
                   >
                     Edit
                   </Link>

@@ -145,19 +145,6 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
 
   const content = (
       <div className={embedded ? '' : 'flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-6xl mx-auto w-full'}>
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-extrabold text-foreground">Payments</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {pendingCount > 0 ? `${pendingCount} pending withdrawal${pendingCount > 1 ? 's' : ''}` : 'All withdrawals processed'}
-            </p>
-          </div>
-          <Button variant="outline" onClick={fetchPayouts} className="rounded-xl gap-2">
-            <Loader2 className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
-
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6 min-w-0">
           <div className="relative flex-1 min-w-0">

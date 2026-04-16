@@ -1,6 +1,5 @@
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AppShell from "@/components/AppShell";
-import { Button } from "@/components/ui/button";
 
 const topLevelTabs = [
   { key: "users", label: "Users", path: "/admin/users?tab=users" },
@@ -15,7 +14,7 @@ const subTabs = [
   { to: "/admin/emails/campaigns", label: "Campaigns" },
   { to: "/admin/emails/contacts", label: "Contacts" },
   { to: "/admin/emails/logs", label: "Logs" },
-];
+] as const;
 
 export default function AdminEmails() {
   const loc = useLocation();
@@ -24,7 +23,7 @@ export default function AdminEmails() {
   return (
     <AppShell>
       <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-6 overflow-x-hidden">
-        {/* Top-level admin tabs — mirror of AdminUsers, keeps "Mailing" active here */}
+        {/* Top-level admin tabs */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
@@ -38,8 +37,8 @@ export default function AdminEmails() {
                   onClick={() => navigate(t.path)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex-shrink-0 ${
                     isActive
-                      ? 'bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20'
-                      : 'text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20'
+                      ? "bg-[#CFFF16]/10 text-black dark:text-[#CFFF16] border border-[#CFFF16]/20"
+                      : "text-foreground/60 dark:text-exclu-space hover:text-foreground dark:hover:text-exclu-cloud hover:bg-foreground/5 dark:hover:bg-exclu-arsenic/20"
                   }`}
                 >
                   {t.label}
@@ -49,18 +48,24 @@ export default function AdminEmails() {
           </div>
         </div>
 
-        {/* Sub-tabs for the emails section */}
-        <div>
-          <h2 className="text-xl font-semibold mb-3">Emails</h2>
-          <nav className="flex gap-2 flex-wrap">
-            {subTabs.map((t) => (
-              <Link key={t.to} to={t.to}>
-                <Button variant={loc.pathname.startsWith(t.to) ? "default" : "outline"}>
-                  {t.label}
-                </Button>
-              </Link>
-            ))}
-          </nav>
+        {/* Sub-tabs — pill style matching AdminPayments status filter */}
+        <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
+          {subTabs.map((t) => {
+            const isActive = loc.pathname.startsWith(t.to);
+            return (
+              <button
+                key={t.to}
+                onClick={() => navigate(t.to)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                  isActive
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         <Outlet />

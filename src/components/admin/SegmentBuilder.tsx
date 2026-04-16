@@ -9,7 +9,7 @@ import { Loader2, Users, UserCircle2, Palette, Building2, MessageSquare, AtSign,
 const ROLES: Array<{ key: "fan" | "creator" | "agency" | "chatter"; label: string; Icon: React.ComponentType<{ className?: string }> }> = [
   { key: "fan", label: "Fans", Icon: UserCircle2 },
   { key: "creator", label: "Creators", Icon: Palette },
-  { key: "agency", label: "Agences", Icon: Building2 },
+  { key: "agency", label: "Agencies", Icon: Building2 },
   { key: "chatter", label: "Chatters", Icon: MessageSquare },
 ];
 
@@ -41,7 +41,7 @@ export default function SegmentBuilder({ value, onChange, hidePreview }: Props) 
 
   return (
     <div className="space-y-5">
-      <Field label="Type de contact" hint="Laisse vide pour inclure tous les types">
+      <Field label="Contact type" hint="Leave empty to include every type">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {ROLES.map(({ key, label, Icon }) => {
             const active = value.role?.includes(key) ?? false;
@@ -68,79 +68,87 @@ export default function SegmentBuilder({ value, onChange, hidePreview }: Props) 
         </div>
       </Field>
 
-      <Field label="Compte Exclu" hint="Certains contacts n'ont pas de compte — ils ont juste laissé leur email lors d'un achat">
+      <Field label="Exclu account" hint="Some contacts have no account — they just left their email during a checkout">
         <div className="flex flex-wrap gap-2">
-          <FilterChip active={value.has_account === undefined} onClick={() => patch({ has_account: undefined })} label="Tous" />
-          <FilterChip active={value.has_account === true} onClick={() => patch({ has_account: true })} label="Avec compte" />
-          <FilterChip active={value.has_account === false} onClick={() => patch({ has_account: false })} label="Email seul" />
+          <FilterChip active={value.has_account === undefined} onClick={() => patch({ has_account: undefined })} label="All" />
+          <FilterChip active={value.has_account === true} onClick={() => patch({ has_account: true })} label="With account" />
+          <FilterChip active={value.has_account === false} onClick={() => patch({ has_account: false })} label="Email only" />
         </div>
       </Field>
 
-      <Field label="Actif depuis" hint="N'inclure que les contacts actifs après cette date">
-        <div className="flex items-center gap-2 max-w-[320px]">
-          <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <Input
-            type="date"
-            value={value.last_seen_after?.slice(0, 10) ?? ""}
-            onChange={(e) => patch({ last_seen_after: e.target.value ? e.target.value : undefined })}
-            className="h-10 flex-1"
-          />
-          {value.last_seen_after && (
-            <button type="button" onClick={() => patch({ last_seen_after: undefined })} className="text-xs text-muted-foreground hover:text-foreground underline">
-              effacer
-            </button>
-          )}
-        </div>
-      </Field>
-
-      <Field label="Email contient" hint="Ex: gmail.com — utile pour cibler un domaine ou ton propre email en test">
-        <div className="flex items-center gap-2 max-w-[400px]">
-          <AtSign className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <Input
-            placeholder="exemple.com"
-            value={value.email_contains ?? ""}
-            onChange={(e) => patch({ email_contains: e.target.value || undefined })}
-            className="h-10 flex-1"
-          />
-        </div>
-      </Field>
-
-      {!hidePreview && (
-        <div className={`rounded-xl border p-4 transition-colors ${hasAnyFilter ? "border-primary/30 bg-primary/5" : "border-amber-500/40 bg-amber-500/5"}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${hasAnyFilter ? "bg-primary/15 text-primary" : "bg-amber-500/15 text-amber-500"}`}>
-                <Users className="w-[18px] h-[18px]" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Contacts ciblés</div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-foreground">
-                    {preview.isFetching && !preview.data ? <Loader2 className="w-5 h-5 animate-spin inline" /> : (preview.data?.count.toLocaleString() ?? "—")}
-                  </span>
-                  {preview.isFetching && preview.data && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
-                </div>
-              </div>
-            </div>
-            {!hasAnyFilter && (
-              <div className="text-[11px] text-amber-600 dark:text-amber-400 max-w-[220px] text-right leading-tight">
-                Aucun filtre — ajoute-en au moins un avant de continuer.
-              </div>
+      {/* Row: Last seen + Email contains (horizontal on sm+, stacked on mobile) */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Field label="Active since" hint="Only include contacts active after this date">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <Input
+              type="date"
+              value={value.last_seen_after?.slice(0, 10) ?? ""}
+              onChange={(e) => patch({ last_seen_after: e.target.value ? e.target.value : undefined })}
+              className="h-10 flex-1"
+            />
+            {value.last_seen_after && (
+              <button type="button" onClick={() => patch({ last_seen_after: undefined })} className="text-xs text-muted-foreground hover:text-foreground underline">
+                clear
+              </button>
             )}
           </div>
-          {preview.data && preview.data.sample.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border/50">
-              <div className="text-[10px] text-muted-foreground mb-1.5">Aperçu (10 premiers) :</div>
-              <div className="flex flex-wrap gap-1">
-                {preview.data.sample.map((email) => (
-                  <Badge key={email} variant="outline" className="text-[10px] font-mono">
-                    {email}
-                  </Badge>
-                ))}
+        </Field>
+
+        <Field label="Email contains" hint="e.g. gmail.com — to target a domain, or your own email for a test">
+          <div className="flex items-center gap-2">
+            <AtSign className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <Input
+              placeholder="example.com"
+              value={value.email_contains ?? ""}
+              onChange={(e) => patch({ email_contains: e.target.value || undefined })}
+              className="h-10 flex-1"
+            />
+          </div>
+        </Field>
+      </div>
+
+      {!hidePreview && (
+        <div className="space-y-1.5">
+          <div className={`rounded-xl border p-4 transition-colors ${hasAnyFilter ? "border-primary/30 bg-primary/5" : "border-amber-500/40 bg-amber-500/5"}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${hasAnyFilter ? "bg-primary/15 text-primary" : "bg-amber-500/15 text-amber-500"}`}>
+                  <Users className="w-[18px] h-[18px]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Targeted contacts</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-foreground">
+                      {preview.isFetching && !preview.data ? <Loader2 className="w-5 h-5 animate-spin inline" /> : (preview.data?.count.toLocaleString() ?? "—")}
+                    </span>
+                    {preview.isFetching && preview.data && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                  </div>
+                </div>
               </div>
+              {!hasAnyFilter && (
+                <div className="text-[11px] text-amber-600 dark:text-amber-400 max-w-[220px] text-right leading-tight">
+                  No filter set — add at least one before continuing.
+                </div>
+              )}
             </div>
-          )}
-          {preview.error && <div className="text-xs text-red-400 mt-2">{(preview.error as Error).message}</div>}
+            {preview.data && preview.data.sample.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/50">
+                <div className="text-[10px] text-muted-foreground mb-1.5">Preview (first 10):</div>
+                <div className="flex flex-wrap gap-1">
+                  {preview.data.sample.map((email) => (
+                    <Badge key={email} variant="outline" className="text-[10px] font-mono">
+                      {email}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {preview.error && <div className="text-xs text-red-400 mt-2">{(preview.error as Error).message}</div>}
+          </div>
+          <p className="text-[10px] text-muted-foreground/80 text-center">
+            Only marketing opt-in contacts are included automatically.
+          </p>
         </div>
       )}
     </div>

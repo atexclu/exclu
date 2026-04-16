@@ -28,7 +28,7 @@ export const EMPTY_SIMPLE_CONTENT: SimpleContent = {
   intro: "",
   cta: { text: "", url: "" },
   outro: "",
-  signature: "— Maria, équipe Exclu",
+  signature: "— Maria, Exclu team",
 };
 
 const BLOCKS_COMMENT_RE = /<!--\s*EXCLU_BLOCKS:([\s\S]*?)-->/;
@@ -127,16 +127,16 @@ export function renderSimpleTemplate(c: SimpleContent, preheader: string): strin
             </td>
           </tr>
           <tr>
-            <td style="padding:24px 40px 32px 40px;background-color:#fafafa;border-top:1px solid #eaeaef;">
-              <p style="margin:0 0 12px 0;font-size:13px;line-height:20px;color:#6b6b75;">
-                Tu reçois cet email parce que tu es inscrit sur Exclu ou que tu as effectué un achat via un lien Exclu. FRANCEPRODUCT SAS, France.
+            <td style="padding:20px 40px 28px 40px;background-color:#fafafa;border-top:1px solid #eaeaef;">
+              <p style="margin:0 0 8px 0;font-size:10px;line-height:14px;color:#9a9aa3;">
+                You are receiving this email because you signed up on Exclu or made a purchase via an Exclu link. FRANCEPRODUCT SAS, France.
               </p>
-              <p style="margin:0;font-size:13px;line-height:20px;color:#6b6b75;">
-                <a href="https://exclu.at" style="color:#6b6b75;text-decoration:underline;">exclu.at</a>
+              <p style="margin:0;font-size:10px;line-height:14px;color:#9a9aa3;">
+                <a href="https://exclu.at" style="color:#9a9aa3;text-decoration:underline;">exclu.at</a>
                 &nbsp;·&nbsp;
-                <a href="https://exclu.at/privacy" style="color:#6b6b75;text-decoration:underline;">Confidentialité</a>
+                <a href="https://exclu.at/privacy" style="color:#9a9aa3;text-decoration:underline;">Privacy</a>
                 &nbsp;·&nbsp;
-                <a href="{{ unsubscribe }}" style="color:#6b6b75;text-decoration:underline;">Se désabonner</a>
+                <a href="{{ unsubscribe }}" style="color:#9a9aa3;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>
           </tr>
