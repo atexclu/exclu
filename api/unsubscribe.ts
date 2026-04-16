@@ -33,7 +33,22 @@ export default async function handler(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret || !serviceKey) {
     console.error("[unsubscribe] missing env: UNSUBSCRIBE_HMAC_SECRET or SUPABASE_SERVICE_ROLE_KEY");
-    res.status(500).json({ ok: false, reason: "misconfigured" });
+    // TEMP diagnostic: show which relevant env vars are actually visible.
+    // Safe to expose names (not values). Remove once env issue resolved.
+    const seen: Record<string, boolean> = {};
+    for (const k of [
+      "UNSUBSCRIBE_HMAC_SECRET",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL",
+      "VITE_SUPABASE_URL",
+      "VITE_SUPABASE_ANON_KEY",
+      "SIGNUP_CHECK_INTERNAL_SECRET",
+      "VERCEL_ENV",
+      "VERCEL_URL",
+    ]) {
+      seen[k] = typeof process.env[k] === "string" && (process.env[k] as string).length > 0;
+    }
+    res.status(500).json({ ok: false, reason: "misconfigured", env_visible: seen });
     return;
   }
 
