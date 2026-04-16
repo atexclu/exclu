@@ -35,7 +35,7 @@ const Footer = () => {
     ],
     support: [
       { label: 'Help Center', href: '/help-center' },
-      { label: 'Contact', href: 'https://telegram.me/exclu_support', external: true },
+      { label: 'Contact', href: 'https://t.me/exclu_alternative', external: true },
       { label: 'DMCA', href: '/dmca' },
     ],
   };

@@ -83,6 +83,117 @@ function slugify(text: string): string {
     .slice(0, 200);
 }
 
+// DB CHECK constraint limits on public.blog_articles. Mirrors the prod schema
+// so client-side validation surfaces clear errors BEFORE the edge function
+// receives the request and BEFORE Postgres rejects the row with a cryptic
+// constraint name. Keep in sync with the migration.
+const BLOG_FIELD_LIMITS = {
+  title: 300,
+  slug: 200,
+  excerpt: 500,
+  author_name: 100,
+  cover_image_alt: 300,
+  meta_title: 70,
+  meta_description: 170,
+  focus_keyword: 100,
+} as const;
+
+// Map Postgres CHECK constraint names (as surfaced by Supabase error messages)
+// to human-readable field labels + max lengths.
+const BLOG_CONSTRAINT_LABELS: Record<string, { label: string; max: number }> = {
+  blog_articles_title_check: { label: 'Title', max: BLOG_FIELD_LIMITS.title },
+  blog_articles_slug_check: { label: 'URL slug', max: BLOG_FIELD_LIMITS.slug },
+  blog_articles_excerpt_check: { label: 'Excerpt', max: BLOG_FIELD_LIMITS.excerpt },
+  blog_articles_author_name_check: { label: 'Author name', max: BLOG_FIELD_LIMITS.author_name },
+  blog_articles_cover_image_alt_check: { label: 'Cover image alt text', max: BLOG_FIELD_LIMITS.cover_image_alt },
+  blog_articles_meta_title_check: { label: 'Meta title', max: BLOG_FIELD_LIMITS.meta_title },
+  blog_articles_meta_description_check: { label: 'Meta description', max: BLOG_FIELD_LIMITS.meta_description },
+  blog_articles_focus_keyword_check: { label: 'Focus keyword', max: BLOG_FIELD_LIMITS.focus_keyword },
+};
+
+/**
+ * Turns a raw Supabase/Postgres error message (from the admin-blog-manage
+ * edge function) into a user-friendly message.
+ *
+ * Handles:
+ *   - CHECK constraint violations → "Title is too long (max 300 characters)"
+ *   - Unique slug conflict → "This URL slug is already used by another article"
+ *   - Auth/permission errors → "Session expired — please log in again"
+ *   - Anything else → falls back to the raw message + advise to F12 console
+ */
+function friendlyBlogSaveError(raw: string | undefined | null): string {
+  const msg = (raw || '').toLowerCase();
+  if (!msg) return 'Unknown error — open DevTools console for details';
+
+  // Check constraint violation: "violates check constraint \"blog_articles_title_check\""
+  for (const [constraintName, meta] of Object.entries(BLOG_CONSTRAINT_LABELS)) {
+    if (msg.includes(constraintName)) {
+      return `${meta.label} is too long — max ${meta.max} characters. Shorten it and try again.`;
+    }
+  }
+
+  if (msg.includes('duplicate key') && msg.includes('slug')) {
+    return 'This URL slug is already used by another article. Change the slug to something unique.';
+  }
+  if (msg.includes('slug already exists')) {
+    return 'This URL slug is already used by another article. Change the slug to something unique.';
+  }
+  if (msg.includes('forbidden') || msg.includes('not authorized')) {
+    return 'You do not have admin access. Contact a super-admin if this is unexpected.';
+  }
+  if (msg.includes('token') || msg.includes('invalid or expired')) {
+    return 'Your session has expired. Please refresh the page and log in again.';
+  }
+  if (msg.includes('failed to fetch') || msg.includes('network')) {
+    return 'Network problem. Check your connection and try again.';
+  }
+  if (msg.includes('title') && msg.includes('required')) {
+    return 'Article title is required.';
+  }
+  return `Save failed: ${raw}. Open DevTools console (F12) for the full error.`;
+}
+
+interface ArticleLike {
+  title: string;
+  slug: string;
+  excerpt: string;
+  author_name: string;
+  cover_image_alt: string;
+  meta_title: string;
+  meta_description: string;
+  focus_keyword: string;
+}
+
+/**
+ * Pre-submit validation. Returns an array of error messages (empty if OK).
+ * Flags every field that exceeds its DB limit so the user can fix ALL issues
+ * in one go instead of discovering them one toast at a time.
+ */
+function validateBlogArticle(a: ArticleLike): string[] {
+  const errors: string[] = [];
+  if (!a.title.trim()) errors.push('Title is required');
+  if (!a.slug.trim()) errors.push('URL slug is required');
+  if (a.title.length > BLOG_FIELD_LIMITS.title) {
+    errors.push(`Title is ${a.title.length} characters — max ${BLOG_FIELD_LIMITS.title}. Shorten it.`);
+  }
+  if (a.slug.length > BLOG_FIELD_LIMITS.slug) {
+    errors.push(`URL slug is ${a.slug.length} characters — max ${BLOG_FIELD_LIMITS.slug}.`);
+  }
+  if (a.excerpt.length > BLOG_FIELD_LIMITS.excerpt) {
+    errors.push(`Excerpt is ${a.excerpt.length} characters — max ${BLOG_FIELD_LIMITS.excerpt}.`);
+  }
+  if (a.author_name.length > BLOG_FIELD_LIMITS.author_name) {
+    errors.push(`Author name is ${a.author_name.length} characters — max ${BLOG_FIELD_LIMITS.author_name}.`);
+  }
+  if (a.cover_image_alt.length > BLOG_FIELD_LIMITS.cover_image_alt) {
+    errors.push(`Cover image alt text is ${a.cover_image_alt.length} characters — max ${BLOG_FIELD_LIMITS.cover_image_alt}.`);
+  }
+  // meta_title + meta_description + focus_keyword are silently truncated to
+  // their limits inside the edge function, so we don't flag them here — but
+  // we DO warn the user if they're trimming significant content.
+  return errors;
+}
+
 // ─── Slash Command Menu ──────────────────────────────────────────────
 interface SlashMenuItem {
   label: string;
@@ -697,8 +808,19 @@ const AdminBlogEditor = () => {
   };
 
   const handleSave = async (targetStatus?: string) => {
-    if (!article.title.trim()) { toast.error('Title is required'); return; }
-    if (!article.slug.trim()) { toast.error('Slug is required'); return; }
+    // Pre-submit validation. Shows ALL length/required errors at once so the
+    // user doesn't have to discover them one by one.
+    const errors = validateBlogArticle(article);
+    if (errors.length > 0) {
+      toast.error(errors[0], { duration: 8000 });
+      // If multiple errors, surface the full list in console so the user
+      // can check all at once.
+      if (errors.length > 1) {
+        console.warn('[AdminBlogEditor] Pre-submit validation errors:', errors);
+        toast.info(`${errors.length - 1} more issue(s) — open DevTools console for the full list`, { duration: 6000 });
+      }
+      return;
+    }
 
     setSaving(true);
 
@@ -751,7 +873,29 @@ const AdminBlogEditor = () => {
     });
 
     if (res.error) {
-      toast.error('Save failed: ' + (res.error.message || 'Unknown error'));
+      // Surface a friendly, actionable error message. Raw details also go to
+      // the console so the client can send them to support if needed.
+      console.error('[AdminBlogEditor] save failed', {
+        error: res.error,
+        message: res.error.message,
+        context: res.error.context,
+        status: (res.error as { status?: number }).status,
+        payload: { ...payload, content: '<tiptap json omitted>', content_html: '<html omitted>' },
+      });
+      // The edge function sometimes nests the real Postgres message inside
+      // `res.error.context` (a Response object). Try both locations.
+      let rawMessage = res.error.message || '';
+      const ctx = (res.error as { context?: Response }).context;
+      if (ctx && typeof (ctx as unknown as { text?: () => Promise<string> }).text === 'function') {
+        try {
+          const bodyText = await (ctx as unknown as { text: () => Promise<string> }).text();
+          const parsed = JSON.parse(bodyText || '{}') as { error?: string };
+          if (parsed.error) rawMessage = parsed.error;
+        } catch {
+          // fall back to res.error.message
+        }
+      }
+      toast.error(friendlyBlogSaveError(rawMessage), { duration: 10000 });
     } else {
       toast.success(
         targetStatus === 'published' ? 'Article published!' :
@@ -843,6 +987,7 @@ const AdminBlogEditor = () => {
                   value={article.cover_image_alt}
                   onChange={(e) => setArticle((prev) => ({ ...prev, cover_image_alt: e.target.value }))}
                   placeholder="Alt text..."
+                  maxLength={BLOG_FIELD_LIMITS.cover_image_alt}
                   className="px-3 py-1 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-primary/50"
                 />
               </div>
@@ -866,12 +1011,20 @@ const AdminBlogEditor = () => {
           {/* Main editor column */}
           <div className="space-y-5">
             {/* Title */}
-            <input
-              value={article.title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              placeholder="Article title..."
-              className="w-full text-2xl sm:text-3xl font-bold bg-transparent border-0 border-b border-exclu-arsenic/30 pb-3 text-exclu-cloud placeholder:text-exclu-space/40 focus:outline-none focus:border-primary/50 transition-colors"
-            />
+            <div>
+              <input
+                value={article.title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Article title..."
+                maxLength={BLOG_FIELD_LIMITS.title}
+                className="w-full text-2xl sm:text-3xl font-bold bg-transparent border-0 border-b border-exclu-arsenic/30 pb-3 text-exclu-cloud placeholder:text-exclu-space/40 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {article.title.length > 200 && (
+                <p className={`text-[10px] mt-1 ${article.title.length >= BLOG_FIELD_LIMITS.title ? 'text-red-400' : 'text-exclu-space/60'}`}>
+                  {article.title.length}/{BLOG_FIELD_LIMITS.title}
+                </p>
+              )}
+            </div>
 
             {/* Excerpt */}
             <Input
@@ -955,8 +1108,14 @@ const AdminBlogEditor = () => {
                 value={article.author_name}
                 onChange={(e) => setArticle((prev) => ({ ...prev, author_name: e.target.value }))}
                 placeholder="Author name"
+                maxLength={BLOG_FIELD_LIMITS.author_name}
                 className="h-11 bg-white dark:bg-black border-border dark:border-white text-foreground dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
               />
+              {article.author_name.length > 70 && (
+                <p className={`text-[10px] mt-1 ${article.author_name.length >= BLOG_FIELD_LIMITS.author_name ? 'text-red-400' : 'text-exclu-space/60'}`}>
+                  {article.author_name.length}/{BLOG_FIELD_LIMITS.author_name}
+                </p>
+              )}
             </div>
 
             {/* SEO */}

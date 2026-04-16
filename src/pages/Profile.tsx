@@ -1380,7 +1380,7 @@ const Profile = () => {
                         <p className="text-xs text-muted-foreground mt-0.5">Contact our support team on Telegram</p>
                       </div>
                       <a
-                        href="https://telegram.me/exclu_support"
+                        href="https://t.me/exclu_alternative"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-sm font-medium transition-colors"
