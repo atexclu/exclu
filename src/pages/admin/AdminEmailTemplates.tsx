@@ -71,14 +71,12 @@ export default function AdminEmailTemplates() {
         ))}
       </div>
 
-      {/* Desktop: clickable rows, no Updated/Edit columns */}
+      {/* Desktop: clickable rows, minimal columns */}
       <div className="hidden md:block rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="border-b border-exclu-arsenic/40 hover:bg-transparent">
               <TableHead className="text-exclu-space">Name</TableHead>
-              <TableHead className="text-exclu-space">Slug</TableHead>
-              <TableHead className="text-exclu-space">Category</TableHead>
               <TableHead className="text-exclu-space">Subject</TableHead>
             </TableRow>
           </TableHeader>
@@ -92,14 +90,6 @@ export default function AdminEmailTemplates() {
                 }`}
               >
                 <TableCell className="font-medium text-exclu-cloud">{t.name}</TableCell>
-                <TableCell>
-                  <code className="text-xs text-muted-foreground">{t.slug}</code>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-[10px]">
-                    {t.category}
-                  </Badge>
-                </TableCell>
                 <TableCell className="max-w-xs truncate text-muted-foreground">
                   {t.subject}
                 </TableCell>

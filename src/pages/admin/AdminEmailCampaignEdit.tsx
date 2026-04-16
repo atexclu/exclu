@@ -78,6 +78,7 @@ function matchPresetKey(url: string): string | null {
 
 type ContentMode = "simple" | "html";
 type StepNumber = 1 | 2 | 3 | 4;
+type ActiveStep = StepNumber | null;
 
 interface FormState {
   name: string;
@@ -131,7 +132,9 @@ export default function AdminEmailCampaignEdit() {
 
   const [form, setForm] = useState<FormState>(campaignToForm(null));
   const [loaded, setLoaded] = useState<Campaign | null>(null);
-  const [currentStep, setCurrentStep] = useState<StepNumber>(1);
+  // On /new → start at step 1. On /:id → null = all sections collapsed,
+  // admin clicks a step card to re-open it.
+  const [currentStep, setCurrentStep] = useState<ActiveStep>(isNew ? 1 : null);
   const [completedSteps, setCompletedSteps] = useState<Set<StepNumber>>(new Set());
   const stepRefs = useRef<Record<StepNumber, HTMLDivElement | null>>({
     1: null,
@@ -162,7 +165,9 @@ export default function AdminEmailCampaignEdit() {
       setForm(campaignToForm(getData.campaign));
       setLoaded(getData.campaign);
       setCompletedSteps(new Set([1, 2, 3, 4]));
-      setCurrentStep(1);
+      // Do NOT auto-open step 1 — all sections stay collapsed on first
+      // load of an existing campaign. Admin clicks to re-open.
+      setCurrentStep(null);
     }
   }, [getData?.campaign]);
 
@@ -285,15 +290,17 @@ export default function AdminEmailCampaignEdit() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground truncate">
-            {isNew && !loaded ? "New campaign" : form.name || "Untitled campaign"}
-          </h2>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xl sm:text-2xl font-bold text-foreground truncate">
+              {isNew && !loaded ? "New campaign" : form.name || "Untitled campaign"}
+            </h2>
             {loaded && (
-              <Badge variant="outline" className="capitalize text-[10px]">
+              <Badge variant="outline" className="capitalize text-[10px] flex-shrink-0">
                 {loaded.status}
               </Badge>
             )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
             <SaveIndicator
               isAutoSaving={isAutoSaving}
               saved={Boolean(loaded) && lastSavedKey === debouncedKey}
@@ -350,7 +357,7 @@ export default function AdminEmailCampaignEdit() {
         icon={<Users className="w-5 h-5" />}
         isActive={currentStep === 2}
         isCompleted={completedSteps.has(2)}
-        isLocked={!completedSteps.has(1) && currentStep < 2}
+        isLocked={!completedSteps.has(1) && (currentStep ?? 0) < 2}
         isEditable={isEditable}
         onEdit={() => goToStep(2)}
         summary={completedSteps.has(2) ? <AudienceSummary rules={form.rules} /> : null}
@@ -371,7 +378,7 @@ export default function AdminEmailCampaignEdit() {
         icon={<Mail className="w-5 h-5" />}
         isActive={currentStep === 3}
         isCompleted={completedSteps.has(3)}
-        isLocked={!completedSteps.has(2) && currentStep < 3}
+        isLocked={!completedSteps.has(2) && (currentStep ?? 0) < 3}
         isEditable={isEditable}
         onEdit={() => goToStep(3)}
         summary={completedSteps.has(3) ? <ContentSummary form={form} /> : null}
@@ -392,7 +399,7 @@ export default function AdminEmailCampaignEdit() {
         icon={<Rocket className="w-5 h-5" />}
         isActive={currentStep === 4}
         isCompleted={completedSteps.has(4)}
-        isLocked={!completedSteps.has(3) && currentStep < 4}
+        isLocked={!completedSteps.has(3) && (currentStep ?? 0) < 4}
         isEditable={isEditable}
         onEdit={() => goToStep(4)}
         summary={null}

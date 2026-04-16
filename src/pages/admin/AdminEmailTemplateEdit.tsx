@@ -16,7 +16,14 @@ import { adminEmails, type EmailTemplateRow } from "@/lib/adminEmails";
 import { renderEmailTemplate } from "@/lib/renderEmailTemplate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  extractTextBlocks,
+  applyTextBlocks,
+  extractPlainText,
+  type TextBlock,
+} from "@/lib/emailTextBlocks";
 
 interface Draft {
   id?: string;
@@ -56,7 +63,7 @@ export default function AdminEmailTemplateEdit() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"html" | "text" | "vars">("html");
+  const [activeTab, setActiveTab] = useState<"content" | "html" | "vars">("content");
 
   useEffect(() => {
     if (data?.template) setDraft(toDraft(data.template));
@@ -65,13 +72,20 @@ export default function AdminEmailTemplateEdit() {
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error("Nothing to save");
+      // Auto-populate text_body from the HTML body if the admin hasn't
+      // set one manually — so the plain-text fallback stays in sync with
+      // the rendered content instead of going stale.
+      const effectiveText =
+        draft.text_body && draft.text_body.trim().length > 0
+          ? draft.text_body
+          : extractPlainText(draft.html_body);
       return adminEmails.upsert({
         slug: draft.slug,
         name: draft.name,
         category: draft.category,
         subject: draft.subject,
         html_body: draft.html_body,
-        text_body: draft.text_body ?? undefined,
+        text_body: effectiveText || undefined,
         variables: draft.variables,
         sample_data: draft.sample_data,
       });
@@ -136,8 +150,8 @@ export default function AdminEmailTemplateEdit() {
           {/* Pill-style tab bar — matches the Templates/Campaigns/Contacts/Logs nav */}
           <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
             {[
+              { key: "content" as const, label: "Content" },
               { key: "html" as const, label: "HTML" },
-              { key: "text" as const, label: "Plain text" },
               { key: "vars" as const, label: "Variables & sample" },
             ].map((t) => {
               const isActive = activeTab === t.key;
@@ -177,24 +191,11 @@ export default function AdminEmailTemplateEdit() {
             </div>
           )}
 
-          {activeTab === "text" && (
-            <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded-lg border border-border overflow-hidden">
-              <Suspense fallback={<EditorFallback />}>
-                <Editor
-                  height="100%"
-                  defaultLanguage="plaintext"
-                  value={draft.text_body ?? ""}
-                  onChange={(v) => setDraft({ ...draft, text_body: v ?? null })}
-                  theme="vs-dark"
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    wordWrap: "on",
-                    scrollBeyondLastLine: false,
-                  }}
-                />
-              </Suspense>
-            </div>
+          {activeTab === "content" && (
+            <ContentBlocksEditor
+              html={draft.html_body}
+              onChange={(nextHtml) => setDraft({ ...draft, html_body: nextHtml })}
+            />
           )}
 
           {activeTab === "vars" && (
@@ -260,8 +261,8 @@ export default function AdminEmailTemplateEdit() {
 
         {/* Right: preview */}
         <div className="flex min-h-[50vh] lg:min-h-0 flex-col rounded border border-border bg-white">
-          <div className="border-b border-border p-3 text-sm font-medium text-foreground">
-            <span className="text-muted-foreground mr-1">Subject:</span>
+          <div className="border-b border-gray-200 p-3 text-sm font-medium bg-gray-50 text-gray-900">
+            <span className="text-gray-500 mr-1">Subject:</span>
             <span className="break-words">{rendered.subject}</span>
           </div>
           <iframe
@@ -295,3 +296,79 @@ export default function AdminEmailTemplateEdit() {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// ContentBlocksEditor — Brevo-style wording editor.
+// Parses the HTML template, surfaces each heading / paragraph / link /
+// list item as its own labeled input, and patches the edits back into
+// the HTML on every keystroke. The admin can reword anything without
+// ever seeing the raw HTML.
+// ═══════════════════════════════════════════════════════════════════════
+
+function ContentBlocksEditor({
+  html,
+  onChange,
+}: {
+  html: string;
+  onChange: (nextHtml: string) => void;
+}) {
+  const [blocks, setBlocks] = useState<TextBlock[]>(() => extractTextBlocks(html));
+
+  // Re-extract when the underlying HTML changes (e.g. admin edits the
+  // raw HTML in the HTML tab then switches back here).
+  useEffect(() => {
+    setBlocks(extractTextBlocks(html));
+  }, [html]);
+
+  if (blocks.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/20 p-6 text-sm text-muted-foreground">
+        No editable content found in the template. Switch to the{" "}
+        <strong className="text-foreground">HTML</strong> tab to edit the raw markup directly —
+        then come back here to adjust the wording.
+      </div>
+    );
+  }
+
+  const updateBlock = (key: string, text: string) => {
+    const next = blocks.map((b) => (b.key === key ? { ...b, text } : b));
+    setBlocks(next);
+    // Apply all block edits to the source HTML in one pass.
+    const nextHtml = applyTextBlocks(html, next);
+    onChange(nextHtml);
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/10 p-3 sm:p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+      <p className="text-[11px] text-muted-foreground">
+        Edit the wording directly — the HTML layout and styling stay intact. Placeholders like{" "}
+        <code className="text-foreground">{"{{ variable }}"}</code> are preserved automatically.
+      </p>
+
+      {blocks.map((b) => {
+        const isShort = b.tag === "a" || b.tag === "h1" || b.tag === "h2" || b.tag === "h3" || b.tag === "h4";
+        return (
+          <div key={b.key}>
+            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+              {b.label}
+            </Label>
+            {isShort ? (
+              <Input
+                value={b.text}
+                onChange={(e) => updateBlock(b.key, e.target.value)}
+                className="h-10 mt-1 text-sm"
+              />
+            ) : (
+              <Textarea
+                value={b.text}
+                onChange={(e) => updateBlock(b.key, e.target.value)}
+                className="min-h-[72px] mt-1 text-sm resize-y"
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
