@@ -33,25 +33,7 @@ export default async function handler(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret || !serviceKey) {
     console.error("[unsubscribe] missing env: UNSUBSCRIBE_HMAC_SECRET or SUPABASE_SERVICE_ROLE_KEY");
-    // TEMP diagnostic: show which relevant env vars are actually visible.
-    // Safe to expose names (not values). Remove once env issue resolved.
-    // TEMP diagnostic: list any env var keys matching the target names
-    // or containing fragments of them — reveals typos, whitespace, or
-    // alternative naming.
-    const allKeys = Object.keys(process.env).sort();
-    const related = allKeys.filter((k) => /UNSUB|SUPA|SERV|HMAC|ROLE/i.test(k));
-    const lens: Record<string, number> = {};
-    for (const k of related) {
-      const v = process.env[k];
-      lens[k] = typeof v === "string" ? v.length : -1;
-    }
-    res.status(500).json({
-      ok: false,
-      reason: "misconfigured",
-      total_env_keys: allKeys.length,
-      related_keys: related,
-      related_lengths: lens,
-    });
+    res.status(500).json({ ok: false, reason: "misconfigured" });
     return;
   }
 
