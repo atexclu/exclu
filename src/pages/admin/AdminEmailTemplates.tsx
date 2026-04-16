@@ -87,7 +87,7 @@ export default function AdminEmailTemplates() {
               <TableRow
                 key={t.id}
                 onClick={() => openTemplate(t.slug)}
-                className={`cursor-pointer border-b border-exclu-arsenic/30 hover:bg-exclu-ink/50 transition-colors duration-200 ${
+                className={`cursor-pointer border-b border-exclu-arsenic/30 hover:bg-exclu-arsenic/30 transition-colors duration-200 ${
                   i === templates.length - 1 ? "border-b-0" : ""
                 }`}
               >

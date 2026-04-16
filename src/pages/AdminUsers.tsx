@@ -544,16 +544,16 @@ const AdminUsers = () => {
   // ── Derived data ──
   const getUserType = (u: AdminUserSummary): string => {
     if (u.is_admin) return 'Admin';
-    if (agencyUserIds.has(u.id)) return 'Agence';
-    if (u.is_creator) return 'Créateur';
+    if (agencyUserIds.has(u.id)) return 'Agency';
+    if (u.is_creator) return 'Creator';
     return 'Fan';
   };
 
   const getTypeBadgeClass = (type: string): string => {
     switch (type) {
       case 'Admin': return 'bg-red-500/20 text-red-400';
-      case 'Agence': return 'bg-purple-500/20 text-purple-400';
-      case 'Créateur': return 'bg-primary/20 text-primary';
+      case 'Agency': return 'bg-purple-500/20 text-purple-400';
+      case 'Creator': return 'bg-primary/20 text-primary';
       default: return 'bg-muted text-muted-foreground';
     }
   };
@@ -561,9 +561,9 @@ const AdminUsers = () => {
   const filteredUsers = users.filter((u) => {
     if (roleFilter === 'all') return true;
     const type = getUserType(u);
-    if (roleFilter === 'creator') return type === 'Créateur';
+    if (roleFilter === 'creator') return type === 'Creator';
     if (roleFilter === 'fan') return type === 'Fan';
-    if (roleFilter === 'agency') return type === 'Agence';
+    if (roleFilter === 'agency') return type === 'Agency';
     return true;
   });
 
@@ -705,7 +705,7 @@ const AdminUsers = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-                  placeholder="Rechercher par nom, email ou id…"
+                  placeholder="Search by name, email or ID…"
                   className={`w-full sm:w-64 ${authInputClass}`}
                 />
                 <select
@@ -713,8 +713,8 @@ const AdminUsers = () => {
                   onChange={(e) => { setRoleFilter(e.target.value as RoleFilter); setPage(1); }}
                   className={selectClass}
                 >
-                  <option value="all">Tous les types</option>
-                  <option value="creator">Par créateur</option>
+                  <option value="all">All types</option>
+                  <option value="creator">Creators only</option>
                   <option value="fan">Par fan</option>
                   <option value="agency">Par agence</option>
                 </select>
@@ -723,7 +723,7 @@ const AdminUsers = () => {
                   onChange={(e) => { setSortMode(e.target.value); setPage(1); }}
                   className={`${selectClass} sm:w-48 w-full`}
                 >
-                  <option value="created_desc">Plus récents</option>
+                  <option value="created_desc">Most recent</option>
                   <option value="created_asc">Plus anciens</option>
                   <option value="best_sellers">Meilleurs vendeurs</option>
                   <option value="most_viewed">Plus de vues</option>
@@ -943,22 +943,22 @@ const AdminUsers = () => {
                     type="text"
                     value={blogSearch}
                     onChange={(e) => setBlogSearch(e.target.value)}
-                    placeholder="Rechercher par titre ou slug…"
+                    placeholder="Search by title or slug…"
                     className={`w-full sm:w-64 ${authInputClass}`}
                   />
-                  {/* Status pills - inline on desktop, separate on mobile */}
-                  <div className="flex items-center gap-1 overflow-x-auto sm:flex-nowrap">
+                  {/* Status filter — pill style matching AdminPayments */}
+                  <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none">
                     {(['all', 'published', 'draft', 'scheduled', 'archived'] as const).map((s) => (
                       <button
                         key={s}
                         onClick={() => setBlogStatusFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                           blogStatusFilter === s
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-exclu-space hover:text-exclu-cloud hover:bg-exclu-ink/80 border border-exclu-arsenic/70'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)} ({blogCounts[s]})
+                        {s === 'all' ? `All (${blogCounts.all})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${blogCounts[s]})`}
                       </button>
                     ))}
                   </div>

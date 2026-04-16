@@ -17,7 +17,6 @@ import { renderEmailTemplate } from "@/lib/renderEmailTemplate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface Draft {
   id?: string;
@@ -57,6 +56,7 @@ export default function AdminEmailTemplateEdit() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"html" | "text" | "vars">("html");
 
   useEffect(() => {
     if (data?.template) setDraft(toDraft(data.template));
@@ -133,58 +133,74 @@ export default function AdminEmailTemplateEdit() {
               onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
             />
           </div>
-          <Tabs defaultValue="html">
-            <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="html">HTML</TabsTrigger>
-              <TabsTrigger value="text">Plain text</TabsTrigger>
-              <TabsTrigger value="vars" className="whitespace-nowrap">Variables & sample</TabsTrigger>
-            </TabsList>
+          {/* Pill-style tab bar — matches the Templates/Campaigns/Contacts/Logs nav */}
+          <div className="flex gap-1 rounded-xl bg-muted/30 p-1 overflow-x-auto scrollbar-none w-fit">
+            {[
+              { key: "html" as const, label: "HTML" },
+              { key: "text" as const, label: "Plain text" },
+              { key: "vars" as const, label: "Variables & sample" },
+            ].map((t) => {
+              const isActive = activeTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                    isActive
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
 
-            <TabsContent value="html">
-              <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded border border-border overflow-hidden">
-                <Suspense fallback={<EditorFallback />}>
-                  <Editor
-                    height="100%"
-                    defaultLanguage="html"
-                    value={draft.html_body}
-                    onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
-                    theme="vs-dark"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      wordWrap: "on",
-                      scrollBeyondLastLine: false,
-                    }}
-                  />
-                </Suspense>
-              </div>
-            </TabsContent>
+          {activeTab === "html" && (
+            <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded-lg border border-border overflow-hidden">
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="html"
+                  value={draft.html_body}
+                  onChange={(v) => setDraft({ ...draft, html_body: v ?? "" })}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    wordWrap: "on",
+                    scrollBeyondLastLine: false,
+                  }}
+                />
+              </Suspense>
+            </div>
+          )}
 
-            <TabsContent value="text">
-              <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded border border-border overflow-hidden">
-                <Suspense fallback={<EditorFallback />}>
-                  <Editor
-                    height="100%"
-                    defaultLanguage="plaintext"
-                    value={draft.text_body ?? ""}
-                    onChange={(v) =>
-                      setDraft({ ...draft, text_body: v ?? null })
-                    }
-                    theme="vs-dark"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      wordWrap: "on",
-                      scrollBeyondLastLine: false,
-                    }}
-                  />
-                </Suspense>
-              </div>
-            </TabsContent>
+          {activeTab === "text" && (
+            <div className="h-[45vh] sm:h-[50vh] lg:h-[60vh] rounded-lg border border-border overflow-hidden">
+              <Suspense fallback={<EditorFallback />}>
+                <Editor
+                  height="100%"
+                  defaultLanguage="plaintext"
+                  value={draft.text_body ?? ""}
+                  onChange={(v) => setDraft({ ...draft, text_body: v ?? null })}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    wordWrap: "on",
+                    scrollBeyondLastLine: false,
+                  }}
+                />
+              </Suspense>
+            </div>
+          )}
 
-            <TabsContent value="vars" className="space-y-3">
+          {activeTab === "vars" && (
+            <div className="space-y-3">
               <Label>Declared variables (JSON)</Label>
-              <div className="h-[25vh] sm:h-[30vh] rounded border border-border overflow-hidden">
+              <div className="h-[25vh] sm:h-[30vh] rounded-lg border border-border overflow-hidden">
                 <Suspense fallback={<EditorFallback />}>
                   <Editor
                     height="100%"
@@ -207,7 +223,7 @@ export default function AdminEmailTemplateEdit() {
               </div>
 
               <Label>Sample data (drives the live preview)</Label>
-              <div className="h-[20vh] rounded border border-border overflow-hidden">
+              <div className="h-[20vh] rounded-lg border border-border overflow-hidden">
                 <Suspense fallback={<EditorFallback />}>
                   <Editor
                     height="100%"
@@ -228,8 +244,8 @@ export default function AdminEmailTemplateEdit() {
                   />
                 </Suspense>
               </div>
-            </TabsContent>
-          </Tabs>
+            </div>
+          )}
 
           {/* Desktop-only inline Save button */}
           <div className="hidden lg:flex items-center gap-2">

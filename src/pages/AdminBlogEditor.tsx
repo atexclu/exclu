@@ -943,30 +943,30 @@ const AdminBlogEditor = () => {
   // ─── Editor mode ───────────────────────────────────────────────────
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 overflow-x-hidden">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 min-w-0">
           <button
             onClick={() => navigate('/admin/users?tab=blog')}
             className="inline-flex items-center gap-1.5 text-sm text-exclu-space hover:text-exclu-cloud transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Back to articles
           </button>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap min-w-0">
             <button
               onClick={() => setPreviewMode(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-exclu-arsenic/70 text-xs font-medium text-exclu-space hover:text-exclu-cloud hover:border-exclu-cloud transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-exclu-arsenic/70 text-xs font-medium text-exclu-space hover:text-exclu-cloud hover:border-exclu-cloud transition-colors flex-shrink-0"
             >
               <Eye className="w-3.5 h-3.5" /> Preview
             </button>
-            <Button variant="outline" onClick={() => handleSave()} disabled={saving} className="flex-1 sm:flex-initial">
-              <Save className="w-4 h-4 mr-1.5" /> Save Draft
+            <Button variant="outline" onClick={() => handleSave()} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+              <Save className="w-4 h-4 mr-1.5 flex-shrink-0" /> Save Draft
             </Button>
-            <Button variant="outline" onClick={() => handleSave('scheduled')} disabled={saving} className="flex-1 sm:flex-initial">
-              <Clock className="w-4 h-4 mr-1.5" /> Schedule
+            <Button variant="outline" onClick={() => handleSave('scheduled')} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+              <Clock className="w-4 h-4 mr-1.5 flex-shrink-0" /> Schedule
             </Button>
-            <Button onClick={() => handleSave('published')} disabled={saving} className="flex-1 sm:flex-initial">
-              <Send className="w-4 h-4 mr-1.5" /> Publish
+            <Button onClick={() => handleSave('published')} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+              <Send className="w-4 h-4 mr-1.5 flex-shrink-0" /> Publish
             </Button>
           </div>
         </div>
@@ -1007,9 +1007,9 @@ const AdminBlogEditor = () => {
           )}
         </div>
 
-        <div className="grid lg:grid-cols-[1fr_320px] gap-8">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-8 min-w-0">
           {/* Main editor column */}
-          <div className="space-y-5">
+          <div className="space-y-5 min-w-0">
             {/* Title */}
             <div>
               <input

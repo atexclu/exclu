@@ -1,6 +1,13 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import AppShell from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus } from "lucide-react";
 
 const topLevelTabs = [
@@ -35,20 +42,24 @@ export default function AdminEmails() {
   return (
     <AppShell>
       <main className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-8 space-y-4 overflow-x-hidden">
-        {/* Mobile: single unified dropdown nav ────────────────────────── */}
+        {/* Mobile: shadcn Select unified nav ─────────────────────────── */}
         <div className="sm:hidden">
           <h1 className="text-xl font-extrabold tracking-tight mb-2">Admin</h1>
-          <select
-            value={loc.pathname + loc.search}
-            onChange={(e) => navigate(e.target.value)}
-            className="h-10 w-full rounded-lg border border-exclu-arsenic/60 bg-exclu-ink/80 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          <Select
+            value={loc.pathname + (loc.search || "")}
+            onValueChange={(value) => navigate(value)}
           >
-            {mobileRoutes.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Navigate…" />
+            </SelectTrigger>
+            <SelectContent>
+              {mobileRoutes.map((r) => (
+                <SelectItem key={r.value} value={r.value}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Desktop: 2-row nav ─────────────────────────────────────────── */}
