@@ -144,3 +144,6 @@ verify_jwt = false
 [functions.check-signup-allowed]
 verify_jwt = false
 
+
+[functions.admin-list-mailing-contacts]
+verify_jwt = false

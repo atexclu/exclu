@@ -41,6 +41,34 @@ function decimalToCents(d: string): number {
   return Math.round(parseFloat(d) * 100);
 }
 
+/**
+ * Fire-and-forget upsert into mailing_contacts via the SECURITY DEFINER RPC.
+ * Never fails the payment flow — on any error we just log and continue.
+ * Phase 3 (mailing overhaul Part B.1).
+ */
+async function upsertMailingContactSafe(
+  email: string | null | undefined,
+  source: 'link_purchase' | 'tip' | 'gift' | 'custom_request',
+  sourceRef: string,
+  displayName?: string | null,
+): Promise<void> {
+  if (!email || !email.trim()) return;
+  const { error } = await supabase.rpc('upsert_mailing_contact', {
+    p_email: email.trim(),
+    p_source: source,
+    p_source_ref: sourceRef,
+    p_role: 'fan',
+    p_display_name: displayName ?? null,
+  });
+  if (error) {
+    console.error(`[ugp-confirm] upsert_mailing_contact failed for ${source}`, {
+      email,
+      source_ref: sourceRef,
+      error: error.message,
+    });
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -191,6 +219,9 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     console.error('Error updating purchase:', updateErr);
     return;
   }
+
+  // Phase 3: register the buyer in the mailing contacts registry
+  void upsertMailingContactSafe(customerEmail, 'link_purchase', purchaseId);
 
   // Load link info for email and wallet credit
   const { data: link } = await supabase
@@ -364,6 +395,8 @@ async function handleTip(tipId: string, body: Record<string, string>) {
     fan_email: customerEmail,
   }).eq('id', tipId);
 
+  void upsertMailingContactSafe(customerEmail, 'tip', tipId, body.CustomerName ?? null);
+
   // Credit creator wallet
   if (creatorNet > 0) {
     try {
@@ -446,7 +479,10 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     ugp_merchant_reference: body.MerchantReference,
     platform_fee_cents: totalPlatformFee,
     creator_net_cents: creatorNet,
+    fan_email: body.CustomerEmail || null,
   }).eq('id', giftId);
+
+  void upsertMailingContactSafe(body.CustomerEmail, 'gift', giftId, body.CustomerName ?? null);
 
   // Increment wishlist gifted_count (read-then-write, single increment)
   const { data: item } = await supabase
@@ -526,6 +562,8 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
     ugp_transaction_id: body.TransactionID,
     ugp_merchant_reference: body.MerchantReference,
   }).eq('id', requestId);
+
+  void upsertMailingContactSafe(request.fan_email ?? body.CustomerEmail, 'custom_request', request.id, body.CustomerName ?? null);
 
   // DO NOT credit wallet here — funds are only held (Authorize), not captured yet
   // The wallet will be credited when the creator captures via manage-request
