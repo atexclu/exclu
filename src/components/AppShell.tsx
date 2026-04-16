@@ -47,7 +47,7 @@ const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: 'Support',
     items: [
-      { path: 'https://telegram.me/exclu_support', label: 'Support', icon: HelpCircle, external: true },
+      { path: 'https://t.me/exclu_alternative', label: 'Support', icon: HelpCircle, external: true },
       { path: '/admin/users?tab=blog', label: 'Admin', icon: ShieldCheck, adminOnly: true },
     ],
   },

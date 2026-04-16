@@ -55,6 +55,30 @@ export async function checkRateLimit(
   return { allowed: data === true, key, errored: false };
 }
 
+/**
+ * Extract the client IP from a Request.
+ *
+ * Works correctly for edge functions called DIRECTLY from the browser:
+ *   browser → Cloudflare (Supabase CDN) → edge fn
+ * Cloudflare prepends the browser IP to `x-forwarded-for`, so
+ * `split(",")[0]` returns the real browser IP.
+ *
+ * ⚠️  DOES NOT WORK for edge functions proxied through a Vercel Function:
+ *   browser → Cloudflare (Vercel) → Vercel Fn → Cloudflare (Supabase) → edge fn
+ * In that chain Cloudflare prepends the Vercel egress IP (not the browser IP)
+ * to `x-forwarded-for`, so this helper would return the shared Vercel egress
+ * IP for every user. That's what caused the 2026-04-15 prod incident where
+ * `check-signup-allowed` mis-keyed its rate limit on the Vercel egress IP
+ * and blocked real users across the platform after 5 total signups.
+ *
+ * Fix for Vercel-fronted functions: have the Vercel Function forward the
+ * real browser IP via a CUSTOM header (we use `x-client-ip`) that Cloudflare
+ * does not touch, and read that header in the edge fn BEFORE falling back
+ * to this helper. See `supabase/functions/check-signup-allowed/handler.ts`
+ * for the pattern. Current audit (2026-04-16): `check-signup-allowed` is
+ * the only edge fn with a Vercel wrapper, so all other callers of this
+ * helper are safe.
+ */
 export function extractClientIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();

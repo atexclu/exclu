@@ -105,7 +105,7 @@ const AntiSlaveryPolicy = () => {
           <ul>
             <li><strong>In-platform reporting:</strong> Every piece of content and every user profile includes a report function</li>
             <li><strong>Email:</strong> <a href="mailto:contact@exclu.at">contact@exclu.at</a></li>
-            <li><strong>Telegram:</strong> <a href="https://telegram.me/exclu_support">@exclu_support</a> — fastest response time</li>
+            <li><strong>Telegram:</strong> <a href="https://t.me/exclu_alternative">@exclu_alternative</a> — fastest response time</li>
           </ul>
           <p>All reports are treated as confidential. We do not disclose the identity of reporters to the reported party. Reports involving minors or trafficking are escalated immediately.</p>
 
@@ -195,7 +195,7 @@ const AntiSlaveryPolicy = () => {
           <p>For questions about this policy, or to report a concern:</p>
           <ul>
             <li><strong>Email:</strong> <a href="mailto:contact@exclu.at">contact@exclu.at</a></li>
-            <li><strong>Telegram:</strong> <a href="https://telegram.me/exclu_support">@exclu_support</a></li>
+            <li><strong>Telegram:</strong> <a href="https://t.me/exclu_alternative">@exclu_alternative</a></li>
             <li><strong>DMCA &amp; content removal:</strong> <a href="/dmca">/dmca</a></li>
           </ul>
           <p>
