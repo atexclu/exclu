@@ -147,3 +147,12 @@ verify_jwt = false
 
 [functions.admin-list-mailing-contacts]
 verify_jwt = false
+
+[functions.admin-manage-campaigns]
+verify_jwt = false
+
+[functions.drain-campaign-sends]
+verify_jwt = false
+
+[functions.brevo-webhook]
+verify_jwt = false
