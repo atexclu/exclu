@@ -943,8 +943,8 @@ const AdminBlogEditor = () => {
   // ─── Editor mode ───────────────────────────────────────────────────
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 overflow-x-hidden">
-        {/* Header */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 pb-32 sm:pb-8 overflow-x-hidden">
+        {/* Header — back link alone on mobile; actions inline on sm+ */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 min-w-0">
           <button
             onClick={() => navigate('/admin/users?tab=blog')}
@@ -952,20 +952,21 @@ const AdminBlogEditor = () => {
           >
             <ArrowLeft className="w-4 h-4" /> Back to articles
           </button>
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap min-w-0">
+          {/* Desktop action row — hidden on mobile (sticky bottom bar takes over) */}
+          <div className="hidden sm:flex items-center gap-2 sm:flex-nowrap min-w-0">
             <button
               onClick={() => setPreviewMode(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-exclu-arsenic/70 text-xs font-medium text-exclu-space hover:text-exclu-cloud hover:border-exclu-cloud transition-colors flex-shrink-0"
             >
               <Eye className="w-3.5 h-3.5" /> Preview
             </button>
-            <Button variant="outline" onClick={() => handleSave()} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+            <Button variant="outline" onClick={() => handleSave()} disabled={saving} className="sm:flex-initial min-w-0">
               <Save className="w-4 h-4 mr-1.5 flex-shrink-0" /> Save Draft
             </Button>
-            <Button variant="outline" onClick={() => handleSave('scheduled')} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+            <Button variant="outline" onClick={() => handleSave('scheduled')} disabled={saving} className="sm:flex-initial min-w-0">
               <Clock className="w-4 h-4 mr-1.5 flex-shrink-0" /> Schedule
             </Button>
-            <Button onClick={() => handleSave('published')} disabled={saving} className="flex-1 sm:flex-initial min-w-0">
+            <Button onClick={() => handleSave('published')} disabled={saving} className="sm:flex-initial min-w-0">
               <Send className="w-4 h-4 mr-1.5 flex-shrink-0" /> Publish
             </Button>
           </div>
@@ -1145,6 +1146,45 @@ const AdminBlogEditor = () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Mobile-only sticky bottom action bar — buttons moved here from the
+          top header so they never push the screen horizontally and so the
+          writer reaches them naturally when finishing the article. */}
+      <div className="sm:hidden fixed inset-x-0 bottom-0 z-30 border-t border-exclu-arsenic/70 bg-exclu-ink/95 backdrop-blur px-3 py-3">
+        <div className="max-w-6xl mx-auto grid grid-cols-4 gap-1.5">
+          <button
+            onClick={() => setPreviewMode(true)}
+            className="inline-flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg border border-exclu-arsenic/70 text-[10px] font-medium text-exclu-space hover:text-exclu-cloud transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+            Preview
+          </button>
+          <button
+            onClick={() => handleSave()}
+            disabled={saving}
+            className="inline-flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg border border-exclu-arsenic/70 text-[10px] font-medium text-exclu-space hover:text-exclu-cloud transition-colors disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" />
+            Draft
+          </button>
+          <button
+            onClick={() => handleSave('scheduled')}
+            disabled={saving}
+            className="inline-flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg border border-exclu-arsenic/70 text-[10px] font-medium text-exclu-space hover:text-exclu-cloud transition-colors disabled:opacity-50"
+          >
+            <Clock className="w-4 h-4" />
+            Schedule
+          </button>
+          <button
+            onClick={() => handleSave('published')}
+            disabled={saving}
+            className="inline-flex flex-col items-center justify-center gap-0.5 h-12 rounded-lg bg-primary text-primary-foreground text-[10px] font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            <Send className="w-4 h-4" />
+            Publish
+          </button>
         </div>
       </div>
     </AppShell>
