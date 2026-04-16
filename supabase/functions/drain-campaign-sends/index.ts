@@ -74,6 +74,26 @@ async function promoteScheduled(): Promise<number> {
       rules = (seg?.rules as Record<string, unknown>) ?? {};
     }
 
+    // Safety: refuse to promote a scheduled campaign with no filters AND
+    // no linked segment. Mirror the guard in admin-manage-campaigns.
+    const hasAnyFilter = Object.entries(rules).some(([_k, v]) => {
+      if (v === null || v === undefined) return false;
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === "string") return v.trim().length > 0;
+      return true;
+    });
+    if (!hasAnyFilter && !c.segment_id) {
+      console.error("[drain] refusing to promote scheduled campaign with empty rules", c.id);
+      await admin
+        .from("email_campaigns")
+        .update({
+          status: "failed",
+          last_error: "promote_blocked:empty_rules",
+        })
+        .eq("id", c.id);
+      continue;
+    }
+
     const { data: recipients, error: resErr } = await admin.rpc("resolve_campaign_segment", {
       p_rules: rules,
     });

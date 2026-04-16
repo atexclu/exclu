@@ -150,6 +150,7 @@ export default function AdminEmailCampaignEdit() {
         html_content: form.html_content,
         tag: form.tag.trim() || null,
         segment_id: form.segmentMode === "existing" ? form.segment_id : null,
+        inline_rules: form.segmentMode === "inline" ? form.inlineRules : null,
         scheduled_at: form.scheduled_at
           ? new Date(form.scheduled_at).toISOString()
           : null,

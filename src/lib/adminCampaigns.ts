@@ -142,6 +142,8 @@ export const adminCampaigns = {
     html_content: string;
     tag?: string | null;
     segment_id?: string | null;
+    /** Inline rules snapshot. Ignored when segment_id is set. */
+    inline_rules?: SegmentRules | null;
     scheduled_at?: string | null;
   }) => call<{ campaign: Campaign }>({ action: "upsert_campaign", payload }),
 

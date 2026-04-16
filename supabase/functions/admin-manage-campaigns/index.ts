@@ -144,6 +144,11 @@ interface CampaignPayload {
   html_content: string;
   tag?: string | null;
   segment_id?: string | null;
+  /** When segmentMode is "inline", the admin-side rules live in the
+   *  campaign itself. Persisted to email_campaigns.resolved_rules so
+   *  start_campaign + drain-campaign-sends consume the same object.
+   */
+  inline_rules?: Record<string, unknown> | null;
   scheduled_at?: string | null;
 }
 
@@ -189,6 +194,17 @@ async function handleUpsertCampaign(
     return jsonError("campaign_preheader_too_long", 400, cors);
   }
 
+  // Resolve which rules get persisted. If the admin picked a saved segment,
+  // clear resolved_rules so start_campaign always reads the fresh segment
+  // definition. If they typed inline rules, snapshot them onto the campaign
+  // row so they survive edits to other segments + drive start/drain.
+  const hasSegmentId = Boolean(payload.segment_id);
+  const resolvedRules = hasSegmentId
+    ? null
+    : payload.inline_rules && typeof payload.inline_rules === "object"
+      ? payload.inline_rules
+      : {};
+
   const base: Record<string, unknown> = {
     name,
     subject,
@@ -196,6 +212,7 @@ async function handleUpsertCampaign(
     html_content: html,
     tag: payload.tag || null,
     segment_id: payload.segment_id || null,
+    resolved_rules: resolvedRules,
     scheduled_at: payload.scheduled_at || null,
   };
 
@@ -303,8 +320,10 @@ async function handleStartCampaign(
     return jsonError("campaign_not_startable", 409, cors);
   }
 
-  // Resolve segment rules. If no segment linked, use campaign.resolved_rules
-  // (which might have been set by a previous start attempt) or empty = everyone opted-in.
+  // Resolve segment rules. Priority:
+  //   1. Saved segment referenced by segment_id → use its rules
+  //   2. Inline rules snapshot on the campaign (resolved_rules)
+  //   3. Empty object → targets EVERY opted-in contact (guarded below)
   let rules: Record<string, unknown> = {};
   if (campaign.segment_id) {
     const { data: segment } = await admin
@@ -315,6 +334,27 @@ async function handleStartCampaign(
     if (segment?.rules) rules = segment.rules as Record<string, unknown>;
   } else if (campaign.resolved_rules) {
     rules = campaign.resolved_rules as Record<string, unknown>;
+  }
+
+  // SAFETY GUARD — refuse to start a campaign with NO filtering. An empty
+  // rules object matches every opted-in contact on the platform, which is
+  // almost never intended when you haven't explicitly picked a saved
+  // "everyone" segment. Make the admin opt-in to a blast by creating a
+  // named segment whose rules = {} and selecting it explicitly.
+  const hasAnyFilter = Object.entries(rules).some(([_k, v]) => {
+    if (v === null || v === undefined) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === "string") return v.trim().length > 0;
+    return true;   // booleans, numbers count as filters
+  });
+  if (!hasAnyFilter && !campaign.segment_id) {
+    await admin
+      .from("email_campaigns")
+      .update({
+        last_error: "start_blocked:empty_rules (set at least one filter or use a saved segment)",
+      })
+      .eq("id", id);
+    return jsonError("empty_rules", 400, cors);
   }
 
   // If scheduled_at is in the future, just mark scheduled — don't enqueue yet.
