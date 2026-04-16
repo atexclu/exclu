@@ -10,6 +10,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableHeader,
@@ -147,20 +149,20 @@ export default function AdminEmailContacts() {
           <option value="creator">Creator</option>
           <option value="agency">Agency</option>
           <option value="chatter">Chatter</option>
-          <option value="unknown">Unknown</option>
         </select>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-background">
+          <Switch
+            id="marketing-opted-in-toggle"
             checked={marketingOnly}
-            onChange={(e) => {
-              setMarketingOnly(e.target.checked);
+            onCheckedChange={(checked) => {
+              setMarketingOnly(checked);
               setPage(1);
             }}
-            className="accent-primary"
           />
-          Opted in only
-        </label>
+          <Label htmlFor="marketing-opted-in-toggle" className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+            Opted in only
+          </Label>
+        </div>
         <Button
           onClick={handleExportCsv}
           disabled={exporting || total === 0}
