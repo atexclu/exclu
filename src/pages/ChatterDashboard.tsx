@@ -19,7 +19,7 @@ import {
   MessageSquare, Search, Loader2, MessagesSquare, ArrowLeft,
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
   DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
-  Lock, Mail, Settings, ChevronRight, Landmark, Wallet, Inbox,
+  Lock, Mail, Settings, ChevronRight, Landmark, Wallet, Inbox, ArrowUpRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -821,6 +821,54 @@ export default function ChatterDashboard() {
               <div className="flex justify-center py-16">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
+            )}
+
+            {/* Empty state — new chatter with no accepted invitations yet.
+                Without this, the dashboard showed "Welcome back" followed
+                by a blank screen because the metrics useEffect early-returns
+                when allProfileIds is empty. */}
+            {!metricsLoading && !metrics && allProfileIds.length === 0 && (
+              <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-6 sm:p-10">
+                <div className="max-w-xl mx-auto text-center">
+                  <div className="mx-auto w-14 h-14 rounded-2xl bg-[#CFFF16]/10 border border-[#CFFF16]/30 flex items-center justify-center mb-5">
+                    <MessageSquare className="w-6 h-6 text-[#CFFF16]" />
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-bold text-exclu-cloud mb-2">
+                    You're all set to start chatting
+                  </h2>
+                  <p className="text-sm text-exclu-space/80 mb-6 leading-relaxed">
+                    Your chatter account is active. To start managing conversations, a
+                    creator or agency needs to invite you to their team. Once you accept
+                    an invite, your conversations, metrics and earnings will appear here.
+                  </p>
+                  <div className="grid sm:grid-cols-2 gap-3 text-left">
+                    <div className="rounded-xl border border-exclu-arsenic/60 bg-exclu-ink p-4">
+                      <div className="text-[11px] uppercase tracking-wider text-exclu-space/70 mb-1">Step 1</div>
+                      <div className="text-sm font-semibold text-exclu-cloud mb-1">Get invited</div>
+                      <p className="text-xs text-exclu-space/75 leading-relaxed">
+                        Ask the creator or agency you'll work with to send you an invitation
+                        from their Exclu dashboard.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-exclu-arsenic/60 bg-exclu-ink p-4">
+                      <div className="text-[11px] uppercase tracking-wider text-exclu-space/70 mb-1">Step 2</div>
+                      <div className="text-sm font-semibold text-exclu-cloud mb-1">Accept the invite</div>
+                      <p className="text-xs text-exclu-space/75 leading-relaxed">
+                        You'll receive an email with a one-click accept link. After that,
+                        conversations will land in your inbox automatically.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMainView('contracts')}
+                    className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-[#CFFF16] hover:underline"
+                  >
+                    View my contracts
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </section>
             )}
 
             {!metricsLoading && metrics && (() => {
