@@ -93,12 +93,36 @@ function normalizeBrevoDate(raw: string | undefined): string | null {
   return new Date(t).toISOString();
 }
 
+/**
+ * Return true only if the webhook event belongs to a real campaign send
+ * we track in email_campaign_sends. Filters out:
+ *   - Transactional emails (auth, link_content, tip…) — no "campaign" tag.
+ *   - Test sends from the admin UI — tagged "test-send", not "campaign".
+ *   - Brevo's own lifecycle events with no tag at all.
+ *
+ * Without this filter, record_campaign_event parks every transactional
+ * webhook event in email_campaign_events_pending as a phantom race —
+ * they'd never resolve and just pile up until the 24h orphan cutoff.
+ */
+function isCampaignEvent(ev: BrevoEvent): boolean {
+  const raw = ev.tag ?? ev.tags;
+  if (raw == null) return false;
+  const asArray = Array.isArray(raw)
+    ? raw.map((t) => String(t).toLowerCase())
+    : String(raw).toLowerCase().split(",").map((t) => t.trim());
+  return asArray.includes("campaign");
+}
+
 async function processOne(ev: BrevoEvent): Promise<"ok" | "skipped" | "error"> {
   const eventType = mapEvent(ev.event ?? "");
   if (!eventType) return "skipped";
 
   const messageId = (ev["message-id"] ?? ev.message_id ?? "").toString().trim();
   if (!messageId) return "skipped";
+
+  // Gate: only campaign-tagged events become DB writes. Everything else
+  // (transactional, test-sends) is acknowledged to Brevo but discarded.
+  if (!isCampaignEvent(ev)) return "skipped";
 
   const occurredAtIso = normalizeBrevoDate(ev.date);
 
