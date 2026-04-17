@@ -1,6 +1,6 @@
 // supabase/functions/brevo-webhook/index.ts
 //
-// Phase 5 — Brevo transactional webhook receiver.
+// Phase 5 + Phase 6 — Brevo transactional webhook receiver.
 //
 // Brevo POSTs event payloads to a URL we configure in their dashboard:
 //   https://<project>.supabase.co/functions/v1/brevo-webhook?secret=<BREVO_WEBHOOK_SECRET>
@@ -14,13 +14,15 @@
 //            | "blocked" | "spam" | "unsubscribed" | "invalid_email" | ...,
 //     "email": "user@example.com",
 //     "message-id": "<abc@smtp-relay.brevo.com>",   // matches our brevo_message_id
-//     "date": "2026-04-16 14:00:00",
+//     "date": "2026-04-16 14:00:00",                // provider timestamp (UTC)
 //     "tag": "campaign,<slug>",
 //     ...
 //   }
 //
 // Brevo may also POST a batch: { events: [...] } or a single object. We
-// normalize both shapes.
+// normalize both shapes and forward each into record_campaign_event,
+// which will either (a) match a send row and apply the event, or (b)
+// park the event in email_campaign_events_pending for drain retry.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -56,11 +58,6 @@ function mapEvent(brevoEvent: string): string | null {
       return "unsubscribed";
     case "invalid_email":
       return "failed";
-    // Ignore non-terminal / info-only events
-    case "deferred":
-    case "request":
-    case "opened_click_link":
-    case "error":
     default:
       return null;
   }
@@ -77,12 +74,33 @@ interface BrevoEvent {
   [k: string]: unknown;
 }
 
-async function processOne(ev: BrevoEvent): Promise<void> {
+/**
+ * Normalize Brevo's "date" field to an ISO timestamp usable as a dedup key.
+ * Brevo sends "2026-04-16 14:00:00" (UTC, no offset). Date.parse accepts it
+ * on Chrome/Deno but returns NaN on Safari for older strings — so we patch
+ * by replacing the space with 'T' and appending 'Z' when needed.
+ */
+function normalizeBrevoDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+  let isoCandidate = cleaned;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(cleaned)) {
+    isoCandidate = cleaned.replace(" ", "T") + "Z";
+  }
+  const t = Date.parse(isoCandidate);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t).toISOString();
+}
+
+async function processOne(ev: BrevoEvent): Promise<"ok" | "skipped" | "error"> {
   const eventType = mapEvent(ev.event ?? "");
-  if (!eventType) return;
+  if (!eventType) return "skipped";
 
   const messageId = (ev["message-id"] ?? ev.message_id ?? "").toString().trim();
-  if (!messageId) return;
+  if (!messageId) return "skipped";
+
+  const occurredAtIso = normalizeBrevoDate(ev.date);
 
   const { error } = await admin.rpc("record_campaign_event", {
     p_brevo_message_id: messageId,
@@ -91,21 +109,24 @@ async function processOne(ev: BrevoEvent): Promise<void> {
       brevo_event: ev.event,
       email: ev.email,
       date: ev.date,
+      occurred_at: occurredAtIso,     // threaded through for pending dedup key
       tag: ev.tag ?? ev.tags ?? null,
     },
   });
   if (error) {
     console.error("[brevo-webhook] rpc failed for event", ev.event, messageId, error);
+    return "error";
   }
+  return "ok";
 }
 
 serve(async (req: Request) => {
-  // 1. Accept GET for Brevo's "test URL" ping
+  // 1. GET for Brevo's "test URL" ping.
   if (req.method === "GET") {
     return new Response("ok", { status: 200 });
   }
 
-  // 2. Shared-secret auth via query string
+  // 2. Shared-secret auth via query string.
   const url = new URL(req.url);
   const secret = url.searchParams.get("secret") ?? url.searchParams.get("s") ?? "";
   if (!webhookSecret || secret !== webhookSecret) {
@@ -122,7 +143,7 @@ serve(async (req: Request) => {
     });
   }
 
-  // 3. Parse body (single event OR { events: [...] })
+  // 3. Parse body (single event OR { events: [...] }).
   let payload: BrevoEvent | { events: BrevoEvent[] };
   try {
     payload = (await req.json()) as BrevoEvent | { events: BrevoEvent[] };
@@ -138,17 +159,22 @@ serve(async (req: Request) => {
     : [payload as BrevoEvent];
 
   let processed = 0;
+  let skipped = 0;
+  let errored = 0;
   for (const ev of events) {
     try {
-      await processOne(ev);
-      processed++;
+      const outcome = await processOne(ev);
+      if (outcome === "ok") processed++;
+      else if (outcome === "skipped") skipped++;
+      else errored++;
     } catch (err) {
+      errored++;
       console.error("[brevo-webhook] processOne threw", err);
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, received: events.length, processed }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({ ok: true, received: events.length, processed, skipped, errored }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
 });

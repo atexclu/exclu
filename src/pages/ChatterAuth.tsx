@@ -20,6 +20,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
+import { recordMarketingConsent } from '@/lib/recordConsent';
 
 const isValidEmail = (email: string) =>
   /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
@@ -124,6 +125,19 @@ const ChatterAuth = () => {
           }
           throw error;
         }
+
+        // RGPD audit trail — enrich the mailing_contacts row with HTTP
+        // context. Fire-and-forget.
+        void recordMarketingConsent({
+          email,
+          source: 'signup',
+          sourceRef: signUpData?.user?.id ?? null,
+          role: 'chatter',
+          displayName: displayName || null,
+          legalSlug: 'terms',
+          consentText:
+            'By creating an account you agree to the Terms of Service and Privacy Policy, including receiving marketing emails from Exclu.',
+        });
 
         // Phase 2B: if Supabase Auth returned a session, the chatter is
         // logged in immediately (Confirm email = OFF). Navigate straight to

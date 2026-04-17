@@ -1,24 +1,40 @@
 // supabase/functions/_shared/campaign_send.ts
 //
-// Shared helpers for rendering a campaign's HTML before handing it to
-// Brevo's transactional API:
+// Shared helpers for rendering a campaign's HTML + building the Brevo
+// transactional payload with all the deliverability headers mail providers
+// now expect on bulk mail (Gmail Feb 2024 rules, RFC 8058 one-click unsub,
+// Google Postmaster Feedback-ID).
 //
-//   1. Replace `{{ unsubscribe }}` (or `{{unsubscribe}}`) with a per-
-//      recipient HMAC-signed URL pointing at /unsubscribe?t=<token>.
+// Render pipeline:
+//   1. Replace `{{ unsubscribe }}` with a per-recipient HMAC-signed URL
+//      pointing at /unsubscribe?t=<token>.
 //   2. Rewrite every <a href="http..."> to append UTM params tying back
 //      to the campaign (utm_source=email, utm_medium=campaign,
-//      utm_campaign=<slug>). External links only; internal mailto:/tel:/
-//      anchor #fragments are left alone.
-//   3. Replace `{{ email }}` with the recipient's email (optional, for
-//      personalization).
-//   4. Replace `{{ preheader }}` with the campaign's preheader text.
+//      utm_campaign=<slug>). External http(s) links only; mailto:/tel:/
+//      anchor #fragments are left alone, and the unsubscribe URL is
+//      excluded to keep UTM noise out of it.
+//   3. Replace `{{ email }}` with the recipient's email (escaped).
+//   4. Replace `{{ preheader }}` with the campaign's preheader (escaped).
 //
-// All string replacements use global regex (not template literals) so
-// they're safe against malformed `{{` sequences in user-authored HTML.
+// Headers pipeline (buildCampaignHeaders):
+//   - Message-ID: <idempotency_key@exclu.at> — stable across Brevo retries
+//   - List-Id: <slug.campaign.exclu.at> — Gmail groups campaigns by this
+//   - List-Unsubscribe: <https unsub URL>, <mailto:unsubscribe@...>
+//   - List-Unsubscribe-Post: List-Unsubscribe=One-Click (RFC 8058)
+//   - Feedback-ID: <campaign_id>:exclu:campaign:<pool> — Google Postmaster
+//   - Precedence: bulk
+//   - X-Exclu-Idempotency-Key: idempotency_key — visible in Brevo logs
+//     for spot-checking duplicate deliveries across our retries.
 
 import { signUnsubscribeToken } from "./unsubscribe_token.ts";
 
 const SITE_BASE = "https://exclu.at";
+const MAILTO_UNSUBSCRIBE = "unsubscribe@exclu.at";
+const MESSAGE_ID_DOMAIN = "exclu.at";
+
+// ========================================================================
+// HTML render
+// ========================================================================
 
 export interface CampaignRenderInput {
   html: string;
@@ -28,41 +44,44 @@ export interface CampaignRenderInput {
   unsubscribeSecret: string;
 }
 
-export async function renderCampaignHtml(input: CampaignRenderInput): Promise<string> {
+export interface CampaignRenderOutput {
+  html: string;
+  unsubscribeUrl: string;
+}
+
+export async function renderCampaignHtml(
+  input: CampaignRenderInput,
+): Promise<CampaignRenderOutput> {
   const { html, email, campaignSlug, preheader, unsubscribeSecret } = input;
 
-  // 1. Unsub token
   const token = await signUnsubscribeToken(email, unsubscribeSecret);
-  const unsubUrl = `${SITE_BASE}/unsubscribe?t=${token}`;
+  const unsubscribeUrl = `${SITE_BASE}/unsubscribe?t=${token}`;
 
-  // 2. UTM injection
-  const slug = (campaignSlug || "exclu").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 64);
+  const slug = slugifyForUtm(campaignSlug || "exclu");
   const utmParams = `utm_source=email&utm_medium=campaign&utm_campaign=${encodeURIComponent(slug)}`;
 
   let rendered = html;
 
-  // Replace placeholders first so injected URLs don't get re-processed by UTM pass.
-  rendered = rendered.replace(/\{\{\s*unsubscribe\s*\}\}/gi, unsubUrl);
+  // Placeholders first so injected URLs are not re-processed by UTM pass.
+  rendered = rendered.replace(/\{\{\s*unsubscribe\s*\}\}/gi, unsubscribeUrl);
   rendered = rendered.replace(/\{\{\s*email\s*\}\}/gi, escapeHtml(email));
   if (preheader !== undefined && preheader !== null) {
     rendered = rendered.replace(/\{\{\s*preheader\s*\}\}/gi, escapeHtml(preheader));
   }
 
-  // 3. UTM pass — append utm params to every absolute http(s) href.
-  // Skip mailto:, tel:, fragment (#), and already-unsubscribe links (the
-  // unsub URL goes straight to our page, no UTM noise there).
+  // Append UTM params to every absolute http(s) href. Skip mailto:/tel:/
+  // fragments and the unsub URL (which goes to our page; UTM is noise there).
   rendered = rendered.replace(
     /href="(https?:\/\/[^"]+)"/gi,
     (match, url: string) => {
       if (url.startsWith(`${SITE_BASE}/unsubscribe`)) return match;
-      const separator = url.includes("?") ? "&" : "?";
-      // Don't double-inject if utm_source is already present.
       if (/[?&]utm_source=/.test(url)) return match;
+      const separator = url.includes("?") ? "&" : "?";
       return `href="${url}${separator}${utmParams}"`;
     },
   );
 
-  return rendered;
+  return { html: rendered, unsubscribeUrl };
 }
 
 function escapeHtml(s: string): string {
@@ -72,6 +91,70 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+export function slugifyForUtm(s: string): string {
+  return (s || "campaign").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 64);
+}
+
+// ========================================================================
+// Deliverability headers
+// ========================================================================
+
+export interface CampaignHeadersInput {
+  idempotencyKey: string;       // UUID from email_campaign_sends.idempotency_key
+  campaignId: string;           // email_campaigns.id
+  campaignSlug: string;         // already slugified (slugifyForUtm)
+  unsubscribeUrl: string;       // from renderCampaignHtml
+  pool?: string;                // 'marketing' | 'tx' — defaults to 'campaign'
+}
+
+/**
+ * Build the RFC-822 + deliverability headers for a CAMPAIGN (bulk) send.
+ * For transactional sends, use buildTransactionalHeaders() instead — it
+ * omits Precedence: bulk and the campaign-specific List-Id.
+ */
+export function buildCampaignHeaders(input: CampaignHeadersInput): Record<string, string> {
+  const { idempotencyKey, campaignId, campaignSlug, unsubscribeUrl, pool = "campaign" } = input;
+
+  return {
+    // RFC 5322 Message-ID. Overriding Brevo's auto-generated value lets us
+    // correlate logs across our DB + Brevo + any bounce report.
+    "Message-ID": `<${idempotencyKey}@${MESSAGE_ID_DOMAIN}>`,
+    // Gmail groups threads by List-Id. One per campaign keeps threading sane.
+    "List-Id": `<${campaignSlug}.campaign.${MESSAGE_ID_DOMAIN}>`,
+    // RFC 2369 + RFC 8058 one-click unsubscribe.
+    "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:${MAILTO_UNSUBSCRIBE}?subject=unsub-${idempotencyKey}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    // Google Postmaster Tools format: <id>:<domain>:<pool>:<ipid>.
+    // The <ipid> slot is Brevo's shared pool; leaving it stable across sends
+    // so Postmaster can attribute reputation cleanly per campaign.
+    "Feedback-ID": `${campaignId}:exclu:${pool}:brevo`,
+    "Precedence": "bulk",
+    "X-Exclu-Idempotency-Key": idempotencyKey,
+    "X-Exclu-Campaign-Id": campaignId,
+  };
+}
+
+/**
+ * Headers for a TRANSACTIONAL send (password reset, receipts, content
+ * access, etc). Intentionally lighter than campaign headers:
+ *   - No List-Id (single transactional stream, not a newsletter).
+ *   - No Precedence: bulk (mailers treat transactional differently).
+ *   - No List-Unsubscribe (transactional = no opt-out; user isn't on a list).
+ *   - Message-ID + Feedback-ID still set for traceability.
+ */
+export function buildTransactionalHeaders(input: {
+  idempotencyKey: string;
+  entityKind: string;           // 'purchase' | 'tip' | 'auth' | ...
+  entityId: string;
+}): Record<string, string> {
+  return {
+    "Message-ID": `<${input.idempotencyKey}@${MESSAGE_ID_DOMAIN}>`,
+    "Feedback-ID": `${input.entityKind}:exclu:tx:brevo`,
+    "X-Exclu-Idempotency-Key": input.idempotencyKey,
+    "X-Exclu-Entity": `${input.entityKind}:${input.entityId}`,
+  };
 }
 
 // ========================================================================

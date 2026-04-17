@@ -1,4 +1,17 @@
 import { supabase } from "@/lib/supabaseClient";
+import type { LintResult } from "@/lib/emailLint";
+
+/**
+ * Thrown when the server-side linter rejects a template upsert. The UI
+ * catches it specifically to display the structured issue list instead
+ * of a generic error toast.
+ */
+export class LintError extends Error {
+  constructor(public lint: LintResult) {
+    super("lint_failed");
+    this.name = "LintError";
+  }
+}
 
 async function call<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const { data: session } = await supabase.auth.getSession();
@@ -18,6 +31,9 @@ async function call<T>(action: string, body: Record<string, unknown> = {}): Prom
   );
   const json = await res.json().catch(() => ({ error: "invalid response" }));
   if (!res.ok) {
+    if (res.status === 422 && json?.error === "lint_failed" && json?.lint) {
+      throw new LintError(json.lint as LintResult);
+    }
     const msg = json.detail ? `${json.error}: ${json.detail}` : json.error;
     throw new Error(msg ?? `admin-email-templates ${action} failed (${res.status})`);
   }
@@ -58,7 +74,7 @@ export const adminEmails = {
   list: () => call<{ templates: EmailTemplateListRow[] }>("list"),
   get: (slug: string) => call<{ template: EmailTemplateRow }>("get", { slug }),
   upsert: (payload: Partial<EmailTemplateRow> & { slug: string; name: string; subject: string; html_body: string }) =>
-    call<{ template: EmailTemplateRow }>("upsert", { payload }),
+    call<{ template: EmailTemplateRow; lint?: LintResult }>("upsert", { payload }),
   versions: (slug: string) => call<{ versions: EmailTemplateVersion[] }>("versions", { slug }),
   restore: (version_id: string) => call<{ template: EmailTemplateRow }>("restore", { version_id }),
 };

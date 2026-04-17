@@ -2,9 +2,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { lintEmail } from "../_shared/email_lint.ts";
 
 interface RequestBody {
-  action: "list" | "get" | "upsert" | "versions" | "restore";
+  action: "list" | "get" | "upsert" | "versions" | "restore" | "lint";
   slug?: string;
   payload?: {
     slug: string;
@@ -17,6 +18,8 @@ interface RequestBody {
     sample_data?: Record<string, unknown>;
   };
   version_id?: string;
+  /** If true on upsert, warnings alone do not block the save. Default true — errors always block. */
+  accept_warnings?: boolean;
 }
 
 /**
@@ -114,6 +117,23 @@ serve(async (req) => {
         if (!p.name) throw new HttpError(400, "payload.name is required");
         if (!p.subject) throw new HttpError(400, "payload.subject is required");
         if (!p.html_body) throw new HttpError(400, "payload.html_body is required");
+
+        // Lint pass. 'error' severity blocks the save; 'warning' + 'info'
+        // are returned alongside the saved row so the UI can surface them.
+        const lint = lintEmail({
+          subject: p.subject,
+          html: p.html_body,
+          declaredVariables: (p.variables as Array<{ key: string }> | undefined) ?? [],
+          category: p.category ?? "transactional",
+        });
+        if (lint.hasErrors) {
+          return json(
+            { error: "lint_failed", lint },
+            422,
+            corsHeaders,
+          );
+        }
+
         const { data, error } = await svc
           .from("email_templates")
           .upsert(
@@ -133,7 +153,18 @@ serve(async (req) => {
           .select()
           .single();
         if (error) throw error;
-        return json({ template: data }, 200, corsHeaders);
+        return json({ template: data, lint }, 200, corsHeaders);
+      }
+      case "lint": {
+        if (!body.payload) throw new HttpError(400, "payload is required");
+        const p = body.payload;
+        const result = lintEmail({
+          subject: p.subject ?? "",
+          html: p.html_body ?? "",
+          declaredVariables: (p.variables as Array<{ key: string }> | undefined) ?? [],
+          category: p.category ?? "transactional",
+        });
+        return json({ lint: result }, 200, corsHeaders);
       }
       case "versions": {
         if (!body.slug) throw new HttpError(400, "slug is required");

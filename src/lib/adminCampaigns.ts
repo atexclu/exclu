@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
+import { LintError } from "@/lib/adminEmails";
+import type { LintResult } from "@/lib/emailLint";
 
 async function call<T>(body: Record<string, unknown>): Promise<T> {
   const { data: session } = await supabase.auth.getSession();
@@ -18,9 +20,13 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
   );
   const json = (await res.json().catch(() => ({ error: "invalid_response" }))) as
     | T
-    | { error: string };
+    | { error: string; lint?: LintResult };
   if (!res.ok) {
-    const err = (json as { error?: string }).error ?? `request failed (${res.status})`;
+    const body = json as { error?: string; lint?: LintResult };
+    if (res.status === 422 && body.error === "lint_failed" && body.lint) {
+      throw new LintError(body.lint);
+    }
+    const err = body.error ?? `request failed (${res.status})`;
     throw new Error(err);
   }
   return json as T;

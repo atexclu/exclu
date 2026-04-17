@@ -11,9 +11,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
+import { recordMarketingConsent } from '@/lib/recordConsent';
 
 const isValidEmail = (email: string) =>
   /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
+
+// Exact disclosure text shown next to the signup submit button (kept in
+// sync with the hint copy in the signup form). Persisted verbatim with
+// every consent grant so a future CNIL review can replay what the user
+// actually agreed to at signup time.
+const TERMS_CHECKBOX_COPY =
+  'By creating an account you agree to the Terms of Service and Privacy Policy, including receiving marketing emails from Exclu.';
 
 const Auth = () => {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset' | 'update-password'>('signup');
@@ -178,6 +186,19 @@ const Auth = () => {
 
           throw error;
         }
+
+        // RGPD audit trail — enrich the mailing_contacts row the DB
+        // trigger just created with IP / UA / URL / legal version id
+        // so we can defend the opt-in if a CNIL complaint ever lands.
+        // Fire-and-forget: never block signup on telemetry.
+        void recordMarketingConsent({
+          email,
+          source: 'signup',
+          sourceRef: signUpData?.user?.id ?? null,
+          role: accountType === 'creator' ? 'creator' : 'fan',
+          legalSlug: 'terms',
+          consentText: TERMS_CHECKBOX_COPY,
+        });
 
         // Phase 2B: if Supabase Auth returned a session, the user is
         // logged in immediately (happens when Confirm email = OFF in the

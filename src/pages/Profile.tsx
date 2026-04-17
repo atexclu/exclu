@@ -260,7 +260,26 @@ const Profile = () => {
     setMarketingOptedIn(next);
     setIsSavingMarketing(true);
 
-    const { error } = await supabase.rpc('set_mailing_opt_in', { p_opted_in: next });
+    // Resolve the current marketing_consent legal document id so the
+    // consent row is tied to whatever wording was live at toggle time.
+    // Failure is non-fatal — the RPC accepts null.
+    let legalVersionId: string | null = null;
+    try {
+      const { data } = await supabase.rpc('current_legal_version', { p_slug: 'marketing_consent' });
+      if (typeof data === 'string') legalVersionId = data;
+    } catch (err) {
+      console.warn('[Profile] current_legal_version lookup failed (non-fatal)', err);
+    }
+
+    const { error } = await supabase.rpc('set_mailing_opt_in', {
+      p_opted_in: next,
+      p_consent_url: typeof window !== 'undefined' ? window.location.href : null,
+      p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      p_consent_text: next
+        ? 'Toggled marketing opt-in ON from /app/profile settings.'
+        : 'Toggled marketing opt-out from /app/profile settings.',
+      p_legal_version_id: legalVersionId,
+    });
 
     setIsSavingMarketing(false);
     if (error) {

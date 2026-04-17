@@ -12,7 +12,7 @@ function EditorFallback() {
     </div>
   );
 }
-import { adminEmails, type EmailTemplateRow } from "@/lib/adminEmails";
+import { adminEmails, LintError, type EmailTemplateRow } from "@/lib/adminEmails";
 import { renderEmailTemplate } from "@/lib/renderEmailTemplate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,8 @@ import {
   extractPlainText,
   type TextBlock,
 } from "@/lib/emailTextBlocks";
+import { lintEmail, type LintResult } from "@/lib/emailLint";
+import { EmailLintPanel } from "@/components/admin/EmailLintPanel";
 
 interface Draft {
   id?: string;
@@ -64,6 +66,7 @@ export default function AdminEmailTemplateEdit() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"content" | "html" | "vars">("content");
+  const [serverLint, setServerLint] = useState<LintResult | null>(null);
 
   useEffect(() => {
     if (data?.template) setDraft(toDraft(data.template));
@@ -90,13 +93,39 @@ export default function AdminEmailTemplateEdit() {
         sample_data: draft.sample_data,
       });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       setSaveError(null);
+      // Keep the server's lint result pinned so warnings shown at save
+      // time remain visible until the admin edits again.
+      setServerLint(res.lint ?? null);
       qc.invalidateQueries({ queryKey: ["admin-email-template", slug] });
       qc.invalidateQueries({ queryKey: ["admin-email-templates"] });
     },
-    onError: (err: Error) => setSaveError(err.message),
+    onError: (err: Error) => {
+      if (err instanceof LintError) {
+        setServerLint(err.lint);
+        setSaveError("Fix the errors below before saving.");
+      } else {
+        setSaveError(err.message);
+      }
+    },
   });
+
+  // Clear pinned server lint result once the admin resumes editing, so
+  // the panel reflects the live state of the document again.
+  useEffect(() => {
+    setServerLint(null);
+  }, [draft?.subject, draft?.html_body, draft?.variables, draft?.category]);
+
+  const liveLint = draft
+    ? lintEmail({
+        subject: draft.subject,
+        html: draft.html_body,
+        declaredVariables: draft.variables,
+        category: draft.category,
+      })
+    : null;
+  const saveBlocked = liveLint?.hasErrors ?? false;
 
   if (isLoading || !draft) {
     return <div className="text-sm text-muted-foreground">Loading template…</div>;
@@ -248,9 +277,22 @@ export default function AdminEmailTemplateEdit() {
             </div>
           )}
 
+          {/* Deliverability + quality lint feedback */}
+          <EmailLintPanel
+            subject={draft.subject}
+            html={draft.html_body}
+            category={draft.category}
+            declaredVariables={draft.variables}
+            overrideResult={serverLint}
+          />
+
           {/* Desktop-only inline Save button */}
           <div className="hidden lg:flex items-center gap-2">
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            <Button
+              onClick={() => save.mutate()}
+              disabled={save.isPending || saveBlocked}
+              title={saveBlocked ? "Fix the errors in the lint panel before saving." : undefined}
+            >
               {save.isPending ? "Saving…" : "Save"}
             </Button>
             {saveError && (
@@ -281,10 +323,10 @@ export default function AdminEmailTemplateEdit() {
         <div className="mx-auto flex max-w-6xl items-center gap-2">
           <Button
             onClick={() => save.mutate()}
-            disabled={save.isPending}
+            disabled={save.isPending || saveBlocked}
             className="flex-1"
           >
-            {save.isPending ? "Saving…" : "Save template"}
+            {save.isPending ? "Saving…" : saveBlocked ? "Fix lint errors" : "Save template"}
           </Button>
           {saveError && (
             <span className="text-[11px] text-destructive line-clamp-2 max-w-[40%]">

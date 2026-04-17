@@ -24,9 +24,11 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCors, jsonError, jsonOk } from "../_shared/cors.ts";
 import {
+  buildCampaignHeaders,
   renderCampaignHtml,
   sendTransactionalEmail,
 } from "../_shared/campaign_send.ts";
+import { lintEmail } from "../_shared/email_lint.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY")!;
@@ -194,6 +196,23 @@ async function handleUpsertCampaign(
     return jsonError("campaign_preheader_too_long", 400, cors);
   }
 
+  // Lint pass — campaign category enforces the {{ unsubscribe }} placeholder,
+  // the subject length limit, HTML size, tag balance, image alt, relative
+  // hrefs. hasErrors blocks the save; warnings + info ride along in the
+  // response so the UI can surface them.
+  const lint = lintEmail({
+    subject,
+    html,
+    declaredVariables: [],
+    category: "campaign",
+  });
+  if (lint.hasErrors) {
+    return new Response(JSON.stringify({ ok: false, error: "lint_failed", lint }), {
+      status: 422,
+      headers: { ...cors, "content-type": "application/json" },
+    });
+  }
+
   // Resolve which rules get persisted. If the admin picked a saved segment,
   // clear resolved_rules so start_campaign always reads the fresh segment
   // definition. If they typed inline rules, snapshot them onto the campaign
@@ -276,12 +295,25 @@ async function handleTestSend(
     .maybeSingle();
   if (error || !campaign) return jsonError("campaign_not_found", 404, cors);
 
-  const renderedHtml = await renderCampaignHtml({
+  const slug = slugify(campaign.tag ?? campaign.name ?? "test");
+  const rendered = await renderCampaignHtml({
     html: campaign.html_content,
     email: toEmail,
-    campaignSlug: slugify(campaign.tag ?? campaign.name ?? "test"),
+    campaignSlug: slug,
     preheader: campaign.preheader ?? null,
     unsubscribeSecret: unsubSecret,
+  });
+
+  // Test sends get the same deliverability headers the real send would
+  // use, so the admin can inspect List-Unsubscribe / Feedback-ID /
+  // Message-ID in their own inbox.
+  const testIdempotencyKey = crypto.randomUUID();
+  const headers = buildCampaignHeaders({
+    idempotencyKey: testIdempotencyKey,
+    campaignId: campaign.id,
+    campaignSlug: slug,
+    unsubscribeUrl: rendered.unsubscribeUrl,
+    pool: "marketing",
   });
 
   const result = await sendTransactionalEmail({
@@ -291,8 +323,9 @@ async function handleTestSend(
     replyToEmail: campaignReplyTo || undefined,
     to: { email: toEmail },
     subject: `[TEST] ${campaign.subject}`,
-    htmlContent: renderedHtml,
-    tags: ["test-send", slugify(campaign.tag ?? campaign.name ?? "test")],
+    htmlContent: rendered.html,
+    tags: ["test-send", slug],
+    headers,
   });
 
   if (!result.ok) {

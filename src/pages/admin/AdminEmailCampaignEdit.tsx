@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useDebounce } from "use-debounce";
 import { adminCampaigns, type Campaign, type SegmentRules } from "@/lib/adminCampaigns";
+import { LintError } from "@/lib/adminEmails";
+import { lintEmail, type LintResult } from "@/lib/emailLint";
+import { EmailLintPanel } from "@/components/admin/EmailLintPanel";
 import {
   renderSimpleTemplate,
   parseSimpleContent,
@@ -174,9 +177,29 @@ export default function AdminEmailCampaignEdit() {
   // Validation per step
   const step1Valid = form.name.trim().length > 0 && form.subject.trim().length > 0;
   const step2Valid = hasAnyFilterValue(form.rules);
+  // Live lint feedback for the campaign HTML. Server re-runs the same
+  // rules on save; this is just for instant UI + blocking the launch
+  // button when the body would be rejected.
+  const liveLint = useMemo<LintResult>(
+    () =>
+      lintEmail({
+        subject: form.subject,
+        html: form.htmlContent,
+        declaredVariables: [],
+        category: "campaign",
+      }),
+    [form.subject, form.htmlContent],
+  );
   const step3Valid =
     form.htmlContent.trim().length > 0 &&
-    (form.contentMode === "html" || form.simpleContent.headline.trim().length > 0);
+    (form.contentMode === "html" || form.simpleContent.headline.trim().length > 0) &&
+    !liveLint.hasErrors;
+
+  const [serverLint, setServerLint] = useState<LintResult | null>(null);
+  // Drop the pinned server result as soon as the admin resumes editing.
+  useEffect(() => {
+    setServerLint(null);
+  }, [form.subject, form.htmlContent]);
 
   // Save mutation — invoked both by auto-save and manual save
   const [lastSavedKey, setLastSavedKey] = useState<string>("");
@@ -204,7 +227,13 @@ export default function AdminEmailCampaignEdit() {
       setLoaded(campaign);
     },
     onError: (err: Error) => {
-      toast.error(err.message);
+      if (err instanceof LintError) {
+        setServerLint(err.lint);
+        const firstError = err.lint.issues.find((i) => i.severity === "error");
+        toast.error(firstError?.message ?? "Campaign rejected by the linter.");
+      } else {
+        toast.error(err.message);
+      }
     },
   });
 
@@ -388,6 +417,8 @@ export default function AdminEmailCampaignEdit() {
           setForm={setForm}
           canContinue={step3Valid}
           onContinue={() => completeAndAdvance(3)}
+          liveLint={liveLint}
+          serverLint={serverLint}
         />
       </StepCard>
 
@@ -717,11 +748,15 @@ function StepContent({
   setForm,
   canContinue,
   onContinue,
+  liveLint,
+  serverLint,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   canContinue: boolean;
   onContinue: () => void;
+  liveLint: LintResult;
+  serverLint: LintResult | null;
 }) {
   const toggleMode = () => {
     if (form.contentMode === "simple") {
@@ -883,7 +918,22 @@ function StepContent({
         </div>
       </div>
 
-      <div className="flex justify-end pt-3">
+      <EmailLintPanel
+        subject={form.subject}
+        html={form.htmlContent}
+        category="campaign"
+        declaredVariables={[]}
+        overrideResult={serverLint ?? undefined}
+      />
+
+      <div className="flex items-center justify-between pt-3 gap-3">
+        {liveLint.hasErrors ? (
+          <span className="text-[11px] text-red-500">
+            Fix the errors above before continuing.
+          </span>
+        ) : (
+          <span />
+        )}
         <Button variant="hero" size="lg" onClick={onContinue} disabled={!canContinue}>
           Continue
           <ChevronDown className="w-4 h-4 ml-2" />
