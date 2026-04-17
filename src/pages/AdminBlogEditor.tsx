@@ -147,6 +147,12 @@ function friendlyBlogSaveError(raw: string | undefined | null): string {
   if (msg.includes('failed to fetch') || msg.includes('network')) {
     return 'Network problem. Check your connection and try again.';
   }
+  if (msg.includes('inline base64 images')) {
+    return 'Article contains images pasted as base64. Re-paste the content, or remove the images and upload them via the image button.';
+  }
+  if (msg.includes('limit 2 mb') || msg.includes('limit 3 mb')) {
+    return raw || 'Article is too large. Shorten it or remove pasted inline content.';
+  }
   if (msg.includes('title') && msg.includes('required')) {
     return 'Article title is required.';
   }
@@ -316,6 +322,56 @@ async function uploadBlogImage(file: File): Promise<string | null> {
   return urlData.publicUrl;
 }
 
+// Converts a `data:image/...;base64,...` URI to a File so uploadBlogImage can
+// push it to storage. Pasting HTML from Google Docs / Word / Medium often
+// inlines images as base64 — those would otherwise bloat content_html by
+// several MB per image and time out the DB insert.
+function dataUriToFile(dataUri: string, idx: number): File | null {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUri);
+  if (!match) return null;
+  const mime = match[1];
+  const b64 = match[2];
+  try {
+    const bin = atob(b64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    const ext = mime.split('/')[1]?.split('+')[0] || 'png';
+    return new File([bytes], `pasted-${Date.now()}-${idx}.${ext}`, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scans pasted HTML for inline base64 `<img>` tags, uploads each to the
+ * blog-images bucket, and returns the HTML with URLs swapped in. If an upload
+ * fails, that img is removed rather than kept as base64 — keeping base64 in
+ * content_html is what originally triggered the DB statement_timeout.
+ */
+async function stripBase64ImagesFromHtml(html: string): Promise<string> {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const imgs = Array.from(doc.querySelectorAll('img')).filter((img) =>
+    (img.getAttribute('src') || '').startsWith('data:image/'),
+  );
+  if (imgs.length === 0) return doc.body.innerHTML;
+
+  const results = await Promise.all(
+    imgs.map(async (img, idx) => {
+      const src = img.getAttribute('src') || '';
+      const file = dataUriToFile(src, idx);
+      if (!file) return { img, url: null };
+      const url = await uploadBlogImage(file);
+      return { img, url };
+    }),
+  );
+  results.forEach(({ img, url }) => {
+    if (url) img.setAttribute('src', url);
+    else img.remove();
+  });
+  return doc.body.innerHTML;
+}
+
 // ─── Enhanced Tiptap Editor ──────────────────────────────────────────
 interface TiptapEditorProps {
   content: string;
@@ -340,7 +396,10 @@ function TiptapEditor({ content, onChange, onJsonChange }: TiptapEditorProps) {
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       UnderlineExt,
       ImageExt.configure({
-        allowBase64: true,
+        // Base64 images bloat content_html (can easily exceed 2 MB and
+        // trigger DB statement_timeout on save). Paste handlers below
+        // intercept any inline base64 and upload to storage instead.
+        allowBase64: false,
         inline: true,
         HTMLAttributes: { class: 'rounded-xl max-w-full my-4' },
       }),
@@ -419,6 +478,7 @@ function TiptapEditor({ content, onChange, onJsonChange }: TiptapEditorProps) {
         return false;
       },
       handlePaste: (_view, event) => {
+        // Case 1: user pasted an actual image file (screenshot, file-copy).
         const files = event.clipboardData?.files;
         if (files && files.length > 0) {
           const file = files[0];
@@ -432,6 +492,29 @@ function TiptapEditor({ content, onChange, onJsonChange }: TiptapEditorProps) {
             return true;
           }
         }
+
+        // Case 2: user pasted rich HTML containing inline base64 images
+        // (happens with Google Docs / Word / Medium). We intercept, upload
+        // each image to storage, and insert the cleaned HTML so content_html
+        // never contains data: URIs.
+        const html = event.clipboardData?.getData('text/html') || '';
+        if (html && /<img[^>]+src=["']data:image\//i.test(html)) {
+          event.preventDefault();
+          const toastId = toast.loading('Uploading pasted images…');
+          stripBase64ImagesFromHtml(html)
+            .then((cleaned) => {
+              if (editor) {
+                editor.chain().focus().insertContent(cleaned).run();
+              }
+              toast.success('Images uploaded and inserted', { id: toastId });
+            })
+            .catch((err) => {
+              console.error('[blog-editor] base64 paste cleanup failed', err);
+              toast.error('Could not upload pasted images — paste as plain text and add images manually.', { id: toastId });
+            });
+          return true;
+        }
+
         return false;
       },
     },
@@ -819,6 +902,24 @@ const AdminBlogEditor = () => {
         console.warn('[AdminBlogEditor] Pre-submit validation errors:', errors);
         toast.info(`${errors.length - 1} more issue(s) — open DevTools console for the full list`, { duration: 6000 });
       }
+      return;
+    }
+
+    // Client-side size guard — mirrors the edge function limits so the user
+    // sees the error instantly instead of waiting for the server round-trip.
+    const htmlBytes = new TextEncoder().encode(article.content_html || '').length;
+    if (htmlBytes > 2 * 1024 * 1024) {
+      toast.error(
+        `Article HTML is ${(htmlBytes / 1024 / 1024).toFixed(1)} MB (limit 2 MB). Likely pasted inline images — re-paste or upload separately.`,
+        { duration: 10000 },
+      );
+      return;
+    }
+    if (/<img[^>]+src=["']data:image\//i.test(article.content_html || '')) {
+      toast.error(
+        'Article contains inline base64 images. Delete them and upload via the image button.',
+        { duration: 10000 },
+      );
       return;
     }
 

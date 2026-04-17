@@ -49,6 +49,63 @@ function sanitizeString(val: unknown, maxLen: number): string | null {
   return trimmed.slice(0, maxLen);
 }
 
+// Hard upper bounds on the bytes we accept for a single article. Well above
+// any legitimate long-form blog post — the only realistic way to hit these is
+// to paste HTML with inline base64 images. We reject early with a clear
+// message so the DB timeout path (which was the original bug) is structurally
+// unreachable.
+const MAX_CONTENT_HTML_BYTES = 2 * 1024 * 1024;   // 2 MB
+const MAX_CONTENT_JSON_BYTES = 3 * 1024 * 1024;   // 3 MB (Tiptap JSON is ~1.5× HTML)
+const BASE64_IMG_RE = /<img[^>]+src=["']data:image\//i;
+
+function byteLength(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  const s = typeof v === 'string' ? v : JSON.stringify(v);
+  return new TextEncoder().encode(s).length;
+}
+
+/**
+ * Returns an error Response if the article payload is too big or contains
+ * inline base64 images (which should have been uploaded via the editor
+ * instead). Returns null if the payload is fine.
+ */
+function rejectOversizedContent(
+  body: { content_html?: unknown; content?: unknown },
+  corsHeaders: Record<string, string>,
+): Response | null {
+  if (typeof body.content_html === 'string' && BASE64_IMG_RE.test(body.content_html)) {
+    return new Response(
+      JSON.stringify({
+        error:
+          'Article content contains inline base64 images. These bloat storage and cause timeouts — paste images via the editor image button, or drop the image file directly so it gets uploaded to storage.',
+      }),
+      { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  const htmlBytes = byteLength(body.content_html);
+  if (htmlBytes > MAX_CONTENT_HTML_BYTES) {
+    return new Response(
+      JSON.stringify({
+        error: `Article HTML is ${(htmlBytes / 1024 / 1024).toFixed(1)} MB (limit 2 MB). Shorten the article or remove pasted inline content.`,
+      }),
+      { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  const jsonBytes = byteLength(body.content);
+  if (jsonBytes > MAX_CONTENT_JSON_BYTES) {
+    return new Response(
+      JSON.stringify({
+        error: `Article structured content is ${(jsonBytes / 1024 / 1024).toFixed(1)} MB (limit 3 MB). Shorten the article or remove pasted inline content.`,
+      }),
+      { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  return null;
+}
+
 async function verifyAdmin(req: Request, corsHeaders: Record<string, string>): Promise<Response | null> {
   const rawToken = req.headers.get('x-supabase-auth') ?? '';
   const token = rawToken.replace(/^Bearer\s+/i, '').trim();
@@ -165,22 +222,17 @@ serve(async (req) => {
         });
       }
 
-      const { data: existing } = await supabaseAdmin
-        .from('blog_articles')
-        .select('id')
-        .eq('slug', slug)
-        .maybeSingle();
-
-      if (existing) {
-        return new Response(JSON.stringify({ error: 'Slug already exists' }), {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+      const oversized = rejectOversizedContent({ content_html, content }, corsHeaders);
+      if (oversized) return oversized;
 
       const readingTime = content_html ? estimateReadingTime(content_html) : 0;
 
-      const insertData: Record<string, unknown> = {
+      // All writes go through an RPC function that runs with
+      // statement_timeout=0 (see migration 145). A plain PostgREST INSERT on
+      // blog_articles was hitting the role-level statement_timeout when
+      // content_html was large (long guides, pasted content), causing
+      // "canceling statement due to statement timeout" on Publish.
+      const rpcPayload: Record<string, unknown> = {
         title,
         slug,
         excerpt: excerpt || null,
@@ -202,24 +254,26 @@ serve(async (req) => {
       };
 
       if (articleStatus === 'published') {
-        insertData.published_at = published_at || new Date().toISOString();
+        rpcPayload.published_at = published_at || new Date().toISOString();
       }
       if (articleStatus === 'scheduled' && scheduled_at) {
-        insertData.scheduled_at = scheduled_at;
+        rpcPayload.scheduled_at = scheduled_at;
       }
 
-      const { data: article, error } = await supabaseAdmin
-        .from('blog_articles')
-        .insert(insertData)
-        .select()
-        .single();
+      const { data: article, error } = await supabaseAdmin.rpc('admin_create_blog_article', {
+        p_data: rpcPayload,
+      });
 
       if (error) {
         console.error('admin-blog-manage create error', error);
-        return new Response(JSON.stringify({ error: 'Failed to create article: ' + error.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        const isSlugDup = error.code === '23505' || /slug already exists/i.test(error.message || '');
+        return new Response(
+          JSON.stringify({ error: isSlugDup ? 'Slug already exists' : 'Failed to create article: ' + error.message }),
+          {
+            status: isSlugDup ? 409 : 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ article }), {
@@ -240,57 +294,47 @@ serve(async (req) => {
 
       delete updates.action;
 
+      const oversized = rejectOversizedContent(
+        { content_html: updates.content_html, content: updates.content },
+        corsHeaders,
+      );
+      if (oversized) return oversized;
+
       if ('meta_title' in updates) updates.meta_title = sanitizeString(updates.meta_title, 70);
       if ('meta_description' in updates) updates.meta_description = sanitizeString(updates.meta_description, 170);
       if ('focus_keyword' in updates) updates.focus_keyword = sanitizeString(updates.focus_keyword, 100);
       if ('cover_image_alt' in updates) updates.cover_image_alt = sanitizeString(updates.cover_image_alt, 300);
 
-      if (updates.slug) {
-        const { data: existing } = await supabaseAdmin
-          .from('blog_articles')
-          .select('id')
-          .eq('slug', updates.slug)
-          .neq('id', id)
-          .maybeSingle();
-
-        if (existing) {
-          return new Response(JSON.stringify({ error: 'Slug already exists' }), {
-            status: 409,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-      }
-
       if (updates.content_html) {
         updates.reading_time_minutes = estimateReadingTime(updates.content_html);
       }
 
-      if (updates.status === 'published' && !updates.published_at) {
-        const { data: current } = await supabaseAdmin
-          .from('blog_articles')
-          .select('published_at')
-          .eq('id', id)
-          .maybeSingle();
-        if (!current?.published_at) {
-          updates.published_at = new Date().toISOString();
-        }
-      }
-
-      updates.updated_at = new Date().toISOString();
-
-      const { data: article, error } = await supabaseAdmin
-        .from('blog_articles')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+      // Same reasoning as the CREATE path: run via RPC to bypass the
+      // role-level statement_timeout that was canceling large updates. The
+      // RPC also handles slug-uniqueness atomically and auto-stamps
+      // published_at when transitioning to 'published' for the first time.
+      const { data: article, error } = await supabaseAdmin.rpc('admin_update_blog_article', {
+        p_id: id,
+        p_data: updates,
+      });
 
       if (error) {
         console.error('admin-blog-manage update error', error);
-        return new Response(JSON.stringify({ error: 'Failed to update article: ' + error.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        const isSlugDup = error.code === '23505' || /slug already exists/i.test(error.message || '');
+        const isNotFound = error.code === 'P0002' || /not found/i.test(error.message || '');
+        return new Response(
+          JSON.stringify({
+            error: isSlugDup
+              ? 'Slug already exists'
+              : isNotFound
+                ? 'Article not found'
+                : 'Failed to update article: ' + error.message,
+          }),
+          {
+            status: isSlugDup ? 409 : isNotFound ? 404 : 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ article }), {
