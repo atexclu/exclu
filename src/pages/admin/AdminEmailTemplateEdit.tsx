@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 
 const Editor = lazy(() => import("@monaco-editor/react"));
 
@@ -100,6 +101,12 @@ export default function AdminEmailTemplateEdit() {
       setServerLint(res.lint ?? null);
       qc.invalidateQueries({ queryKey: ["admin-email-template", slug] });
       qc.invalidateQueries({ queryKey: ["admin-email-templates"] });
+      const warnCount = res.lint?.issues.filter((i) => i.severity === "warning").length ?? 0;
+      if (warnCount > 0) {
+        toast.success(`Template saved · ${warnCount} warning${warnCount > 1 ? "s" : ""} to review`);
+      } else {
+        toast.success("Template saved");
+      }
     },
     onError: (err: Error) => {
       if (err instanceof LintError) {

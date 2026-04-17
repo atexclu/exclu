@@ -36,7 +36,7 @@ const LIMITS = {
   HTML_BYTES_ERROR: 250_000,
   SUBJECT_CHARS_WARN: 80,
   SUBJECT_CHARS_ERROR: 200,
-  TEXT_IMAGE_RATIO_WARN: 0.4,
+  TEXT_IMAGE_RATIO_WARN: 0.2,
 };
 
 export function lintEmail(input: LintInput): LintResult {
@@ -148,7 +148,8 @@ export function lintEmail(input: LintInput): LintResult {
   }
 
   const textBytes = byteLength(stripHtmlForRatio(html));
-  const ratio = htmlBytes === 0 ? 1 : textBytes / htmlBytes;
+  const htmlBytesForRatio = byteLength(stripStyleAttrs(html));
+  const ratio = htmlBytesForRatio === 0 ? 1 : textBytes / htmlBytesForRatio;
   if (ratio < LIMITS.TEXT_IMAGE_RATIO_WARN) {
     issues.push({
       code: "low_text_ratio",
@@ -195,6 +196,12 @@ function byteLength(s: string): number {
   } catch {
     return s.length;
   }
+}
+
+function stripStyleAttrs(html: string): string {
+  return html
+    .replace(/\sstyle\s*=\s*"[^"]*"/gi, "")
+    .replace(/\sstyle\s*=\s*'[^']*'/gi, "");
 }
 
 function stripHtmlForRatio(html: string): string {

@@ -51,7 +51,11 @@ const LIMITS = {
   HTML_BYTES_ERROR: 250_000,      // refuse to send anything this big
   SUBJECT_CHARS_WARN: 80,
   SUBJECT_CHARS_ERROR: 200,
-  TEXT_IMAGE_RATIO_WARN: 0.4,     // < 40% of non-whitespace bytes are text → likely image-heavy
+  // Ratio denominator strips inline style="..." attrs before measuring so
+  // a minimalist transactional template with lots of inline CSS isn't
+  // wrongly flagged as "image-heavy". 20% is the realistic floor for
+  // well-formed transactional HTML (tables + structure without spam score hit).
+  TEXT_IMAGE_RATIO_WARN: 0.2,
 };
 
 // ========================================================================
@@ -177,8 +181,12 @@ export function lintEmail(input: LintInput): LintResult {
   }
 
   // --- Text/image ratio — heuristic for spam filters ---------------------
+  // Strip inline `style="..."` attributes from the denominator: they bloat
+  // the HTML size without affecting deliverability the way images do, and
+  // pure-transactional tables + buttons often weigh 80%+ in inline CSS.
   const textBytes = byteLength(stripHtmlForRatio(html));
-  const ratio = htmlBytes === 0 ? 1 : textBytes / htmlBytes;
+  const htmlBytesForRatio = byteLength(stripStyleAttrs(html));
+  const ratio = htmlBytesForRatio === 0 ? 1 : textBytes / htmlBytesForRatio;
   if (ratio < LIMITS.TEXT_IMAGE_RATIO_WARN) {
     issues.push({
       code: "low_text_ratio",
@@ -230,6 +238,18 @@ function byteLength(s: string): number {
   } catch {
     return s.length;
   }
+}
+
+/**
+ * Remove inline style attributes so they don't count toward the HTML size
+ * denominator in the text/image ratio check. Inline CSS is normal in
+ * transactional emails and doesn't impact deliverability; the ratio rule
+ * should only flag templates that are genuinely image-heavy vs text-light.
+ */
+function stripStyleAttrs(html: string): string {
+  return html
+    .replace(/\sstyle\s*=\s*"[^"]*"/gi, "")
+    .replace(/\sstyle\s*=\s*'[^']*'/gi, "");
 }
 
 function stripHtmlForRatio(html: string): string {
