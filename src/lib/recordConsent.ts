@@ -48,11 +48,16 @@ const ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/record-conse
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export async function recordMarketingConsent(input: RecordConsentInput): Promise<void> {
+  // Capture the URL SYNCHRONOUSLY before any await — otherwise a
+  // navigate() fired immediately after the caller triggers this
+  // function (e.g. post-signup redirect to /app/profile) would race
+  // the getSession() await and stamp the WRONG URL as the consent
+  // location. RGPD audit evidence needs the real signup URL.
+  const consentUrl = typeof window !== "undefined" ? window.location.href : "";
+
   try {
     const { data: session } = await supabase.auth.getSession();
     const token = session.session?.access_token;
-
-    const consentUrl = typeof window !== "undefined" ? window.location.href : "";
 
     const headers: Record<string, string> = {
       "content-type": "application/json",

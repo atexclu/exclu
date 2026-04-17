@@ -25,7 +25,12 @@ import {
 export const CHECK_SIGNUP_CONFIG = {
   IP_LIMIT: 5,
   IP_WINDOW_SEC: 3600, // 1 hour
-  FP_LIMIT: 3,
+  // 5/day per device fingerprint. Covers the normal 3 account types
+  // (creator + fan + chatter) plus 2 legit retries (mistyped email /
+  // missed confirmation / etc.) before the device is considered abusive.
+  // Lower values block shared household devices and iOS private-mode
+  // users who start a fresh fingerprint each session.
+  FP_LIMIT: 5,
   FP_WINDOW_SEC: 86400, // 1 day
   COOLDOWN_SEC: 300, // 5 min
   RECENT_ATTEMPTS_LIMIT: 20,
