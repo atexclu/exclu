@@ -507,8 +507,8 @@ const FanDashboard = () => {
             />
           </a>
 
-          {/* Nav pills */}
-          <nav className="flex-1 flex items-center justify-center">
+          {/* Nav pills — desktop only; mobile gets the floating bottom bar below */}
+          <nav className="hidden sm:flex flex-1 items-center justify-center">
             <div className="relative flex items-center gap-0.5 sm:gap-1 rounded-2xl bg-muted/50 dark:bg-muted/30 p-1">
               {tabs.map(({ key, label, icon: Icon }) => {
                 const active = activeTab === key;
@@ -612,8 +612,74 @@ const FanDashboard = () => {
         </div>
       </header>
 
+      {/* ── Mobile bottom bar — native-app style, visible under sm only ── */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 sm:hidden border-t border-border/50 bg-card/95 backdrop-blur-xl"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        aria-label="Main navigation"
+      >
+        <div className="flex items-stretch justify-around h-14 max-w-lg mx-auto">
+          {tabs.map(({ key, icon: Icon }) => {
+            const active = activeTab === key;
+            const shortLabel =
+              key === "favorites" ? "Creators" :
+              key === "messages" ? "Chat" :
+              key === "tips" ? "Tips" :
+              key === "requests" ? "Links" : "";
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => (key === "messages" ? handleMessagesTabClick() : setActiveTab(key as any))}
+                className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+                  active ? "text-foreground" : "text-muted-foreground active:text-foreground/80"
+                }`}
+                aria-label={shortLabel}
+                aria-current={active ? "page" : undefined}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="fan-mobile-nav-indicator"
+                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary"
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {key === "messages" && fanUnreadCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-1 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                      {fanUnreadCount > 9 ? "9+" : fanUnreadCount}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium leading-none">{shortLabel}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setActiveTab("settings")}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+              activeTab === "settings" ? "text-foreground" : "text-muted-foreground active:text-foreground/80"
+            }`}
+            aria-label="Profile"
+            aria-current={activeTab === "settings" ? "page" : undefined}
+          >
+            {activeTab === "settings" && (
+              <motion.span
+                layoutId="fan-mobile-nav-indicator"
+                className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            )}
+            <Settings className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Me</span>
+          </button>
+        </div>
+      </nav>
+
       {/* ── Main content ── */}
-      <div className="pt-16 sm:pt-20 flex-1 flex flex-col">
+      <div className="pt-16 sm:pt-20 pb-20 sm:pb-0 flex-1 flex flex-col">
         <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8">
 
           {/* Loading */}
