@@ -163,15 +163,27 @@ export default function AdminEmailCampaignEdit() {
     queryFn: () => adminCampaigns.getCampaign(id!),
     enabled: !isNew,
   });
+  // Ref-gated: we only snapshot form state + collapse sections on the
+  // FIRST time this campaign loads. Subsequent refetches (triggered by
+  // auto-save invalidations) must NOT overwrite what the admin is
+  // currently editing, nor close the step they have open. Without this
+  // guard, every auto-save 1.5s after a keystroke closed the active
+  // section — super disruptive.
+  const initializedCampaignId = useRef<string | null>(null);
   useEffect(() => {
-    if (getData?.campaign) {
-      setForm(campaignToForm(getData.campaign));
-      setLoaded(getData.campaign);
-      setCompletedSteps(new Set([1, 2, 3, 4]));
-      // Do NOT auto-open step 1 — all sections stay collapsed on first
-      // load of an existing campaign. Admin clicks to re-open.
-      setCurrentStep(null);
+    const campaign = getData?.campaign;
+    if (!campaign) return;
+    if (initializedCampaignId.current === campaign.id) {
+      // Already initialized; only refresh the read-only `loaded` ref so
+      // status badges / last_error stay live. Do NOT touch form or UI state.
+      setLoaded(campaign);
+      return;
     }
+    initializedCampaignId.current = campaign.id;
+    setForm(campaignToForm(campaign));
+    setLoaded(campaign);
+    setCompletedSteps(new Set([1, 2, 3, 4]));
+    setCurrentStep(null);
   }, [getData?.campaign]);
 
   // Validation per step
