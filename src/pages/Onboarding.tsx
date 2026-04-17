@@ -746,11 +746,16 @@ const Onboarding = () => {
                 {rawAvatarUrl ? (
                   <div className="space-y-3">
                     <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/90 ring-1 ring-white/10">
-                      <Cropper image={rawAvatarUrl} crop={avatarCrop} zoom={avatarZoom} aspect={1} cropShape="rect" showGrid={false} objectFit="contain" onCropChange={setAvatarCrop} onZoomChange={setAvatarZoom} onCropComplete={onAvatarCropComplete} />
+                      {/* minZoom=0.4 + objectFit="contain" lets landscape photos
+                          dezoom below "fit" so the user can see the full image
+                          letterboxed inside the square crop and pan beyond its
+                          edges — previously minZoom=1 clipped landscapes to the
+                          center square with no way to back out. */}
+                      <Cropper image={rawAvatarUrl} crop={avatarCrop} zoom={avatarZoom} minZoom={0.4} aspect={1} cropShape="rect" showGrid={false} objectFit="contain" restrictPosition={false} onCropChange={setAvatarCrop} onZoomChange={setAvatarZoom} onCropComplete={onAvatarCropComplete} />
                     </div>
                     <div className="flex items-center gap-2 px-1">
                       <ZoomOut className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
-                      <input type="range" min={1} max={3} step={0.02} value={avatarZoom} onChange={(e) => setAvatarZoom(Number(e.target.value))} className="flex-1 accent-primary h-1.5 cursor-pointer" />
+                      <input type="range" min={0.4} max={3} step={0.02} value={avatarZoom} onChange={(e) => setAvatarZoom(Number(e.target.value))} className="flex-1 accent-primary h-1.5 cursor-pointer" />
                       <ZoomIn className="w-3.5 h-3.5 text-white/40 flex-shrink-0" />
                     </div>
                     <div className="flex gap-2">
