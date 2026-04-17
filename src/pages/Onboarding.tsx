@@ -15,6 +15,12 @@ import { User } from '@supabase/supabase-js';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useProfiles } from '@/contexts/ProfileContext';
 import Aurora from '@/components/ui/Aurora';
+import {
+  CROPPER_MAX_SOURCE_DIMENSION,
+  MIN_VALID_CROPPED_BLOB_BYTES,
+  downscaleIfNeeded,
+  getCroppedImg,
+} from '@/lib/imageCrop';
 
 
 const SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
@@ -43,32 +49,6 @@ const SUPPORTED_COUNTRIES: { code: string; label: string }[] = [
   { code: 'MX', label: 'Mexico' },
 ];
 
-async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = reject;
-    image.src = imageSrc;
-  });
-
-  const canvas = document.createElement('canvas');
-  const size = Math.min(pixelCrop.width, 1024);
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(
-    image,
-    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, size, size,
-  );
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Canvas toBlob failed'));
-    }, 'image/jpeg', 0.92);
-  });
-}
 
 const Onboarding = () => {
   const navigate = useNavigate();
@@ -125,8 +105,12 @@ const Onboarding = () => {
     }
     try {
       const converted = await maybeConvertHeic(file);
+      // Pre-downscale huge camera shots (48 MP Android/Samsung) to keep the
+      // Cropper and the export canvas under device GPU texture limits — the
+      // main cause of the "black avatar after Save" bug on low-end Chrome.
+      const normalized = await downscaleIfNeeded(converted, CROPPER_MAX_SOURCE_DIMENSION);
       if (rawAvatarUrl) URL.revokeObjectURL(rawAvatarUrl);
-      const objectUrl = URL.createObjectURL(converted);
+      const objectUrl = URL.createObjectURL(normalized);
       setRawAvatarUrl(objectUrl);
       setAvatarCrop({ x: 0, y: 0 });
       setAvatarZoom(1);
@@ -149,9 +133,14 @@ const Onboarding = () => {
 
     try {
       const croppedBlob = await getCroppedImg(rawAvatarUrl, croppedAvatarAreaPixels);
+      // Sanity check: a suspiciously small cropped blob almost always means
+      // the canvas op produced a black/empty image — reject rather than
+      // upload a broken avatar.
+      if (croppedBlob.size < MIN_VALID_CROPPED_BLOB_BYTES) {
+        throw new Error('cropped_image_too_small');
+      }
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
 
-      // Upload to Supabase storage immediately
       const filePath = `avatars/${currentUser.id}/avatar.jpg`;
       const { error: uploadError } = await supabase.storage
         .from('avatars')
@@ -159,22 +148,38 @@ const Onboarding = () => {
 
       if (uploadError) {
         console.error('Avatar upload error', uploadError);
-        toast.error('Failed to upload profile photo. Please try again.');
+        toast.error(`Upload failed: ${uploadError.message}`);
         return;
       }
 
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      const finalUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      const remoteUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+      // Preview uses a LOCAL blob URL so the user sees their cropped photo
+      // instantly — not dependent on CDN round-trip latency. `avatarUrl` still
+      // holds the remote URL so the final profile save references storage.
+      const localPreview = URL.createObjectURL(croppedFile);
+
+      // Persist avatar_url immediately so a refresh mid-onboarding does not
+      // lose the upload. The rest of the profile fields are saved at submit.
+      const { error: persistError } = await supabase
+        .from('profiles')
+        .upsert({ id: currentUser.id, avatar_url: remoteUrl }, { onConflict: 'id' });
+      if (persistError) {
+        console.error('Avatar persist error', persistError);
+      }
 
       URL.revokeObjectURL(rawAvatarUrl);
-      setAvatarUrl(finalUrl);
-      setAvatarPreview(finalUrl);
+      setAvatarUrl(remoteUrl);
+      setAvatarPreview(localPreview);
       setAvatarFile(null);
       setRawAvatarUrl(null);
       toast.success('Photo uploaded!');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error cropping avatar', err);
-      toast.error('Failed to crop photo.');
+      const msg = err?.message === 'cropped_image_too_small'
+        ? 'This photo could not be processed on your device. Please try a smaller image.'
+        : 'Failed to crop photo. Please try again.';
+      toast.error(msg);
     } finally {
       setIsUploadingAvatar(false);
     }

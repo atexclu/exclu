@@ -5,39 +5,18 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import Cropper, { Area } from 'react-easy-crop';
+import {
+  CROPPER_MAX_SOURCE_DIMENSION,
+  MIN_VALID_CROPPED_BLOB_BYTES,
+  downscaleIfNeeded,
+  getCroppedImg,
+} from '@/lib/imageCrop';
 
 interface PhotoSectionProps {
   avatarUrl: string | null;
   userId: string | null;
   profileTag?: string | null;
   onUpdate: (updates: { avatar_url: string | null }) => void;
-}
-
-async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = reject;
-    image.src = imageSrc;
-  });
-
-  const canvas = document.createElement('canvas');
-  const size = Math.min(pixelCrop.width, 1024);
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(
-    image,
-    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, size, size,
-  );
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error('Canvas toBlob failed'));
-    }, 'image/jpeg', 0.92);
-  });
 }
 
 export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoSectionProps) {
@@ -55,7 +34,7 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
     setCroppedAreaPixels(croppedPixels);
   }, []);
 
-  const handleFileSelect = useCallback((file: File) => {
+  const handleFileSelect = useCallback(async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       toast.error('File size must be less than 5MB');
       return;
@@ -64,11 +43,19 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
       toast.error('Please upload an image file (JPG, PNG, WebP)');
       return;
     }
-    if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
-    const objectUrl = URL.createObjectURL(file);
-    setRawImageUrl(objectUrl);
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
+    try {
+      // Pre-downscale huge camera photos so the Cropper and the export canvas
+      // stay under GPU texture limits on low-end Android / old PC iGPUs.
+      const normalized = await downscaleIfNeeded(file, CROPPER_MAX_SOURCE_DIMENSION);
+      if (rawImageUrl) URL.revokeObjectURL(rawImageUrl);
+      const objectUrl = URL.createObjectURL(normalized);
+      setRawImageUrl(objectUrl);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+    } catch (err) {
+      console.error('Avatar file processing error', err);
+      toast.error('Could not process this image. Try a JPG or PNG instead.');
+    }
   }, [rawImageUrl]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -82,6 +69,9 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
 
     try {
       const croppedBlob = await getCroppedImg(rawImageUrl, croppedAreaPixels);
+      if (croppedBlob.size < MIN_VALID_CROPPED_BLOB_BYTES) {
+        throw new Error('cropped_image_too_small');
+      }
 
       // Instant UI feedback across the app (topbar/switcher/manage cards)
       // before network upload finishes.
@@ -98,7 +88,7 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
 
       if (uploadError) {
         console.error('Avatar upload error', uploadError);
-        toast.error('Failed to upload avatar. Please try again.');
+        toast.error(`Upload failed: ${uploadError.message}`);
         return;
       }
 
@@ -107,12 +97,15 @@ export function PhotoSection({ avatarUrl, userId, profileTag, onUpdate }: PhotoS
 
       URL.revokeObjectURL(rawImageUrl);
       onUpdate({ avatar_url: newAvatarUrl });
-      setPreviewUrl(newAvatarUrl);
+      setPreviewUrl(optimisticPreviewUrl);
       setRawImageUrl(null);
       toast.success('Photo saved!');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error uploading avatar', err);
-      toast.error('Failed to upload avatar.');
+      const msg = err?.message === 'cropped_image_too_small'
+        ? 'This photo could not be processed on your device. Please try a smaller image.'
+        : 'Failed to upload avatar.';
+      toast.error(msg);
     } finally {
       setIsUploading(false);
     }
