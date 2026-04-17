@@ -316,8 +316,11 @@ const Onboarding = () => {
         setMainPlatformUrl(existingSocialLinks._main_platform_url);
       }
 
-      // Redirect to dashboard if onboarding already completed (handle + avatar)
-      if (profile?.handle && fullProfile?.avatar_url) {
+      // Redirect to dashboard only if step 1 was fully submitted (display_name
+      // proves the form was posted). We persist avatar_url on crop confirm so
+      // the photo survives refresh, but we must not treat a mid-step upload as
+      // completed onboarding.
+      if (profile?.handle && profile?.display_name && fullProfile?.avatar_url) {
         navigate('/app');
         return;
       }
