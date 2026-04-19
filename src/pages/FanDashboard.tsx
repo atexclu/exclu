@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera, X as IconX } from 'lucide-react';
+import { FanFeedView } from '@/components/feed/FanFeedView';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -118,7 +119,7 @@ const FanDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { resolvedTheme, setTheme } = useTheme();
-  const validTabs = ['favorites', 'tips', 'requests', 'messages', 'settings'] as const;
+  const validTabs = ['favorites', 'feed', 'tips', 'requests', 'messages', 'settings'] as const;
   const urlTab = searchParams.get('tab') as typeof validTabs[number] | null;
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(
     urlTab && validTabs.includes(urlTab) ? urlTab : 'favorites'
@@ -447,6 +448,7 @@ const FanDashboard = () => {
 
   const tabs = [
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
+    { key: 'feed' as const, label: 'Feed', icon: Compass },
     { key: 'messages' as const, label: 'Messages', icon: MessagesSquare },
     { key: 'tips' as const, label: 'Tips & Gifts', icon: DollarSign },
     { key: 'requests' as const, label: 'Links & Requests', icon: Unlock },
@@ -623,6 +625,7 @@ const FanDashboard = () => {
             const active = activeTab === key;
             const shortLabel =
               key === "favorites" ? "Creators" :
+              key === "feed" ? "Feed" :
               key === "messages" ? "Chat" :
               key === "tips" ? "Tips" :
               key === "requests" ? "Links" : "";
@@ -961,6 +964,19 @@ const FanDashboard = () => {
                     </div>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── FEED TAB ── */}
+            {!isLoading && activeTab === 'feed' && (
+              <motion.div
+                key="feed"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 0.2 }}
+              >
+                <FanFeedView userId={userId} />
               </motion.div>
             )}
 
