@@ -19,6 +19,8 @@ type LibraryAsset = {
   mime_type: string | null;
   previewUrl?: string | null;
   is_public: boolean;
+  feed_caption: string | null;
+  is_feed_preview: boolean;
 };
 
 const ContentLibrary = () => {
@@ -34,6 +36,7 @@ const ContentLibrary = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
   const [isPublic, setIsPublic] = useState(false);
+  const [feedCaption, setFeedCaption] = useState('');
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
   const location = useLocation();
@@ -70,7 +73,7 @@ const ContentLibrary = () => {
 
       const assetsQuery = supabase
         .from('assets')
-        .select('id, title, created_at, storage_path, mime_type, is_public')
+        .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview')
         .order('created_at', { ascending: false });
 
       const { data, error } = activeProfile?.id
@@ -234,8 +237,10 @@ const ContentLibrary = () => {
             storage_path: objectName,
             mime_type: file.type || rawFile.type || null,
             is_public: isPublic,
+            feed_caption: isPublic && feedCaption.trim() ? feedCaption.trim().slice(0, 500) : null,
+            is_feed_preview: false,
           })
-          .select('id, title, created_at, storage_path, mime_type, is_public')
+          .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview')
           .single();
 
         if (insertError || !inserted) {
@@ -261,6 +266,7 @@ const ContentLibrary = () => {
       });
       setShowUploadModal(false);
       setIsPublic(false);
+      setFeedCaption('');
     } catch (err: any) {
       console.error('Error uploading asset', err);
       setError(err?.message || 'Unable to upload content right now.');
@@ -274,6 +280,7 @@ const ContentLibrary = () => {
     setAssetTitle('');
     setSelectedFiles([]);
     setIsPublic(false);
+    setFeedCaption('');
     setPreviewUrls((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
       return [];
@@ -471,13 +478,29 @@ const ContentLibrary = () => {
                   <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
                     <div className="flex-1">
                       <p className="text-sm font-medium text-foreground">Make this content public</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Public content will be visible on your profile without payment</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Public content appears in your feed — non-subscribers see it blurred unless you mark it as the free preview.</p>
                     </div>
                     <Switch
                       checked={isPublic}
                       onCheckedChange={setIsPublic}
                     />
                   </div>
+
+                  {isPublic && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
+                        Feed caption <span className="text-muted-foreground">(optional)</span>
+                      </label>
+                      <textarea
+                        value={feedCaption}
+                        onChange={(e) => setFeedCaption(e.target.value.slice(0, 500))}
+                        rows={2}
+                        placeholder="Legend shown above the post in your feed…"
+                        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      />
+                      <p className="text-[10px] text-muted-foreground text-right">{feedCaption.length}/500</p>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-end gap-3">
                     <Button

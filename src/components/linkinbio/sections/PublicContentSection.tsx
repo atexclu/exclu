@@ -27,6 +27,8 @@ interface PublicContent {
   storage_path: string;
   mime_type: string | null;
   is_public: boolean;
+  is_feed_preview: boolean;
+  feed_caption: string | null;
   previewUrl?: string;
 }
 
@@ -40,11 +42,13 @@ interface PublicContentSectionProps {
 interface SortableItemProps {
   content: PublicContent;
   onToggle: (id: string, isPublic: boolean) => void;
+  onSetPreview: (id: string) => void;
+  onCaptionChange: (id: string, caption: string) => void;
   isSelected: boolean;
   onSelect: (id: string) => void;
 }
 
-function SortableItem({ content, onToggle, isSelected, onSelect }: SortableItemProps) {
+function SortableItem({ content, onToggle, onSetPreview, onCaptionChange, isSelected, onSelect }: SortableItemProps) {
   const {
     attributes,
     listeners,
@@ -121,27 +125,52 @@ function SortableItem({ content, onToggle, isSelected, onSelect }: SortableItemP
           </p>
         </div>
 
-        {/* Visibility Toggle */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-            {content.is_public ? (
-              <>
-                <Eye className="w-3.5 h-3.5" />
-                <span>Public</span>
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>Private</span>
-              </>
-            )}
+        {/* Visibility + free preview */}
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+              {content.is_public ? (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Public</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>Private</span>
+                </>
+              )}
+            </div>
+            <Switch
+              checked={content.is_public}
+              onCheckedChange={(checked) => onToggle(content.id, checked)}
+            />
           </div>
-          <Switch
-            checked={content.is_public}
-            onCheckedChange={(checked) => onToggle(content.id, checked)}
-          />
+          {content.is_public && (
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+              <input
+                type="radio"
+                name={`feed-preview-${content.id}`}
+                checked={content.is_feed_preview}
+                onChange={() => onSetPreview(content.id)}
+                className="accent-primary cursor-pointer"
+              />
+              Free preview
+            </label>
+          )}
         </div>
       </div>
+
+      {content.is_public && (
+        <textarea
+          defaultValue={content.feed_caption ?? ''}
+          onBlur={(e) => onCaptionChange(content.id, e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="Feed caption (optional, shown above this post)…"
+          className="w-full resize-none rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground mt-3 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      )}
     </div>
   );
 }
@@ -173,7 +202,7 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     // Fetch assets (content from ContentLibrary)
     const assetsQuery = supabase
       .from('assets')
-      .select('id, title, storage_path, mime_type, is_public')
+      .select('id, title, storage_path, mime_type, is_public, is_feed_preview, feed_caption')
       .order('created_at', { ascending: false });
     const { data: assetsData, error: assetsError } = profileId
       ? await assetsQuery.eq('profile_id', profileId)
@@ -227,9 +256,14 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
   const handleToggleVisibility = async (contentId: string, isPublic: boolean) => {
     setIsUpdating(true);
 
+    // When making private, also clear the feed preview flag so the profile
+    // doesn't keep pointing at a hidden asset as the "free preview".
+    const updatePayload: Record<string, unknown> = { is_public: isPublic };
+    if (!isPublic) updatePayload.is_feed_preview = false;
+
     const { error } = await supabase
       .from('assets')
-      .update({ is_public: isPublic })
+      .update(updatePayload)
       .eq('id', contentId);
 
     if (error) {
@@ -243,6 +277,66 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     }
 
     setIsUpdating(false);
+  };
+
+  /**
+   * Marks a single asset as the free feed preview (the one unblurred post
+   * visible to non-subscribers). Clears the flag on any other asset in the
+   * same scope first — the DB constraint would reject otherwise, but we
+   * also want instant local feedback.
+   */
+  const handleSetPreview = async (contentId: string) => {
+    setIsUpdating(true);
+
+    // Reset existing preview in this scope (profile_id OR legacy creator_id).
+    if (profileId) {
+      await supabase
+        .from('assets')
+        .update({ is_feed_preview: false })
+        .eq('profile_id', profileId)
+        .eq('is_feed_preview', true);
+    } else if (userId) {
+      await supabase
+        .from('assets')
+        .update({ is_feed_preview: false })
+        .is('profile_id', null)
+        .eq('creator_id', userId)
+        .eq('is_feed_preview', true);
+    }
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ is_feed_preview: true })
+      .eq('id', contentId);
+
+    if (error) {
+      console.error('Error setting feed preview', error);
+      toast.error('Failed to set preview');
+    } else {
+      toast.success('Set as free preview');
+      await fetchContents();
+      onContentUpdate?.();
+    }
+    setIsUpdating(false);
+  };
+
+  const handleCaptionChange = async (contentId: string, caption: string) => {
+    const trimmed = caption.trim().slice(0, 500);
+    // Avoid a pointless write if caption is unchanged (uses existing state).
+    const existing = contents.find((c) => c.id === contentId);
+    if (existing && (existing.feed_caption ?? '') === trimmed) return;
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ feed_caption: trimmed || null })
+      .eq('id', contentId);
+    if (error) {
+      console.error('Error saving caption', error);
+      toast.error('Failed to save caption');
+      return;
+    }
+    // Locally patch so the next render doesn't trigger a redundant write.
+    setContents((prev) => prev.map((c) => (c.id === contentId ? { ...c, feed_caption: trimmed || null } : c)));
   };
 
   const handleSelectContent = (id: string) => {
@@ -376,6 +470,8 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
                     key={content.id}
                     content={content}
                     onToggle={handleToggleVisibility}
+                    onSetPreview={handleSetPreview}
+                    onCaptionChange={handleCaptionChange}
                     isSelected={selectedIds.includes(content.id)}
                     onSelect={handleSelectContent}
                   />
