@@ -144,6 +144,9 @@ serve(async (req) => {
       case 'sub':
         await handleSubscription(parsed.id, body);
         break;
+      case 'fsub':
+        await handleFanSubscription(parsed.id, body);
+        break;
       default:
         console.warn('Unknown transaction type:', parsed.type);
     }
@@ -662,6 +665,59 @@ async function handleSubscription(userId: string, body: Record<string, string>) 
   await creditReferralCommission(userId);
 
   console.log('Subscription activated:', userId, wasSubscribed ? '(renewal)' : '(first-time)');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// FAN → CREATOR SUBSCRIPTION (initial Sale only — renewals/cancels go to
+// ugp-membership-confirm via the Member Postback URL)
+// ══════════════════════════════════════════════════════════════════════════
+
+async function handleFanSubscription(subscriptionId: string, body: Record<string, string>) {
+  const { data: sub, error: fetchErr } = await supabase
+    .from('fan_creator_subscriptions')
+    .select('id, fan_id, creator_profile_id, status, price_cents, period_end')
+    .eq('id', subscriptionId)
+    .single();
+
+  if (fetchErr || !sub) {
+    console.error('Fan subscription not found:', subscriptionId, fetchErr);
+    return;
+  }
+
+  // Idempotent: already active and period still valid
+  if (sub.status === 'active' && sub.period_end && new Date(sub.period_end) > new Date()) {
+    console.log('Fan subscription already active:', subscriptionId);
+    return;
+  }
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30); // 30-day cycle; membership-confirm extends on Rebill
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'active',
+    period_start: now.toISOString(),
+    period_end: periodEnd.toISOString(),
+    ugp_transaction_id: body.TransactionID,
+    ugp_merchant_reference: body.MerchantReference,
+    cancel_at_period_end: false,
+  };
+  // Only stamp started_at on first activation
+  if (sub.status === 'pending' || !sub.status) {
+    updatePayload.started_at = now.toISOString();
+  }
+
+  const { error: updateErr } = await supabase
+    .from('fan_creator_subscriptions')
+    .update(updatePayload)
+    .eq('id', subscriptionId);
+
+  if (updateErr) {
+    console.error('Error activating fan subscription:', updateErr);
+    return;
+  }
+
+  console.log('Fan subscription activated:', subscriptionId, 'period_end=', periodEnd.toISOString());
 }
 
 // ══════════════════════════════════════════════════════════════════════════
