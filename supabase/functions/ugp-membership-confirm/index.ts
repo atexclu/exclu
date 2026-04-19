@@ -20,6 +20,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
+// Plan IDs used to disambiguate creator-premium vs fan→creator subscriptions.
+// Creator plan id is the legacy one (defaults to '11027'); fan plan id is
+// provisioned with Derek and may be unset during rollout (we just skip fan handling then).
+const creatorPlanId = Deno.env.get('QUICKPAY_SUB_PLAN_ID') || '11027';
+const fanPlanId = Deno.env.get('QUICKPAY_FAN_SUB_PLAN_ID') || '';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
@@ -62,20 +67,41 @@ serve(async (req) => {
     return new Response('OK', { status: 200 });
   }
 
+  // Route by SubscriptionPlanId: our creator Pro plan uses its own id, fan subs use fanPlanId.
+  // If fanPlanId is unset (rollout in progress), fan postbacks fall through to the default
+  // creator handler — harmless since their Username isn't a profile id and handleActivation
+  // bails gracefully when no profile is found.
+  const isFanSubPlan = !!fanPlanId && subscriptionPlanId === fanPlanId;
+
   try {
-    switch (action) {
-      case 'Add':
-      case 'Rebill':
-        await handleActivation(userId, memberId, action);
-        break;
-
-      case 'Cancel':
-      case 'Inactive':
-        await handleDeactivation(userId, action);
-        break;
-
-      default:
-        console.warn('Unknown membership action:', action);
+    if (isFanSubPlan) {
+      // Fan → creator subscription. Username = fan_creator_subscriptions.id.
+      switch (action) {
+        case 'Add':
+        case 'Rebill':
+          await handleFanActivation(userId, memberId, action);
+          break;
+        case 'Cancel':
+        case 'Inactive':
+          await handleFanDeactivation(userId, action);
+          break;
+        default:
+          console.warn('Unknown fan-sub membership action:', action);
+      }
+    } else {
+      // Creator Pro subscription (existing behaviour).
+      switch (action) {
+        case 'Add':
+        case 'Rebill':
+          await handleActivation(userId, memberId, action);
+          break;
+        case 'Cancel':
+        case 'Inactive':
+          await handleDeactivation(userId, action);
+          break;
+        default:
+          console.warn('Unknown membership action:', action);
+      }
     }
   } catch (err) {
     console.error('Error processing membership postback:', err);
@@ -242,3 +268,61 @@ async function chargeProfileAddons(userId: string) {
     }
   }
 }
+
+// ── FAN → CREATOR SUBSCRIPTION HANDLERS ─────────────────────────────────
+
+/**
+ * Add (first activation) or Rebill (monthly renewal) on a fan subscription.
+ * We extend period_end by 30 days from now. cancel_at_period_end is reset
+ * because a rebill implicitly means the fan didn't cancel.
+ */
+async function handleFanActivation(subId: string, memberId: string, action: string) {
+  const { data: sub } = await supabase
+    .from('fan_creator_subscriptions')
+    .select('id, status, period_end')
+    .eq('id', subId)
+    .single();
+
+  if (!sub) {
+    console.error('Fan sub not found for activation:', subId);
+    return;
+  }
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'active',
+    period_start: now.toISOString(),
+    period_end: periodEnd.toISOString(),
+    ugp_member_id: memberId,
+    cancel_at_period_end: false,
+  };
+  // Only stamp started_at on first activation (Add action or previously pending).
+  if (!sub.status || sub.status === 'pending') {
+    updatePayload.started_at = now.toISOString();
+  }
+
+  await supabase.from('fan_creator_subscriptions').update(updatePayload).eq('id', subId);
+  console.log(`Fan sub ${action}:`, subId, 'period_end=', periodEnd.toISOString());
+}
+
+/**
+ * Cancel/Inactive on a fan subscription. We flip status to 'cancelled' and
+ * stamp cancelled_at, but KEEP period_end intact — has_active_fan_subscription
+ * grants access until that date.
+ */
+async function handleFanDeactivation(subId: string, action: string) {
+  await supabase
+    .from('fan_creator_subscriptions')
+    .update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancel_at_period_end: true,
+    })
+    .eq('id', subId);
+
+  console.log(`Fan sub ${action}:`, subId);
+}
+
