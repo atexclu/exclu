@@ -4,7 +4,7 @@ import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, Users } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -14,6 +14,7 @@ import { ContentSection } from '@/components/linkinbio/sections/ContentSection';
 import { PublicContentSection } from '@/components/linkinbio/sections/PublicContentSection';
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
+import { FanSubscriptionSection } from '@/components/linkinbio/sections/FanSubscriptionSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
@@ -46,6 +47,9 @@ interface LinkInBioData {
   min_custom_request_cents: number;
   show_agency_branding: boolean;
   model_categories: string[];
+  fan_subscription_enabled: boolean;
+  fan_subscription_price_cents: number;
+  gender: 'female' | 'male' | 'other' | null;
 }
 
 interface CreatorLink {
@@ -93,6 +97,9 @@ const LinkInBioEditor = () => {
     min_tip_amount_cents: 500,
     min_custom_request_cents: 2000,
     show_agency_branding: true,
+    fan_subscription_enabled: true,
+    fan_subscription_price_cents: 500,
+    gender: null,
   });
 
   const [links, setLinks] = useState<CreatorLink[]>([]);
@@ -102,7 +109,7 @@ const LinkInBioEditor = () => {
   const [agencyName, setAgencyName] = useState<string | null>(null);
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
+  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'subs' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
@@ -153,7 +160,7 @@ const LinkInBioEditor = () => {
       if (activeProfile?.id) {
         const { data: cpData, error: cpError } = await supabase
           .from('creator_profiles')
-          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories, fan_subscription_enabled, fan_subscription_price_cents, gender')
           .eq('id', activeProfile.id)
           .maybeSingle();
 
@@ -221,6 +228,10 @@ const LinkInBioEditor = () => {
           min_custom_request_cents: profileData.min_custom_request_cents || 2000,
           show_agency_branding: profileData.show_agency_branding !== false,
           model_categories: profileData.model_categories || [],
+          // Fan subscription fields live on creator_profiles (not profiles fallback); default gracefully.
+          fan_subscription_enabled: profileData.fan_subscription_enabled !== false,
+          fan_subscription_price_cents: profileData.fan_subscription_price_cents ?? 500,
+          gender: (profileData.gender ?? null) as LinkInBioData['gender'],
         };
 
         setEditorData(dataToLoad);
@@ -316,11 +327,24 @@ const LinkInBioEditor = () => {
         min_custom_request_cents: debouncedData.min_custom_request_cents,
       };
 
+      // Fields that only live on creator_profiles (not on profiles).
+      const creatorProfileOnlyPayload = {
+        fan_subscription_enabled: debouncedData.fan_subscription_enabled,
+        fan_subscription_price_cents: debouncedData.fan_subscription_price_cents,
+        gender: debouncedData.gender,
+      };
+
       let saveError = false;
 
       // Write to creator_profiles (source of truth for per-profile data)
       if (activeProfile?.id) {
-        const cpPayload = { ...profilePayload, handle: undefined, username: debouncedData.handle, model_categories: debouncedData.model_categories };
+        const cpPayload = {
+          ...profilePayload,
+          ...creatorProfileOnlyPayload,
+          handle: undefined,
+          username: debouncedData.handle,
+          model_categories: debouncedData.model_categories,
+        };
         const { error: cpError } = await supabase
           .from('creator_profiles')
           .update(cpPayload)
@@ -510,6 +534,7 @@ const LinkInBioEditor = () => {
     { id: 'links' as const, label: 'Links', icon: LinkIcon },
     { id: 'content' as const, label: 'Content', icon: ImageIcon },
     { id: 'wishlist' as const, label: 'Wishlist', icon: Gift },
+    { id: 'subs' as const, label: 'Audience', icon: Users },
     { id: 'colors' as const, label: 'Design', icon: Palette },
   ];
 
@@ -663,6 +688,14 @@ const LinkInBioEditor = () => {
                     <WishlistSection
                       items={wishlistItems}
                       onUpdate={fetchWishlistItems}
+                    />
+                  )}
+                  {activeSection === 'subs' && (
+                    <FanSubscriptionSection
+                      enabled={editorData.fan_subscription_enabled}
+                      priceCents={editorData.fan_subscription_price_cents}
+                      gender={editorData.gender}
+                      onUpdate={updateEditorData}
                     />
                   )}
                   {activeSection === 'colors' && (
@@ -834,6 +867,14 @@ const LinkInBioEditor = () => {
                 )}
                 {activeSection === 'wishlist' && (
                   <WishlistSection items={wishlistItems} onUpdate={fetchWishlistItems} />
+                )}
+                {activeSection === 'subs' && (
+                  <FanSubscriptionSection
+                    enabled={editorData.fan_subscription_enabled}
+                    priceCents={editorData.fan_subscription_price_cents}
+                    gender={editorData.gender}
+                    onUpdate={updateEditorData}
+                  />
                 )}
                 {activeSection === 'colors' && (
                   <OptionsSection
