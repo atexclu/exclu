@@ -127,6 +127,42 @@ serve(async (req) => {
   const transactionState = body.TransactionState || 'Sale';
   console.log(`Processing: type=${parsed.type} id=${parsed.id} state=${transactionState} amount=${amount}`);
 
+  // ── 3b. Filter on TransactionState — only actionable states per flow ─
+  //
+  // UG QuickPay POSTs ConfirmURL for multiple TransactionState values including
+  // `Verify` (3DS/AVS check, before capture) and sometimes for declined attempts.
+  // Prior to this filter the handler treated every callback as a successful sale,
+  // crediting wallets and unlocking content for non-captured/declined payments.
+  //
+  // Appendix A of the UG spec: Sale | Authorize | Capture | Void | Refund |
+  // Chargeback | Credit | CBK1 | Verify | Recurring
+  //
+  // `Capture`, `Refund`, `Chargeback`, `Void`, `CBK1` arrive via the Listener URL
+  // (see ugp-listener). The ConfirmURL should only ever actually mutate state for:
+  //   - Sale      → direct one-time capture (link / tip / gift / initial sub)
+  //   - Authorize → pre-auth hold for custom requests (captured later)
+  //   - Recurring → subscription rebill (goes through ugp-membership-confirm too)
+  const actionableStatesByType: Record<string, ReadonlySet<string>> = {
+    link: new Set(['Sale']),
+    tip: new Set(['Sale']),
+    gift: new Set(['Sale']),
+    req: new Set(['Authorize']),
+    sub: new Set(['Sale', 'Recurring']),
+    fsub: new Set(['Sale', 'Recurring']),
+  };
+  const allowedStates = actionableStatesByType[parsed.type];
+  if (allowedStates && !allowedStates.has(transactionState)) {
+    console.log(
+      `[ugp-confirm] Skipping non-actionable state: type=${parsed.type} ` +
+      `state=${transactionState} ref=${merchantRef} txn=${transactionId}`,
+    );
+    await supabase.from('payment_events').update({
+      processed: true,
+      processing_result: `Skipped: state=${transactionState} not actionable for ${parsed.type}`,
+    }).eq('transaction_id', transactionId);
+    return new Response('OK', { status: 200 });
+  }
+
   try {
     switch (parsed.type) {
       case 'link':
@@ -153,7 +189,7 @@ serve(async (req) => {
 
     await supabase.from('payment_events').update({
       processed: true,
-      processing_result: `${parsed.type} processed successfully`,
+      processing_result: `${parsed.type} processed successfully (state=${transactionState})`,
     }).eq('transaction_id', transactionId);
 
   } catch (err) {

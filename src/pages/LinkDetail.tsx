@@ -85,10 +85,14 @@ const LinkDetail = () => {
           throw linkError || new Error('Link not found');
         }
 
+        // Only show captured purchases (succeeded + refunded for history).
+        // `pending` = fan pre-created a checkout then never completed it — showing
+        // those as "buyers" misleads creators into thinking they have unpaid sales.
         const { data: purchasesData, error: purchasesError } = await supabase
           .from('purchases')
           .select('id, buyer_email, amount_cents, currency, status, created_at, access_expires_at, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents')
           .eq('link_id', id)
+          .in('status', ['succeeded', 'refunded'])
           .order('created_at', { ascending: false });
 
         if (purchasesError) {
@@ -104,9 +108,10 @@ const LinkDetail = () => {
         const commissionRate = isPremium ? 0 : 0.10;
 
         const safePurchases = (purchasesData ?? []) as PurchaseRow[];
-        const sales = safePurchases.length;
+        const succeededPurchases = safePurchases.filter((p) => p.status === 'succeeded');
+        const sales = succeededPurchases.length;
         // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
-        const revenue = safePurchases.reduce(
+        const revenue = succeededPurchases.reduce(
           (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
           0
         );
