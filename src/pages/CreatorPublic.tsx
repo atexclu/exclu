@@ -13,6 +13,9 @@ import Aurora from '@/components/ui/Aurora';
 import GuestChat from '@/components/GuestChat';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import { getSignedUrl } from '@/lib/storageUtils';
+import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
+import { SubscriptionPopup } from '@/components/feed/SubscriptionPopup';
+import { useFanSubscription } from '@/hooks/useFanSubscription';
 import {
   SiX,
   SiInstagram,
@@ -50,7 +53,30 @@ interface CreatorProfileData {
   min_custom_request_cents?: number | null;
   show_agency_branding?: boolean | null;
   chat_enabled?: boolean | null;
+  fan_subscription_enabled?: boolean | null;
+  fan_subscription_price_cents?: number | null;
 }
+
+type FeedItem =
+  | {
+      kind: 'asset';
+      id: string;
+      previewUrl: string | null;
+      mimeType: string | null;
+      caption: string | null;
+      isPreview: boolean;
+      createdAt: string;
+    }
+  | {
+      kind: 'link';
+      id: string;
+      slug: string;
+      title: string;
+      description: string | null;
+      priceCents: number;
+      coverUrl: string | null;
+      createdAt: string;
+    };
 
 interface CreatorLinkCard {
   id: string;
@@ -82,8 +108,16 @@ const CreatorPublic = () => {
   const [profile, setProfile] = useState<CreatorProfileData | null>(null);
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>('links');
+
+  // Initial tab honours ?tab=content (used by chat "View feed" CTA and subscription-success redirect).
+  const initialTab: 'links' | 'content' | 'wishlist' =
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'content'
+      ? 'content'
+      : 'links';
+  const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>(initialTab);
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [showSubscribePopup, setShowSubscribePopup] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isContentLoading, setIsContentLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +146,9 @@ const CreatorPublic = () => {
   const [currentFanId, setCurrentFanId] = useState<string | null>(null);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
   const [showGuestChat, setShowGuestChat] = useState(false);
+
+  // Fan → creator subscription state (anonymous users always get isSubscribed=false).
+  const { isSubscribed, refetch: refetchFanSub } = useFanSubscription(creatorProfileId);
 
   const openGuestChat = useCallback(() => {
     setShowGuestChat(true);
@@ -242,7 +279,7 @@ const CreatorPublic = () => {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents')
           .eq('username', handle)
           .maybeSingle();
 
@@ -394,10 +431,12 @@ const CreatorPublic = () => {
         }
 
         // ── Step 4: Load public content ──
+        // Preview asset surfaces first so it appears at the top of the feed even if others are newer.
         let assetsQuery = supabase
           .from('assets')
-          .select('id, title, storage_path, mime_type')
+          .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, created_at')
           .eq('is_public', true)
+          .order('is_feed_preview', { ascending: false })
           .order('created_at', { ascending: false });
 
         if (profileId) {
@@ -461,11 +500,56 @@ const CreatorPublic = () => {
     };
 
     fetchCreator();
-    
+
     return () => {
       isMounted = false;
     };
   }, [handle]);
+
+  // Merge public assets + paid links into a single feed list. The single
+  // `is_feed_preview=true` asset (if any) always leads; everything else is
+  // sorted by created_at desc.
+  useEffect(() => {
+    const assetItems: FeedItem[] = (publicContent as any[]).map((a) => ({
+      kind: 'asset',
+      id: a.id,
+      previewUrl: a.previewUrl ?? null,
+      mimeType: a.mime_type ?? null,
+      caption: a.feed_caption ?? null,
+      isPreview: a.is_feed_preview === true,
+      createdAt: a.created_at ?? new Date().toISOString(),
+    }));
+    const linkItems: FeedItem[] = (links as any[]).map((l) => ({
+      kind: 'link',
+      id: l.id,
+      slug: l.slug,
+      title: l.title,
+      description: l.description ?? null,
+      priceCents: l.price_cents,
+      coverUrl: null,
+      createdAt: (l as any).created_at ?? new Date().toISOString(),
+    }));
+
+    const preview = assetItems.find((x) => x.isPreview);
+    const rest = [...assetItems.filter((x) => !x.isPreview), ...linkItems].sort(
+      (a, b) => (a.createdAt < b.createdAt ? 1 : -1),
+    );
+    setFeedItems(preview ? [preview, ...rest] : rest);
+  }, [publicContent, links]);
+
+  // Fan coming back from QuickPay with ?subscribed=<handle>: refetch sub status + confirm.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('subscribed') && creatorProfileId) {
+      toast.success('Subscription active! Welcome in.');
+      refetchFanSub();
+      // Tidy the URL so a reload doesn't re-toast.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('subscribed');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [creatorProfileId, refetchFanSub]);
 
   const handleLinkClick = (link: CreatorLinkCard) => {
     navigate(`/l/${link.slug}`);
@@ -1046,9 +1130,9 @@ const CreatorPublic = () => {
                     {activeTab === 'links' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
                   </button>
                 )}
-                {publicContent.length > 0 && (
+                {(publicContent.length > 0 || profile?.fan_subscription_enabled) && (
                   <button onClick={() => setActiveTab('content')} className={`relative py-3 text-sm font-medium transition-colors ${activeTab === 'content' ? 'text-white' : 'text-white/50 hover:text-white/70'}`}>
-                    Content
+                    Feed
                     {activeTab === 'content' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
                   </button>
                 )}
@@ -1124,37 +1208,63 @@ const CreatorPublic = () => {
               </div>
             )}
 
-            {!isContentLoading && activeTab === 'content' && publicContent.length > 0 && (
-              <div className="grid grid-cols-2 gap-3">
-                {publicContent.map((content, index) => {
-                  const isVideo = content.mime_type?.startsWith('video/');
-                  return (
-                    <motion.div key={content.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                      transition={{ duration: 0.3, delay: 0.05 * index }}
-                      className="relative aspect-square rounded-2xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20 group cursor-pointer"
-                      onClick={() => setSelectedContent(content)}>
-                      {content.previewUrl ? (isVideo ? (
-                        <video src={content.previewUrl} className="w-full h-full object-cover" muted loop playsInline />
-                      ) : (
-                        <img src={content.previewUrl} alt={content.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      )) : (
-                        <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-white/40" /></div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      {isVideo && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
-                            <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-            {!isContentLoading && activeTab === 'content' && publicContent.length === 0 && (
-              <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No public content available yet.</div>
+            {!isContentLoading && activeTab === 'content' && (
+              feedItems.length > 0 ? (
+                <div className="space-y-4">
+                  {feedItems.map((item) => (
+                    <FeedPost
+                      key={`${item.kind}-${item.id}`}
+                      post={
+                        item.kind === 'asset'
+                          ? {
+                              kind: 'asset',
+                              id: item.id,
+                              previewUrl: item.previewUrl,
+                              mimeType: item.mimeType,
+                              caption: item.caption,
+                              isUnlocked: item.isPreview || isSubscribed,
+                            }
+                          : {
+                              kind: 'link',
+                              id: item.id,
+                              slug: item.slug,
+                              title: item.title,
+                              description: item.description,
+                              priceCents: item.priceCents,
+                              coverUrl: item.coverUrl,
+                            }
+                      }
+                      gradientStops={gradientStops as [string, string]}
+                      onLockedClick={() => setShowSubscribePopup(true)}
+                      onLinkClick={(slug) => navigate(`/l/${slug}`)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                // No public assets → placeholder blurred card (per Part 3 spec:
+                // "si pas de content en publique visible on met juste un image par défaut
+                // blurred dans ce feed").
+                <button
+                  type="button"
+                  onClick={() => setShowSubscribePopup(true)}
+                  className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/20"
+                >
+                  <div
+                    className="absolute inset-0 scale-110 blur-2xl brightness-50"
+                    style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                  />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                    <Lock className="w-8 h-8" />
+                    <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
+                    <span
+                      className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
+                      style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                    >
+                      Discover
+                    </span>
+                  </div>
+                </button>
+              )
             )}
 
             {!isContentLoading && activeTab === 'wishlist' && (
@@ -1472,10 +1582,10 @@ const CreatorPublic = () => {
                             {activeTab === 'links' && <motion.div layoutId="activeTabDesktop" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
                           </button>
                         )}
-                        {publicContent.length > 0 && (
+                        {(publicContent.length > 0 || profile?.fan_subscription_enabled) && (
                           <button onClick={() => setActiveTab('content')}
                             className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === 'content' ? 'text-white' : 'text-white/40 hover:text-white/70'}`}>
-                            Content
+                            Feed
                             {activeTab === 'content' && <motion.div layoutId="activeTabDesktop" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
                           </button>
                         )}
@@ -1559,38 +1669,61 @@ const CreatorPublic = () => {
                       </div>
                     )}
 
-                    {/* Content Tab */}
-                    {!isContentLoading && activeTab === 'content' && publicContent.length > 0 && (
-                      <div className="grid grid-cols-3 gap-3">
-                        {publicContent.map((content, index) => {
-                          const isVideo = content.mime_type?.startsWith('video/');
-                          return (
-                            <motion.div key={content.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                              transition={{ duration: 0.3, delay: 0.05 * index }}
-                              className="relative aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10 group cursor-pointer"
-                              onClick={() => setSelectedContent(content)}>
-                              {content.previewUrl ? (isVideo ? (
-                                <video src={content.previewUrl} className="w-full h-full object-cover" muted loop playsInline />
-                              ) : (
-                                <img src={content.previewUrl} alt={content.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                              )) : (
-                                <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-white/30" /></div>
-                              )}
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                              {isVideo && (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm border border-white/20">
-                                    <Play className="w-5 h-5 text-white ml-0.5" fill="white" />
-                                  </div>
-                                </div>
-                              )}
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {!isContentLoading && activeTab === 'content' && publicContent.length === 0 && (
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50 text-center">No public content available yet.</div>
+                    {/* Content Tab — vertical feed */}
+                    {!isContentLoading && activeTab === 'content' && (
+                      feedItems.length > 0 ? (
+                        <div className="space-y-4 max-w-md mx-auto">
+                          {feedItems.map((item) => (
+                            <FeedPost
+                              key={`${item.kind}-${item.id}`}
+                              post={
+                                item.kind === 'asset'
+                                  ? {
+                                      kind: 'asset',
+                                      id: item.id,
+                                      previewUrl: item.previewUrl,
+                                      mimeType: item.mimeType,
+                                      caption: item.caption,
+                                      isUnlocked: item.isPreview || isSubscribed,
+                                    }
+                                  : {
+                                      kind: 'link',
+                                      id: item.id,
+                                      slug: item.slug,
+                                      title: item.title,
+                                      description: item.description,
+                                      priceCents: item.priceCents,
+                                      coverUrl: item.coverUrl,
+                                    }
+                              }
+                              gradientStops={gradientStops as [string, string]}
+                              onLockedClick={() => setShowSubscribePopup(true)}
+                              onLinkClick={(slug) => navigate(`/l/${slug}`)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowSubscribePopup(true)}
+                          className="relative w-full max-w-md mx-auto aspect-square rounded-2xl overflow-hidden border border-white/20 block"
+                        >
+                          <div
+                            className="absolute inset-0 scale-110 blur-2xl brightness-50"
+                            style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                          />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                            <Lock className="w-8 h-8" />
+                            <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
+                            <span
+                              className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
+                              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                            >
+                              Discover
+                            </span>
+                          </div>
+                        </button>
+                      )
                     )}
 
                     {/* Wishlist Tab */}
@@ -2150,6 +2283,20 @@ const CreatorPublic = () => {
           </motion.div>
         </motion.div>
       )}
+
+      {/* Fan → creator subscription popup (Discover) */}
+      <SubscriptionPopup
+        open={showSubscribePopup}
+        onClose={() => setShowSubscribePopup(false)}
+        creator={{
+          profileId: creatorProfileId || '',
+          displayName: profile?.display_name || profile?.handle || 'creator',
+          handle: profile?.handle || '',
+          avatarUrl: profile?.avatar_url ?? null,
+          priceCents: profile?.fan_subscription_price_cents ?? 500,
+        }}
+        gradientStops={gradientStops as [string, string]}
+      />
     </div>
   );
 };
