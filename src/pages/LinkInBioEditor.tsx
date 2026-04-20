@@ -4,7 +4,7 @@ import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, Users } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
@@ -109,7 +109,7 @@ const LinkInBioEditor = () => {
   const [agencyName, setAgencyName] = useState<string | null>(null);
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'subs' | 'colors'>('photo');
+  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
@@ -532,9 +532,8 @@ const LinkInBioEditor = () => {
     { id: 'info' as const, label: 'Info', icon: FileText },
     { id: 'social' as const, label: 'Social', icon: Share2 },
     { id: 'links' as const, label: 'Links', icon: LinkIcon },
-    { id: 'content' as const, label: 'Content', icon: ImageIcon },
+    { id: 'content' as const, label: 'Feed', icon: ImageIcon },
     { id: 'wishlist' as const, label: 'Wishlist', icon: Gift },
-    { id: 'subs' as const, label: 'Audience', icon: Users },
     { id: 'colors' as const, label: 'Design', icon: Palette },
   ];
 
@@ -677,25 +676,26 @@ const LinkInBioEditor = () => {
                     />
                   )}
                   {activeSection === 'content' && (
-                    <PublicContentSection
-                      userId={userId}
-                      profileId={activeProfile?.id || null}
-                      onUpdate={fetchLinks}
-                      onContentUpdate={fetchPublicContent}
-                    />
+                    <div className="space-y-8">
+                      <FanSubscriptionSection
+                        enabled={editorData.fan_subscription_enabled}
+                        priceCents={editorData.fan_subscription_price_cents}
+                        gender={editorData.gender}
+                        onUpdate={updateEditorData}
+                      />
+                      <div className="border-t border-border/60" />
+                      <PublicContentSection
+                        userId={userId}
+                        profileId={activeProfile?.id || null}
+                        onUpdate={fetchLinks}
+                        onContentUpdate={fetchPublicContent}
+                      />
+                    </div>
                   )}
                   {activeSection === 'wishlist' && (
                     <WishlistSection
                       items={wishlistItems}
                       onUpdate={fetchWishlistItems}
-                    />
-                  )}
-                  {activeSection === 'subs' && (
-                    <FanSubscriptionSection
-                      enabled={editorData.fan_subscription_enabled}
-                      priceCents={editorData.fan_subscription_price_cents}
-                      gender={editorData.gender}
-                      onUpdate={updateEditorData}
                     />
                   )}
                   {activeSection === 'colors' && (
@@ -858,23 +858,24 @@ const LinkInBioEditor = () => {
                   <ContentSection links={links} onUpdate={fetchLinks} />
                 )}
                 {activeSection === 'content' && (
-                  <PublicContentSection
-                    userId={userId}
-                    profileId={activeProfile?.id || null}
-                    onUpdate={fetchLinks}
-                    onContentUpdate={fetchPublicContent}
-                  />
+                  <div className="space-y-8">
+                    <FanSubscriptionSection
+                      enabled={editorData.fan_subscription_enabled}
+                      priceCents={editorData.fan_subscription_price_cents}
+                      gender={editorData.gender}
+                      onUpdate={updateEditorData}
+                    />
+                    <div className="border-t border-border/60" />
+                    <PublicContentSection
+                      userId={userId}
+                      profileId={activeProfile?.id || null}
+                      onUpdate={fetchLinks}
+                      onContentUpdate={fetchPublicContent}
+                    />
+                  </div>
                 )}
                 {activeSection === 'wishlist' && (
                   <WishlistSection items={wishlistItems} onUpdate={fetchWishlistItems} />
-                )}
-                {activeSection === 'subs' && (
-                  <FanSubscriptionSection
-                    enabled={editorData.fan_subscription_enabled}
-                    priceCents={editorData.fan_subscription_price_cents}
-                    gender={editorData.gender}
-                    onUpdate={updateEditorData}
-                  />
                 )}
                 {activeSection === 'colors' && (
                   <OptionsSection
