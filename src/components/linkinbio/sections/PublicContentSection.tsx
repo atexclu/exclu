@@ -202,7 +202,7 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     // Fetch assets (content from ContentLibrary)
     const assetsQuery = supabase
       .from('assets')
-      .select('id, title, storage_path, mime_type, is_public, is_feed_preview, feed_caption')
+      .select('id, title, storage_path, mime_type, is_public, is_feed_preview, feed_caption, feed_blur_path')
       .order('created_at', { ascending: false });
     const { data: assetsData, error: assetsError } = profileId
       ? await assetsQuery.eq('profile_id', profileId)

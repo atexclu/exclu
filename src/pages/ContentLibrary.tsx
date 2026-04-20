@@ -9,6 +9,7 @@ import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { getSignedUrl } from '@/lib/storageUtils';
+import { generateBlurThumbnail } from '@/lib/blurThumbnail';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
@@ -21,6 +22,7 @@ type LibraryAsset = {
   is_public: boolean;
   feed_caption: string | null;
   is_feed_preview: boolean;
+  feed_blur_path: string | null;
 };
 
 const ContentLibrary = () => {
@@ -73,7 +75,7 @@ const ContentLibrary = () => {
 
       const assetsQuery = supabase
         .from('assets')
-        .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview')
+        .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview, feed_blur_path')
         .order('created_at', { ascending: false });
 
       const { data, error } = activeProfile?.id
@@ -227,6 +229,29 @@ const ContentLibrary = () => {
           throw new Error('Upload failed for one of the files. Please try again.');
         }
 
+        // Generate and upload a tiny pre-blurred thumbnail for the public feed.
+        // The feed serves this path to non-subscribed viewers so the full-res
+        // URL never appears in the page source. Failure is non-fatal.
+        let blurPath: string | null = null;
+        if (isPublic) {
+          try {
+            const blurBlob = await generateBlurThumbnail(file);
+            if (blurBlob) {
+              blurPath = `${user.id}/assets/${assetId}/preview/blur.jpg`;
+              const { error: blurErr } = await supabase.storage
+                .from('paid-content')
+                .upload(blurPath, blurBlob, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' });
+              if (blurErr) {
+                console.warn('Blur thumbnail upload failed — continuing without it', blurErr);
+                blurPath = null;
+              }
+            }
+          } catch (err) {
+            console.warn('Blur thumbnail generation failed', err);
+            blurPath = null;
+          }
+        }
+
         const { data: inserted, error: insertError } = await supabase
           .from('assets')
           .insert({
@@ -239,8 +264,9 @@ const ContentLibrary = () => {
             is_public: isPublic,
             feed_caption: isPublic && feedCaption.trim() ? feedCaption.trim().slice(0, 500) : null,
             is_feed_preview: false,
+            feed_blur_path: blurPath,
           })
-          .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview')
+          .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview, feed_blur_path')
           .single();
 
         if (insertError || !inserted) {
