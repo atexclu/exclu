@@ -184,22 +184,24 @@ const CreatorPublic = () => {
   const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
 
   // Desktop photo collapse on scroll.
-  // Triggers on the Feed tab unconditionally (the feed is the centerpiece
-  // and benefits from the extra width), or on the Links tab only when the
-  // creator has enough links to justify scrolling past the fold.
+  // Keep it enabled only for the Links tab when the creator has > 5 links —
+  // the Feed tab intentionally stays in its original position so the card
+  // column never shifts horizontally while the viewer scrolls.
   const [photoVisible, setPhotoVisible] = useState(true);
   useEffect(() => {
     const threshold = window.innerHeight * 0.35;
     const handleScroll = () => {
-      const allowCollapse = activeTab === 'content' || links.length > 5;
-      if (!allowCollapse) {
+      if (activeTab === 'content') {
+        setPhotoVisible((prev) => (prev ? prev : true));
+        return;
+      }
+      if (links.length <= 5) {
         setPhotoVisible((prev) => (prev ? prev : true));
         return;
       }
       const shouldShow = window.scrollY < threshold;
       setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
     };
-    // Fire once on tab/content change so switching tabs doesn't leave us stuck.
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -525,10 +527,10 @@ const CreatorPublic = () => {
     };
   }, [handle]);
 
-  // Merge public assets + paid links into a single feed list. The single
-  // `is_feed_preview=true` asset (if any) always leads; remaining assets
-  // follow the creator's manual order (creator_profiles.content_order) with
-  // created_at desc as a tiebreaker; links are appended by created_at desc.
+  // Build the feed from public assets only — paid links stay on the Links tab.
+  // The single `is_feed_preview=true` asset (if any) always leads; the rest
+  // follows the creator's manual order (creator_profiles.content_order) with
+  // created_at desc as a tiebreaker for new uploads not yet in the array.
   useEffect(() => {
     const order: string[] = (profile?.content_order ?? []) as string[];
     const orderIndex = new Map<string, number>(order.map((id, i) => [id, i]));
@@ -544,28 +546,16 @@ const CreatorPublic = () => {
       isPreview: a.is_feed_preview === true,
       createdAt: a.created_at ?? new Date().toISOString(),
     }));
-    const linkItems: FeedItem[] = (links as any[]).map((l) => ({
-      kind: 'link',
-      id: l.id,
-      slug: l.slug,
-      title: l.title,
-      description: l.description ?? null,
-      priceCents: l.price_cents,
-      coverUrl: null,
-      createdAt: (l as any).created_at ?? new Date().toISOString(),
-    }));
 
     const preview = assetItems.find((x) => x.isPreview);
-    const nonPreviewAssets = assetItems.filter((x) => !x.isPreview).sort((a, b) => {
+    const nonPreview = assetItems.filter((x) => !x.isPreview).sort((a, b) => {
       const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
       const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
       if (ai !== bi) return ai - bi;
       return a.createdAt < b.createdAt ? 1 : -1;
     });
-    const linksSorted = [...linkItems].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    const rest = [...nonPreviewAssets, ...linksSorted];
-    setFeedItems(preview ? [preview, ...rest] : rest);
-  }, [publicContent, links, profile?.content_order]);
+    setFeedItems(preview ? [preview, ...nonPreview] : nonPreview);
+  }, [publicContent, profile?.content_order]);
 
   // Lazy-sign full-res URLs only for the free preview (always) and when the
   // viewer is subscribed (everything else). By deferring this until the

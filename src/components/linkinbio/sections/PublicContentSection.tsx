@@ -63,7 +63,7 @@ function SortableItem({ content, onToggle, onSetPreview, onCaptionChange, isSele
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.6 : 1,
   };
 
   const isVideo = content.mime_type?.startsWith('video/');
@@ -72,107 +72,101 @@ function SortableItem({ content, onToggle, onSetPreview, onCaptionChange, isSele
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative rounded-xl border transition-all ${
-        isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/50'
-      } ${isSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'} ${!content.is_public ? 'opacity-60' : ''} p-4`}
+      className={`group relative flex gap-4 rounded-2xl border bg-card p-3 transition-colors ${
+        isDragging ? 'ring-2 ring-primary shadow-xl' : 'hover:border-primary/40'
+      } ${isSelected ? 'border-primary/60 bg-primary/5' : 'border-border'} ${
+        !content.is_public ? 'opacity-70' : ''
+      }`}
     >
-      <div className="flex items-center gap-3">
-        {/* Checkbox for selection */}
-        <button
-          onClick={() => onSelect(content.id)}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Select content"
-        >
-          {isSelected ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5" />}
-        </button>
-        
-        {/* Drag Handle */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="w-5 h-5" />
-        </button>
+      {/* Drag handle — full-height strip on the left, easy to grab */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 -ml-1 flex w-6 cursor-grab items-center justify-center text-muted-foreground hover:text-foreground active:cursor-grabbing"
+        aria-label="Drag to reorder"
+      >
+        <GripVertical className="h-5 w-5" />
+      </button>
 
-        {/* Preview Thumbnail */}
-        <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-          {content.previewUrl ? (
-            isVideo ? (
-              <video
-                src={content.previewUrl}
-                className="w-full h-full object-cover"
-                muted
-              />
-            ) : (
-              <img
-                src={content.previewUrl}
-                alt={content.title}
-                className="w-full h-full object-cover"
-              />
-            )
+      {/* Preview thumbnail — large square so creators recognise the content */}
+      <button
+        type="button"
+        onClick={() => onSelect(content.id)}
+        className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl bg-muted"
+        aria-label="Select content"
+      >
+        {content.previewUrl ? (
+          isVideo ? (
+            <video src={content.previewUrl} className="h-full w-full object-cover" muted playsInline />
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <ImageIcon className="w-6 h-6 text-muted-foreground" />
-            </div>
-          )}
-        </div>
-
-        {/* Content Info */}
-        <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-semibold text-foreground truncate">{content.title}</h4>
-          <p className="text-xs text-muted-foreground">
-            {isVideo ? 'Video' : 'Image'}
-          </p>
-        </div>
-
-        {/* Visibility + free preview */}
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-              {content.is_public ? (
-                <>
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Public</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff className="w-3.5 h-3.5" />
-                  <span>Private</span>
-                </>
-              )}
-            </div>
-            <Switch
-              checked={content.is_public}
-              onCheckedChange={(checked) => onToggle(content.id, checked)}
-            />
+            <img src={content.previewUrl} alt="" className="h-full w-full object-cover" />
+          )
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <ImageIcon className="h-7 w-7 text-muted-foreground" />
           </div>
-          {content.is_public && (
-            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
-              <input
-                type="radio"
-                name={`feed-preview-${content.id}`}
-                checked={content.is_feed_preview}
-                onChange={() => onSetPreview(content.id)}
-                className="accent-primary cursor-pointer"
-              />
-              Free preview
-            </label>
-          )}
-        </div>
-      </div>
+        )}
+        {isSelected && (
+          <div className="absolute inset-0 bg-primary/30 flex items-center justify-center">
+            <CheckSquare className="h-6 w-6 text-white drop-shadow" />
+          </div>
+        )}
+      </button>
 
-      {content.is_public && (
-        <textarea
-          defaultValue={content.feed_caption ?? ''}
-          onBlur={(e) => onCaptionChange(content.id, e.target.value)}
-          rows={2}
-          maxLength={500}
-          placeholder="Feed caption (optional, shown above this post)…"
-          className="w-full resize-none rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground mt-3 focus:outline-none focus:ring-2 focus:ring-primary/30"
-        />
-      )}
+      {/* Right side: caption + visibility controls */}
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          {/* Visibility pill + Free preview radio in a tidy cluster */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onToggle(content.id, !content.is_public)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                content.is_public
+                  ? 'bg-emerald-500/15 text-emerald-500'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/70'
+              }`}
+            >
+              {content.is_public ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              {content.is_public ? 'In feed' : 'Hidden'}
+            </button>
+            {content.is_public && (
+              <button
+                type="button"
+                onClick={() => onSetPreview(content.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  content.is_feed_preview
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    content.is_feed_preview ? 'bg-primary-foreground' : 'bg-muted-foreground/40'
+                  }`}
+                />
+                {content.is_feed_preview ? 'Free preview' : 'Set as free preview'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Caption editor — always visible when public, full-width, 2 rows */}
+        {content.is_public ? (
+          <textarea
+            defaultValue={content.feed_caption ?? ''}
+            onBlur={(e) => onCaptionChange(content.id, e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder="Write a caption for this post…"
+            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Hidden from your profile. Toggle "In feed" to show it (blurred for non-subscribers).
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -280,30 +274,34 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
         .from('creator_profiles')
         .update({ content_order: orderedIds })
         .eq('id', profileId);
-      if (error) console.error('Error saving content_order on creator_profiles', error);
+      if (error) throw error;
     } else if (userId) {
       const { error } = await supabase
         .from('profiles')
         .update({ content_order: orderedIds })
         .eq('id', userId);
-      if (error) console.error('Error saving content_order on profiles', error);
+      if (error) throw error;
     }
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    const oldIndex = contents.findIndex((item) => item.id === active.id);
+    const newIndex = contents.findIndex((item) => item.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
 
-    setContents((items) => {
-      const oldIndex = items.findIndex((item) => item.id === active.id);
-      const newIndex = items.findIndex((item) => item.id === over.id);
-      const next = arrayMove(items, oldIndex, newIndex);
-      // Fire-and-forget persistence; we already optimistically updated the UI.
-      void persistOrder(next.map((c) => c.id));
-      return next;
-    });
-    onContentUpdate?.();
-    toast.success('Content reordered');
+    const next = arrayMove(contents, oldIndex, newIndex);
+    setContents(next); // optimistic UI
+    try {
+      await persistOrder(next.map((c) => c.id));
+      onContentUpdate?.();
+      toast.success('Feed order saved');
+    } catch (err) {
+      console.error('Error saving content_order', err);
+      toast.error("Couldn't save the new order");
+      setContents(contents); // rollback
+    }
   };
 
   /**
@@ -479,9 +477,6 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     setIsUpdating(false);
   };
 
-  const publicCount = contents.filter((c) => c.is_public).length;
-  const privateCount = contents.length - publicCount;
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -491,31 +486,16 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
   }
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Eye className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs font-medium text-muted-foreground">Public</span>
-          </div>
-          <p className="text-2xl font-bold text-foreground">{publicCount}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <EyeOff className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">Private</span>
-          </div>
-          <p className="text-2xl font-bold text-foreground">{privateCount}</p>
-        </div>
-      </div>
-
-      {/* Content List */}
+    <div className="space-y-5">
       {contents.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Public Content Gallery</h3>
-            <p className="text-xs text-muted-foreground">Drag to reorder • Toggle to show/hide</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Posts</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Drag to reorder — the order here is the order your fans see on your profile.
+              </p>
+            </div>
           </div>
 
           {/* Batch actions */}

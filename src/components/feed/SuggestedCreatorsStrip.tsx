@@ -124,7 +124,7 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
       </div>
 
       <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-6">
+        <div className="flex gap-4 overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-6">
           {ordered.map((c, idx) => (
             <motion.button
               key={c.profileId}

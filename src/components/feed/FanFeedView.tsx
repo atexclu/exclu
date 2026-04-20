@@ -113,12 +113,13 @@ export function FanFeedView({ userId }: { userId: string | null }) {
         });
       }
 
-      // 2) Load posts — public assets + published paid links for those profiles.
+      // 2) Load posts — PUBLIC ASSETS ONLY. Paid links live on the creator's
+      // Links tab and stay out of the feed.
       // Legacy assets (uploaded before the multi-profile rollout) carry only a
       // creator_id and no profile_id; to avoid dropping them, we also scan by
       // creator_user_id of the creators we follow.
       const creatorUserIdArr = Array.from(creatorByProfileId.values()).map((c) => c.userId);
-      const [{ data: assetByProfile }, { data: assetByCreator }, { data: linkRows }] = await Promise.all([
+      const [{ data: assetByProfile }, { data: assetByCreator }] = await Promise.all([
         supabase
           .from('assets')
           .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
@@ -136,14 +137,6 @@ export function FanFeedView({ userId }: { userId: string | null }) {
               .order('created_at', { ascending: false })
               .limit(200)
           : Promise.resolve({ data: [] as any[] }),
-        supabase
-          .from('links')
-          .select('id, profile_id, creator_id, slug, title, description, price_cents, created_at')
-          .in('profile_id', profileIdArr)
-          .eq('status', 'published')
-          .eq('show_on_profile', true)
-          .order('created_at', { ascending: false })
-          .limit(200),
       ]);
 
       // Map legacy rows (profile_id IS NULL) to the creator's first active
@@ -177,23 +170,6 @@ export function FanFeedView({ userId }: { userId: string | null }) {
             mimeType: a.mime_type,
             caption: a.feed_caption,
             isUnlocked,
-          },
-        });
-      }
-      for (const l of (linkRows ?? []) as any[]) {
-        const creator = l.profile_id ? creatorByProfileId.get(l.profile_id) : undefined;
-        if (!creator) continue;
-        compound.push({
-          creator,
-          createdAt: l.created_at,
-          post: {
-            kind: 'link',
-            id: l.id,
-            slug: l.slug,
-            title: l.title,
-            description: l.description,
-            priceCents: l.price_cents,
-            coverUrl: null,
           },
         });
       }
