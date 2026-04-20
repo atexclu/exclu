@@ -70,7 +70,6 @@ import DirectoryAgencies from './pages/DirectoryAgencies';
 import DirectoryTools from './pages/DirectoryTools';
 import AgencyDetail from './pages/AgencyDetail';
 import AdminBlogEditor from './pages/AdminBlogEditor';
-import Earnings from './pages/Earnings';
 import BlogIndex from './pages/BlogIndex';
 import BlogArticle from './pages/BlogArticle';
 import BlogCategory from './pages/BlogCategory';
@@ -256,13 +255,10 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
+                {/* /app/earnings merged into /app/dashboard (Earnings hub) */}
                 <Route
                   path="/app/earnings"
-                  element={
-                    <ProtectedRoute>
-                      <Earnings />
-                    </ProtectedRoute>
-                  }
+                  element={<Navigate to="/app/dashboard" replace />}
                 />
                 {/* IBAN payout setup is inline in Profile/Settings */}
                 <Route

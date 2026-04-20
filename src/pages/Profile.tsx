@@ -74,7 +74,7 @@ const Profile = () => {
       setActiveSection('subscription');
       window.history.replaceState(null, '', window.location.pathname);
     } else if (hash === 'wallet') {
-      window.location.href = '/app/earnings';
+      window.location.href = '/app/dashboard';
       return;
     }
   }, []);

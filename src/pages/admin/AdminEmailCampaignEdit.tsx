@@ -52,12 +52,11 @@ import {
 // ═══════════════════════════════════════════════════════════════════════
 
 const CTA_PRESETS: Array<{ key: string; label: string; url: string }> = [
-  { key: "dashboard", label: "Creator dashboard", url: "https://exclu.at/app/dashboard" },
+  { key: "dashboard", label: "Earnings / wallet", url: "https://exclu.at/app/dashboard" },
   { key: "profile", label: "Profile editor (Link-in-bio)", url: "https://exclu.at/app/profile" },
   { key: "links", label: "Paid links", url: "https://exclu.at/app/links" },
   { key: "content", label: "Content library", url: "https://exclu.at/app/content" },
   { key: "chat", label: "Chat inbox", url: "https://exclu.at/app/chat" },
-  { key: "earnings", label: "Earnings / wallet", url: "https://exclu.at/app/earnings" },
   { key: "referral", label: "Referral dashboard", url: "https://exclu.at/app/referral" },
   { key: "settings", label: "Profile settings", url: "https://exclu.at/app/profile" },
   { key: "fan", label: "Fan dashboard", url: "https://exclu.at/fan" },

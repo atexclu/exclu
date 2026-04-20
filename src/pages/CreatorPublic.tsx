@@ -15,6 +15,7 @@ import { getAuroraGradient } from '@/lib/auroraGradients';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
 import { SubscriptionPopup } from '@/components/feed/SubscriptionPopup';
+import { SuggestedCreatorsStrip } from '@/components/feed/SuggestedCreatorsStrip';
 import { useFanSubscription } from '@/hooks/useFanSubscription';
 import {
   SiX,
@@ -61,7 +62,9 @@ type FeedItem =
   | {
       kind: 'asset';
       id: string;
-      previewUrl: string | null;
+      previewUrl: string | null; // full-res — only populated when viewer is subscribed or it's the free preview
+      blurUrl: string | null;
+      storagePath: string;
       mimeType: string | null;
       caption: string | null;
       isPreview: boolean;
@@ -179,18 +182,27 @@ const CreatorPublic = () => {
   const [giftFanName, setGiftFanName] = useState('');
   const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
 
-  // Desktop photo collapse on scroll (only when >5 links)
+  // Desktop photo collapse on scroll.
+  // Triggers on the Feed tab unconditionally (the feed is the centerpiece
+  // and benefits from the extra width), or on the Links tab only when the
+  // creator has enough links to justify scrolling past the fold.
   const [photoVisible, setPhotoVisible] = useState(true);
   useEffect(() => {
-    const threshold = window.innerHeight * 0.4;
+    const threshold = window.innerHeight * 0.35;
     const handleScroll = () => {
-      if (links.length <= 5) return;
+      const allowCollapse = activeTab === 'content' || links.length > 5;
+      if (!allowCollapse) {
+        setPhotoVisible((prev) => (prev ? prev : true));
+        return;
+      }
       const shouldShow = window.scrollY < threshold;
       setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
     };
+    // Fire once on tab/content change so switching tabs doesn't leave us stuck.
+    handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [links.length]);
+  }, [links.length, activeTab]);
 
   // Check if a fan (not a creator) is logged in
   useEffect(() => {
@@ -434,7 +446,7 @@ const CreatorPublic = () => {
         // Preview asset surfaces first so it appears at the top of the feed even if others are newer.
         let assetsQuery = supabase
           .from('assets')
-          .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, created_at')
+          .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
           .eq('is_public', true)
           .order('is_feed_preview', { ascending: false })
           .order('created_at', { ascending: false });
@@ -452,11 +464,15 @@ const CreatorPublic = () => {
           console.error('Error loading public content:', publicError.message);
         }
         if (!publicError && publicData && publicData.length > 0) {
+          // Sign blur paths for everyone. Full-res signed URLs are resolved
+          // separately in a later effect, but ONLY when the viewer is subscribed.
+          // That way non-subscribers never even observe a full-res URL.
           const withUrls = await Promise.all(
-            publicData.map(async (item) => {
-              if (!item.storage_path) return { ...item, previewUrl: null };
-              const previewUrl = await getSignedUrl(item.storage_path);
-              return { ...item, previewUrl };
+            publicData.map(async (item: any) => {
+              const blurUrl = item.feed_blur_path
+                ? await getSignedUrl(item.feed_blur_path, 60 * 60)
+                : null;
+              return { ...item, blurUrl, previewUrl: null };
             })
           );
           if (!isMounted) return;
@@ -514,6 +530,8 @@ const CreatorPublic = () => {
       kind: 'asset',
       id: a.id,
       previewUrl: a.previewUrl ?? null,
+      blurUrl: a.blurUrl ?? null,
+      storagePath: a.storage_path ?? '',
       mimeType: a.mime_type ?? null,
       caption: a.feed_caption ?? null,
       isPreview: a.is_feed_preview === true,
@@ -536,6 +554,33 @@ const CreatorPublic = () => {
     );
     setFeedItems(preview ? [preview, ...rest] : rest);
   }, [publicContent, links]);
+
+  // Lazy-sign full-res URLs only for the free preview (always) and when the
+  // viewer is subscribed (everything else). By deferring this until the
+  // subscription state resolves, non-subscribed DOMs never contain a full-res
+  // URL — the bundle check / view source attack surface stays protected.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const targets = feedItems.filter(
+        (item): item is Extract<FeedItem, { kind: 'asset' }> =>
+          item.kind === 'asset' && !item.previewUrl && (item.isPreview || isSubscribed) && !!item.storagePath,
+      );
+      if (targets.length === 0) return;
+      const resolved = await Promise.all(
+        targets.map(async (t) => ({ id: t.id, url: await getSignedUrl(t.storagePath) })),
+      );
+      if (cancelled) return;
+      setFeedItems((prev) =>
+        prev.map((item) => {
+          if (item.kind !== 'asset') return item;
+          const hit = resolved.find((r) => r.id === item.id);
+          return hit && hit.url ? { ...item, previewUrl: hit.url } : item;
+        }),
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [feedItems, isSubscribed]);
 
   // Fan coming back from QuickPay with ?subscribed=<handle>: refetch sub status + confirm.
   useEffect(() => {
@@ -1220,6 +1265,7 @@ const CreatorPublic = () => {
                               kind: 'asset',
                               id: item.id,
                               previewUrl: item.previewUrl,
+                              blurUrl: item.blurUrl,
                               mimeType: item.mimeType,
                               caption: item.caption,
                               isUnlocked: item.isPreview || isSubscribed,
@@ -1265,6 +1311,10 @@ const CreatorPublic = () => {
                   </div>
                 </button>
               )
+            )}
+
+            {!isContentLoading && activeTab === 'content' && (
+              <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
             )}
 
             {!isContentLoading && activeTab === 'wishlist' && (
@@ -1669,10 +1719,17 @@ const CreatorPublic = () => {
                       </div>
                     )}
 
-                    {/* Content Tab — vertical feed */}
+                    {/* Content Tab — vertical feed.
+                        Width tracks the photo column: when the photo is hidden
+                        on scroll, the feed widens to max-w-xl so the post cards
+                        become the focal point. */}
                     {!isContentLoading && activeTab === 'content' && (
                       feedItems.length > 0 ? (
-                        <div className="space-y-4 max-w-md mx-auto">
+                        <div
+                          className={`space-y-5 mx-auto transition-[max-width] duration-500 ease-in-out ${
+                            photoVisible ? 'max-w-md' : 'max-w-xl'
+                          }`}
+                        >
                           {feedItems.map((item) => (
                             <FeedPost
                               key={`${item.kind}-${item.id}`}
@@ -1682,6 +1739,7 @@ const CreatorPublic = () => {
                                       kind: 'asset',
                                       id: item.id,
                                       previewUrl: item.previewUrl,
+                                      blurUrl: item.blurUrl,
                                       mimeType: item.mimeType,
                                       caption: item.caption,
                                       isUnlocked: item.isPreview || isSubscribed,
@@ -1706,10 +1764,12 @@ const CreatorPublic = () => {
                         <button
                           type="button"
                           onClick={() => setShowSubscribePopup(true)}
-                          className="relative w-full max-w-md mx-auto aspect-square rounded-2xl overflow-hidden border border-white/20 block"
+                          className={`relative w-full mx-auto aspect-[4/5] rounded-3xl overflow-hidden border border-white/10 block transition-[max-width] duration-500 ${
+                            photoVisible ? 'max-w-md' : 'max-w-xl'
+                          }`}
                         >
                           <div
-                            className="absolute inset-0 scale-110 blur-2xl brightness-50"
+                            className="absolute inset-0 scale-125 blur-[42px]"
                             style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
                           />
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
@@ -1724,6 +1784,14 @@ const CreatorPublic = () => {
                           </div>
                         </button>
                       )
+                    )}
+
+                    {!isContentLoading && activeTab === 'content' && (
+                      <div
+                        className={`mx-auto transition-[max-width] duration-500 ease-in-out ${photoVisible ? 'max-w-md' : 'max-w-xl'}`}
+                      >
+                        <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
+                      </div>
                     )}
 
                     {/* Wishlist Tab */}

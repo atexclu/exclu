@@ -1,13 +1,14 @@
 import AppShell from '@/components/AppShell';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
+import BankDetailsForm, { BankData, getBankDisplayFields } from '@/components/BankDetailsForm';
 
 // --- SELF-HEALING & CACHE-BUSTING ---
 // Increment this version when making critical changes to force data re-fetch
@@ -26,7 +27,7 @@ const AppDashboard = () => {
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'metrics' | 'referral' | 'tips'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'tips' | 'referral' | 'payouts'>('metrics');
   const [tipsRaw, setTipsRaw] = useState<any[]>([]);
   const [giftsRaw, setGiftsRaw] = useState<any[]>([]);
   const [requestsRaw, setRequestsRaw] = useState<any[]>([]);
@@ -51,6 +52,16 @@ const AppDashboard = () => {
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [commissionRate, setCommissionRate] = useState(0.10);
+  // Wallet / payouts state (formerly /app/earnings)
+  const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState(0);
+  const [walletTotalWithdrawnCents, setWalletTotalWithdrawnCents] = useState(0);
+  const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
+  const [bankData, setBankData] = useState<BankData | null>(null);
+  const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const payoutsSectionRef = useRef<HTMLDivElement | null>(null);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,9 +113,10 @@ const AppDashboard = () => {
       }
 
       try {
+        if (isMounted) setUserId(user.id);
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents')
+          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country')
           .eq('id', user.id)
           .single();
 
@@ -192,7 +204,7 @@ const AppDashboard = () => {
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
           .from('payouts')
-          .select('id, amount_cents, status, created_at, paid_at')
+          .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
           .eq('creator_id', user.id)
           .order('created_at', { ascending: false });
 
@@ -249,7 +261,27 @@ const AppDashboard = () => {
         setPayouts(safePayouts);
         setGiftsRaw(safeGifts);
         setRequestsRaw(safeRequests);
+        setWalletPayouts(safePayouts);
+        setWalletTotalEarnedCents(
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0
+            ? dbTotalEarned
+            : revenueSum + tipsSum + requestsRevenue
+        );
+        setWalletTotalWithdrawnCents(
+          typeof profile?.total_withdrawn_cents === 'number' ? profile.total_withdrawn_cents : totalPayoutsCents
+        );
         if (profile) {
+          setPayoutSetupComplete(profile.payout_setup_complete === true);
+          setBankData({
+            bank_account_type: profile.bank_account_type ?? undefined,
+            bank_iban: profile.bank_iban ?? undefined,
+            bank_holder_name: profile.bank_holder_name ?? undefined,
+            bank_bic: profile.bank_bic ?? undefined,
+            bank_account_number: profile.bank_account_number ?? undefined,
+            bank_routing_number: profile.bank_routing_number ?? undefined,
+            bank_bsb: profile.bank_bsb ?? undefined,
+            bank_country: profile.bank_country ?? undefined,
+          });
           setProfileName(activeProfile?.display_name || profile.display_name || 'Creator');
           setProfileHandle(activeProfile?.username || profile.handle || null);
           setProfileViewCount(activeProfile?.profile_view_count ?? profile.profile_view_count ?? 0);
@@ -338,6 +370,52 @@ const AppDashboard = () => {
   const handleDismissPayoutModal = () => {
     sessionStorage.setItem('bankModalDismissed', 'true');
     setShowPayoutModal(false);
+  };
+
+  const goToPayouts = () => {
+    setActiveTab('payouts');
+    requestAnimationFrame(() => {
+      payoutsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const handleRequestWithdrawal = async () => {
+    if (!userId) return;
+    if (walletBalanceCents < 5000) {
+      toast.error('Minimum withdrawal is $50.00');
+      return;
+    }
+    if (!payoutSetupComplete) {
+      toast.error('Please set up your bank details first.');
+      goToPayouts();
+      return;
+    }
+    setIsRequestingWithdrawal(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+        body: {},
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (error || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Withdrawal request failed');
+      }
+      toast.success('Withdrawal requested! Funds typically arrive within 3–5 business days.');
+      if ((data as any)?.new_balance !== undefined) {
+        setWalletBalanceCents((data as any).new_balance);
+      }
+      const { data: refreshedPayouts } = await supabase
+        .from('payouts')
+        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
+        .eq('creator_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (refreshedPayouts) setWalletPayouts(refreshedPayouts);
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to request withdrawal');
+    } finally {
+      setIsRequestingWithdrawal(false);
+    }
   };
 
   const formattedRevenue = (totalRevenueCents / 100).toLocaleString('en-US', {
@@ -480,7 +558,7 @@ const AppDashboard = () => {
                   className="w-full rounded-full"
                   onClick={() => {
                     handleDismissPayoutModal();
-                    window.location.href = '/app/earnings';
+                    goToPayouts();
                   }}
                 >
                   <Landmark className="w-4 h-4 mr-2" />
@@ -500,16 +578,16 @@ const AppDashboard = () => {
       </AnimatePresence>
 
       <main className="px-4 lg:px-6 pb-16 w-full">
-        {/* Simple header with greeting */}
-        <section className="mt-4 sm:mt-6 mb-6">
+        {/* Header — title + quick profile actions */}
+        <section className="mt-4 sm:mt-6 mb-5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                <span>Welcome back{profileName ? <>, <span className="text-black dark:text-[#CFFF16]">{profileName}</span></> : ''}</span>
-              </h1>
-              <p className="text-sm text-exclu-space/70 mt-1">
-                Here's an overview of your performance
+              <p className="text-[10px] uppercase tracking-[0.22em] text-exclu-space/60 mb-1 font-semibold">
+                {profileName ? `${profileName}'s wallet` : 'Wallet'}
               </p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate tracking-tight">
+                Earnings
+              </h1>
             </div>
             <div className="flex items-center gap-2">
               {publicProfileUrl && (
@@ -564,20 +642,127 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
+        {/* ───────────── Wallet Hero ───────────── */}
+        <section className="mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-3xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-6 sm:p-8 lg:p-10 shadow-[0_24px_80px_-40px_rgba(207,255,22,0.22)] dark:shadow-[0_30px_100px_-50px_rgba(207,255,22,0.4)]"
+          >
+            {/* Lime aurora corners — single accent, no blue */}
+            <div aria-hidden className="pointer-events-none absolute -top-32 -right-20 w-[460px] h-[460px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.28),transparent_60%)] blur-3xl opacity-80 dark:opacity-95" />
+            <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 w-[380px] h-[380px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.12),transparent_60%)] blur-3xl opacity-40 dark:opacity-60" />
+            {/* Grain — dark only */}
+            <div aria-hidden className="pointer-events-none absolute inset-0 hidden dark:block opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-        {/* Metrics / Earnings / Referral toggle */}
+            <div className="relative">
+              {/* Row 1 — micro label */}
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
+                <span className="relative inline-flex h-1.5 w-1.5">
+                  <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
+                  <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
+                </span>
+                Available to withdraw
+              </div>
+
+              {/* Row 2 — balance */}
+              <div className="mt-3 flex items-end gap-2.5">
+                <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
+                  ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+              </div>
+
+              {/* Row 3 — stats */}
+              <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
+              <div className="mt-5 grid grid-cols-3">
+                {[
+                  { label: 'Total earned', value: `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
+                  { label: 'Withdrawn', value: `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
+                  { label: 'Sales', value: totalSalesCount.toLocaleString('en-US') },
+                ].map((stat, i) => (
+                  <div
+                    key={stat.label}
+                    className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Row 4 — actions */}
+              <div className="mt-7 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                {/* Bank pill + plan chip */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goToPayouts}
+                    className={`group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all ${
+                      payoutSetupComplete
+                        ? 'border-[#CFFF16]/45 bg-[#CFFF16]/12 text-[#4a6304] dark:text-[#CFFF16] hover:bg-[#CFFF16]/20'
+                        : 'border-amber-500/45 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15'
+                    }`}
+                  >
+                    <span className="relative flex h-2 w-2">
+                      {!payoutSetupComplete && (
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                      )}
+                      <span className={`relative inline-flex h-2 w-2 rounded-full ${payoutSetupComplete ? 'bg-[#CFFF16] shadow-[0_0_8px_rgba(207,255,22,0.8)]' : 'bg-amber-400'}`} />
+                    </span>
+                    {payoutSetupComplete ? 'Bank account connected' : 'Connect bank'}
+                    <ArrowUpRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  </button>
+
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
+                    <Sparkles className="w-3 h-3 text-[#CFFF16]" />
+                    {isCreatorSubscribed
+                      ? <>Premium · <span className="text-[#4a6304] dark:text-[#CFFF16] font-semibold">0% commission</span></>
+                      : <>Free · {Math.round(commissionRate * 100)}% commission</>}
+                  </div>
+                </div>
+
+                {/* Withdraw CTA */}
+                <div className="flex flex-col items-stretch sm:items-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleRequestWithdrawal}
+                    disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                    className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
+                  >
+                    {isRequestingWithdrawal ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                    ) : (
+                      <>
+                        <ArrowDownToLine className="w-4 h-4" />
+                        Withdraw {walletBalanceCents >= 5000 ? `$${(walletBalanceCents / 100).toFixed(2)}` : ''}
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-foreground/45 dark:text-white/45 tracking-wide sm:text-right">
+                    Min. <span className="text-foreground/75 dark:text-white/75 font-semibold">$50.00</span> · 3–5 business days
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* Tab toggle */}
         <section className="mt-1 mb-4">
-          <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+          <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 max-w-full overflow-x-auto scrollbar-hide">
             {[
-              { key: 'metrics', label: 'Metrics' },
-              { key: 'referral', label: 'Referral' },
+              { key: 'metrics', label: 'Overview' },
               { key: 'tips', label: 'Tips' },
+              { key: 'referral', label: 'Referral' },
+              { key: 'payouts', label: 'Payouts' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as 'metrics' | 'referral' | 'tips')}
-                className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'tips' | 'referral' | 'payouts')}
+                className={`px-4 py-1.5 rounded-full font-medium transition-all whitespace-nowrap ${activeTab === tab.key
                   ? 'bg-primary text-white dark:text-black shadow-sm'
                   : 'hover:text-exclu-cloud'
                   }`}
@@ -785,7 +970,7 @@ const AppDashboard = () => {
                                 stroke="currentColor"
                                 strokeWidth={2}
                                 points={pointsAttr}
-                                className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
+                                className="drop-shadow-[0_0_10px_rgba(207,255,22,0.7)] transition-all duration-500"
                               />
 
                               {/* Hover points */}
@@ -1336,6 +1521,193 @@ const AppDashboard = () => {
                             ${(tip.amount_cents / 100).toFixed(2)} total
                           </p>
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'payouts' && (
+          <section ref={payoutsSectionRef} className="mt-2 space-y-4 scroll-mt-24">
+            {/* Quick withdrawal stat row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Available', value: walletBalanceCents, accent: 'text-[#4a6304] dark:text-[#CFFF16]' },
+                { label: 'Total earned', value: walletTotalEarnedCents, accent: 'text-foreground dark:text-white' },
+                { label: 'Withdrawn', value: walletTotalWithdrawnCents, accent: 'text-foreground dark:text-white' },
+                {
+                  label: 'In progress',
+                  value: walletPayouts
+                    .filter((p: any) => ['pending', 'processing', 'requested'].includes(p.status))
+                    .reduce((s: number, p: any) => s + (p.amount_cents ?? 0), 0),
+                  accent: 'text-foreground/70 dark:text-white/70',
+                },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-foreground/50 dark:text-white/50 font-semibold">{stat.label}</p>
+                  <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${stat.accent}`}>
+                    ${(stat.value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Bank Account card */}
+            <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-foreground/50 dark:text-white/50 font-semibold mb-1">Payout method</p>
+                  <h2 className="text-lg sm:text-xl font-bold text-foreground dark:text-white">Bank account</h2>
+                </div>
+                {payoutSetupComplete && !isEditingBank && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingBank(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[11px] font-medium text-foreground/70 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:border-foreground/20 dark:hover:border-white/20 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                )}
+              </div>
+
+              {payoutSetupComplete && !isEditingBank ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Visual bank "card" — lime gradient, no emerald */}
+                  <div className="relative overflow-hidden rounded-2xl border border-[#CFFF16]/30 bg-gradient-to-br from-[#CFFF16]/12 via-transparent to-[#CFFF16]/8 dark:from-[#CFFF16]/14 dark:via-transparent dark:to-[#CFFF16]/6 p-5 min-h-[180px]">
+                    <div aria-hidden className="pointer-events-none absolute -top-12 -right-12 w-44 h-44 rounded-full bg-[#CFFF16]/25 blur-3xl" />
+                    <div aria-hidden className="pointer-events-none absolute -bottom-16 -left-16 w-44 h-44 rounded-full bg-[#CFFF16]/10 blur-3xl" />
+                    <div className="relative flex items-center justify-between">
+                      <div className="inline-flex items-center gap-1.5 rounded-full bg-[#CFFF16]/15 border border-[#CFFF16]/50 px-2.5 py-1 text-[10px] font-semibold text-[#4a6304] dark:text-[#CFFF16]">
+                        <ShieldCheck className="w-3 h-3" /> Verified
+                      </div>
+                      <Landmark className="w-6 h-6 text-[#4a6304]/70 dark:text-[#CFFF16]/80" />
+                    </div>
+                    <div className="relative mt-10">
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/55 dark:text-white/55 font-semibold">Account holder</p>
+                      <p className="text-base font-bold text-foreground dark:text-white truncate mt-0.5">{bankData?.bank_holder_name || '—'}</p>
+                    </div>
+                    <div className="relative mt-3 font-mono text-sm tracking-wider text-foreground/90 dark:text-white/90">
+                      {bankData?.bank_iban
+                        ? bankData.bank_iban.replace(/(.{4})/g, '$1 ').trim()
+                        : bankData?.bank_account_number || '••••  ••••  ••••'}
+                    </div>
+                  </div>
+
+                  {/* Field details */}
+                  <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-foreground/[0.02] dark:bg-white/[0.03] p-5 space-y-1 text-sm">
+                    {getBankDisplayFields(bankData).map((f) => (
+                      <div key={f.label} className="flex justify-between gap-4 py-1.5 border-b border-foreground/5 dark:border-white/5 last:border-b-0">
+                        <span className="text-foreground/60 dark:text-white/60 text-xs">{f.label}</span>
+                        <span className="text-foreground dark:text-white font-mono text-xs truncate">{f.value}</span>
+                      </div>
+                    ))}
+                    {bankData?.bank_country && (
+                      <div className="flex justify-between gap-4 py-1.5">
+                        <span className="text-foreground/60 dark:text-white/60 text-xs">Country</span>
+                        <span className="text-foreground dark:text-white text-xs">{bankData.bank_country}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#CFFF16]/40 bg-[#CFFF16]/5 p-4 mb-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-[#4a6304] dark:text-[#CFFF16] flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-foreground dark:text-white">{isEditingBank ? 'Update your bank details' : 'Set up your payout method'}</p>
+                    <p className="text-xs text-foreground/70 dark:text-white/70 mt-0.5">
+                      {isEditingBank
+                        ? 'Save the new details and we\'ll send your next payout to this account.'
+                        : 'Add a bank account to receive your earnings. We support IBAN, US (ACH), AU (BSB) and more.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(!payoutSetupComplete || isEditingBank) && (
+                <div className="mt-4">
+                  <BankDetailsForm
+                    initialData={bankData}
+                    payoutSetupComplete={payoutSetupComplete}
+                    onSaved={(data) => {
+                      setBankData(data);
+                      setPayoutSetupComplete(true);
+                      setIsEditingBank(false);
+                      toast.success('Bank account saved.');
+                    }}
+                    onCancel={isEditingBank ? () => setIsEditingBank(false) : undefined}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Withdrawal History */}
+            <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] overflow-hidden">
+              <div className="px-5 py-4 border-b border-black/5 dark:border-white/10 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-foreground/50 dark:text-white/50 font-semibold">Withdrawal history</p>
+                  <p className="text-sm text-foreground dark:text-white font-bold mt-0.5">{walletPayouts.length} {walletPayouts.length === 1 ? 'payout' : 'payouts'}</p>
+                </div>
+                {walletBalanceCents >= 5000 && payoutSetupComplete && (
+                  <Button
+                    type="button"
+                    onClick={handleRequestWithdrawal}
+                    disabled={isRequestingWithdrawal}
+                    size="sm"
+                    className="rounded-full gap-1.5 bg-[#CFFF16] text-black hover:bg-[#bef200] shadow-[0_6px_20px_-6px_rgba(207,255,22,0.55)]"
+                  >
+                    {isRequestingWithdrawal
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Requesting</>
+                      : <><ArrowDownToLine className="w-3.5 h-3.5" /> Cash out</>}
+                  </Button>
+                )}
+              </div>
+
+              {walletPayouts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-foreground/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center justify-center">
+                    <Banknote className="w-6 h-6 text-foreground/50 dark:text-white/50" />
+                  </div>
+                  <p className="text-sm text-foreground/70 dark:text-white/70">No withdrawals yet</p>
+                  <p className="text-[11px] text-foreground/50 dark:text-white/50 max-w-xs text-center">
+                    Reach <span className="text-foreground dark:text-white font-semibold">$50</span> in your wallet then request a payout — funds arrive in 3–5 business days.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-black/5 dark:divide-white/10 max-h-[520px] overflow-y-auto">
+                  {walletPayouts.map((payout) => {
+                    const isPaid = payout.status === 'completed' || payout.status === 'paid';
+                    const isFailed = payout.status === 'failed' || payout.status === 'rejected';
+                    const dotClass = isPaid
+                      ? 'bg-[#CFFF16]/15 text-[#4a6304] dark:text-[#CFFF16] border border-[#CFFF16]/40'
+                      : isFailed
+                        ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30'
+                        : 'bg-foreground/5 dark:bg-white/5 text-foreground/70 dark:text-white/70 border border-foreground/10 dark:border-white/10';
+                    const Icon = isPaid ? CircleCheck : isFailed ? CircleX : Clock;
+                    return (
+                      <div key={payout.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${dotClass}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-foreground dark:text-white tabular-nums">
+                              ${(payout.amount_cents / 100).toFixed(2)}
+                            </p>
+                            <p className="text-[11px] text-foreground/55 dark:text-white/55">
+                              Requested {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {payout.paid_at && ` · paid ${new Date(payout.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                            </p>
+                            {payout.rejection_reason && (
+                              <p className="text-[11px] text-red-500/80 dark:text-red-300/80 mt-1">Reason: {payout.rejection_reason}</p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${dotClass}`}>
+                          {payout.status}
+                        </span>
                       </div>
                     );
                   })}

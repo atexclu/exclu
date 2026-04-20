@@ -117,7 +117,7 @@ export function FanFeedView({ userId }: { userId: string | null }) {
       const [{ data: assetRows }, { data: linkRows }] = await Promise.all([
         supabase
           .from('assets')
-          .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, created_at')
+          .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
           .in('profile_id', profileIdArr)
           .eq('is_public', true)
           .order('created_at', { ascending: false })
@@ -132,22 +132,28 @@ export function FanFeedView({ userId }: { userId: string | null }) {
           .limit(200),
       ]);
 
-      // Sign URLs for each asset once; storage policy keeps signed URLs short-lived.
+      // Sign URLs lazily: blur always, full-res only when subscribed or the free preview.
+      // Non-subscribed DOMs never carry a full-res URL — "view source" stays safe.
       const compound: CompoundPost[] = [];
       for (const a of (assetRows ?? []) as any[]) {
         const creator = a.profile_id ? creatorByProfileId.get(a.profile_id) : undefined;
         if (!creator) continue;
-        const url = await getSignedUrl(a.storage_path);
+        const isUnlocked = creator.isSubscribed || a.is_feed_preview === true;
+        const [fullUrl, blurUrl] = await Promise.all([
+          isUnlocked ? getSignedUrl(a.storage_path) : Promise.resolve(null),
+          a.feed_blur_path ? getSignedUrl(a.feed_blur_path, 60 * 60) : Promise.resolve(null),
+        ]);
         compound.push({
           creator,
           createdAt: a.created_at,
           post: {
             kind: 'asset',
             id: a.id,
-            previewUrl: url,
+            previewUrl: fullUrl,
+            blurUrl,
             mimeType: a.mime_type,
             caption: a.feed_caption,
-            isUnlocked: creator.isSubscribed || a.is_feed_preview === true,
+            isUnlocked,
           },
         });
       }

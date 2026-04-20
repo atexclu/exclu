@@ -26,8 +26,13 @@ const creators = [
   { name: 'Mila Ray', followers: '134K', gradient: 'from-exclu-steel/15 to-exclu-phantom/40', image: '/creators/IMG_8271 2.JPG' },
 ];
 
-// Double the array for infinite scroll effect
-const doubledCreators = [...creators, ...creators];
+// Split into 2 disjoint sets so the two scrolling rows don't show duplicate creators.
+// Even-indexed → row 1, odd-indexed → row 2.
+const rowOneCreators = creators.filter((_, i) => i % 2 === 0);
+const rowTwoCreators = creators.filter((_, i) => i % 2 === 1);
+// Each row is doubled within itself so the marquee loop is seamless.
+const doubledRowOne = [...rowOneCreators, ...rowOneCreators];
+const doubledRowTwo = [...rowTwoCreators, ...rowTwoCreators];
 
 const CreatorsCarousel = () => {
   const ref = useRef(null);
@@ -73,7 +78,7 @@ const CreatorsCarousel = () => {
             },
           }}
         >
-          {doubledCreators.map((creator, index) => (
+          {doubledRowOne.map((creator, index) => (
             <div
               key={`row1-${index}`}
               className="flex-shrink-0 group cursor-pointer"
@@ -122,7 +127,7 @@ const CreatorsCarousel = () => {
             },
           }}
         >
-          {[...doubledCreators].reverse().map((creator, index) => (
+          {[...doubledRowTwo].reverse().map((creator, index) => (
             <div
               key={`row2-${index}`}
               className="flex-shrink-0 group cursor-pointer"
