@@ -17,7 +17,6 @@ if (!supabaseAnonKey) {
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
 const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
@@ -40,9 +39,8 @@ function getCorsHeaders(req: Request) {
   };
 }
 
-// Very lightweight in-memory rate limiting per IP and function instance.
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 30; // per IP per window
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function isRateLimited(ip: string): boolean {
@@ -68,12 +66,16 @@ interface AdminUserSummary {
   created_at: string | null;
   is_creator: boolean | null;
   is_admin: boolean | null;
+  is_agency: boolean | null;
   links_count: number;
   assets_count: number;
   total_sales: number;
   total_revenue_cents: number;
   profile_view_count: number;
 }
+
+type SortBy = 'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' | 'most_content' | 'most_links';
+const ALLOWED_SORTS: SortBy[] = ['created_desc', 'created_asc', 'best_sellers', 'most_viewed', 'most_content', 'most_links'];
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -98,7 +100,7 @@ serve(async (req) => {
     let search: string | null = null;
     let page = 1;
     let pageSize = 50;
-    let sortBy: 'created_desc' | 'created_asc' | 'best_sellers' | 'most_viewed' | 'most_content' | 'most_links' = 'created_desc';
+    let sortBy: SortBy = 'created_desc';
 
     try {
       const rawBody = await req.text();
@@ -109,28 +111,20 @@ serve(async (req) => {
           const trimmed = body.search.trim();
           search = trimmed.length > 0 ? trimmed : null;
         }
-
         if (typeof body.page === 'number' && body.page > 0) {
-          page = body.page;
+          page = Math.floor(body.page);
         }
-
         if (typeof body.pageSize === 'number' && body.pageSize > 0) {
-          pageSize = Math.min(body.pageSize, 200);
+          pageSize = Math.min(Math.floor(body.pageSize), 200);
         }
-
-        if (typeof body.sortBy === 'string') {
-          sortBy = body.sortBy as any;
+        if (typeof body.sortBy === 'string' && ALLOWED_SORTS.includes(body.sortBy as SortBy)) {
+          sortBy = body.sortBy as SortBy;
         }
       }
     } catch {
-      // Ignore body parse errors and fall back to defaults
+      // Fall back to defaults
     }
 
-    const normalizedSearch = search ? search.toLowerCase() : null;
-
-    // Get the user from a dedicated header carrying the Supabase access token.
-    // We use a custom header (x-supabase-auth) so that the Functions gateway
-    // can continue to use the project key for its own Authorization header.
     const rawToken = req.headers.get('x-supabase-auth') ?? '';
     const token = rawToken.replace(/^Bearer\s+/i, '').trim();
 
@@ -141,9 +135,7 @@ serve(async (req) => {
       });
     }
 
-    // Use an anon client to resolve the current user from the JWT.
     const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey);
-
     const {
       data: { user },
       error: userError,
@@ -157,7 +149,6 @@ serve(async (req) => {
       });
     }
 
-    // Ensure the caller is an admin according to the profiles table
     const { data: adminProfile, error: adminProfileError } = await supabaseAdmin
       .from('profiles')
       .select('id, is_admin')
@@ -179,314 +170,44 @@ serve(async (req) => {
       });
     }
 
-    // Fetch user profiles for the admin dashboard with optional search and pagination.
-    let users: any[] = [];
-    let totalUsers = 0;
+    // Single round-trip: admin_list_users does the join + aggregation + pagination
+    // server-side and returns one extra column `total_count` (same on every row).
+    const { data: rows, error: rpcError } = await supabaseAdmin.rpc('admin_list_users', {
+      p_search: search,
+      p_page: page,
+      p_page_size: pageSize,
+      p_sort_by: sortBy,
+    });
 
-    // Sorts that depend on aggregated data (links, assets, sales) need all profiles first
-    const needsFullFetch = ['most_content', 'most_links', 'best_sellers'].includes(sortBy);
-
-    if (!normalizedSearch) {
-      let query = supabaseAdmin
-        .from('profiles')
-        .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count', { count: 'exact' });
-
-      // For aggregated sorts, fetch all profiles (override default 1000 row limit)
-      if (needsFullFetch) {
-        query = query.range(0, 99999);
-      }
-
-      // Apply DB-level sorting only for sorts that don't depend on aggregated data
-      if (!needsFullFetch) {
-        if (sortBy === 'created_asc') {
-          query = query.order('created_at', { ascending: true });
-        } else if (sortBy === 'most_viewed') {
-          query = query.order('profile_view_count', { ascending: false, nullsLast: true });
-        } else {
-          query = query.order('created_at', { ascending: false });
-        }
-
-        const from = (page - 1) * pageSize;
-        const to = from + pageSize - 1;
-        query = query.range(from, to);
-      }
-
-      const { data: usersPage, error: usersError, count } = await query;
-
-      if (usersError) {
-        console.error('Error loading users in admin-get-users', usersError);
-        return new Response(JSON.stringify({ error: 'Failed to load users' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      users = usersPage ?? [];
-      totalUsers = typeof count === 'number' ? count : users.length;
-    } else {
-      // Search across profiles (display_name, handle, id when search looks like a UUID)
-      const searchTerm = normalizedSearch;
-
-      const orParts: string[] = [
-        `display_name.ilike.%${searchTerm}%`,
-        `handle.ilike.%${searchTerm}%`,
-      ];
-
-      // Only add an id equality filter if the search string looks like a UUID.
-      // This avoids Postgres errors like "invalid input syntax for type uuid" when the
-      // search term is an email or arbitrary text.
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(searchTerm)) {
-        orParts.push(`id.eq.${searchTerm}`);
-      }
-
-      const orFilters = orParts.join(',');
-
-      const { data: matchedProfiles, error: profilesError } = await supabaseAdmin
-        .from('profiles')
-        .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count')
-        .or(orFilters);
-
-      if (profilesError) {
-        console.error('Error searching profiles in admin-get-users', profilesError);
-        return new Response(JSON.stringify({ error: 'Failed to load users' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Additionally search by email via auth users (paginate to get ALL users)
-      const matchingEmailUserIds: string[] = [];
-      try {
-        let currentPage = 1;
-        let hasMore = true;
-        while (hasMore) {
-          const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
-            page: currentPage,
-            perPage: 1000,
-          });
-
-          if (authUsersError) {
-            console.error('Error loading auth users for search in admin-get-users', authUsersError);
-            break;
-          }
-
-          const authUsers = authUsersData?.users ?? [];
-          for (const au of authUsers) {
-            const email = (au.email ?? '').toLowerCase();
-            if (email && email.includes(searchTerm) && au.id) {
-              matchingEmailUserIds.push(au.id);
-            }
-          }
-
-          hasMore = authUsers.length === 1000;
-          currentPage++;
-        }
-      } catch (e) {
-        console.error('Unexpected error while listing auth users for search in admin-get-users', e);
-      }
-
-      const existingIds = new Set((matchedProfiles ?? []).map((u: any) => u.id as string));
-      const extraIds = matchingEmailUserIds.filter((id) => !existingIds.has(id));
-
-      let extraProfiles: any[] = [];
-      if (extraIds.length > 0) {
-        const { data: extraProfilesData, error: extraProfilesError } = await supabaseAdmin
-          .from('profiles')
-          .select('id, display_name, handle, avatar_url, created_at, is_creator, is_admin, profile_view_count')
-          .in('id', extraIds);
-
-        if (extraProfilesError) {
-          console.error(
-            'Error loading extra profiles for email search in admin-get-users',
-            extraProfilesError,
-          );
-        } else {
-          extraProfiles = extraProfilesData ?? [];
-        }
-      }
-
-      const allMatched = [...(matchedProfiles ?? []), ...extraProfiles];
-
-      totalUsers = allMatched.length;
-
-      const fromIndex = (page - 1) * pageSize;
-      const toIndex = fromIndex + pageSize;
-      users = allMatched.slice(fromIndex, toIndex);
-    }
-
-    let userIds = (users ?? []).map((u: any) => u.id as string).filter(Boolean);
-
-    // Fetch creator_profiles avatars — creators store their real photo there, not in profiles
-    const creatorAvatarByUserId = new Map<string, string | null>();
-    if (userIds.length > 0) {
-      const { data: creatorProfiles } = await supabaseAdmin
-        .from('creator_profiles')
-        .select('user_id, avatar_url')
-        .in('user_id', userIds);
-      for (const cp of creatorProfiles ?? []) {
-        if (cp.user_id && cp.avatar_url) {
-          creatorAvatarByUserId.set(cp.user_id, cp.avatar_url);
-        }
-      }
-    }
-
-    // Fetch aggregated metrics from profile_analytics
-    const { data: analytics, error: analyticsError } = await supabaseAdmin
-      .from('profile_analytics')
-      .select('profile_id, sales_count, revenue_cents, profile_views, link_clicks');
-
-    if (analyticsError) {
-      console.error('Error loading analytics in admin-get-users', analyticsError);
-      return new Response(JSON.stringify({ error: 'Failed to load analytics' }), {
+    if (rpcError) {
+      console.error('admin_list_users RPC failed', rpcError);
+      return new Response(JSON.stringify({ error: 'Failed to load users' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Load auth users to hydrate emails in the summary (paginate to get ALL users)
-    const emailByUserId = new Map<string, string | null>();
-    if (userIds.length > 0) {
-      try {
-        let currentPage = 1;
-        let hasMore = true;
-        while (hasMore) {
-          const { data: authUsersData, error: authUsersError } = await supabaseAdmin.auth.admin.listUsers({
-            page: currentPage,
-            perPage: 1000,
-          });
+    const list = (rows ?? []) as Array<any>;
+    const total = list.length > 0 ? Number(list[0].total_count) : 0;
 
-          if (authUsersError) {
-            console.error('Error loading auth users in admin-get-users', authUsersError);
-            break;
-          }
+    const users: AdminUserSummary[] = list.map((r) => ({
+      id: r.id,
+      display_name: r.display_name ?? null,
+      handle: r.handle ?? null,
+      email: r.email ?? null,
+      avatar_url: r.avatar_url ?? null,
+      created_at: r.created_at ?? null,
+      is_creator: r.is_creator ?? null,
+      is_admin: r.is_admin ?? null,
+      is_agency: r.is_agency ?? null,
+      links_count: Number(r.links_count ?? 0),
+      assets_count: Number(r.assets_count ?? 0),
+      total_sales: Number(r.total_sales ?? 0),
+      total_revenue_cents: Number(r.total_revenue_cents ?? 0),
+      profile_view_count: Number(r.profile_view_count ?? 0),
+    }));
 
-          const authUsers = authUsersData?.users ?? [];
-          for (const au of authUsers) {
-            // Only keep emails for users we care about
-            if (au.id && userIds.includes(au.id)) {
-              emailByUserId.set(au.id, au.email ?? null);
-            }
-          }
-
-          hasMore = authUsers.length === 1000;
-          currentPage++;
-        }
-      } catch (e) {
-        console.error('Unexpected error while listing auth users in admin-get-users', e);
-      }
-    }
-
-    // Compute per-user link counts and map link_id -> creator_id
-    const linksCountByUser = new Map<string, number>();
-    const linkOwnerById = new Map<string, string>();
-
-    {
-      // For aggregated sorts we need ALL links/assets, not just the current page's users
-      let linksQuery = supabaseAdmin.from('links').select('id, creator_id');
-      if (!needsFullFetch && userIds.length > 0) {
-        linksQuery = linksQuery.in('creator_id', userIds);
-      }
-      const { data: linksAll, error: linksError } = await linksQuery.range(0, 99999);
-
-      if (linksError) {
-        console.error('Error loading links in admin-get-users', linksError);
-      } else {
-        for (const link of linksAll ?? []) {
-          const creatorId = (link as any).creator_id as string | null;
-          const linkId = (link as any).id as string | null;
-          if (!creatorId || !linkId) continue;
-          linkOwnerById.set(linkId, creatorId);
-          linksCountByUser.set(creatorId, (linksCountByUser.get(creatorId) ?? 0) + 1);
-        }
-      }
-    }
-
-    // Compute per-user asset counts
-    const assetsCountByUser = new Map<string, number>();
-    {
-      let assetsQuery = supabaseAdmin.from('assets').select('id, creator_id');
-      if (!needsFullFetch && userIds.length > 0) {
-        assetsQuery = assetsQuery.in('creator_id', userIds);
-      }
-      const { data: assetsAll, error: assetsError } = await assetsQuery.range(0, 99999);
-
-      if (assetsError) {
-        console.error('Error loading assets in admin-get-users', assetsError);
-      } else {
-        for (const asset of assetsAll ?? []) {
-          const creatorId = (asset as any).creator_id as string | null;
-          if (!creatorId) continue;
-          assetsCountByUser.set(creatorId, (assetsCountByUser.get(creatorId) ?? 0) + 1);
-        }
-      }
-    }
-
-    // Build maps for aggregated metrics from profile_analytics
-    const salesCountByUser = new Map<string, number>();
-    const revenueByUser = new Map<string, number>();
-    const profileViewsByUser = new Map<string, number>();
-    const linkClicksByUser = new Map<string, number>();
-
-    for (const analytic of (analytics ?? []) as any[]) {
-      const profileId = analytic.profile_id as string;
-
-      // Aggregate metrics for each profile (user)
-      const currentSales = salesCountByUser.get(profileId) ?? 0;
-      salesCountByUser.set(profileId, currentSales + (analytic.sales_count ?? 0));
-
-      const currentRevenue = revenueByUser.get(profileId) ?? 0;
-      revenueByUser.set(profileId, currentRevenue + (analytic.revenue_cents ?? 0));
-
-      const currentViews = profileViewsByUser.get(profileId) ?? 0;
-      profileViewsByUser.set(profileId, currentViews + (analytic.profile_views ?? 0));
-
-      const currentClicks = linkClicksByUser.get(profileId) ?? 0;
-      linkClicksByUser.set(profileId, currentClicks + (analytic.link_clicks ?? 0));
-    }
-
-    const safeUsers: AdminUserSummary[] = (users ?? []).map((u: any) => {
-      const userId = u.id as string;
-      return {
-        id: userId,
-        display_name: u.display_name ?? null,
-        handle: u.handle ?? null,
-        email: emailByUserId.get(userId) ?? null,
-        avatar_url: creatorAvatarByUserId.get(userId) ?? u.avatar_url ?? null,
-        created_at: u.created_at ?? null,
-        is_creator: u.is_creator ?? null,
-        is_admin: u.is_admin ?? null,
-        links_count: linksCountByUser.get(userId) ?? 0,
-        assets_count: assetsCountByUser.get(userId) ?? 0,
-        total_sales: salesCountByUser.get(userId) ?? 0,
-        total_revenue_cents: revenueByUser.get(userId) ?? 0,
-        profile_view_count: u.profile_view_count ?? 0,
-      };
-    });
-
-    // Apply sorting on aggregated data, then paginate
-    if (sortBy === 'best_sellers') {
-      safeUsers.sort((a, b) => {
-        if (b.total_sales !== a.total_sales) {
-          return b.total_sales - a.total_sales;
-        }
-        return b.total_revenue_cents - a.total_revenue_cents;
-      });
-    } else if (sortBy === 'most_content') {
-      safeUsers.sort((a, b) => b.assets_count - a.assets_count);
-    } else if (sortBy === 'most_links') {
-      safeUsers.sort((a, b) => b.links_count - a.links_count);
-    }
-
-    // For aggregated sorts, paginate after sorting
-    let paginatedUsers = safeUsers;
-    if (needsFullFetch) {
-      totalUsers = safeUsers.length;
-      const fromIndex = (page - 1) * pageSize;
-      paginatedUsers = safeUsers.slice(fromIndex, fromIndex + pageSize);
-    }
-
-    return new Response(JSON.stringify({ users: paginatedUsers, page, pageSize, total: totalUsers }), {
+    return new Response(JSON.stringify({ users, page, pageSize, total }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

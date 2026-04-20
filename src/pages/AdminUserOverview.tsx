@@ -85,12 +85,47 @@ interface UserSaleOverview {
   created_at: string | null;
 }
 
+interface MetricsBucket {
+  cnt: number;
+  gross_cents: number;
+  net_cents: number;
+}
+
+interface AdminUserMetrics {
+  purchases: MetricsBucket;
+  tips: MetricsBucket;
+  gifts: MetricsBucket;
+  custom_requests: MetricsBucket;
+  fan_subscriptions: {
+    active_count: number;
+    total_count: number;
+    monthly_revenue_cents: number;
+  };
+  last_30d: {
+    sales_count: number;
+    revenue_cents: number;
+  };
+  top_links: Array<{
+    id: string;
+    title: string | null;
+    slug: string | null;
+    sales_count: number;
+    revenue_cents: number;
+  }>;
+  totals: {
+    count: number;
+    gross_cents: number;
+    net_cents: number;
+  };
+}
+
 interface UserOverviewPayload {
   profile: UserProfileOverview | null;
   links: UserLinkOverview[];
   assets: UserAssetOverview[];
   sales: UserSaleOverview[];
   payouts: PayoutOverview[];
+  metrics: AdminUserMetrics | null;
 }
 
 const AdminUserOverview = () => {
@@ -103,6 +138,7 @@ const AdminUserOverview = () => {
   const [assets, setAssets] = useState<UserAssetOverview[]>([]);
   const [sales, setSales] = useState<UserSaleOverview[]>([]);
   const [payouts, setPayouts] = useState<PayoutOverview[]>([]);
+  const [metrics, setMetrics] = useState<AdminUserMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<UserAssetOverview | null>(null);
@@ -182,6 +218,7 @@ const AdminUserOverview = () => {
       setAssets(payload.assets ?? []);
       setSales(payload.sales ?? []);
       setPayouts(payload.payouts ?? []);
+      setMetrics(payload.metrics ?? null);
 
       // Fetch agency data if user is an agency
       if (id) {
@@ -759,6 +796,80 @@ const AdminUserOverview = () => {
                 </div>
                 )}
 
+
+                {metrics && profile.is_creator && (
+                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Revenue breakdown</h2>
+                      <span className="text-[10px] text-exclu-space/60">All-time, across every revenue surface</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                        <p className="text-[10px] text-exclu-space/60">Total sales</p>
+                        <p className="text-sm font-bold text-exclu-cloud">{metrics.totals.count.toLocaleString()}</p>
+                      </div>
+                      <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                        <p className="text-[10px] text-exclu-space/60">Gross revenue</p>
+                        <p className="text-sm font-bold text-exclu-cloud">${(metrics.totals.gross_cents / 100).toFixed(2)}</p>
+                      </div>
+                      <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                        <p className="text-[10px] text-exclu-space/60">Creator net</p>
+                        <p className="text-sm font-bold text-[#CFFF16]">${(metrics.totals.net_cents / 100).toFixed(2)}</p>
+                      </div>
+                      <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
+                        <p className="text-[10px] text-exclu-space/60">Last 30 days</p>
+                        <p className="text-sm font-bold text-exclu-cloud">
+                          {metrics.last_30d.sales_count} · ${(metrics.last_30d.revenue_cents / 100).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {[
+                        { label: 'Link purchases', data: metrics.purchases },
+                        { label: 'Tips', data: metrics.tips },
+                        { label: 'Gifts', data: metrics.gifts },
+                        { label: 'Custom requests', data: metrics.custom_requests },
+                      ].map(({ label, data }) => (
+                        <div key={label} className="rounded-lg bg-exclu-arsenic/20 p-2.5 border border-exclu-arsenic/30">
+                          <p className="text-[10px] text-exclu-space/60">{label}</p>
+                          <p className="text-[13px] font-semibold text-exclu-cloud mt-0.5">
+                            {data.cnt} · ${(data.gross_cents / 100).toFixed(2)}
+                          </p>
+                          <p className="text-[10px] text-exclu-space/60 mt-0.5">
+                            net ${(data.net_cents / 100).toFixed(2)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-lg bg-exclu-arsenic/20 p-2.5 border border-exclu-arsenic/30">
+                      <p className="text-[10px] text-exclu-space/60">Fan subscriptions</p>
+                      <p className="text-[13px] font-semibold text-exclu-cloud mt-0.5">
+                        {metrics.fan_subscriptions.active_count} active · {metrics.fan_subscriptions.total_count} total
+                      </p>
+                      <p className="text-[10px] text-exclu-space/60 mt-0.5">
+                        Monthly recurring: ${(metrics.fan_subscriptions.monthly_revenue_cents / 100).toFixed(2)}
+                      </p>
+                    </div>
+
+                    {metrics.top_links.length > 0 && (
+                      <div>
+                        <p className="text-[10px] text-exclu-space/60 mb-1.5">Top-selling links</p>
+                        <div className="space-y-1">
+                          {metrics.top_links.map((tl) => (
+                            <div key={tl.id} className="flex items-center justify-between text-xs rounded-lg bg-exclu-arsenic/20 px-2.5 py-1.5">
+                              <span className="text-exclu-cloud truncate max-w-[55%]">{tl.title || tl.slug || tl.id}</span>
+                              <span className="text-exclu-space/70">{tl.sales_count} sales</span>
+                              <span className="text-[#CFFF16] font-medium">${(tl.revenue_cents / 100).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-2">
