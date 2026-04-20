@@ -20,6 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { generateBlurThumbnail } from '@/lib/blurThumbnail';
 
 interface PublicContent {
   id: string;
@@ -29,6 +30,7 @@ interface PublicContent {
   is_public: boolean;
   is_feed_preview: boolean;
   feed_caption: string | null;
+  feed_blur_path: string | null;
   previewUrl?: string;
 }
 
@@ -196,13 +198,13 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
 
   const fetchContents = async () => {
     if (!userId) return;
-    
+
     setIsLoading(true);
 
     // Fetch assets (content from ContentLibrary)
     const assetsQuery = supabase
       .from('assets')
-      .select('id, title, storage_path, mime_type, is_public, is_feed_preview, feed_caption, feed_blur_path')
+      .select('id, title, storage_path, mime_type, is_public, is_feed_preview, feed_caption, feed_blur_path, created_at')
       .order('created_at', { ascending: false });
     const { data: assetsData, error: assetsError } = profileId
       ? await assetsQuery.eq('profile_id', profileId)
@@ -215,9 +217,38 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
       return;
     }
 
+    // Fetch saved display order (creator_profiles.content_order) so the editor
+    // renders in the same order the public profile uses. Missing / new assets
+    // fall back to created_at desc.
+    let savedOrder: string[] = [];
+    if (profileId) {
+      const { data: cp } = await supabase
+        .from('creator_profiles')
+        .select('content_order')
+        .eq('id', profileId)
+        .maybeSingle();
+      savedOrder = (cp?.content_order ?? []) as string[];
+    } else {
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('content_order')
+        .eq('id', userId)
+        .maybeSingle();
+      savedOrder = (p?.content_order ?? []) as string[];
+    }
+
+    const sorted = [...(assetsData ?? [])].sort((a: any, b: any) => {
+      const ai = savedOrder.indexOf(a.id);
+      const bi = savedOrder.indexOf(b.id);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+    });
+
     // Generate signed URLs for previews
     const withPreviews = await Promise.all(
-      (assetsData || []).map(async (content) => {
+      sorted.map(async (content) => {
         if (!content.storage_path) return { ...content, previewUrl: undefined };
 
         const { data: signed, error: signedError } = await supabase.storage
@@ -237,19 +268,79 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     setIsLoading(false);
   };
 
+  /**
+   * Persist the new order to `content_order` so the public profile picks it up.
+   * We store ALL visible asset IDs (not only public), so toggling an asset from
+   * private → public doesn't surprise the creator by placing it at an arbitrary
+   * position.
+   */
+  const persistOrder = async (orderedIds: string[]) => {
+    if (profileId) {
+      const { error } = await supabase
+        .from('creator_profiles')
+        .update({ content_order: orderedIds })
+        .eq('id', profileId);
+      if (error) console.error('Error saving content_order on creator_profiles', error);
+    } else if (userId) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ content_order: orderedIds })
+        .eq('id', userId);
+      if (error) console.error('Error saving content_order on profiles', error);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    if (over && active.id !== over.id) {
-      setContents((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
-        
-        return arrayMove(items, oldIndex, newIndex);
-      });
-      
-      // TODO: Save order to content_order in profiles
-      toast.success('Content reordered');
+    setContents((items) => {
+      const oldIndex = items.findIndex((item) => item.id === active.id);
+      const newIndex = items.findIndex((item) => item.id === over.id);
+      const next = arrayMove(items, oldIndex, newIndex);
+      // Fire-and-forget persistence; we already optimistically updated the UI.
+      void persistOrder(next.map((c) => c.id));
+      return next;
+    });
+    onContentUpdate?.();
+    toast.success('Content reordered');
+  };
+
+  /**
+   * Lazily generate a feed_blur_path for an existing asset that was toggled
+   * public but never went through the upload pipeline. Downloads the
+   * original via a signed URL, runs it through the blur generator and
+   * uploads the result to <user>/assets/<id>/preview/blur.jpg.
+   *
+   * Fire-and-forget: any error is logged, never surfaced — we don't want to
+   * block the visibility toggle.
+   */
+  const ensureBlurForAsset = async (asset: PublicContent) => {
+    try {
+      if (!asset.storage_path) return;
+      // Download the original
+      const { data: signed } = await supabase.storage
+        .from('paid-content')
+        .createSignedUrl(asset.storage_path, 60);
+      if (!signed?.signedUrl) return;
+      const res = await fetch(signed.signedUrl);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const mime = asset.mime_type ?? blob.type ?? 'image/jpeg';
+      const file = new File([blob], `source-${asset.id}`, { type: mime });
+      const blurBlob = await generateBlurThumbnail(file);
+      if (!blurBlob) return;
+
+      // Upload to the conventional preview path under the owning user
+      const [ownerId] = asset.storage_path.split('/');
+      const blurPath = `${ownerId}/assets/${asset.id}/preview/blur.jpg`;
+      const { error: uploadErr } = await supabase.storage
+        .from('paid-content')
+        .upload(blurPath, blurBlob, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' });
+      if (uploadErr) throw uploadErr;
+      await supabase.from('assets').update({ feed_blur_path: blurPath }).eq('id', asset.id);
+    } catch (err) {
+      console.warn('[PublicContentSection] Unable to backfill blur preview', err);
     }
   };
 
@@ -271,6 +362,17 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
       toast.error('Failed to update visibility');
     } else {
       toast.success(isPublic ? 'Content is now public' : 'Content is now private');
+
+      // If we just flipped an asset public and it has no blur preview yet,
+      // generate one. We await it so the subsequent fetchContents() picks
+      // up the new feed_blur_path in one render.
+      if (isPublic) {
+        const target = contents.find((c) => c.id === contentId);
+        if (target && !target.feed_blur_path) {
+          await ensureBlurForAsset(target);
+        }
+      }
+
       fetchContents();
       onUpdate();
       onContentUpdate?.();

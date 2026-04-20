@@ -56,6 +56,7 @@ interface CreatorProfileData {
   chat_enabled?: boolean | null;
   fan_subscription_enabled?: boolean | null;
   fan_subscription_price_cents?: number | null;
+  content_order?: string[] | null;
 }
 
 type FeedItem =
@@ -291,7 +292,7 @@ const CreatorPublic = () => {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents, content_order')
           .eq('username', handle)
           .maybeSingle();
 
@@ -443,7 +444,9 @@ const CreatorPublic = () => {
         }
 
         // ── Step 4: Load public content ──
-        // Preview asset surfaces first so it appears at the top of the feed even if others are newer.
+        // Free preview asset surfaces first; remaining assets follow the
+        // creator's manual order (creator_profiles.content_order) with
+        // created_at desc as a tiebreaker for new uploads not yet in the array.
         let assetsQuery = supabase
           .from('assets')
           .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
@@ -523,9 +526,13 @@ const CreatorPublic = () => {
   }, [handle]);
 
   // Merge public assets + paid links into a single feed list. The single
-  // `is_feed_preview=true` asset (if any) always leads; everything else is
-  // sorted by created_at desc.
+  // `is_feed_preview=true` asset (if any) always leads; remaining assets
+  // follow the creator's manual order (creator_profiles.content_order) with
+  // created_at desc as a tiebreaker; links are appended by created_at desc.
   useEffect(() => {
+    const order: string[] = (profile?.content_order ?? []) as string[];
+    const orderIndex = new Map<string, number>(order.map((id, i) => [id, i]));
+
     const assetItems: FeedItem[] = (publicContent as any[]).map((a) => ({
       kind: 'asset',
       id: a.id,
@@ -549,11 +556,16 @@ const CreatorPublic = () => {
     }));
 
     const preview = assetItems.find((x) => x.isPreview);
-    const rest = [...assetItems.filter((x) => !x.isPreview), ...linkItems].sort(
-      (a, b) => (a.createdAt < b.createdAt ? 1 : -1),
-    );
+    const nonPreviewAssets = assetItems.filter((x) => !x.isPreview).sort((a, b) => {
+      const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
+      const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.createdAt < b.createdAt ? 1 : -1;
+    });
+    const linksSorted = [...linkItems].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const rest = [...nonPreviewAssets, ...linksSorted];
     setFeedItems(preview ? [preview, ...rest] : rest);
-  }, [publicContent, links]);
+  }, [publicContent, links, profile?.content_order]);
 
   // Lazy-sign full-res URLs only for the free preview (always) and when the
   // viewer is subscribed (everything else). By deferring this until the

@@ -113,8 +113,12 @@ export function FanFeedView({ userId }: { userId: string | null }) {
         });
       }
 
-      // 2) Load posts — public assets + published paid links for those profiles
-      const [{ data: assetRows }, { data: linkRows }] = await Promise.all([
+      // 2) Load posts — public assets + published paid links for those profiles.
+      // Legacy assets (uploaded before the multi-profile rollout) carry only a
+      // creator_id and no profile_id; to avoid dropping them, we also scan by
+      // creator_user_id of the creators we follow.
+      const creatorUserIdArr = Array.from(creatorByProfileId.values()).map((c) => c.userId);
+      const [{ data: assetByProfile }, { data: assetByCreator }, { data: linkRows }] = await Promise.all([
         supabase
           .from('assets')
           .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
@@ -122,6 +126,16 @@ export function FanFeedView({ userId }: { userId: string | null }) {
           .eq('is_public', true)
           .order('created_at', { ascending: false })
           .limit(200),
+        creatorUserIdArr.length
+          ? supabase
+              .from('assets')
+              .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
+              .is('profile_id', null)
+              .in('creator_id', creatorUserIdArr)
+              .eq('is_public', true)
+              .order('created_at', { ascending: false })
+              .limit(200)
+          : Promise.resolve({ data: [] as any[] }),
         supabase
           .from('links')
           .select('id, profile_id, creator_id, slug, title, description, price_cents, created_at')
@@ -131,6 +145,15 @@ export function FanFeedView({ userId }: { userId: string | null }) {
           .order('created_at', { ascending: false })
           .limit(200),
       ]);
+
+      // Map legacy rows (profile_id IS NULL) to the creator's first active
+      // profile so they render under the right author header.
+      const creatorProfileByUserId = new Map<string, string>();
+      creatorByProfileId.forEach((c) => { if (!creatorProfileByUserId.has(c.userId)) creatorProfileByUserId.set(c.userId, c.profileId); });
+      const assetRows = [
+        ...((assetByProfile ?? []) as any[]),
+        ...(((assetByCreator ?? []) as any[]).map((a) => ({ ...a, profile_id: creatorProfileByUserId.get(a.creator_id) ?? null }))),
+      ];
 
       // Sign URLs lazily: blur always, full-res only when subscribed or the free preview.
       // Non-subscribed DOMs never carry a full-res URL — "view source" stays safe.

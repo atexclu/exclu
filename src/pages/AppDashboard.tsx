@@ -715,46 +715,46 @@ const AppDashboard = () => {
             {/* Grain — dark only */}
             <div aria-hidden className="pointer-events-none absolute inset-0 hidden dark:block opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-            <div className="relative">
-              {/* Row 1 — micro label */}
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
-                <span className="relative inline-flex h-1.5 w-1.5">
-                  <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
-                  <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
-                </span>
-                Available to withdraw
+            <div className="relative lg:grid lg:grid-cols-[1fr,auto] lg:gap-10 lg:items-start">
+              {/* ── LEFT (desktop) / TOP (mobile) — label + balance + stats ── */}
+              <div>
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
+                    <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
+                  </span>
+                  Available to withdraw
+                </div>
+
+                <div className="mt-3 flex items-end gap-2.5">
+                  <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
+                    ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+                </div>
+
+                <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
+                <div className="mt-5 grid grid-cols-3">
+                  {[
+                    { label: 'Total earned', value: `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Withdrawn', value: `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Sales', value: totalSalesCount.toLocaleString('en-US') },
+                  ].map((stat, i) => (
+                    <div
+                      key={stat.label}
+                      className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
+                      <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* Row 2 — balance */}
-              <div className="mt-3 flex items-end gap-2.5">
-                <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
-                  ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
-              </div>
-
-              {/* Row 3 — stats */}
-              <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
-              <div className="mt-5 grid grid-cols-3">
-                {[
-                  { label: 'Total earned', value: `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
-                  { label: 'Withdrawn', value: `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
-                  { label: 'Sales', value: totalSalesCount.toLocaleString('en-US') },
-                ].map((stat, i) => (
-                  <div
-                    key={stat.label}
-                    className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
-                  >
-                    <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
-                    <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Row 4 — actions */}
-              <div className="mt-7 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                {/* Bank pill + plan chip */}
-                <div className="flex flex-wrap items-center gap-2">
+              {/* ── RIGHT (desktop, top-aligned) / BOTTOM (mobile, centered) — pills + Withdraw ── */}
+              <div className="mt-7 lg:mt-0 flex flex-col items-center lg:items-end gap-3 lg:gap-4">
+                {/* Pills — centered on mobile, right-aligned on desktop */}
+                <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2">
                   <button
                     type="button"
                     onClick={goToPayouts}
@@ -782,13 +782,13 @@ const AppDashboard = () => {
                   </div>
                 </div>
 
-                {/* Withdraw CTA */}
-                <div className="flex flex-col items-stretch sm:items-end gap-1.5">
+                {/* Withdraw CTA — full-width mobile, right-aligned compact on desktop */}
+                <div className="flex flex-col items-stretch lg:items-end gap-1.5 w-full lg:w-auto">
                   <button
                     type="button"
                     onClick={handleRequestWithdrawal}
                     disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
-                    className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
+                    className="group relative w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
                   >
                     {isRequestingWithdrawal ? (
                       <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
@@ -799,7 +799,7 @@ const AppDashboard = () => {
                       </>
                     )}
                   </button>
-                  <p className="text-[10px] text-foreground/45 dark:text-white/45 tracking-wide sm:text-right">
+                  <p className="text-[10px] text-foreground/45 dark:text-white/45 tracking-wide text-center lg:text-right">
                     Min. <span className="text-foreground/75 dark:text-white/75 font-semibold">$50.00</span> · 3–5 business days
                   </p>
                 </div>

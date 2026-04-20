@@ -37,7 +37,9 @@ const ContentLibrary = () => {
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
-  const [isPublic, setIsPublic] = useState(false);
+  // Default ON so the upload flow is feed-first; the creator still toggles it
+  // off explicitly if they want the asset kept private for now.
+  const [isPublic, setIsPublic] = useState(true);
   const [feedCaption, setFeedCaption] = useState('');
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
@@ -291,7 +293,7 @@ const ContentLibrary = () => {
         return [];
       });
       setShowUploadModal(false);
-      setIsPublic(false);
+      setIsPublic(true);
       setFeedCaption('');
     } catch (err: any) {
       console.error('Error uploading asset', err);
@@ -503,8 +505,10 @@ const ContentLibrary = () => {
 
                   <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">Make this content public</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Public content appears in your feed — non-subscribers see it blurred unless you mark it as the free preview.</p>
+                      <p className="text-sm font-medium text-foreground">Show in my feed</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Appears on your public profile. Non-subscribers see it blurred until they subscribe (or unblurred if you mark it as the free preview).
+                      </p>
                     </div>
                     <Switch
                       checked={isPublic}

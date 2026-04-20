@@ -11,9 +11,9 @@ import { motion } from 'framer-motion';
  *   2. Then by profile_view_count desc
  *   3. Current creator excluded
  *
- * The visual intentionally differs from the in-app DiscoveryCarousel:
- *   - Rendered on a dark creator profile background (glass + gradient glow)
- *   - Cover-style card with avatar + "Discover" pill, no platform chrome
+ * We fetch creator_profiles + profiles in two separate queries (rather than
+ * a PostgREST FK join) — the FK name varies across deployments and a missing
+ * hint silently returns null, which would hide every "Pro" badge.
  */
 interface SuggestedCreator {
   profileId: string;
@@ -39,19 +39,36 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
     let cancelled = false;
     (async () => {
       setIsLoading(true);
-      const { data } = await supabase
+
+      const { data: profiles, error: cpErr } = await supabase
         .from('creator_profiles')
-        .select(`
-          id, user_id, username, display_name, avatar_url, profile_view_count,
-          profiles!creator_profiles_user_id_fkey ( is_creator_subscribed )
-        `)
+        .select('id, user_id, username, display_name, avatar_url, profile_view_count')
         .eq('is_active', true)
         .eq('is_directory_visible', true)
         .not('username', 'is', null)
         .order('profile_view_count', { ascending: false })
         .limit(40);
 
-      const mapped: SuggestedCreator[] = (data ?? [])
+      if (cpErr || !profiles) {
+        if (!cancelled) {
+          setCreators([]);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      const userIds = [...new Set(profiles.map((p: any) => p.user_id).filter(Boolean))];
+      const premiumSet = new Set<string>();
+      if (userIds.length) {
+        const { data: pros } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('id', userIds)
+          .eq('is_creator_subscribed', true);
+        (pros ?? []).forEach((p: any) => premiumSet.add(p.id));
+      }
+
+      const mapped: SuggestedCreator[] = profiles
         .filter((r: any) => !!r.username && r.user_id !== excludeUserId)
         .map((r: any) => ({
           profileId: r.id,
@@ -59,7 +76,7 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
           handle: r.username,
           displayName: r.display_name || r.username,
           avatarUrl: r.avatar_url,
-          isPremium: !!r.profiles?.is_creator_subscribed,
+          isPremium: premiumSet.has(r.user_id),
           viewCount: r.profile_view_count ?? 0,
         }));
 
@@ -79,11 +96,19 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
 
   if (isLoading) {
     return (
-      <div className="mt-10 flex items-center gap-3 overflow-x-auto pb-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-56 w-40 flex-shrink-0 rounded-3xl bg-white/5 animate-pulse" />
-        ))}
-      </div>
+      <section className="mt-12">
+        <div className="flex items-end justify-between gap-4 mb-5 px-1">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/40">Discovery</p>
+            <h3 className="text-xl font-bold text-white/50 mt-1">You might also like</h3>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 overflow-hidden pb-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-64 w-44 flex-shrink-0 rounded-3xl bg-white/5 animate-pulse" />
+          ))}
+        </div>
+      </section>
     );
   }
 
@@ -124,13 +149,10 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
                 />
               )}
 
-              {/* Bottom fade */}
               <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/80 to-transparent" />
 
               {c.isPremium && (
-                <span
-                  className="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white backdrop-blur-md"
-                >
+                <span className="absolute top-3 left-3 inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white backdrop-blur-md">
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: gradientStops[0] }} />
                   Pro
                 </span>
