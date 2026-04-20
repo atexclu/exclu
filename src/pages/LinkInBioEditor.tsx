@@ -652,6 +652,7 @@ const LinkInBioEditor = () => {
                       bio={editorData.bio}
                       location={editorData.location}
                       modelCategories={editorData.model_categories}
+                      gender={editorData.gender}
                       onUpdate={updateEditorData}
                       onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
                     />
@@ -680,7 +681,6 @@ const LinkInBioEditor = () => {
                       <FanSubscriptionSection
                         enabled={editorData.fan_subscription_enabled}
                         priceCents={editorData.fan_subscription_price_cents}
-                        gender={editorData.gender}
                         onUpdate={updateEditorData}
                       />
                       <div className="border-t border-border/60" />
@@ -837,6 +837,7 @@ const LinkInBioEditor = () => {
                     bio={editorData.bio}
                     location={editorData.location}
                     modelCategories={editorData.model_categories}
+                    gender={editorData.gender}
                     onUpdate={updateEditorData}
                     onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
                   />
@@ -862,7 +863,6 @@ const LinkInBioEditor = () => {
                     <FanSubscriptionSection
                       enabled={editorData.fan_subscription_enabled}
                       priceCents={editorData.fan_subscription_price_cents}
-                      gender={editorData.gender}
                       onUpdate={updateEditorData}
                     />
                     <div className="border-t border-border/60" />

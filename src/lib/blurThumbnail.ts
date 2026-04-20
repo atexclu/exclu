@@ -1,42 +1,65 @@
 /**
- * Client-side blurred thumbnail generator used by the public feed.
+ * Client-side blurred preview generator for the public feed.
  *
- * Rendered on upload, stored at <original-path>/preview/blur.jpg. The public
- * feed serves ONLY this tiny blurred JPEG to non-subscribed viewers so the
- * full-resolution source URL is never exposed (even through devtools /
- * "view source"). Subscribed viewers receive a signed URL to the original.
+ * Produces a ~512px-wide JPEG with heavy gaussian blur baked in — not a
+ * cosmetic CSS filter. The file served to non-subscribed viewers IS this
+ * blurred image; the full-resolution source never leaves storage for
+ * locked posts, so "view source" / devtools can never recover the
+ * unblurred content.
  *
- * Design notes:
- *  - Output: 64px wide JPEG, quality 0.6 → ~2-4 KB per asset.
- *  - The downscale itself destroys detail. The CSS layer on top (blur-2xl +
- *    brightness-50) just adds cinematic atmosphere.
- *  - For videos we grab a frame at t=0.1s via a hidden <video> element.
- *  - Always resolves — failures return `null` so the upload still succeeds;
- *    the feed falls back to a solid gradient.
+ * The size + blur radius are tuned so the composition (color palette,
+ * subject pose, rough framing) remains readable — enough to tease the
+ * click but not enough to reconstruct detail. Same bar LinkMe / Unlockt
+ * set.
+ *
+ * Every failure path resolves to `null` so the upload never blocks on
+ * preview generation.
  */
 
-const THUMB_WIDTH = 64;
-const THUMB_MIME = 'image/jpeg';
-const THUMB_QUALITY = 0.6;
+const TARGET_W = 512;           // px — blurred JPEG width
+const BLUR_RADIUS = 28;          // canvas 'blur(...)' radius
+const OVERSCAN = 48;             // px — absorbs edge artefacts so the final
+                                 // crop stays clean after blur
+const OUTPUT_MIME = 'image/jpeg';
+const OUTPUT_QUALITY = 0.7;      // good-looking at the target size, ~30-60 KB
 
-function drawToCanvas(source: CanvasImageSource, srcW: number, srcH: number): HTMLCanvasElement {
-  const ratio = srcH / Math.max(srcW, 1);
-  const canvas = document.createElement('canvas');
-  canvas.width = THUMB_WIDTH;
-  canvas.height = Math.max(1, Math.round(THUMB_WIDTH * ratio));
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) throw new Error('Canvas 2D context unavailable');
-  // Light blur on the source before drawing — some browsers respect ctx.filter
-  // (Chromium, Firefox); Safari ignores it silently but the downscale alone
-  // is enough.
-  ctx.filter = 'blur(4px)';
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  ctx.filter = 'none';
-  return canvas;
+/**
+ * Draws `source` into a canvas with a heavy gaussian blur baked in.
+ * Keeps aspect ratio and crops the oversized blurred canvas back down
+ * so we don't ship the soft edges to the final JPEG.
+ */
+function renderBlurred(source: CanvasImageSource, srcW: number, srcH: number): HTMLCanvasElement {
+  const aspect = srcH / Math.max(srcW, 1);
+  const targetW = TARGET_W;
+  const targetH = Math.max(1, Math.round(targetW * aspect));
+
+  // Pass 1 — render on an oversized canvas with the blur filter.
+  const work = document.createElement('canvas');
+  work.width = targetW + OVERSCAN * 2;
+  work.height = targetH + OVERSCAN * 2;
+  const wctx = work.getContext('2d', { alpha: false });
+  if (!wctx) throw new Error('Canvas 2D context unavailable');
+  wctx.fillStyle = '#000';
+  wctx.fillRect(0, 0, work.width, work.height);
+  wctx.filter = `blur(${BLUR_RADIUS}px)`;
+  // Draw the full source to fill the canvas (including the overscan), so the
+  // blur has actual pixels to work with around the crop region.
+  wctx.drawImage(source, 0, 0, work.width, work.height);
+  wctx.filter = 'none';
+
+  // Pass 2 — crop the clean interior. This gives us a tight final image
+  // with no feathered edges.
+  const out = document.createElement('canvas');
+  out.width = targetW;
+  out.height = targetH;
+  const octx = out.getContext('2d', { alpha: false });
+  if (!octx) throw new Error('Canvas 2D context unavailable');
+  octx.drawImage(work, OVERSCAN, OVERSCAN, targetW, targetH, 0, 0, targetW, targetH);
+  return out;
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
-  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), THUMB_MIME, THUMB_QUALITY));
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), OUTPUT_MIME, OUTPUT_QUALITY));
 }
 
 async function generateFromImage(file: File): Promise<Blob | null> {
@@ -49,14 +72,16 @@ async function generateFromImage(file: File): Promise<Blob | null> {
   const img = new Image();
   img.decoding = 'async';
   img.src = dataUrl;
-  await img.decode().catch(() => { /* safari sometimes resolves via onload */ });
-  if (!img.complete || !img.naturalWidth) {
-    await new Promise((res, rej) => {
-      img.onload = () => res(null);
-      img.onerror = rej;
-    });
-  }
-  const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+  // Safari sometimes rejects decode() for EXIF-rotated images; fall back to onload.
+  await img.decode().catch(
+    () =>
+      new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error('Image decode failed'));
+      }),
+  );
+  if (!img.naturalWidth) return null;
+  const canvas = renderBlurred(img, img.naturalWidth, img.naturalHeight);
   return canvasToBlob(canvas);
 }
 
@@ -68,19 +93,20 @@ async function generateFromVideo(file: File): Promise<Blob | null> {
     video.muted = true;
     video.playsInline = true;
     video.preload = 'metadata';
+    video.crossOrigin = 'anonymous';
 
     await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => {
-        // Some browsers need a tiny seek to actually paint the first frame.
-        video.currentTime = Math.min(0.1, video.duration || 0.1);
+        // Seek slightly into the file so we grab a painted frame, not black.
+        video.currentTime = Math.min(0.5, Math.max(0, (video.duration || 1) * 0.05));
       };
       video.onseeked = () => resolve();
-      video.onerror = () => reject(new Error('Unable to read video'));
-      // Hard ceiling so we don't hang the upload if metadata never arrives.
+      video.onerror = () => reject(new Error('Video decode failed'));
       setTimeout(() => reject(new Error('Video metadata timeout')), 8000);
     });
 
-    const canvas = drawToCanvas(video, video.videoWidth, video.videoHeight);
+    if (!video.videoWidth) return null;
+    const canvas = renderBlurred(video, video.videoWidth, video.videoHeight);
     return await canvasToBlob(canvas);
   } finally {
     URL.revokeObjectURL(url);
@@ -88,8 +114,8 @@ async function generateFromVideo(file: File): Promise<Blob | null> {
 }
 
 /**
- * Produce a tiny blurred JPEG from an image OR video file.
- * Returns null on any failure so callers can continue the upload without UX impact.
+ * Produce a heavily blurred JPEG preview from an image OR video file.
+ * Resolves to `null` on any failure so callers never block the upload.
  */
 export async function generateBlurThumbnail(file: File): Promise<Blob | null> {
   try {

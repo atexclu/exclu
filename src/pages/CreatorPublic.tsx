@@ -1720,16 +1720,11 @@ const CreatorPublic = () => {
                     )}
 
                     {/* Content Tab — vertical feed.
-                        Width tracks the photo column: when the photo is hidden
-                        on scroll, the feed widens to max-w-xl so the post cards
-                        become the focal point. */}
+                        Fixed width always; when the photo hides on scroll
+                        the feed simply re-centers via mx-auto on the wider column. */}
                     {!isContentLoading && activeTab === 'content' && (
                       feedItems.length > 0 ? (
-                        <div
-                          className={`space-y-5 mx-auto transition-[max-width] duration-500 ease-in-out ${
-                            photoVisible ? 'max-w-md' : 'max-w-xl'
-                          }`}
-                        >
+                        <div className="space-y-6 mx-auto w-full max-w-[480px]">
                           {feedItems.map((item) => (
                             <FeedPost
                               key={`${item.kind}-${item.id}`}
@@ -1764,9 +1759,7 @@ const CreatorPublic = () => {
                         <button
                           type="button"
                           onClick={() => setShowSubscribePopup(true)}
-                          className={`relative w-full mx-auto aspect-[4/5] rounded-3xl overflow-hidden border border-white/10 block transition-[max-width] duration-500 ${
-                            photoVisible ? 'max-w-md' : 'max-w-xl'
-                          }`}
+                          className="relative block w-full mx-auto max-w-[480px] aspect-[4/5] rounded-3xl overflow-hidden border border-white/10"
                         >
                           <div
                             className="absolute inset-0 scale-125 blur-[42px]"
@@ -1787,9 +1780,7 @@ const CreatorPublic = () => {
                     )}
 
                     {!isContentLoading && activeTab === 'content' && (
-                      <div
-                        className={`mx-auto transition-[max-width] duration-500 ease-in-out ${photoVisible ? 'max-w-md' : 'max-w-xl'}`}
-                      >
+                      <div className="mx-auto w-full max-w-[480px]">
                         <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
                       </div>
                     )}

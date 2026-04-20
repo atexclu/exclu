@@ -3,22 +3,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { MapPin } from 'lucide-react';
 import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
 
+type Gender = 'female' | 'male' | 'other';
+
 interface InfoSectionProps {
   displayName: string;
   handle: string;
   bio: string;
   location: string | null;
   modelCategories: string[];
+  gender: Gender | null;
   onUpdate: (updates: {
     display_name?: string;
     handle?: string;
     bio?: string;
     location?: string | null;
+    gender?: Gender;
   }) => void;
   onModelCategoriesChange: (categories: string[]) => void;
 }
 
-export function InfoSection({ displayName, handle, bio, location, modelCategories, onUpdate, onModelCategoriesChange }: InfoSectionProps) {
+export function InfoSection({ displayName, handle, bio, location, modelCategories, gender, onUpdate, onModelCategoriesChange }: InfoSectionProps) {
   const bioLength = bio.length;
   const bioMaxLength = 300;
 
@@ -103,6 +107,30 @@ export function InfoSection({ displayName, handle, bio, location, modelCategorie
           maxLength={50}
           className="h-12 bg-muted/50 border-border text-foreground text-base"
         />
+      </div>
+
+      {/* Gender — drives the Discover carousel filter in the fan app */}
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-foreground">Gender</label>
+        <p className="text-xs text-muted-foreground">
+          Helps fans find you through the Discover filter in the app.
+        </p>
+        <div className="flex gap-2">
+          {(['female', 'male', 'other'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onUpdate({ gender: option })}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                gender === option
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {option === 'female' ? 'Female' : option === 'male' ? 'Male' : 'Other'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Model Categories */}
