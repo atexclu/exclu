@@ -27,7 +27,25 @@ const AppDashboard = () => {
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'metrics' | 'tips' | 'referral' | 'payouts'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'subscriptions' | 'referral' | 'payouts'>('metrics');
+  // Fan → creator subscriptions (active period, past history)
+  const [fanSubscribers, setFanSubscribers] = useState<Array<{
+    id: string;
+    status: string;
+    price_cents: number;
+    creator_net_cents: number;
+    period_start: string | null;
+    period_end: string | null;
+    cancel_at_period_end: boolean;
+    started_at: string | null;
+    cancelled_at: string | null;
+    fan: { id: string; display_name: string | null; avatar_url: string | null } | null;
+  }>>([]);
+  const [fanSubStats, setFanSubStats] = useState<{
+    active: number;
+    lifetimeNetCents: number;
+    last30dNetCents: number;
+  }>({ active: 0, lifetimeNetCents: 0, last30dNetCents: 0 });
   const [tipsRaw, setTipsRaw] = useState<any[]>([]);
   const [giftsRaw, setGiftsRaw] = useState<any[]>([]);
   const [requestsRaw, setRequestsRaw] = useState<any[]>([]);
@@ -231,6 +249,47 @@ const AppDashboard = () => {
           return sum + Math.round((r.proposed_amount_cents ?? 0) * (1 - rate));
         }, 0);
 
+        // Fan → creator subscriptions (active + history, for the Subscriptions tab and Overview breakdown)
+        const { data: fanSubRows } = await supabase
+          .from('fan_creator_subscriptions')
+          .select('id, fan_id, status, price_cents, creator_net_cents, period_start, period_end, cancel_at_period_end, started_at, cancelled_at')
+          .eq('creator_user_id', user.id)
+          .order('started_at', { ascending: false, nullsFirst: false });
+        const safeFanSubs = fanSubRows ?? [];
+
+        // Resolve fan meta (profiles.id = auth.users.id)
+        const fanSubIds = [...new Set(safeFanSubs.filter((s: any) => s.fan_id).map((s: any) => s.fan_id))];
+        const fanSubProfiles = new Map<string, { id: string; display_name: string | null; avatar_url: string | null }>();
+        if (fanSubIds.length) {
+          const { data: fans } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', fanSubIds);
+          (fans ?? []).forEach((p: any) => fanSubProfiles.set(p.id, { id: p.id, display_name: p.display_name, avatar_url: p.avatar_url }));
+        }
+        const fanSubscribersEnriched = safeFanSubs.map((s: any) => ({ ...s, fan: s.fan_id ? fanSubProfiles.get(s.fan_id) ?? null : null }));
+
+        const now = Date.now();
+        const windowStart = now - 30 * 24 * 60 * 60 * 1000;
+        const subsStats = fanSubscribersEnriched.reduce(
+          (acc, s: any) => {
+            // "Active" = still within period_end, status in active/cancelled (cancelled keeps access until period ends)
+            const periodEnd = s.period_end ? new Date(s.period_end).getTime() : 0;
+            const isLive = (s.status === 'active' || s.status === 'cancelled') && periodEnd > now;
+            if (isLive) acc.active += 1;
+            const net = s.creator_net_cents ?? 0;
+            if (s.started_at) acc.lifetimeNetCents += net;
+            if (s.period_start && new Date(s.period_start).getTime() >= windowStart) acc.last30dNetCents += net;
+            return acc;
+          },
+          { active: 0, lifetimeNetCents: 0, last30dNetCents: 0 },
+        );
+
+        if (isMounted) {
+          setFanSubscribers(fanSubscribersEnriched);
+          setFanSubStats(subsStats);
+        }
+
         const safePayouts = payoutsData ?? [];
         const totalPayoutsCents = safePayouts
           .filter((p: any) => p.status !== 'failed')
@@ -243,16 +302,18 @@ const AppDashboard = () => {
 
         if (!isMounted) return;
 
+        // Gifts + subscriptions roll up into the same revenue picture.
+        const giftsRevenue = safeGifts.reduce((sum: number, g: any) => sum + (g.creator_net_cents ?? 0), 0);
+
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
         setTotalSalesCount(salesCount + safeRequests.length);
         // Use DB total_earned_cents as source of truth (matches wallet credits)
-        // Fallback to frontend calc if not available
+        // Fallback to frontend calc if not available (now includes subs + gifts)
         const dbTotalEarned = profile?.total_earned_cents;
+        const fallbackTotal = revenueSum + tipsSum + requestsRevenue + giftsRevenue + subsStats.lifetimeNetCents;
         setTotalRevenueCents(
-          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0
-            ? dbTotalEarned
-            : revenueSum + tipsSum + requestsRevenue
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0 ? dbTotalEarned : fallbackTotal,
         );
         setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
@@ -263,9 +324,7 @@ const AppDashboard = () => {
         setRequestsRaw(safeRequests);
         setWalletPayouts(safePayouts);
         setWalletTotalEarnedCents(
-          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0
-            ? dbTotalEarned
-            : revenueSum + tipsSum + requestsRevenue
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0 ? dbTotalEarned : fallbackTotal,
         );
         setWalletTotalWithdrawnCents(
           typeof profile?.total_withdrawn_cents === 'number' ? profile.total_withdrawn_cents : totalPayoutsCents
@@ -754,14 +813,14 @@ const AppDashboard = () => {
           <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 max-w-full overflow-x-auto scrollbar-hide">
             {[
               { key: 'metrics', label: 'Overview' },
-              { key: 'tips', label: 'Tips' },
+              { key: 'subscriptions', label: 'Subscriptions' },
               { key: 'referral', label: 'Referral' },
               { key: 'payouts', label: 'Payouts' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as 'metrics' | 'tips' | 'referral' | 'payouts')}
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'subscriptions' | 'referral' | 'payouts')}
                 className={`px-4 py-1.5 rounded-full font-medium transition-all whitespace-nowrap ${activeTab === tab.key
                   ? 'bg-primary text-white dark:text-black shadow-sm'
                   : 'hover:text-exclu-cloud'
@@ -814,7 +873,38 @@ const AppDashboard = () => {
               >
                 <p className="text-xs text-exclu-space mb-1">Revenue</p>
                 <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `$${formattedRevenue} USD`}</p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Total revenue from successful purchases.</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Net earnings across every revenue stream.</p>
+              </div>
+            </section>
+
+            {/* Earnings breakdown — single consolidated view (replaces the old Tips tab) */}
+            <section className="mt-6">
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Revenue breakdown</p>
+                    <p className="text-sm text-exclu-space/80 mt-0.5">Net amount credited per stream — lifetime.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                  {[
+                    { label: 'Links', value: (purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.05) * (1 - commissionRate))), 0)), icon: Zap },
+                    { label: 'Tips', value: tipsRevenueCents, icon: Heart },
+                    { label: 'Requests', value: requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0), icon: FileText },
+                    { label: 'Gifts', value: giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0), icon: Gift },
+                    { label: 'Subscriptions', value: fanSubStats.lifetimeNetCents, icon: Users },
+                  ].map(({ label, value, icon: Icon }) => (
+                    <div key={label} className="rounded-xl border border-exclu-arsenic/50 bg-black/30 p-4">
+                      <div className="flex items-center gap-2 text-exclu-space/70 mb-1.5">
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
+                      </div>
+                      <p className="text-lg font-bold text-exclu-cloud">
+                        {isLoading ? '—' : `$${(value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
@@ -1455,71 +1545,103 @@ const AppDashboard = () => {
           );
         })()}
 
-        {activeTab === 'tips' && (
+        {activeTab === 'subscriptions' && (
           <section className="mt-2 space-y-4">
             {/* Stats cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
-                <p className="text-xs text-exclu-space mb-1">Total tips earned</p>
-                <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading ? '—' : `$${(tipsRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
-                </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Net after platform commission.</p>
+                <p className="text-xs text-exclu-space mb-1">Active subscribers</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fanSubStats.active}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Fans currently within their paid period.</p>
               </div>
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
-                <p className="text-xs text-exclu-space mb-1">Tips received</p>
+                <p className="text-xs text-exclu-space mb-1">Lifetime earnings</p>
                 <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading ? '—' : tipsRaw.length}
+                  {isLoading
+                    ? '—'
+                    : `$${(fanSubStats.lifetimeNetCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Successful tips from fans.</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Net credited to your wallet.</p>
+              </div>
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Last 30 days</p>
+                <p className="text-2xl font-bold text-exclu-cloud">
+                  {isLoading
+                    ? '—'
+                    : `$${(fanSubStats.last30dNetCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Rolling 30-day subscription revenue.</p>
+              </div>
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Total history</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fanSubscribers.length}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Every fan who ever subscribed.</p>
               </div>
             </div>
 
-            {/* Tips list — same UI as Sales History */}
+            {/* Subscribers list */}
             <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-              <div className="px-5 py-4 border-b border-exclu-arsenic/40">
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Tips history</p>
+              <div className="px-5 py-4 border-b border-exclu-arsenic/40 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Subscribers</p>
+                <p className="text-[11px] text-exclu-space/60">Sorted by most recent</p>
               </div>
 
               {isLoading && (
-                <p className="px-5 py-4 text-sm text-exclu-space/80">Loading tips…</p>
+                <p className="px-5 py-4 text-sm text-exclu-space/80">Loading subscribers…</p>
               )}
 
-              {!isLoading && tipsRaw.length === 0 && (
+              {!isLoading && fanSubscribers.length === 0 && (
                 <p className="px-5 py-6 text-sm text-exclu-space/80">
-                  No tips received yet. Enable tips in your profile settings so fans can support you directly.
+                  No subscribers yet. Share your profile link — the Discover popup on your public page lets fans subscribe in one click.
                 </p>
               )}
 
-              {!isLoading && tipsRaw.length > 0 && (
-                <div className="divide-y divide-exclu-arsenic/40 max-h-[500px] overflow-y-auto">
-                  {tipsRaw.map((tip: any) => {
-                    const net = typeof tip.creator_net_cents === 'number' && tip.creator_net_cents > 0
-                      ? tip.creator_net_cents
-                      : Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
+              {!isLoading && fanSubscribers.length > 0 && (
+                <div className="divide-y divide-exclu-arsenic/40 max-h-[600px] overflow-y-auto">
+                  {fanSubscribers.map((sub) => {
+                    const now = Date.now();
+                    const periodEnd = sub.period_end ? new Date(sub.period_end).getTime() : 0;
+                    const isLive = (sub.status === 'active' || sub.status === 'cancelled') && periodEnd > now;
+                    const isExpired = periodEnd > 0 && periodEnd <= now;
                     return (
-                      <div key={tip.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                      <div key={sub.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-full bg-pink-500/20 flex-shrink-0 flex items-center justify-center">
-                            <Heart className="w-3.5 h-3.5 text-pink-400" />
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-primary/15 flex-shrink-0">
+                            {sub.fan?.avatar_url ? (
+                              <img src={sub.fan.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Users className="w-4 h-4 text-primary/80" />
+                              </div>
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-exclu-cloud truncate">
-                              {tip.is_anonymous ? 'Anonymous' : (tip.fan?.display_name || tip.fan_name || 'Fan')}
+                              {sub.fan?.display_name || 'Fan'}
                             </p>
                             <p className="text-[11px] text-exclu-space/60">
-                              {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {tip.message && ` · "${tip.message.slice(0, 40)}${tip.message.length > 40 ? '…' : ''}"`}
+                              Started {sub.started_at ? new Date(sub.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              {isLive && sub.period_end && (
+                                <> · renews {sub.cancel_at_period_end ? 'no — ends ' : ''}
+                                  {new Date(sub.period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
+                              )}
+                              {isExpired && ' · expired'}
                             </p>
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-sm font-bold text-green-400">
-                            +${(net / 100).toFixed(2)}
+                            +${((sub.creator_net_cents || 0) / 100).toFixed(2)}
                           </p>
                           <p className="text-[10px] text-exclu-space/50">
-                            ${(tip.amount_cents / 100).toFixed(2)} total
+                            ${(sub.price_cents / 100).toFixed(2)} / mo
                           </p>
+                          {isLive && (
+                            <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider ${sub.cancel_at_period_end ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
+                              <span className={`w-1 h-1 rounded-full ${sub.cancel_at_period_end ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+                              {sub.cancel_at_period_end ? 'Cancelling' : 'Active'}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
