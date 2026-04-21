@@ -59,15 +59,45 @@ function sleep(ms: number): Promise<void> {
 }
 
 // ========================================================================
-// Step 0 — reclaim rows stuck in 'sending'
+// Lease guard — prevents two Vercel cron ticks from piling up when the DB
+// is under pressure. Migration 156 added the table + RPCs after the
+// 2026-04-21 incident where overlapping drains compounded lock contention
+// until pgbouncer circuit-broke.
 // ========================================================================
-async function reclaimStuckSending(): Promise<number> {
+const DRAIN_LEASE_ID = "drain_campaign_sends";
+const DRAIN_LEASE_TTL_SECONDS = 90; // > worst-case tick (BATCH_PER_TICK * sleep + Brevo RTT)
+
+async function tryAcquireLease(): Promise<boolean> {
+  const { data, error } = await admin.rpc("try_acquire_drain_lease", {
+    p_lease_id: DRAIN_LEASE_ID,
+    p_ttl_seconds: DRAIN_LEASE_TTL_SECONDS,
+  });
+  if (error) {
+    console.error("[drain] try_acquire_drain_lease failed", error);
+    // Fail closed: if the lease table itself is unreachable, don't pile on.
+    return false;
+  }
+  return data === true;
+}
+
+async function releaseLease(): Promise<void> {
+  const { error } = await admin.rpc("release_drain_lease", { p_lease_id: DRAIN_LEASE_ID });
+  if (error) console.error("[drain] release_drain_lease failed", error);
+}
+
+// ========================================================================
+// Step 0 — reclaim rows stuck in 'sending'
+// Returns null on RPC failure so the caller can short-circuit the rest of
+// the pipeline (circuit breaker — don't pile work on a DB that's already
+// struggling). Returns the number of rows reclaimed on success.
+// ========================================================================
+async function reclaimStuckSending(): Promise<number | null> {
   const { data, error } = await admin.rpc("reclaim_stuck_campaign_sends", {
     p_timeout_minutes: STUCK_SENDING_MINUTES,
   });
   if (error) {
     console.error("[drain] reclaim_stuck_campaign_sends failed", error);
-    return 0;
+    return null;
   }
   return (data as number) ?? 0;
 }
@@ -398,8 +428,29 @@ serve(async (req: Request) => {
     });
   }
 
+  // Singleton guard. If the previous tick is still running (e.g. DB slow),
+  // skip this invocation cleanly rather than piling a second pipeline on top.
+  const acquired = await tryAcquireLease();
+  if (!acquired) {
+    return new Response(
+      JSON.stringify({ ok: true, skipped: "already_running" }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }
+
   try {
+    // Circuit breaker: reclaim is the cheapest step and a reliable canary.
+    // If it can't complete (statement_timeout or connection issue), the DB
+    // is under pressure — skip the rest of the pipeline so we don't make
+    // it worse. Next tick will retry once the lease expires.
     const reclaimed = await reclaimStuckSending();
+    if (reclaimed === null) {
+      return new Response(
+        JSON.stringify({ ok: false, skipped: "reclaim_failed", circuit_breaker: true }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
     const pending = await processPendingEvents();
     const promoted = await promoteScheduled();
     const drainRes = await drain();
@@ -422,5 +473,7 @@ serve(async (req: Request) => {
       JSON.stringify({ ok: false, error: (err as Error).message }),
       { status: 500, headers: { "content-type": "application/json" } },
     );
+  } finally {
+    await releaseLease();
   }
 });

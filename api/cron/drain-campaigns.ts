@@ -37,7 +37,12 @@ export default async function handler(
     return;
   }
 
-  let body = "{}";
+  // Hard time-box to 50s so a slow upstream tick can't overrun into the next
+  // minute's cron firing. Combined with the server-side lease in
+  // drain-campaign-sends, overlapping ticks are bounded even under DB pressure.
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 50_000);
+
   try {
     const resp = await fetch(drainUrl, {
       method: "POST",
@@ -46,11 +51,19 @@ export default async function handler(
         "x-drain-secret": drainSecret,
       },
       body: "{}",
+      signal: ctrl.signal,
     });
-    body = await resp.text();
+    const body = await resp.text();
     res.status(resp.status).send(body);
   } catch (err) {
+    if ((err as Error).name === "AbortError") {
+      console.warn("[cron/drain-campaigns] aborted after 50s");
+      res.status(504).json({ error: "drain_timeout_50s" });
+      return;
+    }
     console.error("[cron/drain-campaigns] fetch failed", err);
     res.status(502).json({ error: "drain_fetch_failed", detail: (err as Error).message });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
