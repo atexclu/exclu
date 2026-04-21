@@ -10,6 +10,40 @@
 
 ---
 
+## UG API Cross-Check (2026-04-21)
+
+Every endpoint, field and state used below has been verified against the four
+reference documents in `docs/documentation api ugc payment.md`,
+`docs/documentation api ugc payment 2.md`, and the PDFs in
+`docs/Documentation API UG Payment/`. The verifications that matter for the
+creator + fan subscription flows:
+
+| Topic | Plan assumption | Doc reference |
+| --- | --- | --- |
+| QuickPay hosted checkout URL | `https://quickpay.ugpayments.ch/` | QuickPay v1.3 §PROCESS FOR QUICKPAY PAGE |
+| `IsInitialForRecurring: 'true'` on any Sale we'll rebill later | Required — Task 4.1, Task 6.1 | QuickPay v1.3 §QUICKPAY FIELDS; DirectSale v1.14 §SALE TRANSACTIONS |
+| `/recurringtransactions` URL | `https://api.ugpayments.ch/merchants/[MerchantId]/recurringtransactions` | DirectSale v1.14 §RECURRING/REBILL; Direct Rebilling 1.0 §SALE REBILL |
+| `/recurringtransactions` body | `referenceTransactionId`, `saleTransactionId`, `amount`, `trackingId` | DirectSale v1.14 §RECURRING/REBILL JSON REQUEST PARAMETERS |
+| `/recurringtransactions` response | `{id, message, state, status, reasoncode, trackingid}` | DirectSale v1.14 §HTTP RESPONSE; Direct Rebilling 1.0 §SALE REBILL RESPONSE |
+| ConfirmURL fires for state=Recurring | Yes — handled in Task 4.5 as idempotent no-op | Direct Rebilling 1.0 §CONFIRM PAGE |
+| ConfirmURL fields we consume | `TransactionID`, `TransactionState`, `Amount`, `MerchantReference`, `SiteID`, `CustomerEmail`, `CustomerCountry`, `TrackingId`, `Key` | DirectSale v1.14 §CONFIRM PAGE; QuickPay v1.3 §CONFIRM PAGE |
+| Transaction states we act on (per type) | `link/tip/gift = Sale`, `req = Authorize`, `sub/fsub = Sale + Recurring` | QuickPay v1.3 Appendix A |
+| Transaction statuses we treat as success | `Successful`, `Approved` | QuickPay v1.3 Appendix B; DirectSale v1.14 Appendix B |
+| Cancel flow on new subs | Internal flag (no UG call) — we never enroll in a UG plan | N/A (our design) |
+| Cancel flow on legacy plan 11027 migration | POST to `https://quickpay.ugpayments.ch/Cancel` with `username` = `MembershipUsername` | QuickPay v1.3 §CANCEL FORM |
+| Refund endpoint | `/merchants/[MerchantId]/refundtransactions` with `{referencetransactionid, amount}` | DirectSale v1.14 §REFUND TRANSACTIONS |
+| Key validation on ConfirmURL | Mandatory per-MID (Task 0.6b) | QuickPay v1.3 §CONFIRM PAGE `[Key]`; DirectSale v1.14 §CONFIRM PAGE `[Key]` |
+
+**Creator Pro Monthly ($39 + $10/extra profile)**: variable amount per cycle → one-shot Sale at signup with `IsInitialForRecurring=true`, merchant-managed rebill via `/recurringtransactions` (Task 4.1 + Task 4.3). UG-managed plan mode (SubscriptionPlanId) not usable because of variable amount.
+
+**Creator Pro Annual ($239.99 fixed)**: same one-shot Sale + rebill pattern, period advances by 365 days. Task 4.1 branch + Task 4.3.
+
+**Fan → Creator Subscription ($5–$100, creator-set)**: variable per creator → one-shot Sale with `IsInitialForRecurring=true` at subscribe time, merchant-managed rebill every 30 days. Task 6.1 + Task 4.3 (`rebillFanSubscription`). Creator's share credited on EACH cycle (Task 8.3 Step 4).
+
+**Legacy plan 11027 (UG-managed subscription, fixed $39)**: kept for existing subs until migration drains them (Task 4.9 cancels the UG plan enrollment then rebills the original Sale TID via `/recurringtransactions`). New creators never land on plan 11027.
+
+---
+
 ## External Dependencies — Confirmed with Derek (2026-04-20)
 
 All 5 open questions answered. Derek is actively provisioning the new 2D US/CA MID; we start coding now and plug the credentials in when they arrive.
@@ -450,16 +484,22 @@ export function getMidCredentials(key: UgMidKey): UgMidCredentials {
 //
 // Thin wrapper around UG Payments' /recurringtransactions endpoint.
 //
+// Request body follows the DirectSale doc §RECURRING/REBILL (4 fields):
+//   - referenceTransactionId: the ORIGINAL Sale TID we want to rebill
+//   - saleTransactionId:       same value — doc lists both as "mandatory"
+//   - amount:                  decimal number (not a string)
+//   - trackingId:              our correlation id, echoed back in the
+//                              ConfirmURL as [TrackingId]
+//
 // Derek confirmed (2026-04-20) that UG does NOT expose a uniform reason code
 // for card-expired vs other declines — each issuer returns its own free-form
-// message. So we intentionally keep the classification binary: either the
-// rebill succeeded, or it didn't. The caller decides the retry policy on
-// top (see `rebill-subscriptions`).
+// message. Classification is binary (success/declined/error); the caller
+// decides the retry policy on top (see `rebill-subscriptions`).
 import type { UgMidCredentials } from './ugRouting.ts';
 
 export interface RebillResult {
   success: boolean;
-  transactionId: string | null;
+  transactionId: string | null;  // NEW rebill TID (not the reference)
   reasonCode: string | null;
   message: string | null;
   classification: 'success' | 'declined' | 'error';
@@ -468,15 +508,15 @@ export interface RebillResult {
 
 export async function rebillTransaction(
   creds: UgMidCredentials,
-  referenceTransactionId: string,
+  referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (Derek Q1)
   amountCents: number,
   trackingId: string,
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {
-    TransactionID: referenceTransactionId, // MUST be the ORIGINAL Sale TID; never a rebilled TID
-    Amount: (amountCents / 100).toFixed(2),
-    Currency: 'USD',
+    referenceTransactionId,
+    saleTransactionId: referenceTransactionId,
+    amount: amountCents / 100,            // decimal number per doc
     trackingId,
   };
 
@@ -502,8 +542,14 @@ export async function rebillTransaction(
   }
 
   const raw = await res.json().catch(() => null);
+  // DirectSale response uses lowercase `reasoncode` but doc mentions reasonCode
+  // in the parameter table — accept either.
   const status = String(raw?.status ?? '').toLowerCase();
-  const reasonCode = raw?.reasoncode ? String(raw.reasoncode) : raw?.reasonCode ? String(raw.reasonCode) : null;
+  const reasonCode = raw?.reasoncode
+    ? String(raw.reasoncode)
+    : raw?.reasonCode
+    ? String(raw.reasonCode)
+    : null;
   const message = raw?.message ? String(raw.message) : null;
   const tid = raw?.id ? String(raw.id) : null;
 
@@ -522,6 +568,79 @@ export async function rebillTransaction(
 ```bash
 git add supabase/functions/_shared/ugRouting.ts supabase/functions/_shared/ugRebill.ts
 git commit -m "feat(payments): shared UG routing + rebill helpers"
+```
+
+---
+
+### Task 0.6b — Harden ConfirmURL Key validation
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+- Modify: `supabase/functions/ugp-membership-confirm/index.ts`
+- Modify: `supabase/functions/ugp-listener/index.ts`
+
+Per the QuickPay ConfirmURL doc, every callback carries a `[Key]` field "supplied from portal from UnicornPayment". Today our code validates the Key **only when the incoming payload includes one** (see `ugp-confirm` lines 94–97). That's a prod foot-gun: if the portal Key gets dropped by accident, unsigned callbacks silently get accepted.
+
+**Required production invariant:** `QUICKPAY_CONFIRM_KEY` is set on both MIDs (portal config), and any inbound callback without a matching `Key` is rejected with 401.
+
+- [ ] **Step 1: Change the key-present-only check to a mandatory check**
+
+```ts
+// supabase/functions/ugp-confirm/index.ts — replace the existing guard
+if (!confirmKey) {
+  console.error('[ugp-confirm] QUICKPAY_CONFIRM_KEY is not set — refusing to process callbacks');
+  return new Response('Server misconfigured', { status: 503 });
+}
+if (body.Key !== confirmKey) {
+  console.error('[ugp-confirm] Key mismatch', { provided: body.Key?.slice(0, 8) + '...' });
+  return new Response('Unauthorized', { status: 401 });
+}
+```
+
+Apply the same shape to `ugp-membership-confirm/index.ts` and `ugp-listener/index.ts` (each already has a `confirmKey` and a soft check — tighten all three).
+
+- [ ] **Step 2: Set the Key in BOTH UG portals**
+
+In the UG merchant portal (Merchant Setup → Sites):
+- 3D MID (existing, SiteID 98845): set the "Key" field in the ConfirmURL row → copy the value into Supabase `QUICKPAY_CONFIRM_KEY` secret.
+- 2D MID (new, once Derek delivers): same — set the Key, copy into `QUICKPAY_CONFIRM_KEY_US_2D`.
+
+If the two MIDs use different keys, we pick the right one per inbound request by matching `body.SiteID` to the stored SiteID of each MID, then comparing against the MID-specific key.
+
+- [ ] **Step 3: Extend ugRouting to expose the per-MID confirm key**
+
+```ts
+// supabase/functions/_shared/ugRouting.ts
+export function getMidConfirmKey(key: UgMidKey): string {
+  const env = key === 'us_2d' ? 'QUICKPAY_CONFIRM_KEY_US_2D' : 'QUICKPAY_CONFIRM_KEY_INTL_3D';
+  const value = Deno.env.get(env) ?? Deno.env.get('QUICKPAY_CONFIRM_KEY') ?? '';
+  if (!value) throw new Error(`Missing ${env}`);
+  return value;
+}
+
+// Given an inbound callback SiteID, find the matching MID.
+export function midFromSiteId(siteId: string): UgMidKey {
+  const us2d = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  return siteId && siteId === us2d ? 'us_2d' : 'intl_3d';
+}
+```
+
+- [ ] **Step 4: Use per-MID key validation in ugp-confirm**
+
+```ts
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
+// ...
+const midKey = midFromSiteId(body.SiteID ?? '');
+const expectedKey = getMidConfirmKey(midKey);
+if (body.Key !== expectedKey) { return new Response('Unauthorized', { status: 401 }); }
+```
+
+- [ ] **Step 5: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-confirm ugp-membership-confirm ugp-listener --linked
+git add supabase/functions/
+git commit -m "feat(security): mandatory Key validation per MID on every UG callback"
 ```
 
 ---
@@ -1559,6 +1678,11 @@ serve(async (req) => {
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',
+      // CRITICAL: tags this TID as rebill-eligible at the UG gateway. Without
+      // this, future /recurringtransactions calls against this TID may be
+      // rejected. Confirmed required per QuickPay doc §QUICKPAY FIELDS and
+      // DirectSale doc §SaleTransactions ("isInitialForRecurring mandatory").
+      IsInitialForRecurring: 'true',
       ApprovedURL: `${siteUrl}/app?subscription=success`,
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/app?subscription=failed`,
@@ -2543,6 +2667,9 @@ serve(async (req) => {
     AmountShipping: '0.00',
     ShippingRequired: 'false',
     MembershipRequired: 'false',
+    // Same note as Task 4.1 — tags this TID as rebill-eligible. Mandatory
+    // because our cron will call /recurringtransactions on this TID every 30 days.
+    IsInitialForRecurring: 'true',
     ApprovedURL: `${siteUrl}/fan/subscriptions?subscribed=${creatorProfile.id}`,
     ConfirmURL: `${siteUrl}/api/ugp-confirm`,
     DeclinedURL: `${siteUrl}/fan/subscriptions?failed=${creatorProfile.id}`,
@@ -3276,19 +3403,28 @@ git commit -m "feat(ledger): shared helpers for apply/reverse wallet transaction
 
 ---
 
-### Task 8.3 — Migrate `ugp-confirm` credit paths to the ledger
+### Task 8.3 — Migrate every credit path to the ledger
 
 **Files:**
 - Modify: `supabase/functions/ugp-confirm/index.ts`
+- Modify: `supabase/functions/manage-request/index.ts`
+- Modify: `supabase/functions/rebill-subscriptions/index.ts`
 
-Each success handler currently does:
-```ts
-await supabase.rpc('credit_creator_wallet', { ... }); // or direct UPDATE
-```
+**Credit ordering rules — single writer per flow so we never double-count:**
 
-Replace with a single `applyWalletTransaction` call. Chatter earnings get their own ledger row too.
+| Flow | Writer | Reason |
+| --- | --- | --- |
+| Link / tip / gift purchase, first sub Sale, first fan-sub Sale | `ugp-confirm` on `TransactionState=Sale` | ConfirmURL is the authoritative success signal |
+| Custom request capture | `manage-request` on `status='delivered'` | Capture happens server-side (no ConfirmURL flow for capture) |
+| Creator Pro referral commission (rebill cycle) | `rebill-subscriptions` cron on successful `/recurringtransactions` response | Cron has the authoritative sync ack |
+| Fan→creator sub rebill cycle | `rebill-subscriptions` cron on successful response | Same |
+| Refund / chargeback | `ugp-listener` on `TransactionState=Refund` or `CBK1` | Listener is the authoritative reversal signal |
 
-**Golden rule for this task:** every `profiles.wallet_balance_cents` / `.total_earned_cents` / `.chatter_earnings_cents` mutation across the whole codebase must go through `applyWalletTransaction`. Nothing else.
+**Golden rules for this task:**
+
+1. `profiles.wallet_balance_cents` / `.total_earned_cents` / `.chatter_earnings_cents` mutations go through `applyWalletTransaction`. Nothing else.
+2. The ledger insert happens **BEFORE** any status flip (`purchases.status='succeeded'`, `subscription_period_end = ...`). If the ledger throws, nothing moves downstream.
+3. Every path is idempotent on `source_transaction_id` (the UG TID — initial or rebill) so any double callback is a safe no-op.
 
 - [ ] **Step 1: `handleLinkPurchase`**
 
@@ -3380,12 +3516,128 @@ Note: `commission_earned_cents` + `affiliate_earnings_cents` on `referrals` / `p
 
 In the "capture → credit creator" block, swap to `applyWalletTransaction` with `sourceType='custom_request'`, `sourceId=customRequestId`, `sourceTransactionId=<capture tid>`. Credit chatter if attributed.
 
-- [ ] **Step 4: Deploy + commit**
+- [ ] **Step 4: `supabase/functions/rebill-subscriptions/index.ts` — rebill cycle credits**
+
+This is the authoritative writer for every monthly/annual rebill. The cron does three things in sequence on a successful `/recurringtransactions` response:
+1. Insert the `rebill_attempts` row (already in Task 4.3).
+2. `applyWalletTransaction` with the REBILL TID (`result.transactionId` — NOT the original Sale TID) as `sourceTransactionId`, so each cycle gets its own ledger row.
+3. Advance `subscription_period_end` / `next_rebill_at`.
+
+The ordering is ledger → period advance, so a ledger throw leaves the period where it was and the cron retries next run.
+
+In `rebillCreatorSubscription`:
+
+```ts
+if (result.success) {
+  // 2a) Ledger: credit the referrer's commission (creator Pro revenue is the
+  //     platform's, NOT the subscribing creator's). Idempotent on result.transactionId.
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('id, referrer_id')
+    .eq('referred_id', creator.id)
+    .neq('status', 'inactive')
+    .maybeSingle();
+
+  if (referral && result.transactionId) {
+    const commissionCents = Math.round(amount * 0.35); // 35% of the rebilled amount
+    try {
+      await applyWalletTransaction(supabase, {
+        ownerId: referral.referrer_id,
+        ownerKind: 'creator',
+        direction: 'credit',
+        amountCents: commissionCents,
+        sourceType: 'creator_subscription',
+        sourceId: referral.id,
+        sourceTransactionId: result.transactionId, // rebill TID, not original
+        sourceUgpMid: mid,
+        metadata: { kind: 'referral_commission_rebill', subscriber_id: creator.id, cycle_amount_cents: amount },
+      });
+    } catch (err) {
+      console.error(`[rebill] ledger write failed for creator ${creator.id}`, err);
+      return; // do NOT advance period_end if the ledger didn't persist
+    }
+  }
+
+  // 2b) Advance period AFTER ledger success.
+  const now = new Date();
+  const nextEnd = new Date(now);
+  if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+  else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+  await supabase.from('profiles').update({
+    subscription_amount_cents: amount,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: nextEnd.toISOString(),
+    subscription_suspended_at: null,
+    // NEVER overwrite subscription_ugp_transaction_id — only the ORIGINAL Sale TID works with /recurringtransactions.
+  }).eq('id', creator.id);
+  return;
+}
+```
+
+In `rebillFanSubscription`:
+
+```ts
+if (result.success) {
+  // 2a) Ledger: credit the creator's net for this billing cycle.
+  //     Platform fee: 15% on Free, 0% on Pro — check the creator's plan.
+  const { data: creatorProfile } = await supabase
+    .from('profiles')
+    .select('subscription_plan')
+    .eq('id', sub.creator_user_id)
+    .single();
+  const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
+  const creatorNetCents = Math.round(amount * (1 - platformRate));
+
+  if (result.transactionId) {
+    try {
+      await applyWalletTransaction(supabase, {
+        ownerId: sub.creator_user_id,
+        ownerKind: 'creator',
+        direction: 'credit',
+        amountCents: creatorNetCents,
+        sourceType: 'fan_subscription',
+        sourceId: sub.id,
+        sourceTransactionId: result.transactionId, // rebill TID, not original
+        sourceUgpMid: mid,
+        metadata: {
+          fan_id: sub.fan_id,
+          cycle_amount_cents: amount,
+          platform_rate: platformRate,
+          kind: 'rebill',
+        },
+      });
+    } catch (err) {
+      console.error(`[rebill] ledger write failed for fan sub ${sub.id}`, err);
+      return; // don't advance next_rebill_at if the ledger didn't persist
+    }
+  }
+
+  // 2b) Advance period.
+  const now = new Date();
+  const nextEnd = new Date(now);
+  nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+  await supabase.from('fan_creator_subscriptions').update({
+    period_start: now.toISOString(),
+    period_end: nextEnd.toISOString(),
+    next_rebill_at: nextEnd.toISOString(),
+    suspended_at: null,
+  }).eq('id', sub.id);
+  return;
+}
+```
+
+The query for fan subs in the cron needs `creator_user_id` and `fan_id` in the SELECT (add them — they were implicit before). Double-check `select` in the cron's query:
+
+```ts
+.select('id, fan_id, creator_user_id, ugp_transaction_id, ugp_mid, price_cents, next_rebill_at, cancel_at_period_end')
+```
+
+- [ ] **Step 5: Deploy + commit**
 
 ```bash
-supabase functions deploy ugp-confirm manage-request --linked
-git add supabase/functions/ugp-confirm/index.ts supabase/functions/manage-request/index.ts
-git commit -m "feat(ledger): ugp-confirm + manage-request route credits through the ledger"
+supabase functions deploy ugp-confirm manage-request rebill-subscriptions --linked
+git add supabase/functions/ugp-confirm/index.ts supabase/functions/manage-request/index.ts supabase/functions/rebill-subscriptions/index.ts
+git commit -m "feat(ledger): route every credit path (checkout + capture + rebill) through the ledger"
 ```
 
 ---
