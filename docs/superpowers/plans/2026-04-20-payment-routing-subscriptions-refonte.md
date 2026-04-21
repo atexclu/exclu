@@ -1767,13 +1767,19 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
     const nextEnd = new Date(now);
     if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
     else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+    // NOTE: we advance period_end here purely to mark "rebill accepted".
+    // The ACTUAL creator wallet credit (if any) happens in ugp-confirm when
+    // UG POSTs back with TransactionState=Recurring. See Task 8.3 —
+    // applyWalletTransaction is idempotent, so even if the ConfirmURL never
+    // lands we won't credit off the synchronous response here.
     await supabase.from('profiles').update({
       subscription_amount_cents: amount,
       subscription_period_start: now.toISOString(),
       subscription_period_end: nextEnd.toISOString(),
       subscription_suspended_at: null,
+      subscription_ugp_transaction_id: creator.subscription_ugp_transaction_id, // keep the ORIGINAL — never overwrite with rebill TID
     }).eq('id', creator.id);
-    console.log(`[rebill] creator ${creator.id} success, next: ${nextEnd.toISOString()}`);
+    console.log(`[rebill] creator ${creator.id} accepted, next: ${nextEnd.toISOString()}`);
     return;
   }
 
@@ -2964,6 +2970,1013 @@ git commit -m "docs: update CLAUDE.md for payment pipeline refonte"
 
 ---
 
+## Phase 8 — Accounting Integrity & Reliability (2 days)
+
+> **Why this phase exists.** Phases 0–7 deliver the happy path. Phase 8 hardens the money flows so **every wallet credit / debit is auditable, idempotent, and gated on a real successful payment**. This is the phase that lets us confidently say: "If a charge didn't clear, the creator isn't credited and the fan doesn't get the content." It's the backbone of the creator/chatter stats reliability the user asked for.
+>
+> **Model:** introduce a single append-only ledger (`wallet_transactions`). Every mutation to `profiles.wallet_balance_cents` / `profiles.total_earned_cents` / `profiles.chatter_earnings_cents` goes through one SECURITY DEFINER RPC so the running totals and the ledger can never disagree. Every other flow (tips / links / gifts / requests / subs / payouts / refunds / chargebacks) just inserts the right ledger row — the trigger keeps the balances in sync.
+
+### Task 8.1 — Migration 156: `wallet_transactions` ledger
+
+**Files:**
+- Create: `supabase/migrations/156_wallet_ledger.sql`
+
+Append-only source of truth for every cent of creator/chatter earnings. No `UPDATE`s (ledgers never rewrite history). The 1:1 link to a `payment_events.transaction_id` + source row is what makes every credit traceable; the unique index on `(owner_id, source_type, source_id, direction, source_transaction_id)` is what makes every credit idempotent even if a ConfirmURL fires twice.
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 156_wallet_ledger.sql
+-- Append-only ledger for every credit/debit that touches:
+--   profiles.wallet_balance_cents
+--   profiles.total_earned_cents
+--   profiles.chatter_earnings_cents
+--
+-- Invariants enforced here:
+--   - Idempotency: duplicate ConfirmURLs for the same TransactionID never double-credit.
+--   - Provenance: every balance mutation links back to a real UG transaction
+--     OR to an internal operation (payout, manual_adjustment) with audit metadata.
+--   - No UPDATEs: reversals are expressed as a new row with opposite sign + parent_id.
+
+create type wallet_owner_kind as enum ('creator', 'chatter');
+create type wallet_tx_direction as enum ('credit', 'debit');
+create type wallet_tx_source as enum (
+  'link_purchase',        -- paid link sale
+  'tip',                  -- one-shot tip
+  'gift_purchase',        -- wishlist gift
+  'custom_request',       -- creator-accepted custom request (capture)
+  'creator_subscription', -- creator Pro Sale or Recurring (referral commission only)
+  'fan_subscription',     -- fan → creator Sale or Recurring
+  'chatter_commission',   -- chatter's share of a link sale / custom request
+  'payout_hold',          -- wallet debit at payout request
+  'payout_failure',       -- reverse the hold if payout is rejected
+  'refund',               -- fan-initiated or admin refund
+  'chargeback',           -- CBK1 from UG Listener
+  'manual_adjustment'     -- admin corrections (requires admin_notes)
+);
+
+create table wallet_transactions (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null,                -- auth.users.id (creator OR chatter)
+  owner_kind wallet_owner_kind not null,
+  direction wallet_tx_direction not null,
+  amount_cents bigint not null check (amount_cents > 0),
+  currency text not null default 'USD',
+  source_type wallet_tx_source not null,
+  source_id uuid,                        -- id of the originating row (purchase/tip/gift/etc.)
+  source_transaction_id text,            -- UG TransactionID when applicable
+  source_ugp_mid text,                   -- MID for the UG transaction
+  parent_id uuid references wallet_transactions(id), -- reversals point at the original credit
+  admin_notes text,                      -- required for manual_adjustment
+  metadata jsonb,                        -- fee breakdown, fan_email, chatter_id, etc.
+  created_at timestamptz not null default now()
+);
+
+-- Idempotency guarantee: one (credit|debit) row per (owner, source, UG TID) tuple.
+-- parent_id is NULL for first-write rows and points at the original for reversals,
+-- so refunding the same TID twice creates exactly ONE reversal row.
+create unique index wallet_tx_idempotency_idx
+  on wallet_transactions(owner_id, source_type, direction, coalesce(source_transaction_id, source_id::text))
+  where source_transaction_id is not null or source_id is not null;
+
+create index wallet_tx_owner_idx on wallet_transactions(owner_id, created_at desc);
+create index wallet_tx_source_idx on wallet_transactions(source_type, source_id);
+create index wallet_tx_tid_idx on wallet_transactions(source_transaction_id)
+  where source_transaction_id is not null;
+
+comment on table wallet_transactions is
+  'Append-only ledger of every mutation to creator/chatter balances. Every credit or debit written here; profiles.wallet_balance_cents/total_earned_cents/chatter_earnings_cents are projections that MUST equal the ledger sum.';
+
+-- Single-writer RPC: callers pass the facts, the function writes the ledger row
+-- AND updates the projection columns atomically. Idempotent on the unique index.
+create or replace function apply_wallet_transaction(
+  p_owner_id uuid,
+  p_owner_kind wallet_owner_kind,
+  p_direction wallet_tx_direction,
+  p_amount_cents bigint,
+  p_source_type wallet_tx_source,
+  p_source_id uuid,
+  p_source_transaction_id text default null,
+  p_source_ugp_mid text default null,
+  p_parent_id uuid default null,
+  p_metadata jsonb default null,
+  p_admin_notes text default null
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+  v_signed_amount bigint;
+begin
+  if p_owner_id is null or p_amount_cents is null or p_amount_cents <= 0 then
+    raise exception 'apply_wallet_transaction: bad args';
+  end if;
+  if p_source_type = 'manual_adjustment' and (p_admin_notes is null or length(p_admin_notes) < 3) then
+    raise exception 'manual_adjustment requires admin_notes';
+  end if;
+
+  -- Idempotency: if a row with the same (owner, source_type, direction, tid|source_id)
+  -- already exists, short-circuit. We return the existing id; the projection is
+  -- already in sync so the caller has nothing to do.
+  select id into v_id
+    from wallet_transactions
+   where owner_id = p_owner_id
+     and source_type = p_source_type
+     and direction = p_direction
+     and coalesce(source_transaction_id, source_id::text) = coalesce(p_source_transaction_id, p_source_id::text)
+   limit 1;
+  if v_id is not null then
+    return v_id;
+  end if;
+
+  insert into wallet_transactions (
+    owner_id, owner_kind, direction, amount_cents, source_type, source_id,
+    source_transaction_id, source_ugp_mid, parent_id, metadata, admin_notes
+  ) values (
+    p_owner_id, p_owner_kind, p_direction, p_amount_cents, p_source_type, p_source_id,
+    p_source_transaction_id, p_source_ugp_mid, p_parent_id, p_metadata, p_admin_notes
+  ) returning id into v_id;
+
+  v_signed_amount := case when p_direction = 'credit' then p_amount_cents else -p_amount_cents end;
+
+  -- Project onto the running totals on profiles.
+  if p_owner_kind = 'creator' then
+    update profiles
+       set wallet_balance_cents = coalesce(wallet_balance_cents, 0) + v_signed_amount,
+           total_earned_cents = coalesce(total_earned_cents, 0) + greatest(v_signed_amount, 0)
+     where id = p_owner_id;
+  else
+    -- chatter: a chatter's money lives on their own profile.chatter_earnings_cents
+    update profiles
+       set chatter_earnings_cents = coalesce(chatter_earnings_cents, 0) + v_signed_amount
+     where id = p_owner_id;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+grant execute on function apply_wallet_transaction(uuid, wallet_owner_kind, wallet_tx_direction, bigint, wallet_tx_source, uuid, text, text, uuid, jsonb, text) to service_role;
+
+-- RLS: read-only for the row owner, writes only via the RPC (service_role).
+alter table wallet_transactions enable row level security;
+
+create policy wallet_tx_self_read
+  on wallet_transactions for select
+  using (auth.uid() = owner_id);
+
+-- Read-only view for admin dashboards (joined metadata).
+create or replace view wallet_transactions_admin
+with (security_invoker = on)
+as
+select wt.*, p.display_name, p.handle
+  from wallet_transactions wt
+  join profiles p on p.id = wt.owner_id;
+```
+
+- [ ] **Step 2: Apply + smoke test**
+
+```bash
+supabase db reset
+supabase db push --linked
+docker exec supabase_db_Exclu psql -U postgres -d postgres -c "SELECT apply_wallet_transaction('00000000-0000-0000-0000-000000000001'::uuid, 'creator', 'credit', 100, 'tip', '00000000-0000-0000-0000-000000000002'::uuid, 'txn-1');"
+docker exec supabase_db_Exclu psql -U postgres -d postgres -c "SELECT apply_wallet_transaction('00000000-0000-0000-0000-000000000001'::uuid, 'creator', 'credit', 100, 'tip', '00000000-0000-0000-0000-000000000002'::uuid, 'txn-1');"
+```
+
+Expected: both calls return the same id (second is idempotent short-circuit). One row in `wallet_transactions`. `profiles.wallet_balance_cents` credited once. (Set up a stub profile row first on a test DB.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/migrations/156_wallet_ledger.sql
+git commit -m "feat(ledger): wallet_transactions + apply_wallet_transaction RPC"
+```
+
+---
+
+### Task 8.2 — Shared helpers: `ledger.ts`
+
+**Files:**
+- Create: `supabase/functions/_shared/ledger.ts`
+
+Every edge function that used to write to `profiles.wallet_balance_cents` directly goes through these helpers. Direct writes are banned (Task 8.6 adds a lint check).
+
+- [ ] **Step 1: Write the helpers**
+
+```ts
+// supabase/functions/_shared/ledger.ts
+//
+// Single entry point for every wallet mutation. All edge functions must use
+// these helpers; direct UPDATEs against profiles.wallet_balance_cents /
+// total_earned_cents / chatter_earnings_cents are forbidden (Task 8.6 CI check).
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+
+export type LedgerSource =
+  | 'link_purchase'
+  | 'tip'
+  | 'gift_purchase'
+  | 'custom_request'
+  | 'creator_subscription'
+  | 'fan_subscription'
+  | 'chatter_commission'
+  | 'payout_hold'
+  | 'payout_failure'
+  | 'refund'
+  | 'chargeback'
+  | 'manual_adjustment';
+
+interface ApplyArgs {
+  ownerId: string;
+  ownerKind: 'creator' | 'chatter';
+  direction: 'credit' | 'debit';
+  amountCents: number;
+  sourceType: LedgerSource;
+  sourceId?: string | null;
+  sourceTransactionId?: string | null;
+  sourceUgpMid?: string | null;
+  parentId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  adminNotes?: string | null;
+}
+
+/**
+ * Apply a ledger row + projection update atomically.
+ * Idempotent on (owner, source_type, direction, tid | source_id).
+ * Returns the ledger row id (new or existing).
+ */
+export async function applyWalletTransaction(
+  sb: SupabaseClient,
+  args: ApplyArgs,
+): Promise<string> {
+  if (!Number.isInteger(args.amountCents) || args.amountCents <= 0) {
+    throw new Error(`applyWalletTransaction: invalid amount ${args.amountCents}`);
+  }
+  const { data, error } = await sb.rpc('apply_wallet_transaction', {
+    p_owner_id: args.ownerId,
+    p_owner_kind: args.ownerKind,
+    p_direction: args.direction,
+    p_amount_cents: args.amountCents,
+    p_source_type: args.sourceType,
+    p_source_id: args.sourceId ?? null,
+    p_source_transaction_id: args.sourceTransactionId ?? null,
+    p_source_ugp_mid: args.sourceUgpMid ?? null,
+    p_parent_id: args.parentId ?? null,
+    p_metadata: args.metadata ?? null,
+    p_admin_notes: args.adminNotes ?? null,
+  });
+  if (error) throw new Error(`apply_wallet_transaction failed: ${error.message}`);
+  return data as string;
+}
+
+/**
+ * Reverse a previously applied ledger row. Writes a new row with opposite
+ * direction + same amount, linked via parent_id. Idempotent — replaying the
+ * reversal a second time short-circuits on the unique index.
+ */
+export async function reverseWalletTransaction(
+  sb: SupabaseClient,
+  args: {
+    parentRowId: string;
+    sourceType: LedgerSource; // 'refund' or 'chargeback' or 'payout_failure'
+    sourceTransactionId?: string | null;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<string> {
+  const { data: parent, error: fetchErr } = await sb
+    .from('wallet_transactions')
+    .select('owner_id, owner_kind, direction, amount_cents, source_id, source_ugp_mid')
+    .eq('id', args.parentRowId)
+    .single();
+  if (fetchErr || !parent) throw new Error(`parent row not found: ${args.parentRowId}`);
+  if (parent.direction !== 'credit') throw new Error(`cannot reverse a non-credit row ${args.parentRowId}`);
+
+  return applyWalletTransaction(sb, {
+    ownerId: parent.owner_id,
+    ownerKind: parent.owner_kind,
+    direction: 'debit',
+    amountCents: parent.amount_cents,
+    sourceType: args.sourceType,
+    sourceId: parent.source_id,
+    sourceTransactionId: args.sourceTransactionId ?? null,
+    sourceUgpMid: parent.source_ugp_mid,
+    parentId: args.parentRowId,
+    metadata: args.metadata ?? null,
+  });
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add supabase/functions/_shared/ledger.ts
+git commit -m "feat(ledger): shared helpers for apply/reverse wallet transactions"
+```
+
+---
+
+### Task 8.3 — Migrate `ugp-confirm` credit paths to the ledger
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+
+Each success handler currently does:
+```ts
+await supabase.rpc('credit_creator_wallet', { ... }); // or direct UPDATE
+```
+
+Replace with a single `applyWalletTransaction` call. Chatter earnings get their own ledger row too.
+
+**Golden rule for this task:** every `profiles.wallet_balance_cents` / `.total_earned_cents` / `.chatter_earnings_cents` mutation across the whole codebase must go through `applyWalletTransaction`. Nothing else.
+
+- [ ] **Step 1: `handleLinkPurchase`**
+
+Replace the wallet-credit block (search for `credit_creator_wallet` or `wallet_balance_cents`) with:
+
+```ts
+// Find the creator (already loaded as `link`)
+const receivedCents = decimalToCents(body.Amount);
+const expectedCents = purchase.amount_cents;
+if (Math.abs(receivedCents - expectedCents) > 2) {
+  // Amount mismatch — do NOT credit. Log + mark event errored.
+  await markEventError(body.TransactionID, `amount mismatch: expected ${expectedCents}, got ${receivedCents}`);
+  console.error(`[ugp-confirm] link ${purchaseId}: amount mismatch`, { expectedCents, receivedCents });
+  return;
+}
+
+await applyWalletTransaction(supabase, {
+  ownerId: link.creator_id,
+  ownerKind: 'creator',
+  direction: 'credit',
+  amountCents: purchase.creator_net_cents,
+  sourceType: 'link_purchase',
+  sourceId: purchase.id,
+  sourceTransactionId: body.TransactionID,
+  sourceUgpMid: purchase.ugp_mid ?? null,
+  metadata: {
+    platform_fee_cents: purchase.platform_fee_cents,
+    buyer_email: customerEmail,
+    amount_paid_cents: receivedCents,
+  },
+});
+
+// Chatter commission (if attributed)
+if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
+  await applyWalletTransaction(supabase, {
+    ownerId: purchase.chat_chatter_id,
+    ownerKind: 'chatter',
+    direction: 'credit',
+    amountCents: purchase.chatter_earnings_cents,
+    sourceType: 'chatter_commission',
+    sourceId: purchase.id,
+    sourceTransactionId: body.TransactionID,
+    metadata: { creator_id: link.creator_id, purchase_link_id: link.id },
+  });
+}
+```
+
+The `purchases.status = 'succeeded'` update stays — it's the content-unlock signal. Critically it goes **AFTER** `applyWalletTransaction` succeeds. If the ledger insert throws we abort without flipping status; the event stays `processed=false` and Task 8.7 reconciliation re-attempts.
+
+- [ ] **Step 2: `handleTip`, `handleGift`, `handleRequest` (Capture only), `handleSubscription`, `handleFanSubscription`**
+
+Same pattern — add amount verification, then `applyWalletTransaction`. For the custom request flow, crediting happens in `manage-request` at capture time (not in `ugp-confirm`), so update that file too in step 3.
+
+**Subscription flows** credit only the referral commission (the $39 / $239.99 charge is revenue to the platform, not the creator). The existing `creditReferralCommission` helper needs to be rewritten to go through `applyWalletTransaction` with `sourceType='creator_subscription'` on the REFERRER's profile.
+
+```ts
+// New creditReferralCommission
+async function creditReferralCommission(subscriberId: string, subTxnId: string) {
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('id, referrer_id')
+    .eq('referred_id', subscriberId)
+    .neq('status', 'inactive')
+    .maybeSingle();
+  if (!referral) return;
+
+  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  await applyWalletTransaction(supabase, {
+    ownerId: referral.referrer_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: commissionCents,
+    sourceType: 'creator_subscription',
+    sourceId: referral.id,
+    sourceTransactionId: subTxnId,
+    metadata: { kind: 'referral_commission', subscriber_id: subscriberId },
+  });
+
+  await supabase.from('referrals').update({
+    status: 'converted',
+    converted_at: new Date().toISOString(),
+  }).eq('id', referral.id);
+}
+```
+
+Note: `commission_earned_cents` + `affiliate_earnings_cents` on `referrals` / `profiles` become secondary read models; the ledger is the source of truth.
+
+- [ ] **Step 3: `supabase/functions/manage-request/index.ts` — capture flow**
+
+In the "capture → credit creator" block, swap to `applyWalletTransaction` with `sourceType='custom_request'`, `sourceId=customRequestId`, `sourceTransactionId=<capture tid>`. Credit chatter if attributed.
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-confirm manage-request --linked
+git add supabase/functions/ugp-confirm/index.ts supabase/functions/manage-request/index.ts
+git commit -m "feat(ledger): ugp-confirm + manage-request route credits through the ledger"
+```
+
+---
+
+### Task 8.4 — Migrate refund / chargeback / void to ledger reversals
+
+**Files:**
+- Modify: `supabase/functions/ugp-listener/index.ts`
+
+Today `ugp-listener` directly does `UPDATE profiles SET wallet_balance_cents = wallet_balance_cents - X`. We replace that with a `reverseWalletTransaction` call. Chatter earnings reverse automatically because they're independent ledger rows for the same source_id.
+
+- [ ] **Step 1: Refund**
+
+In `handleRefund`, after marking the row refunded:
+
+```ts
+import { reverseWalletTransaction } from '../_shared/ledger.ts';
+// ...
+
+// Find every ledger credit tied to this TransactionID (creator AND chatter).
+const { data: credits } = await supabase
+  .from('wallet_transactions')
+  .select('id, owner_id, owner_kind, amount_cents, source_type')
+  .eq('source_transaction_id', txnId)
+  .eq('direction', 'credit');
+
+for (const c of credits ?? []) {
+  try {
+    await reverseWalletTransaction(supabase, {
+      parentRowId: c.id,
+      sourceType: 'refund',
+      sourceTransactionId: txnId,
+      metadata: { refund_amount: amount },
+    });
+  } catch (err) {
+    console.error(`[listener] refund reversal failed for ${c.id}`, err);
+  }
+}
+```
+
+- [ ] **Step 2: Chargeback**
+
+Same shape as refund, `sourceType: 'chargeback'`. Chargebacks MAY take the creator's balance negative — accepted, admin follow-up. The existing email notification to `atexclu@gmail.com` stays.
+
+- [ ] **Step 3: Void**
+
+Voids on custom-request Authorize events don't credit anything yet, so there's nothing to reverse. Flip the `custom_requests.status='expired'` as before; no ledger change.
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-listener --linked
+git add supabase/functions/ugp-listener/index.ts
+git commit -m "feat(ledger): refunds + chargebacks reverse via ledger"
+```
+
+---
+
+### Task 8.5 — Migrate payouts to the ledger
+
+**Files:**
+- Modify: `supabase/functions/request-withdrawal/index.ts`
+- Modify: `supabase/functions/process-payout/index.ts`
+- Modify: admin payout rejection path (find via `grep -rn "status.*rejected" supabase/functions/`)
+
+A payout has two ledger events:
+1. **On request** → `payout_hold` debit on the creator. This is the "funds reserved" moment. If the wallet can't cover it, the RPC rejects (amount_cents check keeps it positive — debits still require a `direction='debit'` + positive amount).
+2. **On admin reject** → `payout_failure` credit (same amount, opposite direction), linked via `parent_id` to the hold row.
+
+A successful payout is just a state change on `payouts` — the money already left the wallet at hold time, so we don't re-debit.
+
+- [ ] **Step 1: `request-withdrawal`**
+
+Replace the `wallet_balance_cents -= amount` block with:
+
+```ts
+import { applyWalletTransaction } from '../_shared/ledger.ts';
+// ... existing validation ...
+
+const { data: payout, error: insErr } = await supabase.from('payouts').insert({
+  creator_id: user.id,
+  amount_cents: amount,
+  status: 'requested',
+  requested_at: new Date().toISOString(),
+}).select('id').single();
+if (insErr || !payout) { /* error */ }
+
+try {
+  await applyWalletTransaction(supabase, {
+    ownerId: user.id,
+    ownerKind: 'creator',
+    direction: 'debit',
+    amountCents: amount,
+    sourceType: 'payout_hold',
+    sourceId: payout.id,
+  });
+} catch (err) {
+  // Hold failed — roll back the payout row
+  await supabase.from('payouts').delete().eq('id', payout.id);
+  throw err;
+}
+```
+
+- [ ] **Step 2: Admin reject path**
+
+```ts
+// When admin rejects a payout:
+const { data: holdRow } = await supabase
+  .from('wallet_transactions')
+  .select('id')
+  .eq('source_type', 'payout_hold')
+  .eq('source_id', payoutId)
+  .single();
+
+if (holdRow) {
+  await reverseWalletTransaction(supabase, {
+    parentRowId: holdRow.id,
+    sourceType: 'payout_failure',
+  });
+}
+await supabase.from('payouts').update({ status: 'rejected', rejection_reason: reason }).eq('id', payoutId);
+```
+
+- [ ] **Step 3: `process-payout`**
+
+No ledger change needed (hold already debited). Just update `payouts.status`, `processed_at`, and `profiles.total_withdrawn_cents`:
+
+```ts
+// total_withdrawn_cents is a separate stat, not a wallet mutation.
+await supabase.rpc('increment_total_withdrawn', { p_user_id: creator.id, p_amount_cents: payout.amount_cents });
+```
+
+Add that helper to migration 156 (or a follow-up 157):
+
+```sql
+create or replace function increment_total_withdrawn(p_user_id uuid, p_amount_cents bigint)
+returns void language sql security definer as $$
+  update profiles set total_withdrawn_cents = coalesce(total_withdrawn_cents, 0) + p_amount_cents where id = p_user_id;
+$$;
+```
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy request-withdrawal process-payout --linked
+git add supabase/functions/request-withdrawal/index.ts supabase/functions/process-payout/index.ts supabase/migrations/157_increment_total_withdrawn.sql
+git commit -m "feat(ledger): payout hold/release go through the ledger"
+```
+
+---
+
+### Task 8.6 — CI guardrail: no direct wallet writes outside the ledger
+
+**Files:**
+- Create: `scripts/check-ledger-discipline.sh`
+- Modify: `package.json` (add `lint:ledger` script)
+
+Enforces at review time that nobody reintroduces a raw `UPDATE profiles SET wallet_balance_cents`. Exit non-zero breaks CI.
+
+- [ ] **Step 1: Write the check**
+
+```bash
+#!/usr/bin/env bash
+# scripts/check-ledger-discipline.sh — fails if any edge function writes wallet fields
+# directly. The ledger RPC is the only allowed writer.
+set -euo pipefail
+
+BAD=$(grep -rEn \
+  "wallet_balance_cents\s*=|chatter_earnings_cents\s*=|total_earned_cents\s*=|credit_creator_wallet\(|debit_creator_wallet\(" \
+  supabase/functions/ \
+  --include='*.ts' \
+  | grep -v '_shared/ledger.ts' \
+  | grep -v apply_wallet_transaction \
+  | grep -v '//\s*ledger-exempt' || true)
+
+if [ -n "$BAD" ]; then
+  echo "✗ Direct wallet writes detected — route through _shared/ledger.ts:"
+  echo "$BAD"
+  exit 1
+fi
+echo "✓ Ledger discipline OK"
+```
+
+```bash
+chmod +x scripts/check-ledger-discipline.sh
+```
+
+- [ ] **Step 2: Wire into `npm run test`**
+
+Add to `package.json`:
+
+```json
+"scripts": {
+  "lint:ledger": "bash scripts/check-ledger-discipline.sh",
+  "test": "vitest && npm run lint:ledger"
+}
+```
+
+- [ ] **Step 3: Run, commit**
+
+```bash
+npm run lint:ledger
+git add scripts/check-ledger-discipline.sh package.json
+git commit -m "feat(ci): enforce ledger discipline for wallet writes"
+```
+
+---
+
+### Task 8.7 — Reconciliation cron: event backlog + balance drift
+
+**Files:**
+- Create: `supabase/functions/reconcile-payments/index.ts`
+- Create: `supabase/functions/reconcile-payments/config.toml`
+- Modify: `vercel.json`
+- Create: `api/cron/reconcile-payments.ts`
+
+Runs hourly. Does three things:
+1. **Re-process stuck `payment_events`** — `processed=false AND created_at < now() - 5 min` with an actionable state. Rare, but happens if our server was briefly unreachable when UG POSTed.
+2. **Detect balance drift** — `profiles.wallet_balance_cents ≠ sum(credit) − sum(debit)` from the ledger. Alert + refuse to auto-correct.
+3. **Detect orphan ledger rows** — a ledger row whose `source_id` no longer exists.
+
+- [ ] **Step 1: Write the function**
+
+```ts
+// supabase/functions/reconcile-payments/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
+
+const sb = createClient(Deno.env.get('PROJECT_URL')!, Deno.env.get('SERVICE_ROLE_KEY')!);
+const secret = Deno.env.get('RECONCILE_CRON_SECRET');
+
+serve(async (req) => {
+  if (req.headers.get('Authorization')?.replace('Bearer ', '') !== secret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const anomalies: string[] = [];
+
+  // 1. Stuck events — older than 5 minutes, still unprocessed, with an actionable state.
+  const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { data: stuck } = await sb.from('payment_events')
+    .select('transaction_id, merchant_reference, transaction_state, created_at')
+    .eq('processed', false)
+    .is('processing_error', null)
+    .lt('created_at', cutoff)
+    .limit(50);
+
+  for (const e of stuck ?? []) {
+    // Re-fire the ConfirmURL handler by POSTing the raw payload back to ourselves.
+    // We have `raw_payload` for this — fetch it separately because it's jsonb.
+    const { data: full } = await sb.from('payment_events').select('raw_payload').eq('transaction_id', e.transaction_id).single();
+    if (!full?.raw_payload) continue;
+    const form = new URLSearchParams(full.raw_payload as Record<string, string>);
+    const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
+    await fetch(`${siteUrl}/api/ugp-confirm`, { method: 'POST', body: form.toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  }
+
+  // 2. Balance drift — flag creators whose running total disagrees with the ledger.
+  // (Runs against an RPC for speed; full table scans on profiles would be too slow as we grow.)
+  const { data: drifts } = await sb.rpc('find_wallet_drift', { p_tolerance_cents: 1 });
+  for (const d of drifts ?? []) {
+    anomalies.push(`Wallet drift: user ${d.user_id}, projected ${d.projection_cents}, ledger ${d.ledger_cents}`);
+  }
+
+  // 3. Admin alert
+  if (anomalies.length > 0) {
+    await sendBrevoEmail({
+      to: 'atexclu@gmail.com',
+      subject: `🚨 Wallet reconciliation — ${anomalies.length} anomalies`,
+      htmlContent: `<p>Ledger reconciliation detected ${anomalies.length} anomalies:</p><pre>${anomalies.join('\n')}</pre>`,
+    });
+  }
+
+  return new Response(JSON.stringify({ stuckRequeued: stuck?.length ?? 0, anomalies: anomalies.length }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
+```
+
+- [ ] **Step 2: `find_wallet_drift` RPC**
+
+Append to migration 157 (or a new 158):
+
+```sql
+-- 158_wallet_drift_rpc.sql
+create or replace function find_wallet_drift(p_tolerance_cents bigint default 1)
+returns table(user_id uuid, projection_cents bigint, ledger_cents bigint)
+language sql stable security definer as $$
+  select p.id,
+         coalesce(p.wallet_balance_cents, 0) as projection_cents,
+         coalesce((
+           select sum(case when direction = 'credit' then amount_cents else -amount_cents end)
+             from wallet_transactions wt
+            where wt.owner_id = p.id and wt.owner_kind = 'creator'
+         ), 0) as ledger_cents
+    from profiles p
+   where p.is_creator = true
+     and abs(coalesce(p.wallet_balance_cents, 0) - coalesce((
+           select sum(case when direction = 'credit' then amount_cents else -amount_cents end)
+             from wallet_transactions wt
+            where wt.owner_id = p.id and wt.owner_kind = 'creator'
+         ), 0)) > p_tolerance_cents;
+$$;
+```
+
+- [ ] **Step 3: Vercel cron entry**
+
+```ts
+// api/cron/reconcile-payments.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+const URL = 'https://qexnwezetjlbwltyccks.supabase.co/functions/v1/reconcile-payments';
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
+  const r = await fetch(URL, { method: 'POST', headers: { Authorization: `Bearer ${process.env.RECONCILE_CRON_SECRET}` } });
+  res.status(r.status).send(await r.text());
+}
+```
+
+```json
+// vercel.json — append cron entry
+{ "path": "/api/cron/reconcile-payments", "schedule": "0 * * * *" }
+```
+
+- [ ] **Step 4: Deploy + secrets + commit**
+
+```bash
+openssl rand -hex 32 | pbcopy
+supabase secrets set RECONCILE_CRON_SECRET=<paste> --linked
+vercel env add RECONCILE_CRON_SECRET production preview development
+supabase db push --linked
+supabase functions deploy reconcile-payments --linked
+git add supabase/migrations/158_wallet_drift_rpc.sql supabase/functions/reconcile-payments/ api/cron/reconcile-payments.ts vercel.json
+git commit -m "feat(ledger): hourly reconciliation cron + drift alerting"
+```
+
+---
+
+### Task 8.8 — Dashboards read from the ledger
+
+**Files:**
+- Modify: `src/pages/AppDashboard.tsx`
+- Modify: `src/pages/FanDashboard.tsx`
+
+Earnings cards today compute from `tipsRaw.reduce(...)` etc. Once the ledger is the source of truth, replace those sums with a single query against `wallet_transactions`:
+
+```ts
+// Lifetime earnings per source — single, fast, always consistent with wallet.
+const { data: ledger } = await supabase.from('wallet_transactions')
+  .select('source_type, direction, amount_cents')
+  .eq('owner_id', user.id)
+  .eq('owner_kind', 'creator');
+
+const byKind = { link_purchase: 0, tip: 0, gift_purchase: 0, custom_request: 0, fan_subscription: 0 };
+for (const row of ledger ?? []) {
+  const signed = row.direction === 'credit' ? row.amount_cents : -row.amount_cents;
+  if (row.source_type in byKind) byKind[row.source_type as keyof typeof byKind] += signed;
+}
+```
+
+- [ ] **Step 1: Update Overview breakdown in AppDashboard**
+
+Replace the 5-bucket computation with `byKind[...]`. Same values but guaranteed to match the wallet.
+
+- [ ] **Step 2: Update Subscriptions tab earning stats**
+
+`fanSubStats.lifetimeNetCents` becomes `byKind.fan_subscription`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/AppDashboard.tsx src/pages/FanDashboard.tsx
+git commit -m "feat(dashboard): earnings breakdown reads the ledger"
+```
+
+---
+
+### Task 8.9 — Content-access gates verified (every delivery path)
+
+**Files:**
+- Modify: `src/pages/PublicLink.tsx`
+- Modify: `src/pages/CreatorPublic.tsx` (fan subscription gate)
+- Modify: `supabase/functions/send-link-content-email/index.ts` (email-based delivery)
+- Modify: `supabase/functions/generate-signed-urls/index.ts` (signed URL issuance)
+- Create: `src/lib/contentAccess.ts`
+- Create: `tests/content-access.test.ts`
+
+There are **four** content-delivery paths in the app. Each one needs the same single gate:
+
+| Path | Source of truth | Correct gate |
+| --- | --- | --- |
+| Paid-link direct access (`/l/:slug`) | `purchases.status` | `status = 'succeeded'` |
+| Paid-link email delivery | `purchases.status` | `status = 'succeeded'` |
+| Custom request delivery (`custom_requests.delivery_link_id`) | `custom_requests.status` | `status = 'delivered'` AND `captured_at IS NOT NULL` |
+| Fan subscription feed (`/:handle` + `/fan`) | `has_active_fan_subscription(fan, creator_profile)` RPC | RPC returns true |
+
+Invariant: **content unlocks iff the gate returns true, regardless of any other flag (`access_token`, row presence, signed URL possession).** Everything else — `pending`, `requires_payment_method`, `refunded`, missing — keeps the content locked.
+
+- [ ] **Step 1: Central gate helper**
+
+```ts
+// src/lib/contentAccess.ts
+export interface PurchaseGate { status: string; }
+export interface CustomRequestGate { status: string; captured_at?: string | null; }
+
+export function canAccessPurchasedLink(p: PurchaseGate | null | undefined): boolean {
+  return !!p && p.status === 'succeeded';
+}
+
+export function canAccessCustomRequestDelivery(r: CustomRequestGate | null | undefined): boolean {
+  return !!r && r.status === 'delivered' && !!r.captured_at;
+}
+```
+
+- [ ] **Step 2: Audit each delivery point**
+
+For each of the files listed above, grep the current access check:
+
+```bash
+grep -rn "access_token\|status.*succeeded\|status.*delivered\|purchase.status\|request.status\|isSubscribed" src/pages/PublicLink.tsx src/pages/CreatorPublic.tsx supabase/functions/send-link-content-email supabase/functions/generate-signed-urls
+```
+
+For every match where the access logic is inline:
+- **Paid link (PublicLink.tsx, send-link-content-email)** — replace the inline `purchase.status === 'succeeded'` check with `canAccessPurchasedLink(purchase)`.
+- **Custom request delivery** — add `canAccessCustomRequestDelivery(request)` before issuing signed URLs.
+- **Fan subscription feed (CreatorPublic.tsx feed tab)** — already goes through `has_active_fan_subscription` RPC via `useFanSubscription`; no change.
+- **`generate-signed-urls` edge function** — verify it checks the owning purchase/request status before signing. If it signs unconditionally (relying on the caller to have auth), add the gate.
+
+- [ ] **Step 3: Write the regression tests**
+
+```ts
+// tests/content-access.test.ts
+import { describe, expect, it } from 'vitest';
+import { canAccessPurchasedLink, canAccessCustomRequestDelivery } from '@/lib/contentAccess';
+
+describe('canAccessPurchasedLink', () => {
+  it('blocks pending', () => expect(canAccessPurchasedLink({ status: 'pending' })).toBe(false));
+  it('blocks refunded', () => expect(canAccessPurchasedLink({ status: 'refunded' })).toBe(false));
+  it('blocks failed', () => expect(canAccessPurchasedLink({ status: 'failed' })).toBe(false));
+  it('blocks null', () => expect(canAccessPurchasedLink(null)).toBe(false));
+  it('allows succeeded', () => expect(canAccessPurchasedLink({ status: 'succeeded' })).toBe(true));
+});
+
+describe('canAccessCustomRequestDelivery', () => {
+  it('blocks accepted but not captured', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'accepted', captured_at: null })).toBe(false));
+  it('blocks delivered without capture', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'delivered', captured_at: null })).toBe(false));
+  it('allows delivered + captured', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'delivered', captured_at: '2026-04-21T00:00:00Z' })).toBe(true));
+  it('blocks refunded', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'refunded', captured_at: '2026-04-21T00:00:00Z' })).toBe(false));
+});
+```
+
+- [ ] **Step 4: Run + commit**
+
+```bash
+npm run test -- tests/content-access.test.ts
+git add src/lib/contentAccess.ts src/pages/PublicLink.tsx src/pages/CreatorPublic.tsx supabase/functions/send-link-content-email/index.ts supabase/functions/generate-signed-urls/index.ts tests/content-access.test.ts
+git commit -m "feat(access): single access gate across every content-delivery path"
+```
+
+---
+
+### Task 8.10 — End-to-end integrity tests
+
+**Files:**
+- Create: `supabase/functions/ugp-confirm/ledger.integration.test.ts`
+
+These tests drive the handler with realistic UG POST bodies and assert the ledger + projection land in the right state. They're the final safety net.
+
+- [ ] **Step 1: Write scenarios**
+
+```ts
+// supabase/functions/ugp-confirm/ledger.integration.test.ts
+import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
+// NB: requires extraction of the handler to a pure `handle(req, deps)` function
+// with an injectable Supabase client — see Task 7.3.
+
+Deno.test('link purchase Sale → creator credited exactly once', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p1', amount_cents: 1150, creator_net_cents: 850, platform_fee_cents: 300, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p1', TransactionState: 'Sale', Amount: '11.50', TransactionID: 'T1', CustomerEmail: 'fan@x.com' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T1');
+  assertEquals(ledger.length, 1);
+  assertEquals(ledger[0].amount_cents, 850);
+  assertEquals(ledger[0].direction, 'credit');
+
+  // Replay the same POST — must stay idempotent.
+  await handle(req, sb);
+  const ledgerAfter = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T1');
+  assertEquals(ledgerAfter.length, 1);
+});
+
+Deno.test('link purchase Verify callback does NOT credit', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p2', amount_cents: 1150, creator_net_cents: 850, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p2', TransactionState: 'Verify', Amount: '11.50', TransactionID: 'T2' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T2');
+  assertEquals(ledger.length, 0);
+  const purchase = await sb.from('purchases').select('status').eq('id', 'p2').single();
+  assertEquals(purchase.status, 'pending');
+});
+
+Deno.test('amount mismatch → no credit, event errored', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p3', amount_cents: 1150, creator_net_cents: 850, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p3', TransactionState: 'Sale', Amount: '500.00', TransactionID: 'T3' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T3');
+  assertEquals(ledger.length, 0);
+});
+
+Deno.test('refund reverses creator + chatter credits', async () => {
+  // Seed a succeeded link_purchase with a chatter attributed
+  // Call handleRefund via the listener handler
+  // Assert two new rows (creator debit + chatter debit), both linked to parent ids.
+  // Assert wallet_balance_cents net == 0
+  // ... (task owner fills in)
+});
+```
+
+- [ ] **Step 2: Run**
+
+```bash
+deno test --allow-env --allow-net supabase/functions/ugp-confirm/ledger.integration.test.ts
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/ugp-confirm/ledger.integration.test.ts
+git commit -m "test(ledger): integration suite for credit/reversal/idempotency"
+```
+
+---
+
+### Task 8.11 — Cross-phase audit: "is this credit gated?"
+
+Final safety sweep. Open each checkout + capture + rebill handler and answer these 5 questions in writing (as code comments):
+
+1. **Where does `applyWalletTransaction` get called?**
+2. **What status does the source row transition to?**
+3. **Is the status transition AFTER the ledger insert?** (Must be — ledger is the gate.)
+4. **If the ledger throws, does the function bail out WITHOUT flipping status?** (Must — else content unlocks without money booked.)
+5. **What's the idempotency key?** (Must be `source_transaction_id` for UG flows, `source_id` for internal.)
+
+Files to audit:
+- `supabase/functions/ugp-confirm/index.ts` (link, tip, gift, request, sub, fsub)
+- `supabase/functions/ugp-listener/index.ts` (refund, chargeback, void, capture)
+- `supabase/functions/ugp-membership-confirm/index.ts` (legacy, eventually drained)
+- `supabase/functions/manage-request/index.ts` (capture flow)
+- `supabase/functions/rebill-subscriptions/index.ts` (recurring)
+- `supabase/functions/request-withdrawal/index.ts` (payout hold)
+- `supabase/functions/process-payout/index.ts` (payout completion — no ledger mutation)
+
+Every `yes/no` must be `yes`. Any `no` is a bug to fix in that file before merging.
+
+- [ ] **Step 1: Walk the 7 files, add a comment block at the top of each credit/debit block**
+
+Example:
+```ts
+// [ledger-audit]
+//   - applyWalletTransaction: line 217, creator credit 850c
+//   - status transition: purchases.status='succeeded' at line 219 (AFTER ledger)
+//   - ledger-first ordering: YES (await applyWalletTransaction, then update)
+//   - idempotency key: body.TransactionID (UG sale TID)
+//   - failure mode: thrown error → caught at line 158, event marked errored, status stays pending
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add supabase/functions/
+git commit -m "docs(ledger): audit comments on every credit/debit call site"
+```
+
+---
+
 ## Execution Order & Dependencies
 
 ```
@@ -2980,18 +3993,67 @@ Phase 1 (country + routing)       ──(needs Phase 0 + MID)──► the only 
                                                             Code + tests go in now; just skip deploy
                                                             until `QUICKPAY_*_US_2D` secrets are set.
 
-Phase 7 (cleanup)                 ──(last)─────────────────► after Phases 4 + 6
+Phase 8 (accounting integrity)    ──(needs Phases 4 + 6)───► hardens the money flows.
+                                                            Tasks 8.1–8.2 (ledger table + RPC + helper)
+                                                            can ship early and alongside; 8.3–8.5
+                                                            migrate each credit path one at a time.
+
+Phase 7 (cleanup)                 ──(last)─────────────────► after Phases 4 + 6 + 8
 ```
 
-Realistic timeline if one engineer full-time: **8–10 working days** including testing. Many phases parallelizable with 2 engineers. The only hard external dependency is the new 2D MID credentials from Derek — everything else can ship immediately.
+Realistic timeline if one engineer full-time: **10–12 working days** (Phase 8 adds ~2 days). Many phases parallelizable with 2 engineers. The only hard external dependency is the new 2D MID credentials from Derek — everything else can ship immediately.
 
 ---
 
 ## Self-Review Notes
 
-- Spec coverage: every item from the user's requirements maps to a task (country onboarding/pre-checkout, 2D/3D routing, reliable credit only on Sale, creator Free/Monthly/Annual with variable profiles charged on card, fan subs with fan-side cancel UI, pricing refonte 15%/0% + 15% fan fee, weekly Pro popup for Free creators, legacy 11027 migration).
-- Placeholder scan: two explicit placeholders remain and are acceptable — the full ISO-3166 country list in `countryList.ts` (250 entries, task owner pastes) and the Deno test mock setup in Task 7.3 (sketch is clear enough). Both are bounded work, not "TBD architectural decisions".
-- Type consistency: `UgMidKey = 'us_2d' | 'intl_3d'` used identically across frontend + edge functions; `subscription_plan_type` enum matches the `'free' | 'monthly' | 'annual'` string literals in code.
+### Spec coverage
+
+Every user-facing requirement maps to a task:
+- Country onboarding + pre-checkout (Phase 1)
+- 2D/3D routing by country (Phase 1)
+- Only credit on real `Sale`/`Recurring`/`Capture` states (Phase 0.3b filter + Phase 8 ledger gate)
+- Creator Free/Monthly/Annual with variable profiles charged on card (Phases 4, 5)
+- Fan subs with fan-side cancel UI (Phase 6)
+- Pricing refonte 15% / 0% + 15% fan fee (Phase 2)
+- Weekly Pro popup for Free creators (Phase 3)
+- Legacy 11027 migration (Phase 4.9)
+
+### Reliability requirements (new — Phase 8)
+
+The user's brief on this revision: "tout doit être fiable, le wallet et les stats créateur/chatter ne bougent que sur une vente réellement passée, rien ne se débloque si le paiement échoue". Mapping:
+- **Idempotent credits** → Task 8.1 (unique index) + 8.2 (RPC short-circuit) + 8.10 (replay test)
+- **No credit without a real charge** → amount verification in Task 8.3 (`Math.abs(received - expected) <= 2`) + state filter in Phase 0
+- **No content unlock without a real charge** → Task 8.9 central gate across all 4 delivery paths
+- **Failure never leaves money hanging** → Task 8.3 golden rule (ledger BEFORE status flip) + Task 8.11 audit
+- **Refunds and chargebacks reverse cleanly** → Task 8.4 with per-ledger-row reversal including chatter
+- **Drift detection** → Task 8.7 hourly reconciliation + email alert
+- **Payouts don't double-spend** → Task 8.5 hold-at-request / release-on-reject
+- **CI enforces discipline** → Task 8.6 lint script blocks direct wallet writes
+
+### Placeholder scan
+
+Three placeholders remain, all bounded work with clear intent:
+1. Full ISO-3166 country list (Task 0.5, 250 entries — task owner pastes)
+2. Deno test scaffolding in Task 8.10 (mock Supabase client — standard Deno testing boilerplate)
+3. Admin reject code path location in Task 8.5 (task owner greps)
+
+None are "TBD architectural decisions".
+
+### Type consistency
+
+- `UgMidKey = 'us_2d' | 'intl_3d'` — frontend `src/lib/countryRouting.ts` + edge `_shared/ugRouting.ts`
+- `subscription_plan_type` enum = `'free' | 'monthly' | 'annual'` — matches string literals in edge + frontend
+- `wallet_owner_kind = 'creator' | 'chatter'` — matches `ledger.ts` `ownerKind` field + the RPC signature
+- `wallet_tx_source` enum — Phase 8 Task 8.1 + Task 8.2 `LedgerSource` type literal union
+
+### Invariants cheat-sheet
+
+For anyone reviewing future payment code, the three invariants that make this system correct:
+
+1. **Ledger-first.** Every status flip to `succeeded` / `delivered` / `active` comes AFTER `applyWalletTransaction` resolves. If the ledger throws, the status stays pending and the event stays unprocessed for the reconciliation cron.
+2. **Amount-matched.** Before crediting, `Math.abs(body.Amount*100 - purchase.amount_cents) <= 2`. Mismatch = do not credit + mark event errored + alert.
+3. **Gate is `status`, not `access_token`.** Content reveals through `canAccessPurchasedLink` / `canAccessCustomRequestDelivery` / `has_active_fan_subscription`. The `access_token` is a sharing handle, not an access grant.
 
 ---
 
