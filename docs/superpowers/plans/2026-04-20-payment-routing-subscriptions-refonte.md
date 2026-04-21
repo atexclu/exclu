@@ -3215,7 +3215,17 @@ create table wallet_transactions (
   parent_id uuid references wallet_transactions(id), -- reversals point at the original credit
   admin_notes text,                      -- required for manual_adjustment
   metadata jsonb,                        -- fee breakdown, fan_email, chatter_id, etc.
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on
+  -- link purchases (chatter_commission source) and custom request captures
+  -- (via chatter_commission source_id = custom_requests.id). They earn
+  -- NOTHING on tips, gifts, subscriptions (creator Pro or fan→creator).
+  -- The constraint here is a safety net — the checkout functions refuse to
+  -- set chat_chatter_id on those flows in the first place (Task 8.12).
+  constraint wallet_tx_chatter_source_whitelist check (
+    owner_kind <> 'chatter'
+    or source_type in ('chatter_commission', 'refund', 'chargeback', 'manual_adjustment')
+  )
 );
 
 -- Idempotency guarantee: one (credit|debit) row per (owner, source, UG TID) tuple.
@@ -3392,12 +3402,26 @@ interface ApplyArgs {
  * Idempotent on (owner, source_type, direction, tid | source_id).
  * Returns the ledger row id (new or existing).
  */
+const CHATTER_ALLOWED_SOURCES: LedgerSource[] = [
+  'chatter_commission', // the one and only positive-credit source for chatters
+  'refund',             // reversal — fine on any owner kind
+  'chargeback',         // reversal — fine on any owner kind
+  'manual_adjustment',  // admin override with admin_notes
+];
+
 export async function applyWalletTransaction(
   sb: SupabaseClient,
   args: ApplyArgs,
 ): Promise<string> {
   if (!Number.isInteger(args.amountCents) || args.amountCents <= 0) {
     throw new Error(`applyWalletTransaction: invalid amount ${args.amountCents}`);
+  }
+  // Hard-locked attribution policy (Task 8.12): chatters earn only on
+  // link purchases + custom request captures (both source_type=chatter_commission).
+  if (args.ownerKind === 'chatter' && !CHATTER_ALLOWED_SOURCES.includes(args.sourceType)) {
+    throw new Error(
+      `applyWalletTransaction: chatter credits not allowed on source_type=${args.sourceType}`,
+    );
   }
   const { data, error } = await sb.rpc('apply_wallet_transaction', {
     p_owner_id: args.ownerId,
@@ -4246,6 +4270,118 @@ git commit -m "test(ledger): integration suite for credit/reversal/idempotency"
 
 ---
 
+### Task 8.12 — Enforce chatter attribution policy end-to-end
+
+**Files:**
+- Modify: `supabase/functions/create-creator-subscription/index.ts`
+- Modify: `supabase/functions/create-fan-subscription-checkout/index.ts`
+- Modify: `supabase/functions/create-tip-checkout/index.ts`
+- Modify: `supabase/functions/create-gift-checkout/index.ts`
+- Modify: `supabase/functions/create-link-checkout/index.ts`
+- Modify: `supabase/functions/create-request-checkout/index.ts`
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+
+Locks the chatter revenue rule in three layers (see the "Chatter Attribution Rules" section at the top of the Risk Register):
+
+**Layer 1 — reject chatter attribution params on the wrong flows.**
+
+The 4 flows that MUST NOT credit a chatter are tips, gifts, creator Pro subs, fan→creator subs. Each checkout function must:
+- NOT read `chtref` from the request body
+- NOT write `chat_chatter_id` on any row
+- Log + drop any incoming `chtref` (defense against legacy clients still sending it)
+
+**Layer 2 — DB CHECK constraint.**
+
+Already added in Task 8.1 migration 156:
+```sql
+constraint wallet_tx_chatter_source_whitelist check (
+  owner_kind <> 'chatter' or source_type in ('chatter_commission', 'refund', 'chargeback', 'manual_adjustment')
+)
+```
+
+Any ledger insert that violates this throws `check constraint violation`. The helper propagates; the checkout bails out.
+
+**Layer 3 — audit comments.**
+
+Task 8.11's per-call-site comment block now includes `owner_kind`. A reviewer catches any non-chatter source incorrectly owning a chatter.
+
+- [ ] **Step 1: Strip chatter params from sub + tip + gift checkouts**
+
+In `create-creator-subscription/index.ts`, `create-fan-subscription-checkout/index.ts`, `create-tip-checkout/index.ts`, `create-gift-checkout/index.ts`:
+- Remove any parsing of `body.chtref` / `req.url.searchParams.get('chtref')`.
+- Add a defensive log if one is sent:
+```ts
+const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+if (rogueChtref) {
+  console.warn(`[${source}] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
+}
+```
+- Do NOT propagate `chat_chatter_id` to any row insert from these functions.
+
+- [ ] **Step 2: Verify link + request checkouts still accept chtref**
+
+`create-link-checkout/index.ts` and `create-request-checkout/index.ts` keep their existing `chtref` resolution → `chat_chatter_id` on `purchases` / `custom_requests`. No change.
+
+- [ ] **Step 3: Narrow `handleTip` / `handleGift` / `handleSubscription` / `handleFanSubscription`**
+
+In `ugp-confirm/index.ts`, confirm each of these handlers:
+- Reads `chat_chatter_id` from the DB row only for link purchases and custom request captures.
+- Never calls `applyWalletTransaction` with `ownerKind: 'chatter'`.
+
+Add a unit assert in the ledger helper as belt-and-braces:
+```ts
+// ledger.ts — inside applyWalletTransaction
+const CHATTER_ALLOWED_SOURCES: LedgerSource[] = ['chatter_commission', 'refund', 'chargeback', 'manual_adjustment'];
+if (args.ownerKind === 'chatter' && !CHATTER_ALLOWED_SOURCES.includes(args.sourceType)) {
+  throw new Error(`applyWalletTransaction: chatter credits not allowed on source_type=${args.sourceType}`);
+}
+```
+
+This fails fast in TS before even hitting the DB — easier to debug than a Postgres constraint violation.
+
+- [ ] **Step 4: Regression test**
+
+```ts
+// supabase/functions/_shared/ledger.test.ts
+import { assertRejects } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
+import { applyWalletTransaction } from './ledger.ts';
+
+Deno.test('chatter credit on fan_subscription is rejected', async () => {
+  const sb = mockSupabase();
+  await assertRejects(
+    () => applyWalletTransaction(sb, {
+      ownerId: 'u1',
+      ownerKind: 'chatter',
+      direction: 'credit',
+      amountCents: 100,
+      sourceType: 'fan_subscription',
+      sourceId: 's1',
+    }),
+    Error,
+    'chatter credits not allowed',
+  );
+});
+
+Deno.test('chatter credit on creator_subscription is rejected', async () => {
+  // ... same shape, different source_type
+});
+
+Deno.test('chatter credit on tip is rejected', async () => { /* ... */ });
+Deno.test('chatter credit on gift_purchase is rejected', async () => { /* ... */ });
+Deno.test('chatter credit on chatter_commission is accepted', async () => { /* happy path */ });
+```
+
+- [ ] **Step 5: Deploy + commit**
+
+```bash
+deno test --allow-env supabase/functions/_shared/ledger.test.ts
+supabase functions deploy create-creator-subscription create-fan-subscription-checkout create-tip-checkout create-gift-checkout ugp-confirm --linked
+git add supabase/functions/
+git commit -m "feat(attribution): lock chatter revenue to link + custom_request only"
+```
+
+---
+
 ### Task 8.11 — Cross-phase audit: "is this credit gated?"
 
 Final safety sweep. Open each checkout + capture + rebill handler and answer these 5 questions in writing (as code comments):
@@ -4466,13 +4602,30 @@ These are real risks the initial plan didn't close. Each has a concrete fix that
 - Fan disputes with their bank → UG refunds → we reverse credit + set `period_end=now()` (fix #3 above). Access cut immediately.
 - Different UX: voluntary cancel = grace, dispute = immediate. Right behaviour; just worth documenting.
 
+### Chatter Attribution Rules — locked (2026-04-21)
+
+Thomas confirmed the revenue split. A chatter earns **ONLY** on two flows:
+
+1. **Link purchase** where the chatter sent the link to the fan through chat (attributed via the `?chtref=...` query param on the shared link → resolved to `chatter_id` at `create-link-checkout` time and stored on `purchases.chat_chatter_id`).
+2. **Custom request** where the chatter handled the creator's reply (the chatter opened the request modal, typed the proposed amount, and the fan paid; the `chat_chatter_id` is set on `custom_requests` at creation).
+
+A chatter earns **NOTHING** on:
+- Creator Pro subscriptions (initial Sale or any rebill cycle)
+- Fan → creator subscriptions (initial Sale or any rebill cycle)
+- Tips
+- Gift purchases (wishlist)
+
+This is enforced three ways in the code (defense in depth):
+
+- **Checkout functions:** `create-creator-subscription`, `create-fan-subscription-checkout`, `create-tip-checkout`, `create-gift-checkout` MUST ignore any `chtref` query param or `chat_chatter_id` body field. See Task 8.12.
+- **Ledger RPC:** `apply_wallet_transaction` rejects any `owner_kind='chatter'` row with `source_type IN ('creator_subscription', 'fan_subscription', 'tip', 'gift_purchase')`. See Task 8.12.
+- **Audit task:** Task 8.11 already requires every call site to document its owner_kind — a chatter credit on a sub source fails the audit.
+
 ### Things we have NOT anticipated (open questions)
 
 These aren't necessarily bugs — they're scenarios where the plan is silent and a design decision still has to be made. Worth flagging now so they don't become emergencies in production.
 
 - **Subscription currency other than USD.** Plan hardcodes USD. If we ever expand to EUR/GBP pricing, every `.toFixed(2)` + hardcoded `'USD'` needs auditing.
-- **Chatter commission on fan subs.** The plan credits the CREATOR their net on each fan-sub cycle, but chatters aren't credited. If a chatter onboards a fan (via a shared link with `chtref`) and that fan subscribes, does the chatter earn on each recurring cycle, or only on the initial? Business decision — surface to Thomas before launch.
-- **Tax / VAT on fan fees.** We charge "15% fan fee" and "0 or 15% creator commission". No tax math anywhere. If a jurisdiction requires VAT collection (UK, EU post-2023), we're under-collecting.
 - **PayPal / crypto / alt rails.** Everything assumes UG Payments. A design that lets us plug in an alternative processor later requires abstracting `{create checkout, rebill, refund}` behind an interface — worth at least noting in the future-proofing.
 - **Dunning retry schedule tuning.** The plan hardcodes `RETRY_DELAY_DAYS = [0, 3, 4]` (7 days total). Industry best-practice is smart dunning (retry on different days of the week, avoid weekends for certain issuers). Revisit when we have enough data.
 - **"Trying to cancel right before rebill day" race.** Fan hits Cancel at 07:59 UTC, cron runs at 08:00 UTC. Whose state wins? Our code: `cancel_at_period_end=true` set first, cron reads it and treats as cancelled. Safe, but worth a manual test.
