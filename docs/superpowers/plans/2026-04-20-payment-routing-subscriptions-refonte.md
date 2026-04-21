@@ -23,7 +23,7 @@ creator + fan subscription flows:
 | QuickPay hosted checkout URL | `https://quickpay.ugpayments.ch/` | QuickPay v1.3 §PROCESS FOR QUICKPAY PAGE |
 | `IsInitialForRecurring: 'true'` on any Sale we'll rebill later | Required — Task 4.1, Task 6.1 | QuickPay v1.3 §QUICKPAY FIELDS; DirectSale v1.14 §SALE TRANSACTIONS |
 | `/recurringtransactions` URL | `https://api.ugpayments.ch/merchants/[MerchantId]/recurringtransactions` | DirectSale v1.14 §RECURRING/REBILL; Direct Rebilling 1.0 §SALE REBILL |
-| `/recurringtransactions` body | `referenceTransactionId`, `saleTransactionId`, `amount`, `trackingId` | DirectSale v1.14 §RECURRING/REBILL JSON REQUEST PARAMETERS |
+| `/recurringtransactions` body | `TransactionID`, `Amount`, `Currency` | Direct Rebilling 1.0 §SALE REBILL REQUEST (authoritative for our QuickPay → rebill scenario). DirectSale v1.14 shows a 4-field variant for DirectSale-originated subs but we never use DirectSale for checkout. |
 | `/recurringtransactions` response | `{id, message, state, status, reasoncode, trackingid}` | DirectSale v1.14 §HTTP RESPONSE; Direct Rebilling 1.0 §SALE REBILL RESPONSE |
 | ConfirmURL fires for state=Recurring | Yes — handled in Task 4.5 as idempotent no-op | Direct Rebilling 1.0 §CONFIRM PAGE |
 | ConfirmURL fields we consume | `TransactionID`, `TransactionState`, `Amount`, `MerchantReference`, `SiteID`, `CustomerEmail`, `CustomerCountry`, `TrackingId`, `Key` | DirectSale v1.14 §CONFIRM PAGE; QuickPay v1.3 §CONFIRM PAGE |
@@ -300,7 +300,7 @@ create table if not exists rebill_attempts (
   amount_cents int not null,
   currency text not null default 'USD',
   attempt_number int not null default 1,
-  status text not null check (status in ('pending', 'success', 'declined', 'error')),
+  status text not null check (status in ('pending', 'success', 'declined', 'error', 'transient')),
   ugp_response jsonb,
   ugp_transaction_id text,
   reason_code text,
@@ -484,17 +484,19 @@ export function getMidCredentials(key: UgMidKey): UgMidCredentials {
 //
 // Thin wrapper around UG Payments' /recurringtransactions endpoint.
 //
-// Request body follows the DirectSale doc §RECURRING/REBILL (4 fields):
-//   - referenceTransactionId: the ORIGINAL Sale TID we want to rebill
-//   - saleTransactionId:       same value — doc lists both as "mandatory"
-//   - amount:                  decimal number (not a string)
-//   - trackingId:              our correlation id, echoed back in the
-//                              ConfirmURL as [TrackingId]
+// We rebill QuickPay-originated Sales. Body follows the authoritative spec
+// Direct Rebilling 1.0 §SALE REBILL REQUEST:
+//   - TransactionID: the ORIGINAL Sale TID we want to rebill
+//   - Amount:        decimal-as-string, e.g. "39.00"
+//   - Currency:      ISO-4217, MUST match the original Sale's currency
 //
-// Derek confirmed (2026-04-20) that UG does NOT expose a uniform reason code
-// for card-expired vs other declines — each issuer returns its own free-form
-// message. Classification is binary (success/declined/error); the caller
-// decides the retry policy on top (see `rebill-subscriptions`).
+// Derek confirmed (2026-04-20) there's no uniform card-expired reason code —
+// each issuer returns its own free-form message. Classification is binary
+// (success / declined / error); the caller decides the retry policy on top.
+//
+// Transient errors (5xx / network timeout) are classified `transient` so the
+// cron does NOT count them against the 3-attempt cap — UG being down is not
+// the creator's fault.
 import type { UgMidCredentials } from './ugRouting.ts';
 
 export interface RebillResult {
@@ -502,23 +504,26 @@ export interface RebillResult {
   transactionId: string | null;  // NEW rebill TID (not the reference)
   reasonCode: string | null;
   message: string | null;
-  classification: 'success' | 'declined' | 'error';
+  classification: 'success' | 'declined' | 'error' | 'transient';
   raw: unknown;
 }
+
+const REBILL_TIMEOUT_MS = 15_000;
 
 export async function rebillTransaction(
   creds: UgMidCredentials,
   referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (Derek Q1)
   amountCents: number,
-  trackingId: string,
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {
-    referenceTransactionId,
-    saleTransactionId: referenceTransactionId,
-    amount: amountCents / 100,            // decimal number per doc
-    trackingId,
+    TransactionID: referenceTransactionId,
+    Amount: (amountCents / 100).toFixed(2),
+    Currency: 'USD',
   };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REBILL_TIMEOUT_MS);
 
   let res: Response;
   try {
@@ -529,21 +534,41 @@ export async function rebillTransaction(
         'Authorization': `Bearer ${creds.oauthBearer}`,
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
   } catch (e) {
+    clearTimeout(timeout);
+    // Network failure / timeout / abort — transient. The cron will retry next run.
     return {
       success: false,
       transactionId: null,
       reasonCode: null,
       message: (e as Error).message,
-      classification: 'error',
+      classification: 'transient',
       raw: null,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // 5xx from UG itself = transient; 4xx = a real decline/validation error.
+  if (res.status >= 500) {
+    const raw = await res.json().catch(() => null);
+    return {
+      success: false,
+      transactionId: null,
+      reasonCode: null,
+      message: `UG 5xx: ${res.status}`,
+      classification: 'transient',
+      raw,
     };
   }
 
   const raw = await res.json().catch(() => null);
-  // DirectSale response uses lowercase `reasoncode` but doc mentions reasonCode
-  // in the parameter table — accept either.
+  // Direct Rebilling 1.0 §APPENDIX B transaction statuses: Successful / Error
+  //   / Declined / Pending / Scrubbed / Fraud / Unconfirmed. Response example
+  //   uses lowercase field names (`reasoncode`); the legacy DirectSale v1.14
+  //   doc also mentions `reasonCode`. Accept either.
   const status = String(raw?.status ?? '').toLowerCase();
   const reasonCode = raw?.reasoncode
     ? String(raw.reasoncode)
@@ -558,6 +583,10 @@ export async function rebillTransaction(
   }
   if (status === 'declined' || status === 'scrubbed' || status === 'fraud') {
     return { success: false, transactionId: tid, reasonCode, message, classification: 'declined', raw };
+  }
+  if (status === 'pending' || status === 'unconfirmed' || status === 'error') {
+    // UG's own side is uncertain — treat as transient so we don't burn a retry slot.
+    return { success: false, transactionId: tid, reasonCode, message, classification: 'transient', raw };
   }
   return { success: false, transactionId: tid, reasonCode, message, classification: 'error', raw };
 }
@@ -1891,24 +1920,28 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
     const nextEnd = new Date(now);
     if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
     else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
-    // NOTE: we advance period_end here purely to mark "rebill accepted".
-    // The ACTUAL creator wallet credit (if any) happens in ugp-confirm when
-    // UG POSTs back with TransactionState=Recurring. See Task 8.3 —
-    // applyWalletTransaction is idempotent, so even if the ConfirmURL never
-    // lands we won't credit off the synchronous response here.
+    // The actual wallet credit happens in Task 8.3 Step 4 (extended ledger
+    // integration). Here we only advance the period after a successful rebill.
     await supabase.from('profiles').update({
       subscription_amount_cents: amount,
       subscription_period_start: now.toISOString(),
       subscription_period_end: nextEnd.toISOString(),
       subscription_suspended_at: null,
-      subscription_ugp_transaction_id: creator.subscription_ugp_transaction_id, // keep the ORIGINAL — never overwrite with rebill TID
+      // NEVER overwrite subscription_ugp_transaction_id — only the ORIGINAL Sale TID is rebillable.
     }).eq('id', creator.id);
     console.log(`[rebill] creator ${creator.id} accepted, next: ${nextEnd.toISOString()}`);
     return;
   }
 
-  // Failure handling — Derek confirmed no uniform card-expired code, so we
-  // treat every decline/error identically: retry N times, then suspend.
+  // Transient failure (network / UG 5xx / Pending status) — do NOT count
+  // against the attempt cap. Just leave period_end untouched so next cron
+  // run tries again. We still log the attempt for observability.
+  if (result.classification === 'transient') {
+    console.warn(`[rebill] creator ${creator.id} transient failure, will retry next cron run`, result.message);
+    return;
+  }
+
+  // Real decline / error — retry N times, then suspend.
   if (attemptNumber >= MAX_ATTEMPTS) {
     await supabase.from('profiles').update({
       is_creator_subscribed: false,
@@ -1978,6 +2011,12 @@ async function rebillFanSubscription(sub: any): Promise<void> {
     return;
   }
 
+  // Transient failure — don't burn an attempt slot, just wait for the next cron.
+  if (result.classification === 'transient') {
+    console.warn(`[rebill] fan sub ${sub.id} transient failure, will retry next cron run`, result.message);
+    return;
+  }
+
   if (attemptNumber >= MAX_ATTEMPTS) {
     await supabase.from('fan_creator_subscriptions').update({
       status: 'past_due',
@@ -2029,16 +2068,36 @@ serve(async (req) => {
   }
 
   // ── Fan subs ─────────────────────────────────────────────────────
+  // NB: extra select fields needed by Task 8.3 Step 4 (ledger credit per cycle).
+  // Also pull the creator_profile so we can skip subs whose creator has
+  // disabled fan subscriptions or whose profile was deactivated mid-cycle.
   const { data: fanSubs } = await supabase.from('fan_creator_subscriptions')
-    .select('id, ugp_transaction_id, ugp_mid, price_cents, next_rebill_at, cancel_at_period_end')
+    .select(`
+      id, fan_id, creator_user_id, creator_profile_id, ugp_transaction_id, ugp_mid,
+      price_cents, next_rebill_at, cancel_at_period_end,
+      creator_profile:creator_profiles!fan_creator_subscriptions_creator_profile_id_fkey(
+        is_active, fan_subscription_enabled
+      )
+    `)
     .eq('status', 'active')
     .lte('next_rebill_at', now)
     .is('suspended_at', null);
 
-  let fanOk = 0, fanFail = 0;
+  let fanOk = 0, fanFail = 0, fanSkipped = 0;
   for (const s of fanSubs ?? []) {
     if (s.cancel_at_period_end) {
       await supabase.from('fan_creator_subscriptions').update({ status: 'cancelled' }).eq('id', s.id);
+      continue;
+    }
+    // Creator took down their sub feature or deactivated the profile → skip
+    // the rebill (their intent is "no more subs"). Mark the sub cancelled so
+    // the fan doesn't keep seeing "active" in their dashboard.
+    const creatorProfile = (s as any).creator_profile;
+    if (!creatorProfile?.is_active || !creatorProfile?.fan_subscription_enabled) {
+      await supabase.from('fan_creator_subscriptions')
+        .update({ status: 'cancelled', cancel_at_period_end: true, cancelled_at: new Date().toISOString() })
+        .eq('id', s.id);
+      fanSkipped++;
       continue;
     }
     try {
@@ -2050,7 +2109,7 @@ serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ creatorOk, creatorFail, fanOk, fanFail }), {
+  return new Response(JSON.stringify({ creatorOk, creatorFail, fanOk, fanFail, fanSkipped }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
@@ -4306,6 +4365,119 @@ For anyone reviewing future payment code, the three invariants that make this sy
 1. **Ledger-first.** Every status flip to `succeeded` / `delivered` / `active` comes AFTER `applyWalletTransaction` resolves. If the ledger throws, the status stays pending and the event stays unprocessed for the reconciliation cron.
 2. **Amount-matched.** Before crediting, `Math.abs(body.Amount*100 - purchase.amount_cents) <= 2`. Mismatch = do not credit + mark event errored + alert.
 3. **Gate is `status`, not `access_token`.** Content reveals through `canAccessPurchasedLink` / `canAccessCustomRequestDelivery` / `has_active_fan_subscription`. The `access_token` is a sharing handle, not an access grant.
+
+---
+
+## Known Edge Cases & Post-Implementation Risks
+
+Senior-review pass. Every item below is acknowledged — either fixed in a specific task, or accepted as "acceptable behaviour, watch the logs".
+
+### Already handled in the plan
+
+- **Rebill idempotency on network retry** — Same-TID callback twice → ledger unique index short-circuits (Task 8.1).
+- **ConfirmURL fires for Recurring state** — Handled as idempotent no-op in Task 4.5; rebill cron is the single writer for recurring credits.
+- **Legacy 11027 rebillability** — `cancel plan → rebill the original Sale TID` sequence (Task 4.9). Derek confirmed this doesn't break the TID.
+- **Card-expired detection** — No uniform code from UG; we don't try to distinguish. Generic retry-then-suspend applies (Tasks 4.3 + 4.6).
+- **Floating-point amount drift** — `Math.round(parseFloat(body.Amount) * 100)` handles `"39.99" → 3999` cleanly; 2¢ tolerance on comparison (Task 8.3 Step 1).
+- **Transient UG outage vs permanent decline** — `classification='transient'` from `ugRebill` (5xx, network timeout, `status=pending|error|unconfirmed`) never counts against the 3-attempt cap. The cron retries next run untouched (Task 0.6 + Task 4.3).
+- **Creator disables subs or deactivates profile mid-cycle** — Rebill cron skips + auto-cancels any fan sub whose `creator_profile.is_active=false` OR `fan_subscription_enabled=false` (Task 4.3 fan loop).
+- **UG API timeout** — AbortController with 15s timeout in `ugRebill.ts`. Classified as `transient` so it doesn't eat an attempt slot.
+
+### Post-implementation risks — fixes owed
+
+These are real risks the initial plan didn't close. Each has a concrete fix that should go into Phase 8 or a follow-up.
+
+**1. Partial refunds over-debit the wallet.**
+- Scenario: fan disputes only $10 of a $39 charge. UG refunds $10. `ugp-listener` today reverses the *full* ledger credit ($33 net after 15% fee) → creator's wallet goes negative by ~$23.
+- Fix: when reversing, use the refund callback's `body.Amount` to compute the proportional reversal amount. If refund < 100% of original, split:
+  ```ts
+  const originalCents = creditRow.amount_cents;
+  const refundedCents = Math.round(parseFloat(body.Amount) * 100);
+  const refundRatio = refundedCents / originalGrossCents; // original TOTAL charge, not net
+  const reverseAmount = Math.round(originalCents * refundRatio);
+  ```
+- Add to Task 8.4 Step 1.
+
+**2. Chargeback after refund double-reverses.**
+- Scenario: we refund fully → UG later sends CBK1 for the same TID (possible if issuer contested the refund too).
+- Ledger unique index is `(owner, source_type, direction, tid)`. A refund and chargeback have different `source_type` values → both rows would insert → double reverse.
+- Fix: `ugp-listener` chargeback handler checks whether a `refund` row already exists for the same TID and short-circuits with an alert rather than reversing again.
+- Add to Task 8.4 Step 2.
+
+**3. Subscription refund doesn't revoke access.**
+- Scenario: creator refunds a fan's $5 sub payment manually from the UG portal. Our `handleRefund` reverses the wallet credit (via Task 8.4 ledger lookup) but doesn't touch `fan_creator_subscriptions.period_end` — the fan keeps access until period end.
+- Fix: extend `handleRefund` to check whether the refund is for a sub's TID (query `fan_creator_subscriptions` by `ugp_transaction_id`) and if so set `period_end = now()` + `status = 'refunded'`. Same treatment for creator Pro subs.
+- Add as a new Task 8.4 Step 4.
+
+**4. Creator upgrades Monthly → Annual can't do it in-app.**
+- Current plan: `create-creator-subscription` rejects if `subscription_plan !== 'free'`.
+- UX hole: Monthly subscriber wanting to switch to Annual must cancel + wait for period end + resubscribe. During that window they lose Pro.
+- Fix (small follow-up): allow Monthly → Annual by issuing the new Sale immediately + setting `cancel_at_period_end=true` on the old Monthly. Cron picks up the cancel naturally. Document in a new Phase 9.
+
+**5. Creator hard-deletes account with active fan subs.**
+- Cascade-delete `creator_profiles` → cascade-delete `fan_creator_subscriptions`. Cron finds nothing to rebill → fan's card not charged. Good.
+- But the fan loses their "I paid in the past" record in `/fan/subscriptions`. Regulatory concern for a 3-year transaction history retention if we operate in EU.
+- Fix: switch `fan_creator_subscriptions` to soft-delete via `deleted_at`, keep the ledger rows forever. Add a `rebill-subscriptions` cron guard: `WHERE creator_profile_id IN (active profiles)`.
+- Document as a compliance follow-up.
+
+**6. Fan sub grandfathered price drift.**
+- Creator sets price to $5, fan subscribes. Creator bumps to $10. Fan keeps paying $5 (locked on `fan_creator_subscriptions.price_cents`) — correct.
+- But if the fan cancels then resubscribes the next day, they pay $10. No notice they'd be "grandfathered out" for leaving.
+- Not a bug, just a UX note to surface in the fan's cancel confirmation dialog: "If you resubscribe later, the price may have changed."
+
+**7. Double-click on "Subscribe" before first checkout completes.**
+- Handled by `uniq_fan_sub_live_per_creator` index (migration 147). The second insert fails; we should catch it in the checkout function and return the existing pending row's QuickPay fields instead of erroring.
+- Fix: `create-fan-subscription-checkout` already has a `.maybeSingle()` check on existing — ensure it returns the existing row's fields on duplicate.
+
+**8. Rebill cron processing 10k+ subs per day.**
+- Current code is a `for` loop doing sequential Supabase writes + one `/recurringtransactions` call each. ~1s per sub → 10k subs → 2.7 hours.
+- Fluid Compute auto-scales but a single cron entry point runs serially.
+- Fix when we hit ~5k active subs: batch the loop with `Promise.all(batch.map(rebillOne))` in chunks of 10, rate-limited to ~20 req/s to respect UG API.
+- Acceptable for MVP. Document as a scale follow-up.
+
+**9. Missing `rebill_attempts` primary key for concurrency.**
+- If the cron runs twice accidentally (Vercel double-fire), both runs could process the same sub. The inserts would succeed (no unique constraint on `subject_id + attempt_number`), leading to duplicate ledger inserts — BUT the ledger itself is idempotent on source_transaction_id, so no double-credit. The `rebill_attempts` row is just a log.
+- Accepted; worth a note in the rebill cron: "this function must be run serially via Vercel Cron, not in parallel".
+
+**10. Creator's `subscription_amount_cents` displayed ≠ amount charged.**
+- Rebill day: cron computes `amount = BASE + extras * ADDON`. This is the amount charged. We update `subscription_amount_cents` AFTER success. If the cron fails, the displayed amount is stale (still shows last month's).
+- Benign, but worth keeping in mind when debugging customer complaints.
+
+**11. `IsInitialForRecurring` interaction with `SubscriptionPlanId`.**
+- QuickPay spec allows both fields on the same request. We set only `IsInitialForRecurring=true` and not `SubscriptionPlanId`. Expectation: UG treats the Sale as a standalone charge that is tagged as rebill-eligible, WITHOUT enrolling the customer in a UG-managed plan.
+- Worth confirming with Derek as a verification step during the first sandbox test. If UG accidentally enrolls in a plan, we'd get Member Postbacks we don't want.
+- Document as a **pre-launch sandbox test**: "submit 1 fan sub Sale with IsInitialForRecurring=true + no SubscriptionPlanId, verify no Member Postback fires in the next 30 days".
+
+**12. `CustomerCountry` on ConfirmURL is optional.**
+- Task 1.7 persists `profiles.billing_country` from `body.CustomerCountry` on successful checkout. But this field is OPTIONAL in the QuickPay spec — UG might not always send it.
+- Accepted: if missing, we just don't update; user will be re-prompted at next checkout.
+
+**13. Chatter wallet never goes negative on refunds.**
+- Ledger allows `apply_wallet_transaction` to produce negative `chatter_earnings_cents` if we reverse more than was credited. Could happen if there's a data inconsistency.
+- Fix: add a CHECK constraint `chatter_earnings_cents >= 0` ... but no, chargebacks legitimately push creators negative. Same should apply to chatters.
+- Keep negative allowed. Admin follows up via alert (Task 8.7).
+
+**14. `payment_events` retention.**
+- Every UG callback inserts a row. At 1000 txs/day that's 365k rows/year. Cheap to store but querying will slow.
+- Already indexed; fine for 5+ years. Plan to move to a time-partitioned table if we exceed ~50M rows.
+
+**15. Fan sub refund vs access-until-period-end cancellation.**
+- Fan cancels via our cancel button → `cancel_at_period_end=true`, keeps access until period_end.
+- Fan disputes with their bank → UG refunds → we reverse credit + set `period_end=now()` (fix #3 above). Access cut immediately.
+- Different UX: voluntary cancel = grace, dispute = immediate. Right behaviour; just worth documenting.
+
+### Things we have NOT anticipated (open questions)
+
+These aren't necessarily bugs — they're scenarios where the plan is silent and a design decision still has to be made. Worth flagging now so they don't become emergencies in production.
+
+- **Subscription currency other than USD.** Plan hardcodes USD. If we ever expand to EUR/GBP pricing, every `.toFixed(2)` + hardcoded `'USD'` needs auditing.
+- **Chatter commission on fan subs.** The plan credits the CREATOR their net on each fan-sub cycle, but chatters aren't credited. If a chatter onboards a fan (via a shared link with `chtref`) and that fan subscribes, does the chatter earn on each recurring cycle, or only on the initial? Business decision — surface to Thomas before launch.
+- **Tax / VAT on fan fees.** We charge "15% fan fee" and "0 or 15% creator commission". No tax math anywhere. If a jurisdiction requires VAT collection (UK, EU post-2023), we're under-collecting.
+- **PayPal / crypto / alt rails.** Everything assumes UG Payments. A design that lets us plug in an alternative processor later requires abstracting `{create checkout, rebill, refund}` behind an interface — worth at least noting in the future-proofing.
+- **Dunning retry schedule tuning.** The plan hardcodes `RETRY_DELAY_DAYS = [0, 3, 4]` (7 days total). Industry best-practice is smart dunning (retry on different days of the week, avoid weekends for certain issuers). Revisit when we have enough data.
+- **"Trying to cancel right before rebill day" race.** Fan hits Cancel at 07:59 UTC, cron runs at 08:00 UTC. Whose state wins? Our code: `cancel_at_period_end=true` set first, cron reads it and treats as cancelled. Safe, but worth a manual test.
+- **Recovery after ledger drift alert.** Task 8.7 emails admin on drift but doesn't auto-correct. Manual reconciliation runbook: query `find_wallet_drift` → inspect the offending rows → manually insert an adjustment via `apply_wallet_transaction` with `sourceType='manual_adjustment'` and `adminNotes` explaining. Worth writing this runbook before the first drift happens.
+- **GDPR "delete my data" request on a fan with subscription history.** If a fan asks for erasure, we must anonymise their PII but keep the ledger rows (financial law). Not in this plan; handle in a separate compliance pass.
 
 ---
 
