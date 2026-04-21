@@ -10,17 +10,17 @@
 
 ---
 
-## Pending External Dependencies
+## External Dependencies — Confirmed with Derek (2026-04-20)
 
-5 questions are out to Derek. The plan's **default assumptions** are documented here; tasks blocked on a specific answer are marked `⚠️ PENDING DEREK Q<n>`.
+All 5 open questions answered. Derek is actively provisioning the new 2D US/CA MID; we start coding now and plug the credentials in when they arrive.
 
-| Q | Topic | Default assumption | Impact if wrong |
+| Q | Topic | Answer | Plan impact |
 |---|---|---|---|
-| D1 | `/recurringtransactions` on QuickPay-originated TIDs | ✅ works — we can migrate existing `plan 11027` subs by reusing their original Sale TID | If not: Phase 4 migration step (Task 4.10) pivots to "force re-subscribe" UX |
-| D2 | 2D US/CA MID returns its own QuickPayToken + OAuth Bearer + SiteID | ✅ assumed yes — plan stores per-MID env vars | If it's same creds with different MID routing: env var collapse, routing logic simplifies |
-| D3 | Card-expired `reasonCode` on `/recurringtransactions` | ✅ assumed detectable from `reasonCode` or `message` — we match substrings `expired`, `declined`, `lost`, `invalid card` | If not: all rebill failures collapse to generic retry; no "ask user to update card" UX |
-| D4 | TID portability across MIDs | ✅ assumed NO — rebills must hit the same MID as the initial Sale. Plan stores `ugp_mid` per subscription | If portable: we can consolidate to one MID for rebills — simplification |
-| D5 | `/recurringtransactions` limits (min/max amount, max interval) | ✅ assumed: min $1, max $10000, no interval limit (we'll rebill annual 365 days later) | If limits exist: Annual plan may need splitting into 12×$20 rebills or similar |
+| D1 | `/recurringtransactions` on QuickPay-originated TIDs | ✅ **Works — but ONLY on the original Sale TID**, never on a rebilled TID. For plan 11027 migration, we must FIRST cancel the UG-side plan enrollment (so UG stops its own $39 auto-rebill), THEN use the original Sale TID with `/recurringtransactions`. Cancelling the plan does NOT break rebill capability on the original TID. | Task 4.9 (migration) becomes: (a) cancel UG plan, (b) read original Sale TID from `payment_events`, (c) populate `subscription_ugp_transaction_id`. Always persist the ORIGINAL TID — never overwrite it with a rebilled one. |
+| D2 | New 2D US/CA MID returns its own credentials | ✅ **New `QuickPayToken`, new OAuth Bearer, new SiteID** (distinct from the existing `98845`). Derek will pre-configure the ConfirmURL / ListenerURL / Membership Postback URL on that MID to point at our existing endpoints. | Env var set per MID as planned — `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`. Plug in once Derek delivers. |
+| D3 | Card-expired `reasonCode` on rebill failures | ❌ **No uniform reason code.** Issuers return free-form messages ("insufficient funds", "expired card", etc.). We cannot reliably auto-detect "card expired" vs any other decline. | `ugRebill.ts` classification collapses to a single `declined` bucket. We retry N times on a schedule; after the final failure we suspend the subscription and email the creator/fan to update their card — same UX regardless of the underlying issuer message. |
+| D4 | TID portability across MIDs | ❌ **Not portable.** A TID can only rebill on the MID where the initial Sale was authenticated. | Plan keeps `subscription_mid` per row; rebill cron picks the right credentials per row. Unchanged. |
+| D5 | `/recurringtransactions` limits | ✅ **No UG-side limits** on amount or interval. Only the issuer's own response gates rebills. | Annual plan rebills 365 days later — no splitting needed. Our own sanity ceiling on the creator dashboard (min $5, max $100 for fan subs; fixed $39/$239.99 for Pro) is sufficient. |
 
 ---
 
@@ -266,7 +266,7 @@ create table if not exists rebill_attempts (
   amount_cents int not null,
   currency text not null default 'USD',
   attempt_number int not null default 1,
-  status text not null check (status in ('pending', 'success', 'declined', 'card_expired', 'error')),
+  status text not null check (status in ('pending', 'success', 'declined', 'error')),
   ugp_response jsonb,
   ugp_transaction_id text,
   reason_code text,
@@ -403,10 +403,12 @@ git commit -m "feat(routing): country list + MID routing helpers"
 // supabase/functions/_shared/ugRouting.ts
 //
 // Resolves the per-MID credentials and endpoints for UG payments.
-// Env vars expected (both MUST be set for prod):
+// Per Derek (2026-04-20) each MID ships its own full credential set, so the
+// env vars below MUST both be present in prod:
 //   QUICKPAY_TOKEN_INTL_3D        / QUICKPAY_SITE_ID_INTL_3D        / UGP_MID_INTL_3D        / UGP_API_BEARER_TOKEN_INTL_3D
 //   QUICKPAY_TOKEN_US_2D          / QUICKPAY_SITE_ID_US_2D          / UGP_MID_US_2D          / UGP_API_BEARER_TOKEN_US_2D
-// ⚠️ PENDING DEREK Q2: confirm separate creds per MID. If shared, collapse to one set.
+// ConfirmURL / ListenerURL / Member Postback URLs are pre-configured on the
+// UG side by Derek to point at our existing endpoints — no extra wiring here.
 
 const US_2D_COUNTRIES = new Set(['US', 'CA']);
 
@@ -445,6 +447,14 @@ export function getMidCredentials(key: UgMidKey): UgMidCredentials {
 
 ```ts
 // supabase/functions/_shared/ugRebill.ts
+//
+// Thin wrapper around UG Payments' /recurringtransactions endpoint.
+//
+// Derek confirmed (2026-04-20) that UG does NOT expose a uniform reason code
+// for card-expired vs other declines — each issuer returns its own free-form
+// message. So we intentionally keep the classification binary: either the
+// rebill succeeded, or it didn't. The caller decides the retry policy on
+// top (see `rebill-subscriptions`).
 import type { UgMidCredentials } from './ugRouting.ts';
 
 export interface RebillResult {
@@ -452,12 +462,9 @@ export interface RebillResult {
   transactionId: string | null;
   reasonCode: string | null;
   message: string | null;
-  classification: 'success' | 'declined' | 'card_expired' | 'error';
+  classification: 'success' | 'declined' | 'error';
   raw: unknown;
 }
-
-const CARD_EXPIRED_MARKERS = ['expired', 'invalid expiry', 'expired card'];
-const CARD_DEAD_MARKERS = ['lost', 'stolen', 'pick up card', 'retain', 'invalid card number'];
 
 export async function rebillTransaction(
   creds: UgMidCredentials,
@@ -467,7 +474,7 @@ export async function rebillTransaction(
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {
-    TransactionID: referenceTransactionId,
+    TransactionID: referenceTransactionId, // MUST be the ORIGINAL Sale TID; never a rebilled TID
     Amount: (amountCents / 100).toFixed(2),
     Currency: 'USD',
     trackingId,
@@ -502,14 +509,6 @@ export async function rebillTransaction(
 
   if (status === 'successful' || status === 'approved') {
     return { success: true, transactionId: tid, reasonCode, message, classification: 'success', raw };
-  }
-
-  const lower = (message || '').toLowerCase();
-  // ⚠️ PENDING DEREK Q3: confirm the exact reasonCode for card-expired. Fallback to substring match for now.
-  const expired = CARD_EXPIRED_MARKERS.some((m) => lower.includes(m));
-  const dead = CARD_DEAD_MARKERS.some((m) => lower.includes(m));
-  if (expired || dead) {
-    return { success: false, transactionId: tid, reasonCode, message, classification: 'card_expired', raw };
   }
   if (status === 'declined' || status === 'scrubbed' || status === 'fraud') {
     return { success: false, transactionId: tid, reasonCode, message, classification: 'declined', raw };
@@ -553,7 +552,7 @@ supabase secrets set --linked \
 # (the CLI only prints digests — use the dashboard Secrets panel for the actual values).
 ```
 
-⚠️ PENDING DEREK Q2: US_2D secrets set once Derek provides them.
+⚠️ Blocking: Derek is provisioning the new 2D US/CA MID. As soon as he delivers the `QuickPayToken`, OAuth Bearer, SiteID, and MerchantID, set the `US_2D` family of secrets below.
 
 - [ ] **Step 3: Mirror in Vercel env vars**
 
@@ -1778,8 +1777,9 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
     return;
   }
 
-  // Failure handling
-  if (attemptNumber >= MAX_ATTEMPTS || result.classification === 'card_expired') {
+  // Failure handling — Derek confirmed no uniform card-expired code, so we
+  // treat every decline/error identically: retry N times, then suspend.
+  if (attemptNumber >= MAX_ATTEMPTS) {
     await supabase.from('profiles').update({
       is_creator_subscribed: false,
       subscription_plan: 'free',
@@ -1788,7 +1788,8 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
       show_deeplinks: false,
       show_available_now: false,
     }).eq('id', creator.id);
-    // TODO: send suspension email via Brevo helper
+    // TODO: send suspension email via Brevo helper — "Your Pro subscription
+    // couldn't be rebilled. Please update your card."
     console.log(`[rebill] creator ${creator.id} suspended after ${attemptNumber} attempts`);
     return;
   }
@@ -1847,11 +1848,12 @@ async function rebillFanSubscription(sub: any): Promise<void> {
     return;
   }
 
-  if (attemptNumber >= MAX_ATTEMPTS || result.classification === 'card_expired') {
+  if (attemptNumber >= MAX_ATTEMPTS) {
     await supabase.from('fan_creator_subscriptions').update({
       status: 'past_due',
       suspended_at: new Date().toISOString(),
     }).eq('id', sub.id);
+    // TODO: email the fan to update their card.
     return;
   }
 
@@ -2300,32 +2302,58 @@ git commit -m "refactor(sub): cancel creator sub via cancel_at_period_end flag"
 
 ---
 
-### Task 4.9 — Migrate existing `plan 11027` subscribers ⚠️ PENDING DEREK Q1
+### Task 4.9 — Migrate existing `plan 11027` subscribers
 
 **Files:**
 - Create: `scripts/migrate-legacy-creator-subs.ts`
 
-Only run this once D1 is answered. If D1=yes (TID is rebillable), we populate `subscription_ugp_transaction_id` for existing subscribers from `payment_events`. If D1=no, we'd need a force-resubscribe flow (not detailed here — ~1 more day of work).
+Per Derek (2026-04-20), the migration is a **two-step operation per creator**:
+
+1. **Cancel the UG-side plan enrollment** (so UG stops its own $39 auto-rebill via `ugp-membership-confirm`). This uses the existing `cancel-creator-subscription` edge function — which posts to `https://quickpay.ugpayments.ch/Cancel` — OR we can issue the same POST in bulk from this script using the service role. Cancelling the plan does **NOT** break the ability to rebill the original Sale TID via `/recurringtransactions`.
+2. **Record the original Sale TID + MID** on `profiles` so the new rebill cron (Task 4.5) picks it up. **Only use the ORIGINAL Sale TID — never a Rebill TID.** Derek was explicit: rebilled TIDs do not work with `/recurringtransactions`.
+
+The script is idempotent — re-running it is safe as long as `subscription_ugp_transaction_id IS NULL`.
 
 - [ ] **Step 1: Write the script**
 
 ```ts
 // scripts/migrate-legacy-creator-subs.ts
-// Populates subscription_ugp_transaction_id + subscription_mid for creators
-// currently on the legacy plan 11027. Idempotent.
+//
+// For every creator still on legacy plan 11027:
+//   1. Look up their initial Sale event from `payment_events`
+//      (state=Sale, prefix sub_<user_id>) — this is the TID we'll rebill.
+//   2. Cancel their plan 11027 enrollment on UG so UG stops auto-rebilling.
+//   3. Write subscription_ugp_transaction_id + subscription_mid on profiles.
+//
+// Idempotent — safe to re-run; a creator with subscription_ugp_transaction_id
+// already set is skipped.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const sb = createClient('https://qexnwezetjlbwltyccks.supabase.co', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+const QUICKPAY_TOKEN = Deno.env.get('QUICKPAY_TOKEN')!; // still the INTL_3D token
+const QUICKPAY_SITE_ID = Deno.env.get('QUICKPAY_SITE_ID') ?? '98845';
+
+async function cancelUgPlan(username: string) {
+  // Same shape as cancel-creator-subscription's Cancel form POST.
+  const body = new URLSearchParams({
+    QuickpayToken: QUICKPAY_TOKEN,
+    username,
+    SiteID: QUICKPAY_SITE_ID,
+  });
+  const res = await fetch('https://quickpay.ugpayments.ch/Cancel', { method: 'POST', body });
+  if (!res.ok) throw new Error(`UG cancel failed: ${res.status} ${await res.text()}`);
+}
 
 const { data: subs } = await sb.from('profiles')
-  .select('id, subscription_plan, subscription_ugp_transaction_id')
-  .eq('subscription_plan', 'monthly')
+  .select('id, subscription_plan, subscription_ugp_transaction_id, subscription_ugp_username, is_creator_subscribed')
+  .eq('is_creator_subscribed', true)
   .is('subscription_ugp_transaction_id', null);
 
 console.log('Migrating', subs?.length, 'creators');
 
 for (const s of subs ?? []) {
+  // 1) Find the initial Sale event (ORIGINAL TID only — Rebill events are skipped).
   const { data: event } = await sb.from('payment_events')
     .select('transaction_id, raw_payload, processed, transaction_state, created_at')
     .eq('merchant_reference', `sub_${s.id}`)
@@ -2340,30 +2368,49 @@ for (const s of subs ?? []) {
     continue;
   }
 
+  // 2) Cancel the UG-side plan enrollment. Safe before the TID is moved to
+  //    /recurringtransactions — Derek confirmed this doesn't break rebillability.
+  const username = (s.subscription_ugp_username ?? s.id) as string;
+  try {
+    await cancelUgPlan(username);
+    console.log('   UG plan cancelled for', s.id);
+  } catch (err) {
+    console.error(`   UG cancel failed for ${s.id}:`, err);
+    continue; // don't record TID if we couldn't cancel — we'd double-bill
+  }
+
+  // 3) Write the ORIGINAL Sale TID + MID on the profile.
   const siteId = String((event.raw_payload as any)?.SiteID ?? '');
-  const intl = Deno.env.get('QUICKPAY_SITE_ID_INTL_3D') ?? '';
-  const us2d = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
-  const mid = siteId === us2d ? 'us_2d' : 'intl_3d';
+  const us2dSite = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  const mid = siteId && us2dSite && siteId === us2dSite ? 'us_2d' : 'intl_3d';
 
   await sb.from('profiles').update({
     subscription_ugp_transaction_id: event.transaction_id,
     subscription_mid: mid,
-    subscription_amount_cents: 3900, // legacy base, will recompute on next rebill
+    subscription_amount_cents: 3900, // legacy base; the new cron recomputes per cycle
   }).eq('id', s.id);
 
   console.log('✅', s.id, 'TID', event.transaction_id, 'MID', mid);
 }
 ```
 
-- [ ] **Step 2: Run after Derek confirms D1**
+- [ ] **Step 2: Dry-run in staging first**
 
 ```bash
-SUPABASE_SERVICE_ROLE_KEY=... deno run -A scripts/migrate-legacy-creator-subs.ts
+# Run on a staging DB copy; verify UG cancel + TID recording flow end-to-end
+# on 1-2 real subscribers before touching prod.
+SUPABASE_SERVICE_ROLE_KEY=... QUICKPAY_TOKEN=... deno run -A scripts/migrate-legacy-creator-subs.ts
 ```
 
-- [ ] **Step 3: Disable `chargeProfileAddons`**
+- [ ] **Step 3: Run on prod**
 
-In `supabase/functions/ugp-membership-confirm/index.ts`, comment out the `await chargeProfileAddons(userId);` line. Legacy 11027 rebills (which still hit this function) stop debiting wallets for extras — the new cron is the source of truth going forward.
+```bash
+SUPABASE_SERVICE_ROLE_KEY=... QUICKPAY_TOKEN=... deno run -A scripts/migrate-legacy-creator-subs.ts
+```
+
+- [ ] **Step 4: Disable `chargeProfileAddons`**
+
+In `supabase/functions/ugp-membership-confirm/index.ts`, comment out the `await chargeProfileAddons(userId);` line. After step 3 UG no longer fires Rebill postbacks for plan 11027 (we've cancelled them), but we want the fallback path neutralised regardless.
 
 ```bash
 supabase functions deploy ugp-membership-confirm --linked
@@ -2853,24 +2900,24 @@ git commit -m "test(confirm): integration tests for state filtering"
 **Files:**
 - Modify: `src/pages/AdminPayments.tsx` (or new `AdminRebills.tsx`)
 
-Add a section: "Recent rebill attempts" — last 50 from `rebill_attempts`, grouped by status, with counts of `success` / `declined` / `card_expired` / `error` in the last 24h.
+Add a section: "Recent rebill attempts" — last 50 from `rebill_attempts`, grouped by status, with counts of `success` / `declined` / `error` in the last 24h. (No dedicated card-expired bucket — Derek confirmed UG returns no uniform code; admins can click through to the issuer message per-row to triage.)
 
 - [ ] **Step 1: Add the query + card**
 
 ```tsx
 // Inside AdminPayments.tsx
-const [stats, setStats] = useState<{ ok: number; fail: number; expired: number } | null>(null);
+const [stats, setStats] = useState<{ ok: number; declined: number; error: number } | null>(null);
 
 useEffect(() => {
   supabase.from('rebill_attempts')
     .select('status')
     .gte('created_at', new Date(Date.now() - 86400000).toISOString())
     .then(({ data }) => {
-      const out = { ok: 0, fail: 0, expired: 0 };
+      const out = { ok: 0, declined: 0, error: 0 };
       for (const r of data ?? []) {
         if (r.status === 'success') out.ok++;
-        else if (r.status === 'card_expired') out.expired++;
-        else out.fail++;
+        else if (r.status === 'declined') out.declined++;
+        else out.error++;
       }
       setStats(out);
     });
@@ -2880,8 +2927,8 @@ useEffect(() => {
 {stats && (
   <div className="mb-6 grid grid-cols-3 gap-3">
     <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Rebills 24h · OK</p><p className="text-xl font-bold text-green-400">{stats.ok}</p></div>
-    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Failed</p><p className="text-xl font-bold text-red-400">{stats.fail}</p></div>
-    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Card expired</p><p className="text-xl font-bold text-amber-400">{stats.expired}</p></div>
+    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Declined</p><p className="text-xl font-bold text-red-400">{stats.declined}</p></div>
+    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Errors</p><p className="text-xl font-bold text-amber-400">{stats.error}</p></div>
   </div>
 )}
 ```
@@ -2924,15 +2971,19 @@ Phase 0 (schema + helpers)        ───────────────�
 Phase 2 (pricing refonte)         ────────────────────────► can start now (independent)
 Phase 3 (pricing page + popup)    ──(needs Phase 2 numbers)► after Phase 2
 
-Phase 1 (country + routing)       ──(needs Phase 0 + D2)───► after Derek provides 2D MID creds
-Phase 4 (creator Pro refactor)    ──(needs Phase 0 + D1)───► after Derek confirms rebill on QuickPay TIDs
+Phase 4 (creator Pro refactor)    ──(needs Phase 0)────────► can start now (Derek confirmed rebill on original Sale TID)
 Phase 5 (creator Pro annual)      ──(extends Phase 4)──────► after Phase 4
 Phase 6 (fan sub refactor)        ──(needs Phase 0)────────► can start in parallel with Phase 4
+
+Phase 1 (country + routing)       ──(needs Phase 0 + MID)──► the only remaining external blocker
+                                                            Derek is provisioning the 2D US/CA MID.
+                                                            Code + tests go in now; just skip deploy
+                                                            until `QUICKPAY_*_US_2D` secrets are set.
 
 Phase 7 (cleanup)                 ──(last)─────────────────► after Phases 4 + 6
 ```
 
-Realistic timeline if one engineer full-time: **8–10 working days** including testing. Many phases parallelizable with 2 engineers.
+Realistic timeline if one engineer full-time: **8–10 working days** including testing. Many phases parallelizable with 2 engineers. The only hard external dependency is the new 2D MID credentials from Derek — everything else can ship immediately.
 
 ---
 
