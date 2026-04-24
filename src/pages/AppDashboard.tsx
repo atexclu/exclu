@@ -763,7 +763,9 @@ const AppDashboard = () => {
 
                 <div className="mt-3 flex items-end gap-2.5">
                   <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
-                    ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {isLoading
+                      ? <span className="inline-block h-[0.9em] w-[4ch] rounded-md bg-foreground/10 dark:bg-white/10 animate-pulse align-middle" />
+                      : `$${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                   <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
                 </div>
@@ -771,9 +773,9 @@ const AppDashboard = () => {
                 <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
                 <div className="mt-5 grid grid-cols-3">
                   {[
-                    { label: 'Total earned', value: `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
-                    { label: 'Withdrawn', value: `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
-                    { label: 'Sales', value: totalSalesCount.toLocaleString('en-US') },
+                    { label: 'Total earned', value: isLoading ? '—' : `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Withdrawn', value: isLoading ? '—' : `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Sales', value: isLoading ? '—' : totalSalesCount.toLocaleString('en-US') },
                   ].map((stat, i) => (
                     <div
                       key={stat.label}

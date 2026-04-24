@@ -74,7 +74,9 @@ const Terms = () => {
             <li><strong>Tips:</strong> Voluntary one-time payments sent directly to a creator as a show of support. Minimum: $5 USD. Maximum: $500 USD.</li>
             <li><strong>Gifts (Wishlist):</strong> Purchases of items from a creator's wishlist on their behalf.</li>
             <li><strong>Custom Requests:</strong> Paid content requests submitted to a creator. The payment is pre-authorized and held until the creator accepts or declines. If the creator accepts and delivers the content, the payment is captured. If the creator declines or fails to respond within 6 days, the hold is released and the fan is not charged. Minimum: $20 USD. Maximum: $1,000 USD.</li>
-            <li><strong>Premium Subscription:</strong> A monthly subscription for creators at $39.99 USD/month that removes the platform commission on sales (0% instead of 15%).</li>
+            <li><strong>Premium Subscription (Monthly):</strong> A recurring monthly subscription for creators at $39.99 USD/month that removes the platform commission on sales (0% instead of 15%).</li>
+            <li><strong>Premium Subscription (Annual):</strong> A recurring yearly subscription for creators at $239.99 USD/year (equivalent to approximately $20/month — about 50% savings vs. the Monthly plan). Same 0% platform commission benefit and includes unlimited creator profiles.</li>
+            <li><strong>Fan Subscriptions to Creators:</strong> Fans may subscribe directly to individual creator profiles at a recurring monthly price set by each creator (between $5 and $100 USD/month). The subscription grants ongoing access to that creator's subscriber-only content feed and automatically renews every 30 days. A 15% platform commission applies to these subscriptions when the creator is on the Free plan; 0% on Premium plans.</li>
           </ul>
 
           <h3>3.3 Processing Fee</h3>
@@ -90,9 +92,15 @@ const Terms = () => {
           <p>Creator earnings are credited to an internal wallet on Exclu. Creators may request a withdrawal of their earnings to their registered bank account (IBAN) at any time, subject to a minimum withdrawal amount of <strong>$50 USD</strong>. Withdrawals are processed manually and typically completed within 1–5 business days.</p>
 
           <h3>3.6 Multi-Profile Pricing</h3>
-          <p>The Premium subscription includes up to 2 creator profiles. Each additional profile beyond 2 incurs an additional charge of <strong>$10 USD/month</strong>. The full subscription amount (base $39.99 + extras) is billed directly to the creator's registered payment card at each monthly renewal — it is never debited from the creator's wallet.</p>
+          <p>The Premium <strong>Monthly</strong> subscription includes up to 2 creator profiles. Each additional profile beyond 2 incurs an additional charge of <strong>$10 USD/month</strong>. The Premium <strong>Annual</strong> subscription includes unlimited profiles (up to 50) with no per-profile add-on charge. The full subscription amount (base $39.99/month + extras for Monthly, or $239.99/year for Annual) is billed directly to the creator's registered payment card at each renewal — it is never debited from the creator's wallet.</p>
 
-          <h3>3.7 Refunds</h3>
+          <h3>3.7 Subscription Renewals, Cancellations, and Switches</h3>
+          <p><strong>Automatic renewal.</strong> Premium creator subscriptions and fan-to-creator subscriptions renew automatically at the end of each billing period (30 days for Monthly and fan subscriptions, 365 days for Annual) using the payment method on file. No action is required from you to stay subscribed.</p>
+          <p><strong>Cancellation.</strong> You may cancel a subscription at any time from your account settings. Cancellation stops the next renewal; you retain full access until the end of the current paid period. You can also reactivate a cancelled subscription at any time before the period ends, and renewals will resume.</p>
+          <p><strong>Plan switches (creator Premium).</strong> You may switch between Monthly and Annual Premium plans at any time. The new plan is charged immediately; the previous plan's upcoming renewal is cancelled. The unused portion of the previous plan's current period is not refunded — you simply keep both periods' access until the old one naturally ends.</p>
+          <p><strong>Failed payments.</strong> If a renewal payment is declined, we automatically retry up to 3 times over approximately 7 days. If all attempts fail, the subscription is suspended, your account reverts to the Free plan (or, for fan subscriptions, loses access to the creator's subscriber-only feed), and you are notified by email so you can update your card and resubscribe.</p>
+
+          <h3>3.8 Refunds</h3>
           <p>Purchases on Exclu are generally <strong>final and non-refundable</strong>. However, we reserve the right to issue refunds in our sole discretion in appropriate cases, such as:</p>
           <ul>
             <li>A custom request that was declined by the creator (the hold is automatically released)</li>
@@ -100,14 +108,14 @@ const Terms = () => {
             <li>Content that was not delivered as described</li>
           </ul>
 
-          <h3>3.8 Chargebacks</h3>
+          <h3>3.9 Chargebacks</h3>
           <p>If a purchase results in a chargeback, we reserve the right to immediately suspend or terminate your account and debit the corresponding amount from the creator's wallet.</p>
 
-          <h3>3.9 Taxes</h3>
+          <h3>3.10 Taxes</h3>
           <p>You are solely responsible for determining and paying any taxes applicable to your transactions on Exclu. Exclu does not provide tax advice and is not responsible for your tax obligations.</p>
 
           <h2>4. Referral Program</h2>
-          <p>Exclu may provide creators with a unique referral link. When a new creator registers using your referral link and subscribes to the Premium plan, you earn a recurring commission of <strong>35% of the subscription price</strong> ($14.00 USD) for each billing cycle that the referred creator remains subscribed. Additional bonuses may apply (e.g., $100 bonus when a referred creator reaches $1,000 in net revenue within 90 days).</p>
+          <p>Exclu may provide creators with a unique referral link. When a new creator registers using your referral link and subscribes to a Premium plan (Monthly or Annual), you earn a recurring commission of <strong>35% of the subscription price</strong> — approximately $14.00 USD per monthly renewal, or $84.00 USD per annual renewal — for each billing cycle that the referred creator remains subscribed. Additional bonuses may apply (e.g., $100 bonus when a referred creator reaches $1,000 in net revenue within 90 days).</p>
 
           <h2>5. Chatter Revenue Sharing</h2>
           <p>When a sale is attributed to a chatter (team member managing conversations on behalf of a creator), the revenue is split as follows:</p>
