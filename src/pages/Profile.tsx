@@ -34,6 +34,7 @@ import { ThemeToggleSwitch } from '@/components/ThemeToggleSwitch';
 import { Switch } from '@/components/ui/switch';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { AgencyCategoryConfig, EMPTY_AGENCY_CATEGORIES, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
+import { PlanManagement } from '@/components/settings/PlanManagement';
 
 const Profile = () => {
   const { activeProfile, refreshProfiles, isAgency, profiles: creatorProfiles, setActiveProfileId } = useProfiles();
@@ -1057,76 +1058,10 @@ const Profile = () => {
                   transition={{ duration: 0.3 }}
                   className="space-y-6"
                 >
-                  {/* Current Plan Card */}
                   <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
                     <h2 className="text-lg font-semibold text-exclu-cloud mb-5">Your Plan</h2>
-
-                    <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/10 border border-border">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${isCreatorSubscribed ? 'bg-emerald-500/15' : 'bg-amber-500/15'}`}>
-                        {isCreatorSubscribed ? (
-                          <Zap className="w-6 h-6 text-emerald-400" />
-                        ) : (
-                          <CreditCard className="w-6 h-6 text-amber-300" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-base font-semibold text-exclu-cloud">
-                            {isCreatorSubscribed ? 'Premium Plan' : 'Free Plan'}
-                          </h3>
-                          {isCreatorSubscribed && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] text-emerald-300 dark:text-emerald-300 light:text-black font-medium">
-                              <Check className="w-3 h-3 text-emerald-300 dark:text-emerald-300 light:text-black" />
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-exclu-space/80 mt-1">
-                          {isCreatorSubscribed
-                            ? '0% commission on all your sales. You keep 100% of your revenue.'
-                            : '15% commission on sales. Upgrade to Premium to keep 100% of your revenue.'}
-                        </p>
-                        {isCreatorSubscribed && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs text-exclu-space/60">
-                              ${creatorProfiles.length > 2
-                                ? `${39.99 + (creatorProfiles.length - 2) * 10}/month`
-                                : '39.99/month'} • Billed monthly
-                            </p>
-                            {creatorProfiles.length > 2 && (
-                              <div className="text-[11px] text-exclu-space/50 space-y-0.5">
-                                <p>$39.99 base + {creatorProfiles.length - 2} additional profile{creatorProfiles.length - 2 > 1 ? 's' : ''} × $10/mo</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {!isCreatorSubscribed && (
-                        <Button
-                          onClick={handleUpgradeToPremium}
-                          variant="hero"
-                          disabled={isUpgradeLoading}
-                          className="rounded-full"
-                        >
-                          <Zap className="w-4 h-4 mr-2" />
-                          {isUpgradeLoading ? 'Loading...' : 'Upgrade to Premium – $39.99/mo'}
-                        </Button>
-                      )}
-                      {isCreatorSubscribed && (
-                        <Button
-                          onClick={handleCancelSubscription}
-                          variant="outline"
-                          className="rounded-full border-red-500/30 text-red-400 hover:bg-red-500/10"
-                        >
-                          Cancel subscription
-                        </Button>
-                      )}
-                    </div>
+                    <PlanManagement />
                   </div>
-
                 </motion.div>
               )}
 
