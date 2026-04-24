@@ -70,7 +70,7 @@ export function ProUpgradePopup() {
           type="button"
           variant="hero"
           className="mt-4 w-full"
-          onClick={() => { setVisible(false); navigate('/pricing'); }}
+          onClick={() => { setVisible(false); navigate('/app/settings#payments'); }}
         >
           See plans
         </Button>

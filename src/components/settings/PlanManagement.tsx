@@ -15,6 +15,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { QuickPayForm } from '@/components/payment/QuickPayForm';
 import { PlanCard } from '@/components/pricing/PlanCard';
+import { CountrySelect } from '@/components/checkout/CountrySelect';
+import { getGeoCountry } from '@/lib/ipGeo';
 import { cn } from '@/lib/utils';
 
 type PlanKey = 'free' | 'monthly' | 'annual';
@@ -26,7 +28,18 @@ interface SubState {
   cancel_at_period_end: boolean;
 }
 
+interface RebillRow {
+  id: string;
+  created_at: string;
+  status: 'pending' | 'success' | 'declined' | 'error' | 'transient';
+  amount_cents: number;
+  attempt_number: number;
+  ugp_transaction_id: string | null;
+  message: string | null;
+}
+
 type PendingAction =
+  | { kind: 'subscribe'; target: 'monthly' | 'annual' }
   | { kind: 'switch'; target: 'monthly' | 'annual' }
   | { kind: 'cancel' }
   | { kind: 'reactivate' }
@@ -56,12 +69,15 @@ export function PlanManagement() {
   const [busy, setBusy] = useState(false);
   const [pendingFields, setPendingFields] = useState<Record<string, string> | null>(null);
   const [confirm, setConfirm] = useState<PendingAction>(null);
+  const [country, setCountry] = useState<string | null>(null);
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+  const [history, setHistory] = useState<RebillRow[]>([]);
 
   const loadSub = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase.from('profiles')
-      .select('subscription_plan, subscription_amount_cents, subscription_period_end, subscription_cancel_at_period_end')
+      .select('subscription_plan, subscription_amount_cents, subscription_period_end, subscription_cancel_at_period_end, country, billing_country')
       .eq('id', user.id).maybeSingle();
     if (data) {
       setSub({
@@ -70,35 +86,57 @@ export function PlanManagement() {
         period_end: data.subscription_period_end,
         cancel_at_period_end: !!data.subscription_cancel_at_period_end,
       });
+      // Prefill country from stored profile fields if we have one
+      const profileCountry = (data.billing_country ?? data.country ?? null) as string | null;
+      if (profileCountry) setCountry(profileCountry);
     }
+  };
+
+  const loadHistory = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('rebill_attempts')
+      .select('id, created_at, status, amount_cents, attempt_number, ugp_transaction_id, message')
+      .eq('subject_table', 'profiles')
+      .eq('subject_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(24);
+    setHistory((data ?? []) as RebillRow[]);
   };
 
   useEffect(() => {
     loadSub();
+    loadHistory();
   }, []);
 
-  // Auto-start checkout when redirected from /pricing (?subscribe=monthly|annual)
+  // Detect country via IP geo for the checkout dropdown default
   useEffect(() => {
-    if (!sub || busy || pendingFields) return;
+    getGeoCountry().then((c) => {
+      if (c) setDetectedCountry(c);
+    });
+  }, []);
+
+  // When redirected from /pricing (?subscribe=monthly|annual) open the checkout dialog
+  // with the right plan pre-selected. Country selection happens inside the dialog.
+  useEffect(() => {
+    if (!sub || busy || pendingFields || confirm) return;
     const params = new URLSearchParams(window.location.search);
     const target = params.get('subscribe');
     if (target !== 'monthly' && target !== 'annual') return;
-    // Clean the param so a refresh doesn't retrigger
     const url = new URL(window.location.href);
     url.searchParams.delete('subscribe');
     window.history.replaceState(null, '', url.toString());
-    // Only start checkout if user isn't already on this plan
-    if (sub.plan !== target) {
-      handleCta(target);
-    }
-  }, [sub]);
+    if (sub.plan === target) return;
+    setConfirm(sub.plan === 'free' ? { kind: 'subscribe', target } : { kind: 'switch', target });
+  }, [sub, busy, pendingFields, confirm]);
 
-  const startCheckout = async (plan: 'monthly' | 'annual') => {
+  const startCheckout = async (plan: 'monthly' | 'annual', checkoutCountry: string | null) => {
     setBusy(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('create-creator-subscription', {
-        body: { plan, country: null },
+        body: { plan, country: checkoutCountry },
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
       });
       if (error) throw error;
@@ -166,11 +204,12 @@ export function PlanManagement() {
       setConfirm({ kind: 'cancel' });
       return;
     }
-    if (isPaid && target !== sub.plan) {
-      setConfirm({ kind: 'switch', target });
+    if (sub.plan === 'free') {
+      setConfirm({ kind: 'subscribe', target });
       return;
     }
-    startCheckout(target);
+    // Already paid, switching between monthly/annual
+    setConfirm({ kind: 'switch', target });
   };
 
   const ctaFor = (target: PlanKey) => {
@@ -179,6 +218,9 @@ export function PlanManagement() {
     if (!isPaid) return target === 'monthly' ? 'Upgrade to Monthly' : 'Upgrade to Annual';
     return target === 'monthly' ? 'Switch to Monthly' : 'Switch to Annual';
   };
+
+  const checkoutTarget = confirm?.kind === 'subscribe' || confirm?.kind === 'switch' ? confirm.target : null;
+  const canProceedToCheckout = !!country && !busy;
 
   return (
     <div className="space-y-6">
@@ -296,6 +338,76 @@ export function PlanManagement() {
         </div>
       )}
 
+      {/* Billing history — recurring charges on the subscription card */}
+      {isPaid && (
+        <div className="rounded-xl border border-border/70 bg-card/40 overflow-hidden">
+          <div className="border-b border-border/60 px-4 py-3">
+            <h4 className="text-sm font-semibold text-foreground">Billing history</h4>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Recurring charges on your subscription card. Your next charge is scheduled for {renewalLabel}.
+            </p>
+          </div>
+          {history.length === 0 ? (
+            <div className="px-4 py-5 text-xs text-muted-foreground text-center">
+              No recurring charges yet. Your first automatic renewal will appear here.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {history.map((row) => {
+                const date = (() => {
+                  try {
+                    return new Date(row.created_at).toLocaleDateString(undefined, {
+                      year: 'numeric', month: 'short', day: 'numeric',
+                    });
+                  } catch {
+                    return row.created_at.slice(0, 10);
+                  }
+                })();
+                const statusStyles: Record<RebillRow['status'], string> = {
+                  success: 'bg-emerald-500/15 text-emerald-300',
+                  declined: 'bg-rose-500/15 text-rose-300',
+                  error: 'bg-rose-500/15 text-rose-300',
+                  transient: 'bg-amber-500/15 text-amber-300',
+                  pending: 'bg-muted text-muted-foreground',
+                };
+                const statusLabels: Record<RebillRow['status'], string> = {
+                  success: 'Charged',
+                  declined: 'Declined',
+                  error: 'Error',
+                  transient: 'Retrying',
+                  pending: 'Pending',
+                };
+                return (
+                  <li key={row.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {PLAN_LABEL[sub.plan]} renewal
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                        {date}
+                        {row.attempt_number > 1 && ` · Attempt ${row.attempt_number}`}
+                        {row.message && row.status !== 'success' && ` · ${row.message}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-sm font-semibold text-foreground tabular-nums">
+                        ${(row.amount_cents / 100).toFixed(2)}
+                      </span>
+                      <span className={cn(
+                        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        statusStyles[row.status],
+                      )}>
+                        {statusLabels[row.status]}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Confirm dialogs */}
       <AlertDialog open={!!confirm} onOpenChange={(open) => !open && setConfirm(null)}>
         <AlertDialogContent>
@@ -343,25 +455,44 @@ export function PlanManagement() {
               </AlertDialogFooter>
             </>
           )}
-          {confirm?.kind === 'switch' && (
+          {(confirm?.kind === 'subscribe' || confirm?.kind === 'switch') && checkoutTarget && (
             <>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  Switch to {confirm.target === 'annual' ? 'Pro Annual' : 'Pro Monthly'}?
+                  {confirm.kind === 'subscribe'
+                    ? `Subscribe to ${PLAN_LABEL[checkoutTarget]}`
+                    : `Switch to ${PLAN_LABEL[checkoutTarget]}`}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  You&apos;ll be redirected to checkout to start the new plan. Your current{' '}
-                  {PLAN_LABEL[sub.plan]} subscription will be cancelled at the end of its period
-                  ({renewalLabel}), so there is no double-billing.
+                  {confirm.kind === 'switch'
+                    ? `Your new plan starts immediately. Your current ${PLAN_LABEL[sub.plan]} subscription stops renewing and ends naturally on ${renewalLabel}, so you won't be double-charged.`
+                    : 'Select your billing country so we route your payment through the correct card network. You can change it now or keep the detected value.'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              <div className="my-4 space-y-1.5">
+                <label htmlFor="sub-checkout-country" className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground block">
+                  Billing country <span className="text-destructive">*</span>
+                </label>
+                <CountrySelect
+                  id="sub-checkout-country"
+                  value={country}
+                  autoDetectedCountry={detectedCountry}
+                  onChange={setCountry}
+                  required
+                  placeholder="Select your country"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  US and Canada cards route through our 2D network; every other country uses 3D Secure.
+                </p>
+              </div>
               <AlertDialogFooter>
                 <AlertDialogCancel>Not now</AlertDialogCancel>
                 <AlertDialogAction
+                  disabled={!canProceedToCheckout}
                   onClick={() => {
-                    const target = confirm.target;
+                    const target = checkoutTarget;
                     setConfirm(null);
-                    startCheckout(target);
+                    startCheckout(target, country);
                   }}
                 >
                   Continue to checkout
