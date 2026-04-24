@@ -49,6 +49,16 @@ const AppDashboard = () => {
   const [tipsRaw, setTipsRaw] = useState<any[]>([]);
   const [giftsRaw, setGiftsRaw] = useState<any[]>([]);
   const [requestsRaw, setRequestsRaw] = useState<any[]>([]);
+  // Ledger-based earnings breakdown (wallet_transactions grouped by source_type)
+  const [byKind, setByKind] = useState<Record<string, number>>({
+    link_purchase: 0,
+    tip: 0,
+    gift_purchase: 0,
+    custom_request: 0,
+    fan_subscription: 0,
+    creator_subscription: 0,
+    chatter_commission: 0,
+  });
   // Referral state (recruteur)
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
@@ -289,6 +299,31 @@ const AppDashboard = () => {
           setFanSubscribers(fanSubscribersEnriched);
           setFanSubStats(subsStats);
         }
+
+        // Ledger query — wallet_transactions grouped by source_type
+        // Post-deploy rows carry precise creator_net_cents already; legacy rows fall back below.
+        const { data: ledgerRows } = await supabase
+          .from('wallet_transactions')
+          .select('source_type, direction, amount_cents')
+          .eq('owner_id', user.id)
+          .eq('owner_kind', 'creator');
+
+        const newByKind: Record<string, number> = {
+          link_purchase: 0,
+          tip: 0,
+          gift_purchase: 0,
+          custom_request: 0,
+          fan_subscription: 0,
+          creator_subscription: 0,
+          chatter_commission: 0,
+        };
+        for (const row of ledgerRows ?? []) {
+          const signed = row.direction === 'credit' ? row.amount_cents : -row.amount_cents;
+          if (row.source_type in newByKind) {
+            newByKind[row.source_type as keyof typeof newByKind] += signed;
+          }
+        }
+        if (isMounted) setByKind(newByKind);
 
         const safePayouts = payoutsData ?? [];
         const totalPayoutsCents = safePayouts
@@ -897,13 +932,22 @@ const AppDashboard = () => {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
-                    {[
-                      { label: 'Links', value: purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.15) * (1 - commissionRate))), 0), icon: Zap },
-                      { label: 'Tips', value: tipsRevenueCents, icon: Heart },
-                      { label: 'Requests', value: requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0), icon: FileText },
-                      { label: 'Gifts', value: giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0), icon: Gift },
-                      { label: 'Subscriptions', value: fanSubStats.lifetimeNetCents, icon: Users },
-                    ].map(({ label, value, icon: Icon }) => (
+                    {(() => {
+                      // Prefer ledger sums for post-deploy rows. Legacy pre-ledger rows are still
+                      // totaled via the manual reduce below — can remove once backfill is complete.
+                      const legacyLinks = purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.15) * (1 - commissionRate))), 0);
+                      const legacyTips = tipsRevenueCents;
+                      const legacyRequests = requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0);
+                      const legacyGifts = giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0);
+                      const legacySubs = fanSubStats.lifetimeNetCents;
+                      return [
+                        { label: 'Links', value: byKind.link_purchase > 0 ? byKind.link_purchase : legacyLinks, icon: Zap },
+                        { label: 'Tips', value: byKind.tip > 0 ? byKind.tip : legacyTips, icon: Heart },
+                        { label: 'Requests', value: byKind.custom_request > 0 ? byKind.custom_request : legacyRequests, icon: FileText },
+                        { label: 'Gifts', value: byKind.gift_purchase > 0 ? byKind.gift_purchase : legacyGifts, icon: Gift },
+                        { label: 'Subscriptions', value: byKind.fan_subscription > 0 ? byKind.fan_subscription : legacySubs, icon: Users },
+                      ];
+                    })().map(({ label, value, icon: Icon }) => (
                       <div
                         key={label}
                         className="rounded-xl border border-black/5 dark:border-white/10 bg-foreground/[0.02] dark:bg-white/[0.03] p-3.5 sm:p-4 transition-colors hover:border-[#CFFF16]/30"
@@ -1573,7 +1617,7 @@ const AppDashboard = () => {
                 <p className="text-2xl font-bold text-exclu-cloud">
                   {isLoading
                     ? '—'
-                    : `$${(fanSubStats.lifetimeNetCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    : `$${((byKind.fan_subscription > 0 ? byKind.fan_subscription : fanSubStats.lifetimeNetCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </p>
                 <p className="text-[11px] text-exclu-space/80 mt-1">Net credited to your wallet.</p>
               </div>
