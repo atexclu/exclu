@@ -84,6 +84,16 @@ serve(async (req) => {
     }
 
     const body = await req.json();
+
+    // Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on link
+    // purchases + custom request captures. Tips, gifts, and subs never split revenue
+    // with a chatter. If a legacy client still sends `chtref` on this flow, drop it
+    // and log for observability — we do NOT propagate it to the created row.
+    const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+    if (rogueChtref) {
+      console.warn(`[create-tip-checkout] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
+    }
+
     const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
     const midKey = routeMidForCountry(country);
     const creds = getMidCredentials(midKey);

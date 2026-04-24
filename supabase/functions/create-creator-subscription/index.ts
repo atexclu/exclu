@@ -47,6 +47,16 @@ serve(async (req) => {
     if (userErr || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
 
     const body = await req.json().catch(() => ({}));
+
+    // Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on link
+    // purchases + custom request captures. Tips, gifts, and subs never split revenue
+    // with a chatter. If a legacy client still sends `chtref` on this flow, drop it
+    // and log for observability — we do NOT propagate it to the created row.
+    const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+    if (rogueChtref) {
+      console.warn(`[create-creator-subscription] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
+    }
+
     const plan: Plan = body?.plan === 'annual' ? 'annual' : 'monthly';
     const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
 
