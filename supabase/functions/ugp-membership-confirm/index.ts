@@ -161,8 +161,14 @@ async function handleActivation(userId: string, memberId: string, action: string
   await creditReferralCommission(userId);
 
   // ── Multi-profile addon charge (at each renewal) ──────────────────
+  // DEPRECATED 2026-04-23 — Phase 4 Task 4.9: legacy plan 11027 subscribers have
+  // been migrated to server-driven /recurringtransactions. Member postbacks no
+  // longer need to debit wallets for addon charges (the new rebill cron bills
+  // the full amount, base + extras, at source). Safe to leave no-op until
+  // Phase 7 removes the helper entirely.
+  // await chargeProfileAddons(userId);
   if (action === 'Rebill') {
-    await chargeProfileAddons(userId);
+    // no-op — see deprecation note above
   }
 
   console.log(`Subscription ${action}:`, userId);
