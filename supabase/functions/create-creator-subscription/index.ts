@@ -29,7 +29,7 @@ function corsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
   const allowed = ['http://localhost:8080', 'http://localhost:5173', siteUrl];
   return {
-    'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : siteUrl,
+    'Access-Control-Allow-Origin': (allowed.includes(origin) || /^https:\/\/exclu-[a-z0-9-]+-atexclus-projects\.vercel\.app$/.test(origin)) ? origin : siteUrl,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 }

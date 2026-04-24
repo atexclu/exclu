@@ -33,7 +33,7 @@ const allowedOrigins = [normalizedSiteOrigin, 'http://localhost:8080', 'http://l
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
   return {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin,
+    'Access-Control-Allow-Origin': (allowedOrigins.includes(origin) || /^https:\/\/exclu-[a-z0-9-]+-atexclus-projects\.vercel\.app$/.test(origin)) ? origin : normalizedSiteOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 }
