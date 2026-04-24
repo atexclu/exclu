@@ -1,38 +1,28 @@
 /**
- * create-fan-subscription-checkout — Opens a UGPayments QuickPay recurring
- * checkout for a fan subscribing to a specific creator profile.
+ * create-fan-subscription-checkout — Opens a UGPayments QuickPay one-shot
+ * Sale (IsInitialForRecurring=true) for a fan subscribing to a creator profile.
+ * The MID is routed per fan country (us_2d for US/CA, intl_3d otherwise).
  *
  * Contract:
- *   POST { creator_profile_id: string }
+ *   POST { creator_profile_id: string, country?: string }
  *   Auth required (fan session JWT in Authorization: Bearer).
  *
- *   → 200 { fields }                               (POST fields to https://quickpay.ugpayments.ch/)
+ *   → 200 { fields, subscription_id, mid }
  *   → 200 { alreadySubscribed: true, subscription_id }
  *   → 4xx { error } for invalid input / disabled sub / self-subscription
- *   → 503 { error } if QUICKPAY_FAN_SUB_PLAN_ID isn't yet provisioned with Derek
- *
- * Variable price: AmountTotal is derived from
- *   creator_profiles.fan_subscription_price_cents (range $5–$100).
- *
- * Idempotency: we look up any non-terminal row for this (fan, creator) pair.
- * If it's active with a future period_end we return { alreadySubscribed }.
- * Otherwise (pending, cancelled, expired, past_due) we reuse the row so
- * duplicate clicks don't create stale pending rows.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
-const supabaseUrl = Deno.env.get('PROJECT_URL');
-const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
+const sbUrl = Deno.env.get('PROJECT_URL')!;
+const sbKey = Deno.env.get('SERVICE_ROLE_KEY')!;
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
 
-if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
+if (!sbUrl || !sbKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+const sb = createClient(sbUrl, sbKey);
 
 const allowedOrigins = [
   siteUrl,
@@ -40,7 +30,7 @@ const allowedOrigins = [
   'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
 ];
 
-function getCorsHeaders(req: Request): Record<string, string> {
+function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
   const allowed = allowedOrigins.includes(origin) ? origin : siteUrl;
   return {
@@ -64,54 +54,48 @@ function jsonError(msg: string, status: number, cors: Record<string, string>) {
 }
 
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-
-  // Lazy check: don't crash on cold start if Derek's plan id isn't provisioned yet.
-  // The function stays deployable so the frontend's error path is stable.
-  const fanSubPlanId = Deno.env.get('QUICKPAY_FAN_SUB_PLAN_ID');
-  if (!fanSubPlanId) {
-    console.error('create-fan-subscription-checkout called but QUICKPAY_FAN_SUB_PLAN_ID is unset');
-    return jsonError('Fan subscription plan not configured yet', 503, corsHeaders);
-  }
+  const cors = corsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: cors });
 
   try {
     // ── Auth ───────────────────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return jsonError('Missing authorization header', 401, corsHeaders);
+    if (!authHeader) return jsonError('Missing authorization header', 401, cors);
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    if (userError || !user) return jsonError('Invalid or expired token', 401, corsHeaders);
+    const { data: { user }, error: userError } = await sb.auth.getUser(token);
+    if (userError || !user) return jsonError('Invalid or expired token', 401, cors);
 
     // ── Input ──────────────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
     const creatorProfileId = typeof body?.creator_profile_id === 'string' ? body.creator_profile_id : null;
-    if (!creatorProfileId) return jsonError('Missing creator_profile_id', 400, corsHeaders);
+    if (!creatorProfileId) return jsonError('Missing creator_profile_id', 400, cors);
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
 
     // ── Resolve creator profile + validate ─────────────────────────────────
-    const { data: creatorProfile, error: cpErr } = await supabaseAdmin
+    const { data: creatorProfile, error: cpErr } = await sb
       .from('creator_profiles')
-      .select('id, user_id, username, display_name, fan_subscription_enabled, fan_subscription_price_cents')
+      .select('id, user_id, username, display_name, fan_subscription_enabled, fan_subscription_price_cents, is_active')
       .eq('id', creatorProfileId)
-      .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
-    if (cpErr || !creatorProfile) return jsonError('Creator profile not found', 404, corsHeaders);
+    if (cpErr || !creatorProfile) return jsonError('Creator profile not found', 404, cors);
+    if (!creatorProfile.is_active) return jsonError('Creator profile not active', 400, cors);
     if (!creatorProfile.fan_subscription_enabled) {
-      return jsonError('Subscriptions are disabled for this creator', 400, corsHeaders);
+      return jsonError('Subscriptions are disabled for this creator', 400, cors);
     }
     if (creatorProfile.user_id === user.id) {
-      return jsonError('Creators cannot subscribe to themselves', 400, corsHeaders);
+      return jsonError('Creators cannot subscribe to themselves', 400, cors);
     }
 
-    const priceCents: number = creatorProfile.fan_subscription_price_cents || 500;
-    if (priceCents < 500 || priceCents > 10000) {
-      return jsonError('Invalid subscription price', 400, corsHeaders);
+    const priceCents: number = creatorProfile.fan_subscription_price_cents;
+    if (!priceCents || priceCents < 500 || priceCents > 10000) {
+      return jsonError('Invalid subscription price', 400, cors);
     }
 
     // ── Short-circuit if fan already has an active, unexpired sub ──────────
-    const { data: existing } = await supabaseAdmin
+    const { data: existing } = await sb
       .from('fan_creator_subscriptions')
       .select('id, status, period_end')
       .eq('fan_id', user.id)
@@ -125,13 +109,13 @@ serve(async (req) => {
       existing.period_end &&
       new Date(existing.period_end) > new Date()
     ) {
-      return jsonOk({ alreadySubscribed: true, subscription_id: existing.id }, corsHeaders);
+      return jsonOk({ alreadySubscribed: true, subscription_id: existing.id }, cors);
     }
 
     // ── Reuse pending/past row OR create a fresh pending row ───────────────
     let subId = existing?.id ?? null;
     if (!subId) {
-      const { data: inserted, error: insErr } = await supabaseAdmin
+      const { data: inserted, error: insErr } = await sb
         .from('fan_creator_subscriptions')
         .insert({
           fan_id: user.id,
@@ -144,35 +128,37 @@ serve(async (req) => {
         .select('id')
         .single();
       if (insErr || !inserted) {
-        console.error('Error creating pending fan subscription', insErr);
-        return jsonError('Unable to start subscription checkout', 500, corsHeaders);
+        console.error('[create-fan-subscription-checkout] insert failed', insErr);
+        return jsonError('Unable to start subscription checkout', 500, cors);
       }
       subId = inserted.id;
     } else if (existing && existing.status !== 'pending') {
       // Reset the reused row so the next checkout is clean.
-      await supabaseAdmin
+      await sb
         .from('fan_creator_subscriptions')
         .update({ status: 'pending', price_cents: priceCents })
         .eq('id', subId);
     }
 
-    // ── Build QuickPay subscription form fields ────────────────────────────
-    const merchantReference = `fsub_${subId}`;
+    // ── Route MID + build QuickPay form fields ─────────────────────────────
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
     const amountDecimal = (priceCents / 100).toFixed(2);
     const displayName = creatorProfile.display_name || creatorProfile.username || 'creator';
     const creatorHandle = creatorProfile.username || '';
+    const merchantReference = `fsub_${subId}`;
 
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
       AmountTotal: amountDecimal,
       CurrencyID: 'USD',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
-      MembershipRequired: 'true',
-      ShowUserNamePassword: 'false',
-      MembershipUsername: subId!,              // uuid, matched on every postback
-      SubscriptionPlanId: fanSubPlanId,         // variable-price plan (configured with Derek)
+      MembershipRequired: 'false',
+      // IsInitialForRecurring tags this TID as rebill-eligible.
+      // Our cron calls /recurringtransactions on this TID every 30 days.
+      IsInitialForRecurring: 'true',
       'ItemName[0]': `Subscribe to ${displayName}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
@@ -181,21 +167,18 @@ serve(async (req) => {
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?subscribe_failed=1`,
       MerchantReference: merchantReference,
-      Email: user.email || '',
+      Email: user.email ?? '',
     };
 
-    // Persist the ugp username + merchant ref on the row for later cancel ops / reconciliation.
-    await supabaseAdmin
+    // Persist the merchant reference on the row for reconciliation.
+    await sb
       .from('fan_creator_subscriptions')
-      .update({
-        ugp_membership_username: subId,
-        ugp_merchant_reference: merchantReference,
-      })
+      .update({ ugp_merchant_reference: merchantReference })
       .eq('id', subId);
 
-    return jsonOk({ fields, subscription_id: subId }, corsHeaders);
+    return jsonOk({ fields, subscription_id: subId, mid: midKey }, cors);
   } catch (err) {
-    console.error('Error in create-fan-subscription-checkout:', err);
-    return jsonError('Unable to start subscription checkout', 500, corsHeaders);
+    console.error('[create-fan-subscription-checkout] unhandled error:', err);
+    return jsonError('Unable to start subscription checkout', 500, cors);
   }
 });

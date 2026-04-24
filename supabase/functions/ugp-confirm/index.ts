@@ -807,7 +807,7 @@ async function handleFanSubscription(subscriptionId: string, body: Record<string
     .from('fan_creator_subscriptions')
     .select('id, fan_id, creator_profile_id, status, price_cents, period_end')
     .eq('id', subscriptionId)
-    .single();
+    .maybeSingle();
 
   if (fetchErr || !sub) {
     console.error('Fan subscription not found:', subscriptionId, fetchErr);
@@ -822,15 +822,20 @@ async function handleFanSubscription(subscriptionId: string, body: Record<string
 
   const now = new Date();
   const periodEnd = new Date(now);
-  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30); // 30-day cycle; membership-confirm extends on Rebill
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30); // 30-day cycle; rebill cron extends on each renewal
+
+  const mid = midFromSiteId(body.SiteID ?? '');
 
   const updatePayload: Record<string, unknown> = {
     status: 'active',
     period_start: now.toISOString(),
     period_end: periodEnd.toISOString(),
-    ugp_transaction_id: body.TransactionID,
-    ugp_merchant_reference: body.MerchantReference,
+    next_rebill_at: periodEnd.toISOString(),
+    ugp_transaction_id: body.TransactionID ?? null,
+    ugp_merchant_reference: body.MerchantReference ?? null,
+    ugp_mid: mid,
     cancel_at_period_end: false,
+    suspended_at: null,
   };
   // Only stamp started_at on first activation
   if (sub.status === 'pending' || !sub.status) {
@@ -847,7 +852,7 @@ async function handleFanSubscription(subscriptionId: string, body: Record<string
     return;
   }
 
-  console.log('Fan subscription activated:', subscriptionId, 'period_end=', periodEnd.toISOString());
+  console.log(`Fan sub activated: ${subscriptionId} amount=${sub.price_cents} period_end=${periodEnd.toISOString()}`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
