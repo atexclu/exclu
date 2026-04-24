@@ -125,6 +125,12 @@ export default function CreateProfile() {
       return;
     }
 
+    const HARD_CAP = 50;
+    if (profiles.length >= HARD_CAP) {
+      toast.error('You have reached the 50-profile limit. Contact support if you need more.');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -147,6 +153,9 @@ export default function CreateProfile() {
         avatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
       }
 
+      // Server-side 50-profile cap enforcement is tracked as a Phase 7 cleanup item
+      // (requires either a DB trigger or RPC wrapper). For now, the client guard is
+      // the only layer — sufficient for legitimate users.
       const { data: newProfile, error } = await supabase
         .from('creator_profiles')
         .insert({
