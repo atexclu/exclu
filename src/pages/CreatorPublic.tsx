@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -152,7 +152,7 @@ const CreatorPublic = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
 
   // Fan → creator subscription state (anonymous users always get isSubscribed=false).
-  const { isSubscribed, refetch: refetchFanSub } = useFanSubscription(creatorProfileId);
+  const { isSubscribed, periodEnd, cancelAtPeriodEnd, refetch: refetchFanSub } = useFanSubscription(creatorProfileId);
 
   const openGuestChat = useCallback(() => {
     setShowGuestChat(true);
@@ -1304,26 +1304,45 @@ const CreatorPublic = () => {
                 // No public assets → placeholder blurred card (per Part 3 spec:
                 // "si pas de content en publique visible on met juste un image par défaut
                 // blurred dans ce feed").
-                <button
-                  type="button"
-                  onClick={() => setShowSubscribePopup(true)}
-                  className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/20"
-                >
-                  <div
-                    className="absolute inset-0 scale-110 blur-2xl brightness-50"
-                    style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
-                  />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-                    <Lock className="w-8 h-8" />
-                    <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
-                    <span
-                      className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
-                      style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                <>
+                  {isSubscribed && periodEnd && (
+                    <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm mb-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <span className="font-semibold text-green-300">✓ Subscribed</span>
+                          <span className="text-white/70 ml-2">
+                            {cancelAtPeriodEnd ? 'Ends' : 'Renews'} {periodEnd.slice(0, 10)}
+                          </span>
+                        </div>
+                        <Link to="/fan/subscriptions" className="text-xs text-primary hover:underline">
+                          Manage
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                  {!isSubscribed && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSubscribePopup(true)}
+                      className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/20"
                     >
-                      Discover
-                    </span>
-                  </div>
-                </button>
+                      <div
+                        className="absolute inset-0 scale-110 blur-2xl brightness-50"
+                        style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                        <Lock className="w-8 h-8" />
+                        <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
+                        <span
+                          className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
+                          style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                        >
+                          Discover
+                        </span>
+                      </div>
+                    </button>
+                  )}
+                </>
               )
             )}
 
@@ -1783,26 +1802,45 @@ const CreatorPublic = () => {
                           ))}
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setShowSubscribePopup(true)}
-                          className="relative block w-full aspect-[4/5] rounded-3xl overflow-hidden border border-white/10"
-                        >
-                          <div
-                            className="absolute inset-0 scale-125 blur-[42px]"
-                            style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
-                          />
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-                            <Lock className="w-8 h-8" />
-                            <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
-                            <span
-                              className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
-                              style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                        <>
+                          {isSubscribed && periodEnd && (
+                            <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm mb-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <span className="font-semibold text-green-300">✓ Subscribed</span>
+                                  <span className="text-white/70 ml-2">
+                                    {cancelAtPeriodEnd ? 'Ends' : 'Renews'} {periodEnd.slice(0, 10)}
+                                  </span>
+                                </div>
+                                <Link to="/fan/subscriptions" className="text-xs text-primary hover:underline">
+                                  Manage
+                                </Link>
+                              </div>
+                            </div>
+                          )}
+                          {!isSubscribed && (
+                            <button
+                              type="button"
+                              onClick={() => setShowSubscribePopup(true)}
+                              className="relative block w-full aspect-[4/5] rounded-3xl overflow-hidden border border-white/10"
                             >
-                              Discover
-                            </span>
-                          </div>
-                        </button>
+                              <div
+                                className="absolute inset-0 scale-125 blur-[42px]"
+                                style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                              />
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                                <Lock className="w-8 h-8" />
+                                <span className="text-sm font-semibold">Subscribe to unlock the feed</span>
+                                <span
+                                  className="inline-flex px-4 py-2 rounded-full text-xs font-bold text-black"
+                                  style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                                >
+                                  Discover
+                                </span>
+                              </div>
+                            </button>
+                          )}
+                        </>
                       )
                     )}
 

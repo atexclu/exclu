@@ -5,6 +5,8 @@ type State = {
   isSubscribed: boolean;
   fanId: string | null;
   subscriptionId: string | null;
+  periodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
 };
 
 /**
@@ -25,12 +27,12 @@ export function useFanSubscription(creatorProfileId: string | null) {
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !creatorProfileId) {
-        return { isSubscribed: false, fanId: null, subscriptionId: null };
+        return { isSubscribed: false, fanId: null, subscriptionId: null, periodEnd: null, cancelAtPeriodEnd: false };
       }
 
       const { data } = await supabase
         .from('fan_creator_subscriptions')
-        .select('id, status, period_end')
+        .select('id, status, period_end, cancel_at_period_end')
         .eq('fan_id', user.id)
         .eq('creator_profile_id', creatorProfileId)
         .in('status', ['active', 'cancelled'])
@@ -41,6 +43,8 @@ export function useFanSubscription(creatorProfileId: string | null) {
         isSubscribed: !!data,
         fanId: user.id,
         subscriptionId: data?.id ?? null,
+        periodEnd: data?.period_end ?? null,
+        cancelAtPeriodEnd: data?.cancel_at_period_end ?? false,
       };
     },
     staleTime: 30_000,
@@ -50,6 +54,8 @@ export function useFanSubscription(creatorProfileId: string | null) {
     isSubscribed: query.data?.isSubscribed ?? false,
     fanId: query.data?.fanId ?? null,
     subscriptionId: query.data?.subscriptionId ?? null,
+    periodEnd: query.data?.periodEnd ?? null,
+    cancelAtPeriodEnd: query.data?.cancelAtPeriodEnd ?? false,
     isLoading: query.isLoading,
     refetch: query.refetch,
   };
