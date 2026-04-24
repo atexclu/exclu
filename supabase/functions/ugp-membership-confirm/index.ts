@@ -16,10 +16,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
 // Plan IDs used to disambiguate creator-premium vs fan→creator subscriptions.
 // Creator plan id is the legacy one (defaults to '11027'); fan plan id is
 // provisioned with Derek and may be unset during rollout (we just skip fan handling then).
@@ -45,7 +45,6 @@ serve(async (req) => {
   }
 
   const action = body.Action || '';
-  const key = body.Key || '';
   const username = body.Username || ''; // This is the user.id we set as MembershipUsername
   const memberId = body.MemberId || '';
   const subscriptionPlanId = body.SubscriptionPlanId || '';
@@ -54,9 +53,24 @@ serve(async (req) => {
 
   console.log(`Membership postback: action=${action} username=${username} memberId=${memberId} planId=${subscriptionPlanId}`);
 
-  // Verify Key (only reject if both confirmKey is set AND Key is provided but mismatched)
-  if (confirmKey && key && key !== confirmKey) {
-    console.error('Invalid Key in membership postback');
+  // ── Mandatory per-MID Key validation ─────────────────────────────────
+  const siteId = String(body?.SiteID ?? '');
+  const midKey = midFromSiteId(siteId);
+
+  let expectedKey: string;
+  try {
+    expectedKey = getMidConfirmKey(midKey);
+  } catch (e) {
+    console.error('[ugp-membership-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
+    return new Response('Server misconfigured', { status: 503 });
+  }
+
+  if (String(body?.Key ?? '') !== expectedKey) {
+    console.error('[ugp-membership-confirm] Key mismatch', {
+      siteId,
+      midKey,
+      provided: String(body?.Key ?? '').slice(0, 8) + '...',
+    });
     return new Response('Unauthorized', { status: 401 });
   }
 

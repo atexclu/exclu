@@ -39,3 +39,16 @@ export function getMidCredentials(key: UgMidKey): UgMidCredentials {
   }
   return creds;
 }
+
+export function getMidConfirmKey(key: UgMidKey): string {
+  const env = key === 'us_2d' ? 'QUICKPAY_CONFIRM_KEY_US_2D' : 'QUICKPAY_CONFIRM_KEY_INTL_3D';
+  const value = Deno.env.get(env) ?? Deno.env.get('QUICKPAY_CONFIRM_KEY') ?? '';
+  if (!value) throw new Error(`Missing ${env}`);
+  return value;
+}
+
+// Given an inbound callback SiteID, find the matching MID.
+export function midFromSiteId(siteId: string): UgMidKey {
+  const us2d = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  return siteId && siteId === us2d ? 'us_2d' : 'intl_3d';
+}

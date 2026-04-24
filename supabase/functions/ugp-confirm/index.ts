@@ -16,11 +16,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
@@ -84,19 +84,31 @@ serve(async (req) => {
     return new Response('Bad request', { status: 400 });
   }
 
-  // ── 1. Log raw event ────────────────────────────────────────────────
-  const transactionId = body.TransactionID || '';
-  const merchantRef = body.MerchantReference || '';
-  const amount = body.Amount || '0';
+  // ── 1. Mandatory per-MID Key validation ─────────────────────────────
+  const siteId = String(body?.SiteID ?? '');
+  const midKey = midFromSiteId(siteId);
 
-  // ── 1. Verify Key if present (standard ConfirmURL callbacks don't include Key,
-  //       only Membership Postbacks do — so only validate when actually sent) ──
-  if (confirmKey && body.Key && body.Key !== confirmKey) {
-    console.error('Invalid Key in ConfirmURL callback. Got:', body.Key?.slice(0, 8) + '...');
+  let expectedKey: string;
+  try {
+    expectedKey = getMidConfirmKey(midKey);
+  } catch (e) {
+    console.error('[ugp-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
+    return new Response('Server misconfigured', { status: 503 });
+  }
+
+  if (String(body?.Key ?? '') !== expectedKey) {
+    console.error('[ugp-confirm] Key mismatch', {
+      siteId,
+      midKey,
+      provided: String(body?.Key ?? '').slice(0, 8) + '...',
+    });
     return new Response('Unauthorized', { status: 401 });
   }
 
   // ── 2. Log raw event (after key validation) ─────────────────────────
+  const transactionId = body.TransactionID || '';
+  const merchantRef = body.MerchantReference || '';
+  const amount = body.Amount || '0';
   try {
     await supabase.from('payment_events').insert({
       transaction_id: transactionId,

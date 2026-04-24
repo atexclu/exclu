@@ -14,10 +14,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -45,6 +45,27 @@ serve(async (req) => {
 
   console.log(`Listener event: state=${transactionState} txn=${transactionId} ref=${merchantRef} amount=${amount}`);
 
+  // ── Mandatory per-MID Key validation (before any DB write) ───────────
+  const siteId = String(body?.SiteID ?? '');
+  const midKey = midFromSiteId(siteId);
+
+  let expectedKey: string;
+  try {
+    expectedKey = getMidConfirmKey(midKey);
+  } catch (e) {
+    console.error('[ugp-listener] Missing confirm key env var', { midKey, error: (e as Error).message });
+    return new Response('Server misconfigured', { status: 503 });
+  }
+
+  if (String(body?.Key ?? '') !== expectedKey) {
+    console.error('[ugp-listener] Key mismatch', {
+      siteId,
+      midKey,
+      provided: String(body?.Key ?? '').slice(0, 8) + '...',
+    });
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   // Log the event
   try {
     await supabase.from('payment_events').insert({
@@ -62,12 +83,6 @@ serve(async (req) => {
       console.log('Duplicate listener event, skipping');
       return new Response('OK', { status: 200 });
     }
-  }
-
-  // Verify Key only when actually present in payload (standard callbacks don't include Key)
-  if (confirmKey && body.Key && body.Key !== confirmKey) {
-    console.error('Invalid Key in listener callback');
-    return new Response('Unauthorized', { status: 401 });
   }
 
   try {
