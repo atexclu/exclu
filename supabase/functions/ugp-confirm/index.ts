@@ -30,8 +30,12 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function parseMerchantRef(ref: string): { type: string; id: string } | null {
+function parseMerchantRef(ref: string): { type: string; id: string; subPlan?: 'monthly' | 'annual' } | null {
   if (!ref) return null;
+  // sub_monthly_<uuid> or sub_annual_<uuid> (new Phase 4 format)
+  const subMatch = ref.match(/^sub_(monthly|annual)_(.+)$/);
+  if (subMatch) return { type: 'sub', subPlan: subMatch[1] as 'monthly' | 'annual', id: subMatch[2] };
+  // Legacy: sub_<uuid>, link_<uuid>, tip_<uuid>, gift_<uuid>, req_<uuid>, fsub_<uuid>
   const idx = ref.indexOf('_');
   if (idx === -1) return null;
   return { type: ref.slice(0, idx), id: ref.slice(idx + 1) };
@@ -237,7 +241,7 @@ serve(async (req) => {
         await handleRequest(parsed.id, body, transactionState);
         break;
       case 'sub':
-        await handleSubscription(parsed.id, body);
+        await handleSubscription(parsed.id, body, parsed.subPlan ?? 'monthly');
         break;
       case 'fsub':
         await handleFanSubscription(parsed.id, body);
@@ -748,38 +752,45 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
 // Note: Renewals go to ugp-membership-confirm via Member Postback URL
 // ══════════════════════════════════════════════════════════════════════════
 
-async function handleSubscription(userId: string, body: Record<string, string>) {
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, is_creator_subscribed')
-    .eq('id', userId)
-    .single();
-
+async function handleSubscription(userId: string, body: Record<string, string>, subPlan: 'monthly' | 'annual' = 'monthly') {
+  const { data: profile } = await supabase.from('profiles')
+    .select('id, subscription_plan')
+    .eq('id', userId).single();
   if (!profile) {
     console.error('Profile not found for subscription:', userId);
     return;
   }
 
-  const wasSubscribed = profile.is_creator_subscribed;
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+  const now = new Date();
+  const periodEnd = new Date(now);
+  if (subPlan === 'annual') periodEnd.setUTCDate(periodEnd.getUTCDate() + 365);
+  else periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
 
-  const updatePayload: Record<string, unknown> = {
+  // MID: infer from SiteID on the callback — the SiteID unambiguously identifies the MID.
+  const siteIdFromCallback = body.SiteID || '';
+  const us2dSite = Deno.env.get('QUICKPAY_SITE_ID_US_2D') || '';
+  const mid = siteIdFromCallback && siteIdFromCallback === us2dSite ? 'us_2d' : 'intl_3d';
+
+  await supabase.from('profiles').update({
     is_creator_subscribed: true,
-  };
+    subscription_plan: subPlan,
+    subscription_ugp_transaction_id: body.TransactionID || null,
+    subscription_mid: mid,
+    subscription_amount_cents: amountCents,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: periodEnd.toISOString(),
+    subscription_cancel_at_period_end: false,
+    subscription_suspended_at: null,
+    show_join_banner: false,
+    show_certification: true,
+    show_deeplinks: true,
+    show_available_now: true,
+  }).eq('id', userId);
 
-  // First-time subscription flags
-  if (!wasSubscribed) {
-    updatePayload.show_join_banner = false;
-    updatePayload.show_certification = true;
-    updatePayload.show_deeplinks = true;
-    updatePayload.show_available_now = true;
-  }
-
-  await supabase.from('profiles').update(updatePayload).eq('id', userId);
-
-  // Referral commission (35% of $39.99 = 1400 cents)
   await creditReferralCommission(userId);
 
-  console.log('Subscription activated:', userId, wasSubscribed ? '(renewal)' : '(first-time)');
+  console.log(`Creator sub activated: ${userId} plan=${subPlan} amount=${amountCents} period_end=${periodEnd.toISOString()}`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
