@@ -684,13 +684,12 @@ const CreatorPublic = () => {
   };
 
   const handleRequestCta = () => {
-    // Guests can't send custom requests — send them to fan signup with the
-    // creator pre-linked so the creator is auto-added to their favorites
-    // after signup/email confirmation.
-    if (!currentFanId) {
-      if (isCreatorAccount) {
-        toast.info('You need a fan account to send requests. Please sign up as a fan.');
-      }
+    // Creators can't send requests to other creators — bounce to fan signup.
+    // Anonymous fans CAN now send requests: the modal asks for their email
+    // and they pay immediately (pre-auth). An account is created in the
+    // background; they can claim it later via the delivery email.
+    if (isCreatorAccount) {
+      toast.info('You need a fan account to send requests. Please sign up as a fan.');
       navigate(`/fan/signup?creator=${handle}`);
       return;
     }
@@ -841,14 +840,17 @@ const CreatorPublic = () => {
       return;
     }
 
-    // Guest validation
+    // Guest validation — email required, password OPTIONAL.
+    // Backend auto-generates a random password when omitted so the fan
+    // doesn't need to create an account upfront. They can claim it later
+    // via the delivery email.
     if (!currentFanId) {
       if (!requestEmail || !requestEmail.includes('@')) {
         toast.error('Please enter your email address');
         return;
       }
-      if (requestEmailExists === false && (!requestPassword || requestPassword.length < 6)) {
-        toast.error('Please enter a password (min 6 characters) to create your account');
+      if (requestPassword && requestPassword.length > 0 && requestPassword.length < 6) {
+        toast.error('Password must be at least 6 characters if you set one');
         return;
       }
     }
@@ -2368,15 +2370,22 @@ const CreatorPublic = () => {
                   className="overflow-hidden"
                 >
                   <div className="space-y-1.5">
-                    <p className="text-xs text-white/50">Create a password for your account</p>
+                    <p className="text-xs text-white/50">
+                      Password{' '}
+                      <span className="text-white/30 font-normal">(optional — skip to continue as guest)</span>
+                    </p>
                     <Input
                       type="password"
                       value={requestPassword}
                       onChange={(e) => setRequestPassword(e.target.value)}
-                      placeholder="Min 6 characters"
+                      placeholder="Leave empty to continue as guest"
                       className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
                     />
-                    <p className="text-[10px] text-white/40">An account will be created so you can track your request</p>
+                    <p className="text-[10px] text-white/40">
+                      {requestPassword
+                        ? 'Your account will be created with this password.'
+                        : 'No account needed. We\'ll email you when the creator delivers your request, with a link to claim your account if you want to continue the conversation.'}
+                    </p>
                   </div>
                 </motion.div>
               )}
@@ -2394,7 +2403,7 @@ const CreatorPublic = () => {
             <button
               type="button"
               onClick={handleRequestSubmit}
-              disabled={isRequestSubmitting || !requestDescription || !requestAmount || (!currentFanId && (!requestEmail || !requestEmail.includes('@') || isCheckingEmail || (requestEmailExists === false && (!requestPassword || requestPassword.length < 6))))}
+              disabled={isRequestSubmitting || !requestDescription || !requestAmount || (!currentFanId && (!requestEmail || !requestEmail.includes('@') || isCheckingEmail || (!!requestPassword && requestPassword.length < 6)))}
               className="w-full h-12 rounded-2xl text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
               style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
             >

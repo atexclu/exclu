@@ -115,15 +115,29 @@ serve(async (req) => {
       if (existingUserId) {
         fanUserId = existingUserId;
       } else {
-        if (!fanPassword || fanPassword.length < 6) {
-          return jsonError('Password is required (min 6 characters) to create your account', 400, corsHeaders);
-        }
+        // Password is now OPTIONAL. When absent we still need to create a
+        // Supabase Auth user (to own the custom_requests row + to receive
+        // delivery emails) but we generate a random password the fan never
+        // knows. They can later claim the account via a password reset
+        // email triggered by the delivery notification's "claim account"
+        // CTA. This matches the user experience the client agreed to:
+        // "si le fan ne veut pas créer son compte on lui envoie un mail
+        // avec la custom" — the account exists as a carrier for the
+        // delivery but is effectively a guest record until they claim it.
+        const effectivePassword =
+          fanPassword && fanPassword.length >= 6
+            ? fanPassword
+            : crypto.randomUUID() + crypto.randomUUID();
 
         const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
           email: fanEmail!,
-          password: fanPassword,
+          password: effectivePassword,
           email_confirm: false,
-          user_metadata: { is_creator: false, favorite_creator: creatorId },
+          user_metadata: {
+            is_creator: false,
+            favorite_creator: creatorId,
+            created_via: fanPassword && fanPassword.length >= 6 ? 'custom_request' : 'custom_request_guest',
+          },
         });
 
         if (createErr || !newUser?.user) {
