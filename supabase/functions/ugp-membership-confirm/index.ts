@@ -7,11 +7,14 @@
  *   Action = 'Cancel'   → Subscription cancelled
  *   Action = 'Inactive' → Subscription deactivated
  *
+ * Handles legacy plan 11027 creator Pro postbacks and fan→creator subscription
+ * postbacks. New creators go through rebill-subscriptions cron (Phase 4 Task 4.3)
+ * which bills base + extras at source — no wallet debit needed here.
+ *
  * Handles:
  *   - Activating/deactivating premium status
  *   - First-time subscription flags (certification, deeplinks, etc.)
  *   - Referral commission (35% of $39.99 at each renewal)
- *   - Multi-profile addon charges (debit wallet for extra profiles)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -160,17 +163,6 @@ async function handleActivation(userId: string, memberId: string, action: string
   // ── Referral commission (35% of $39.99 = 1400 cents) ──────────────
   await creditReferralCommission(userId);
 
-  // ── Multi-profile addon charge (at each renewal) ──────────────────
-  // DEPRECATED 2026-04-23 — Phase 4 Task 4.9: legacy plan 11027 subscribers have
-  // been migrated to server-driven /recurringtransactions. Member postbacks no
-  // longer need to debit wallets for addon charges (the new rebill cron bills
-  // the full amount, base + extras, at source). Safe to leave no-op until
-  // Phase 7 removes the helper entirely.
-  // await chargeProfileAddons(userId);
-  if (action === 'Rebill') {
-    // no-op — see deprecation note above
-  }
-
   console.log(`Subscription ${action}:`, userId);
 }
 
@@ -224,69 +216,6 @@ async function creditReferralCommission(subscriberId: string) {
   }
 
   console.log('Referral commission:', referral.referrer_id, '+', commissionCents, 'cents');
-}
-
-// ── Multi-profile addon charges ──────────────────────────────────────────
-
-async function chargeProfileAddons(userId: string) {
-  const { data: profiles } = await supabase
-    .from('creator_profiles')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_active', true);
-
-  const profileCount = profiles?.length || 1;
-  const includedProfiles = 2;
-  const extraProfiles = Math.max(0, profileCount - includedProfiles);
-  const addonCents = extraProfiles * 1000; // $10 per extra profile
-
-  if (addonCents <= 0) return;
-
-  console.log(`Addon charge: ${extraProfiles} extra profiles = ${addonCents} cents for user ${userId}`);
-
-  try {
-    await supabase.rpc('debit_creator_wallet', {
-      p_creator_id: userId,
-      p_amount_cents: addonCents,
-    });
-
-    await supabase.from('addon_charges').insert({
-      creator_id: userId,
-      amount_cents: addonCents,
-      profile_count: profileCount,
-      extra_profiles: extraProfiles,
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      status: 'charged',
-      charged_at: new Date().toISOString(),
-    });
-
-    console.log('Addon charge successful:', userId, addonCents, 'cents');
-  } catch (err) {
-    console.error('Addon charge failed (insufficient wallet?):', err);
-
-    await supabase.from('addon_charges').insert({
-      creator_id: userId,
-      amount_cents: addonCents,
-      profile_count: profileCount,
-      extra_profiles: extraProfiles,
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      status: 'failed',
-    });
-
-    // Send warning email to creator
-    const { data: creatorAuth } = await supabase.auth.admin.getUserById(userId);
-    if (creatorAuth?.user?.email) {
-      const { sendBrevoEmail, formatUSD } = await import('../_shared/brevo.ts');
-      await sendBrevoEmail({
-        to: creatorAuth.user.email,
-        subject: `⚠️ Profile addon charge failed — ${formatUSD(addonCents)}`,
-        htmlContent: `<p>Your monthly addon charge of <strong>${formatUSD(addonCents)}</strong> for ${extraProfiles} additional profile(s) could not be deducted from your wallet.</p>
-          <p>Please add funds to your wallet to avoid service interruption.</p>`,
-      });
-    }
-  }
 }
 
 // ── FAN → CREATOR SUBSCRIPTION HANDLERS ─────────────────────────────────
