@@ -309,7 +309,7 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
 
   // Conversation revenue tracking
   // Track conversation revenue using base price (without fan processing fee)
-  const basePriceCents = Math.round(purchase.amount_cents / 1.05);
+  const basePriceCents = Math.round(purchase.amount_cents / 1.15);
   if (purchase.chat_conversation_id && basePriceCents > 0) {
     try {
       await supabase.rpc('increment_conversation_revenue', {
@@ -415,9 +415,9 @@ async function handleTip(tipId: string, body: Record<string, string>) {
 
   // Fallback: recalculate if not pre-stored (e.g. legacy records)
   if (!creatorNet && tip.amount_cents > 0) {
-    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
     const platformCommission = Math.round(tip.amount_cents * commissionRate);
-    const fanFee = Math.round(tip.amount_cents * 0.05);
+    const fanFee = Math.round(tip.amount_cents * 0.15);
     creatorNet = tip.amount_cents - platformCommission;
     totalPlatformFee = platformCommission + fanFee;
   }
@@ -505,9 +505,9 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     .eq('id', gift.creator_id)
     .single();
 
-  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
   const platformCommission = Math.round(gift.amount_cents * commissionRate);
-  const fanFee = Math.round(gift.amount_cents * 0.05);
+  const fanFee = Math.round(gift.amount_cents * 0.15);
   const creatorNet = gift.amount_cents - platformCommission;
   const totalPlatformFee = platformCommission + fanFee;
 

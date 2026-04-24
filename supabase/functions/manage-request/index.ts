@@ -113,7 +113,7 @@ serve(async (req) => {
 
       // Capture the pre-authorized payment via UGPayments API
       const amountCents = request.proposed_amount_cents;
-      const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+      const fanProcessingFeeCents = Math.round(amountCents * 0.15);
       const totalFanPaysCents = amountCents + fanProcessingFeeCents;
       const captureAmountDecimal = totalFanPaysCents / 100;
 
@@ -169,7 +169,7 @@ serve(async (req) => {
         chatterEarningsCents = Math.round(amountCents * 0.25);
         totalPlatformFee = Math.round(amountCents * 0.15) + fanProcessingFeeCents;
       } else {
-        const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
+        const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.15;
         const platformCommissionCents = Math.round(amountCents * commissionRate);
         creatorNetCents = amountCents - platformCommissionCents;
         totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
@@ -271,7 +271,7 @@ serve(async (req) => {
           // If void fails, try refund (for Sale transactions that can't be voided)
           try {
             const { ugpRefund } = await import('../_shared/ugp-api.ts');
-            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.05)) / 100;
+            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.15)) / 100;
             await ugpRefund(request.ugp_transaction_id, refundAmount);
             console.log('UGP refund success (Sale → refund) for request:', requestId);
           } catch (refundErr) {

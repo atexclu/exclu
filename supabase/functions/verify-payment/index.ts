@@ -124,7 +124,7 @@ async function verifyLinkPurchase(recordId: string, transactionId: string, cors:
       await supabase.rpc('increment_chatter_earnings', { p_chatter_id: purchase.chat_chatter_id, p_amount_cents: purchase.chatter_earnings_cents });
     } catch (e) { console.error('Chatter credit error:', e); }
   }
-  const basePriceCents = Math.round(purchase.amount_cents / 1.05);
+  const basePriceCents = Math.round(purchase.amount_cents / 1.15);
   if (purchase.chat_conversation_id && basePriceCents > 0) {
     try { await supabase.rpc('increment_conversation_revenue', { p_conversation_id: purchase.chat_conversation_id, p_amount_cents: basePriceCents }); } catch (e) { console.error('Conv revenue error:', e); }
   }
@@ -163,9 +163,9 @@ async function verifyTip(recordId: string, transactionId: string, cors: Record<s
 
   if (!creatorNet && tip.amount_cents > 0) {
     const { data: creator } = await supabase.from('profiles').select('id, is_creator_subscribed').eq('id', tip.creator_id).single();
-    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
     const platformCommission = Math.round(tip.amount_cents * commissionRate);
-    const fanFee = Math.round(tip.amount_cents * 0.05);
+    const fanFee = Math.round(tip.amount_cents * 0.15);
     creatorNet = tip.amount_cents - platformCommission;
     totalPlatformFee = platformCommission + fanFee;
   }
@@ -201,9 +201,9 @@ async function verifyGift(recordId: string, transactionId: string, cors: Record<
 
   const { data: creator } = await supabase.from('profiles').select('id, is_creator_subscribed').eq('id', gift.creator_id).single();
 
-  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
   const platformCommission = Math.round(gift.amount_cents * commissionRate);
-  const fanFee = Math.round(gift.amount_cents * 0.05);
+  const fanFee = Math.round(gift.amount_cents * 0.15);
   const creatorNet = gift.amount_cents - platformCommission;
 
   await supabase.from('gift_purchases').update({
