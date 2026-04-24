@@ -2,11 +2,15 @@
 //
 // Thin wrapper around UG Payments' /recurringtransactions endpoint.
 //
-// We rebill QuickPay-originated Sales. Body follows the authoritative spec
-// Direct Rebilling 1.0 §SALE REBILL REQUEST:
-//   - TransactionID: the ORIGINAL Sale TID we want to rebill
-//   - Amount:        decimal-as-string, e.g. "39.00"
-//   - Currency:      ISO-4217, MUST match the original Sale's currency
+// Request body fields (verified via UG 400 validation response 2026-04-24):
+//   - SaleTransactionId: the ORIGINAL Sale TID (UG's validator calls this field
+//                        "Reference Transaction Id" in human form but expects
+//                        the JSON key `SaleTransactionId`). Do NOT use
+//                        `TransactionID` — UG silently ignores it and rejects
+//                        the request as `SaleTransactionId` null.
+//   - Amount:            decimal-as-string, e.g. "39.99"
+//   - Currency:          ISO-4217, MUST match the original Sale's currency
+//   - TrackingId:        echoed verbatim on the ListenerURL Recurring postback
 //
 // UG Payment confirmed (2026-04-20) there's no uniform card-expired reason code —
 // each issuer returns its own free-form message. Classification is binary
@@ -36,7 +40,7 @@ export async function rebillTransaction(
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {
-    TransactionID: referenceTransactionId,
+    SaleTransactionId: referenceTransactionId,
     Amount: (amountCents / 100).toFixed(2),
     Currency: 'USD',
     TrackingId: trackingId,
