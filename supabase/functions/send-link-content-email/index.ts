@@ -54,11 +54,18 @@ function isRateLimited(ip: string): boolean {
   return existing.count > RATE_LIMIT_MAX_REQUESTS;
 }
 
+// Mirrored from src/lib/contentAccess.ts (can't cross-import src/ into Deno).
+// Must stay in sync; if you touch either, touch both.
+function canAccessPurchasedLink(p: { status?: string } | null | undefined): boolean {
+  return !!p && p.status === 'succeeded';
+}
+
 interface Purchase {
   id: string;
   link_id: string;
   buyer_email: string | null;
   fan_email: string | null;
+  status: string;
 }
 
 interface LinkRow {
@@ -109,7 +116,7 @@ serve(async (req) => {
     // Find the purchase based on session id (legacy pre-UGP purchases)
     const { data: purchase, error: purchaseError } = await supabase
       .from('purchases')
-      .select('id, link_id, buyer_email, fan_email')
+      .select('id, link_id, buyer_email, fan_email, status')
       .eq('stripe_session_id', session_id)
       .maybeSingle<Purchase>();
 
@@ -117,6 +124,15 @@ serve(async (req) => {
       console.error('Purchase not found for session', session_id, purchaseError);
       return new Response(JSON.stringify({ error: 'Purchase not found' }), {
         status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Gate: only send email if purchase has succeeded.
+    if (!canAccessPurchasedLink(purchase)) {
+      console.warn('Email send refused — purchase not succeeded', purchase.id, purchase.status);
+      return new Response(JSON.stringify({ error: 'Purchase not completed' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

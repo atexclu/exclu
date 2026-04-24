@@ -4,6 +4,7 @@ import { PreCheckoutGate, isPreCheckoutReady, type PreCheckoutGateState } from '
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase, supabaseAnon } from '@/lib/supabaseClient';
+import { canAccessPurchasedLink } from '@/lib/contentAccess';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -145,7 +146,7 @@ async function verifyPurchase(
       .eq('id', purchaseId)
       .maybeSingle();
 
-    if (purchase?.status === 'succeeded') {
+    if (canAccessPurchasedLink(purchase)) {
       return purchase as PurchaseData;
     }
 
