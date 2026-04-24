@@ -59,74 +59,67 @@ function SortableItem({ link, onToggle, isSelected, onSelect }: SortableItemProp
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const priceLabel = `${(link.price_cents / 100).toFixed(2)} ${link.currency}`;
+  const priceLabel = `$${(link.price_cents / 100).toFixed(2)}`;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative rounded-xl border transition-all ${
-        isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/50'
-      } ${isSelected ? 'border-primary bg-primary/5' : 'border-border bg-card'} ${!link.show_on_profile ? 'opacity-60' : ''} p-4`}
+      className={`group relative rounded-2xl border p-3 transition-all ${
+        isDragging ? 'shadow-xl ring-2 ring-[#CFFF16]' : 'hover:border-[#CFFF16]/40'
+      } ${isSelected ? 'border-[#CFFF16]/50 bg-[#CFFF16]/5' : 'border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10]'} ${!link.show_on_profile ? 'opacity-60' : ''}`}
     >
+      {/* Top row — drag · preview tile · title · select checkbox */}
       <div className="flex items-center gap-3">
-        {/* Checkbox for selection */}
-        <button
-          onClick={() => onSelect(link.id)}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Select link"
-        >
-          {isSelected ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5" />}
-        </button>
-        {/* Drag Handle */}
         <button
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center justify-center w-5 cursor-grab active:cursor-grabbing text-foreground/30 dark:text-white/30 hover:text-[#CFFF16] transition-colors flex-shrink-0 self-stretch"
           aria-label="Drag to reorder"
         >
-          <GripVertical className="w-5 h-5" />
+          <GripVertical className="w-4 h-4" />
         </button>
 
-        {/* Lock Icon */}
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
-          <Lock className="w-5 h-5" />
+        {/* Lime preview tile with lock + price */}
+        <div className="relative w-14 h-14 flex-shrink-0 overflow-hidden rounded-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#CFFF16]/25 via-[#CFFF16]/10 to-[#CFFF16]/5" />
+          <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(207,255,22,0.3),transparent_60%)]" />
+          <div className="relative h-full flex flex-col items-center justify-center gap-0.5">
+            <Lock className="w-4 h-4 text-[#4a6304] dark:text-[#CFFF16]" />
+            <span className="text-[9px] font-bold text-[#4a6304] dark:text-[#CFFF16] tabular-nums tracking-tight">{priceLabel}</span>
+          </div>
         </div>
 
-        {/* Link Info */}
+        {/* Title only — wraps on 2 lines */}
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-semibold text-foreground truncate">{link.title}</h4>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-bold text-primary">{priceLabel}</span>
-            {link.description && (
-              <>
-                <span className="text-xs text-muted-foreground">•</span>
-                <span className="text-xs text-muted-foreground truncate">{link.description}</span>
-              </>
-            )}
-          </div>
+          <h4 className="text-sm sm:text-[15px] font-semibold text-foreground dark:text-white leading-snug line-clamp-2">
+            {link.title}
+          </h4>
         </div>
 
-        {/* Visibility Toggle */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-            {link.show_on_profile ? (
-              <>
-                <Eye className="w-3.5 h-3.5" />
-                <span>Visible</span>
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>Hidden</span>
-              </>
-            )}
-          </div>
-          <Switch
-            checked={link.show_on_profile}
-            onCheckedChange={(checked) => onToggle(link.id, checked)}
-          />
-        </div>
+        {/* Selection checkbox — subtle, right edge */}
+        <button
+          onClick={() => onSelect(link.id)}
+          className="flex-shrink-0 text-foreground/30 dark:text-white/30 hover:text-foreground dark:hover:text-white transition-colors"
+          aria-label="Select link"
+        >
+          {isSelected ? <CheckSquare className="w-4 h-4 text-[#CFFF16]" /> : <Square className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Bottom row — visibility switch */}
+      <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/10 flex items-center justify-between">
+        <span className="text-[11px] font-medium text-foreground/70 dark:text-white/70 inline-flex items-center gap-1.5">
+          {link.show_on_profile ? (
+            <><Eye className="w-3 h-3 text-[#4a6304] dark:text-[#CFFF16]" /> Visible on your profile</>
+          ) : (
+            <><EyeOff className="w-3 h-3" /> Hidden</>
+          )}
+        </span>
+        <Switch
+          checked={link.show_on_profile}
+          onCheckedChange={(checked) => onToggle(link.id, checked)}
+        />
       </div>
     </div>
   );
@@ -216,71 +209,64 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
   const hiddenCount = links.length - visibleCount;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Eye className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs font-medium text-muted-foreground">Visible</span>
+            <Eye className="w-4 h-4 text-[#CFFF16]" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/60 dark:text-white/60">Visible</span>
           </div>
-          <p className="text-2xl font-bold text-foreground">{visibleCount}</p>
+          <p className="text-2xl font-bold text-foreground dark:text-white tabular-nums">{visibleCount}</p>
         </div>
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4">
           <div className="flex items-center gap-2 mb-1">
-            <EyeOff className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">Hidden</span>
+            <EyeOff className="w-4 h-4 text-foreground/50 dark:text-white/50" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground/60 dark:text-white/60">Hidden</span>
           </div>
-          <p className="text-2xl font-bold text-foreground">{hiddenCount}</p>
+          <p className="text-2xl font-bold text-foreground dark:text-white tabular-nums">{hiddenCount}</p>
         </div>
       </div>
 
       {/* Links List */}
       {links.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">Your Content Links</h3>
-            <p className="text-xs text-muted-foreground">Drag to reorder • Toggle to show/hide</p>
-          </div>
-
-          {/* Batch actions */}
-          {selectedIds.length > 0 && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/30">
-              <span className="text-sm font-medium text-primary">{selectedIds.length} selected</span>
-              <div className="flex gap-2 ml-auto">
-                <button
-                  onClick={() => handleBatchVisibility(true)}
-                  disabled={isUpdating}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
-                >
-                  <Eye className="w-3.5 h-3.5 inline mr-1" />
-                  Make Visible
-                </button>
-                <button
-                  onClick={() => handleBatchVisibility(false)}
-                  disabled={isUpdating}
-                  className="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-foreground text-xs font-medium transition-colors disabled:opacity-50"
-                >
-                  <EyeOff className="w-3.5 h-3.5 inline mr-1" />
-                  Hide
-                </button>
-                <button
-                  onClick={() => setSelectedIds([])}
-                  className="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-foreground text-xs font-medium transition-colors"
-                >
-                  Clear
-                </button>
+          {/* Batch actions + select-all (merged into a single compact bar) */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              onClick={handleSelectAll}
+              className="text-xs text-foreground/60 dark:text-white/60 hover:text-foreground dark:hover:text-white transition-colors font-medium"
+            >
+              {selectedIds.length === links.length ? 'Deselect all' : 'Select all'}
+            </button>
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#CFFF16]/10 border border-[#CFFF16]/30">
+                <span className="text-xs font-semibold text-[#4a6304] dark:text-[#CFFF16]">{selectedIds.length} selected</span>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => handleBatchVisibility(true)}
+                    disabled={isUpdating}
+                    className="px-2.5 py-1 rounded-full bg-[#CFFF16] hover:bg-[#bef200] text-black text-[11px] font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    <Eye className="w-3 h-3" /> Show
+                  </button>
+                  <button
+                    onClick={() => handleBatchVisibility(false)}
+                    disabled={isUpdating}
+                    className="px-2.5 py-1 rounded-full bg-foreground/10 dark:bg-white/10 hover:bg-foreground/15 dark:hover:bg-white/15 text-foreground dark:text-white text-[11px] font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    <EyeOff className="w-3 h-3" /> Hide
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds([])}
+                    className="px-2.5 py-1 rounded-full bg-foreground/10 dark:bg-white/10 hover:bg-foreground/15 dark:hover:bg-white/15 text-foreground dark:text-white text-[11px] font-semibold transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Select all button */}
-          <button
-            onClick={handleSelectAll}
-            className="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
-          >
-            {selectedIds.length === links.length ? 'Deselect All' : 'Select All'}
-          </button>
+            )}
+          </div>
 
           <DndContext
             sensors={sensors}

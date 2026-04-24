@@ -1,6 +1,7 @@
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { DollarSign, Users } from 'lucide-react';
+import { DollarSign, Users, Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface FanSubscriptionSectionProps {
   enabled: boolean;
@@ -31,15 +32,29 @@ export function FanSubscriptionSection({ enabled, priceCents, onUpdate }: FanSub
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">Fan subscription</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Let fans pay monthly to unlock your private feed. Cancel anytime — fans keep access until the end of the paid period.
-          </p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Fan subscription</h3>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full text-muted-foreground/70 hover:text-foreground transition-colors focus:outline-none"
+                  aria-label="About fan subscription"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="start" className="max-w-xs text-xs leading-relaxed">
+                <p className="font-semibold mb-1">Fan subscription</p>
+                <p className="text-muted-foreground">
+                  Let fans pay monthly to unlock your private feed. Cancel anytime — fans keep access until the end of the paid period.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <Switch
           checked={enabled}
@@ -48,7 +63,7 @@ export function FanSubscriptionSection({ enabled, priceCents, onUpdate }: FanSub
       </div>
 
       {enabled && (
-        <div className="space-y-2">
+        <div className="space-y-2 mt-4">
           <label className="text-xs font-medium text-foreground block">Monthly price (USD)</label>
           <div className="relative">
             <DollarSign className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />

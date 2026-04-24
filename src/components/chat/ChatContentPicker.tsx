@@ -53,6 +53,7 @@ export function ChatContentPicker({ profileId, onSendAssets, onClose }: ChatCont
         .from('assets')
         .select('id, title, storage_path, mime_type, is_public')
         .eq('profile_id', profileId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(100);
 

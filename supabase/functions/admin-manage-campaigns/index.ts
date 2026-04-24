@@ -17,6 +17,9 @@
 //   cancel_campaign { id }            → flips status to cancelled; queued sends become skipped
 //
 //   list_recent_events { limit? }     → recent webhook events (for /admin/emails/logs)
+//   list_campaign_sends { id, status?, search?, offset?, limit? }
+//                                     → per-recipient send rows for a single campaign,
+//                                       used by the campaign detail "Recipients" panel
 //
 // All actions require an authenticated admin (profiles.is_admin = true).
 
@@ -520,6 +523,95 @@ async function handleListRecentEvents(
   return jsonOk({ events: data ?? [] }, cors);
 }
 
+// ------------------------------------------------------------------------
+// list_campaign_sends — per-recipient detail for one campaign.
+// Powers the "Recipients" panel in the admin campaign editor so ops can
+// see who has been contacted, who is still queued, and which addresses
+// bounced or failed, live while the campaign is sending.
+// ------------------------------------------------------------------------
+
+const SEND_STATUS_VALUES = [
+  "queued", "sending", "sent", "delivered", "opened", "clicked",
+  "bounced", "complained", "unsubscribed", "failed", "skipped", "retrying",
+] as const;
+type SendStatus = typeof SEND_STATUS_VALUES[number];
+
+async function handleListCampaignSends(
+  campaignId: string,
+  status: string | null,
+  search: string | null,
+  offset: number,
+  limit: number,
+  cors: Record<string, string>,
+): Promise<Response> {
+  if (!campaignId) return jsonError("id_required", 400, cors);
+
+  const lim = Math.max(1, Math.min(200, limit || 50));
+  const off = Math.max(0, offset || 0);
+
+  // Aggregate counts per status for the filter pills. Runs in parallel
+  // with the paginated page so the UI can render both in one round-trip.
+  // RPC aggregates server-side — fetching every row client-side would
+  // silently truncate at PostgREST's 1000-row max for large campaigns.
+  const statusCountsPromise = admin.rpc("campaign_send_status_counts", {
+    p_campaign_id: campaignId,
+  });
+
+  let query = admin
+    .from("email_campaign_sends")
+    .select(
+      "id, email, status, brevo_message_id, sent_at, last_event_at, " +
+      "error, retry_count, created_at, next_retry_at",
+      { count: "exact" },
+    )
+    .eq("campaign_id", campaignId);
+
+  if (status && (SEND_STATUS_VALUES as readonly string[]).includes(status)) {
+    query = query.eq("status", status as SendStatus);
+  }
+
+  if (search && search.trim().length > 0) {
+    const needle = search.trim().toLowerCase();
+    // ilike with wildcards on both sides for substring match on email.
+    query = query.ilike("email", `%${needle.replace(/[%_]/g, "")}%`);
+  }
+
+  // Terminal/in-flight first so ops see actionable rows at the top:
+  // queued → sending → sent → delivered → opened → clicked is effectively
+  // captured by ordering on created_at desc (drain processes oldest first
+  // so newest created rows are the still-queued ones for a live campaign).
+  // Then fall back to email for deterministic pagination on ties.
+  const { data, count, error } = await query
+    .order("created_at", { ascending: false })
+    .order("email", { ascending: true })
+    .range(off, off + lim - 1);
+
+  if (error) {
+    console.error("[list_campaign_sends] query failed", error);
+    return jsonError("sends_read_failed", 500, cors);
+  }
+
+  const { data: rpcCounts, error: sErr } = await statusCountsPromise;
+  if (sErr) {
+    console.error("[list_campaign_sends] status counts failed", sErr);
+  }
+  const statusCounts: Record<string, number> = Object.fromEntries(
+    SEND_STATUS_VALUES.map((k) => [k, 0]),
+  );
+  const rpcObj = (rpcCounts ?? {}) as Record<string, number>;
+  for (const [k, v] of Object.entries(rpcObj)) {
+    statusCounts[k] = Number(v) || 0;
+  }
+
+  return jsonOk({
+    sends: data ?? [],
+    total: count ?? 0,
+    offset: off,
+    limit: lim,
+    status_counts: statusCounts,
+  }, cors);
+}
+
 // ========================================================================
 // Helpers
 // ========================================================================
@@ -589,6 +681,15 @@ serve(async (req: Request) => {
       // Events / logs
       case "list_recent_events":
         return handleListRecentEvents(Number(body.limit) || 100, cors);
+      case "list_campaign_sends":
+        return handleListCampaignSends(
+          String(body.id ?? ""),
+          (body.status as string | null) ?? null,
+          (body.search as string | null) ?? null,
+          Number(body.offset) || 0,
+          Number(body.limit) || 50,
+          cors,
+        );
 
       default:
         return jsonError("unknown_action", 400, cors);

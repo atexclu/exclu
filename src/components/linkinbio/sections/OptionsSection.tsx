@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Crown, Palette, BadgeCheck, Smartphone, CircleDot, DollarSign, MessageSquare, Building2, Upload, X } from 'lucide-react';
+import { Crown, BadgeCheck, Smartphone, CircleDot, DollarSign, MessageSquare, Building2, Upload, X } from 'lucide-react';
 import { auroraGradients } from '@/lib/auroraGradients';
 
 interface OptionsSectionProps {
@@ -33,14 +33,6 @@ export function OptionsSection({ showJoinBanner, showCertification, showDeeplink
     <div className="space-y-6">
       {/* Profile Gradient Color */}
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Palette className="w-5 h-5 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Profile Color</h3>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Applies to the background animation, verified badge, exclusive content button, and link accents
-        </p>
-
         <div className="flex flex-wrap gap-4">
           {auroraGradients.map((gradient) => (
             <button

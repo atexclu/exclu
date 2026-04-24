@@ -125,6 +125,7 @@ export function FanFeedView({ userId }: { userId: string | null }) {
           .select('id, profile_id, creator_id, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
           .in('profile_id', profileIdArr)
           .eq('is_public', true)
+          .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .limit(200),
         creatorUserIdArr.length
@@ -134,6 +135,7 @@ export function FanFeedView({ userId }: { userId: string | null }) {
               .is('profile_id', null)
               .in('creator_id', creatorUserIdArr)
               .eq('is_public', true)
+              .is('deleted_at', null)
               .order('created_at', { ascending: false })
               .limit(200)
           : Promise.resolve({ data: [] as any[] }),

@@ -1,10 +1,10 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { User } from '@supabase/supabase-js';
-import { LogOut, LayoutDashboard } from 'lucide-react';
+import { LogOut, LayoutDashboard, Menu, X } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { useEffect, useState } from 'react';
@@ -20,6 +20,7 @@ interface NavbarProps {
 const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopContent, hideDashboard = false }: NavbarProps) => {
   const { resolvedTheme } = useTheme();
   const [sessionUser, setSessionUser] = useState<User | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (userProp) return;
@@ -29,6 +30,16 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
   }, [userProp]);
 
   const user = userProp ?? sessionUser;
+
+  // Close mobile menu when user scrolls or resizes to desktop
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onResize = () => {
+      if (window.innerWidth >= 768) setMobileMenuOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [mobileMenuOpen]);
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -54,6 +65,7 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
   ];
 
   const navLinks = variant === 'blog' ? blogLinks : landingLinks;
+  const showNavLinks = !centerContent;
 
   return (
     <motion.nav
@@ -74,8 +86,8 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
             <img src={resolvedTheme === 'light' ? logoBlack : logoWhite} alt="Exclu" className="h-7" />
           </motion.a>
 
-          {/* Navigation Links */}
-          {!user && !centerContent && (
+          {/* Navigation Links — desktop */}
+          {showNavLinks && (
             <div className="hidden md:flex items-center gap-8">
               {navLinks.map((link) => (
                 <a
@@ -122,7 +134,7 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
+                  className="hidden sm:inline-flex text-exclu-space hover:text-exclu-cloud hover:bg-black/5 dark:hover:bg-white/5"
                   onClick={handleSignOut}
                 >
                   <LogOut className="w-4 h-4 sm:mr-2" />
@@ -139,8 +151,113 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
                 </Button>
               </>
             )}
+
+            {/* Mobile menu trigger */}
+            {showNavLinks && (
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((v) => !v)}
+                aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={mobileMenuOpen}
+                className="md:hidden ml-1 inline-flex items-center justify-center w-9 h-9 rounded-xl border border-exclu-arsenic/40 bg-exclu-phantom/40 text-exclu-cloud hover:border-exclu-cloud/30 transition-colors"
+              >
+                <AnimatePresence initial={false} mode="wait">
+                  {mobileMenuOpen ? (
+                    <motion.span
+                      key="x"
+                      initial={{ rotate: -90, opacity: 0 }}
+                      animate={{ rotate: 0, opacity: 1 }}
+                      exit={{ rotate: 90, opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <X className="w-4 h-4" />
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="menu"
+                      initial={{ rotate: 90, opacity: 0 }}
+                      animate={{ rotate: 0, opacity: 1 }}
+                      exit={{ rotate: -90, opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Menu className="w-4 h-4" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Mobile dropdown panel */}
+        <AnimatePresence>
+          {mobileMenuOpen && showNavLinks && (
+            <>
+              <motion.button
+                type="button"
+                aria-label="Close menu"
+                onClick={() => setMobileMenuOpen(false)}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="md:hidden fixed inset-0 top-[72px] z-40 bg-black/40 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="md:hidden relative z-50 mt-2 glass-strong rounded-2xl overflow-hidden"
+              >
+                <ul className="py-2">
+                  {navLinks.map((link, i) => (
+                    <li key={link.href}>
+                      <a
+                        href={link.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center justify-between px-5 py-3 text-[15px] font-medium text-exclu-cloud hover:bg-white/5 transition-colors"
+                        style={{ animationDelay: `${i * 40}ms` }}
+                      >
+                        <span>{link.label}</span>
+                        <span className="text-exclu-space/50 text-xs">→</span>
+                      </a>
+                    </li>
+                  ))}
+                  {user && (
+                    <li className="border-t border-white/5 mt-1 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          handleSignOut();
+                        }}
+                        className="w-full flex items-center justify-between px-5 py-3 text-[15px] font-medium text-exclu-space hover:text-red-400 hover:bg-white/5 transition-colors"
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <LogOut className="w-4 h-4" />
+                          Sign out
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                  {!user && (
+                    <li className="border-t border-white/5 mt-1 pt-1">
+                      <a
+                        href="/auth"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center justify-between px-5 py-3 text-[15px] font-medium text-exclu-cloud hover:bg-white/5 transition-colors"
+                      >
+                        <span>Log in</span>
+                        <span className="text-exclu-space/50 text-xs">→</span>
+                      </a>
+                    </li>
+                  )}
+                </ul>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </motion.nav>
   );

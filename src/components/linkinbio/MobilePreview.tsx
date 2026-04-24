@@ -67,6 +67,9 @@ interface MobilePreviewProps {
   wishlistItems?: WishlistItem[];
   agencyName?: string | null;
   agencyLogoUrl?: string | null;
+  /** Controlled tab (if provided, the preview mirrors the editor). */
+  activeTab?: 'links' | 'content' | 'wishlist';
+  onActiveTabChange?: (tab: 'links' | 'content' | 'wishlist') => void;
 }
 
 
@@ -82,8 +85,13 @@ const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
   snapchat: { label: 'Snapchat', icon: <SiSnapchat className="w-4 h-4" /> },
 };
 
-export function MobilePreview({ data, links, isPremium = false, publicContent = [], wishlistItems = [], agencyName, agencyLogoUrl }: MobilePreviewProps) {
-  const [activeTab, setActiveTab] = React.useState<'links' | 'content' | 'wishlist'>('links');
+export function MobilePreview({ data, links, isPremium = false, publicContent = [], wishlistItems = [], agencyName, agencyLogoUrl, activeTab: controlledTab, onActiveTabChange }: MobilePreviewProps) {
+  const [uncontrolledTab, setUncontrolledTab] = React.useState<'links' | 'content' | 'wishlist'>('links');
+  const activeTab = controlledTab ?? uncontrolledTab;
+  const setActiveTab = (tab: 'links' | 'content' | 'wishlist') => {
+    if (onActiveTabChange) onActiveTabChange(tab);
+    else setUncontrolledTab(tab);
+  };
   const displayName = data.display_name || 'Your Name';
   const aurora = getAuroraGradient(data.aurora_gradient || 'purple_dream');
   const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
@@ -258,7 +266,7 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                             : 'text-white/50 hover:text-white/70'
                             }`}
                         >
-                          Content
+                          Feed
                           {activeTab === 'content' && (
                             <div className="absolute -bottom-[1px] left-0 right-0 h-[1.5px] rounded-full" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} />
                           )}
@@ -382,31 +390,73 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                     </div>
                   )}
 
-                  {/* Content Tab */}
+                  {/* Feed Tab — mirrors the public profile: vertical post list with author header + separator + Discovery strip */}
                   {activeTab === 'content' && publicContent.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        {publicContent.map((content: any) => {
-                          const isVideo = content.mime_type?.startsWith('video/');
-                          return (
-                            <div
-                              key={content.id}
-                              className="relative aspect-square rounded-xl overflow-hidden bg-white/10 backdrop-blur-sm border border-white/20"
-                            >
-                              {content.previewUrl ? (
-                                isVideo ? (
+                    <div className="pt-1">
+                      {publicContent.map((content: any, idx: number) => {
+                        const isVideo = content.mime_type?.startsWith('video/');
+                        const isPreview = content.is_feed_preview === true;
+                        const showUnblurred = isPreview;
+                        const src = showUnblurred
+                          ? (content.previewUrl || content.blurUrl)
+                          : (content.blurUrl || content.previewUrl);
+                        return (
+                          <div
+                            key={content.id}
+                            className={`${idx > 0 ? 'mt-3 pt-3 border-t border-white/10' : ''}`}
+                          >
+                            {/* Author header — same pattern as FeedPost (avatar + name + verified). */}
+                            <div className="flex items-center gap-1.5 pb-1.5 px-0.5">
+                              {data.avatar_url ? (
+                                <img
+                                  src={data.avatar_url}
+                                  alt={displayName}
+                                  className="w-5 h-5 rounded-full object-cover ring-1 ring-white/15 flex-shrink-0"
+                                />
+                              ) : (
+                                <div
+                                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ring-1 ring-white/15 flex-shrink-0"
+                                  style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                                >
+                                  {displayName.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="min-w-0 leading-tight">
+                                <div className="flex items-center gap-1">
+                                  <p className="text-[9px] font-semibold text-white truncate">{displayName}</p>
+                                  {data.show_certification !== false && (
+                                    <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 flex-shrink-0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <defs><linearGradient id={`mp-feed-badge-${data.aurora_gradient}`} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={gradientStops[0]} /><stop offset="100%" stopColor={gradientStops[1]} /></linearGradient></defs>
+                                      <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" fill={`url(#mp-feed-badge-${data.aurora_gradient})`} stroke={`url(#mp-feed-badge-${data.aurora_gradient})`} />
+                                      <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" fill="none" />
+                                    </svg>
+                                  )}
+                                </div>
+                                {data.handle && <p className="text-[8px] text-white/45 truncate">@{data.handle}</p>}
+                              </div>
+                            </div>
+
+                            {content.feed_caption && (
+                              <p className="text-[10px] text-white/85 leading-snug pb-1.5 px-0.5 whitespace-pre-wrap">
+                                {content.feed_caption}
+                              </p>
+                            )}
+
+                            <div className="relative aspect-[4/5] rounded-xl overflow-hidden border border-white/10 bg-black/40">
+                              {src ? (
+                                isVideo && showUnblurred ? (
                                   <video
-                                    src={content.previewUrl}
-                                    className="w-full h-full object-cover"
+                                    src={src}
+                                    className={`w-full h-full object-cover ${showUnblurred ? '' : 'blur-xl scale-110'}`}
                                     muted
                                     loop
                                     playsInline
                                   />
                                 ) : (
                                   <img
-                                    src={content.previewUrl}
+                                    src={src}
                                     alt={content.title}
-                                    className="w-full h-full object-cover"
+                                    className={`w-full h-full object-cover ${showUnblurred ? '' : 'blur-xl scale-110'}`}
                                   />
                                 )
                               ) : (
@@ -414,16 +464,61 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                                   <ImageIcon className="w-6 h-6 text-white/40" />
                                 </div>
                               )}
+
+                              {/* Locked overlay — identical copy to the public feed */}
+                              {!showUnblurred && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-gradient-to-b from-transparent via-black/20 to-black/55">
+                                  <div
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/40 backdrop-blur-xl"
+                                    style={{ boxShadow: `0 0 24px ${gradientStops[0]}55` }}
+                                  >
+                                    <Lock className="w-3.5 h-3.5 text-white" strokeWidth={1.5} />
+                                  </div>
+                                  <span className="text-[7px] font-semibold uppercase tracking-[0.25em] text-white/70">
+                                    Subscribers only
+                                  </span>
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[8px] font-bold text-black shadow"
+                                    style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                                  >
+                                    Subscribe to view
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                          );
-                        })}
+                          </div>
+                        );
+                      })}
+
+                      {/* Discovery strip — "You might also like" (visual placeholder, matches SuggestedCreatorsStrip) */}
+                      <div className="mt-5 pt-4 border-t border-white/10">
+                        <p className="text-[7px] font-semibold uppercase tracking-[0.25em] text-white/45 mb-0.5">Discovery</p>
+                        <p className="text-[11px] font-bold text-white mb-2">You might also like</p>
+                        <div className="flex gap-1.5 -mx-0.5 px-0.5 overflow-x-auto scrollbar-hide">
+                          {[0, 1, 2, 3].map((i) => (
+                            <div
+                              key={i}
+                              className="h-20 w-14 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 relative bg-white/5"
+                              style={{ background: `linear-gradient(135deg, ${gradientStops[0]}33, ${gradientStops[1]}33)` }}
+                            >
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                              <div
+                                className="absolute bottom-1 left-1 right-1 h-3 rounded-full flex items-center justify-center text-[6px] font-bold text-black"
+                                style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+                              >
+                                Discover
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
 
                   {activeTab === 'content' && publicContent.length === 0 && (
-                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">
-                      No public content yet
+                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-[10px] text-white/70 text-center">
+                      Your feed is empty. Make content public in{' '}
+                      <span className="font-semibold text-white">Content library</span> to fill it.
                     </div>
                   )}
 

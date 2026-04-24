@@ -1,4 +1,4 @@
-import { Lock, Play, DollarSign } from 'lucide-react';
+import { Lock, Play, DollarSign, BadgeCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 /**
@@ -29,11 +29,56 @@ export type FeedPostData =
       coverUrl: string | null;
     };
 
+export interface FeedAuthor {
+  displayName: string;
+  handle: string | null;
+  avatarUrl: string | null;
+  verified?: boolean;
+}
+
 interface FeedPostProps {
   post: FeedPostData;
   gradientStops: [string, string];
+  author?: FeedAuthor;
   onLockedClick: () => void;
   onLinkClick: (slug: string) => void;
+}
+
+/**
+ * Compact author strip above each post — avatar + display name + @handle.
+ * Mimics X / Instagram post headers but without like/comment actions.
+ */
+function AuthorHeader({ author, gradientStops }: { author: FeedAuthor; gradientStops: [string, string] }) {
+  const initial = (author.displayName || author.handle || '?').charAt(0).toUpperCase();
+  return (
+    <div className="flex items-center gap-2.5 px-1 pb-2.5">
+      <div className="relative flex-shrink-0">
+        {author.avatarUrl ? (
+          <img
+            src={author.avatarUrl}
+            alt={author.displayName}
+            className="w-9 h-9 rounded-full object-cover ring-1 ring-white/15"
+          />
+        ) : (
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ring-1 ring-white/15"
+            style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
+          >
+            {initial}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 leading-tight">
+        <div className="flex items-center gap-1">
+          <p className="text-[13px] font-semibold text-white truncate">{author.displayName}</p>
+          {author.verified && (
+            <BadgeCheck className="w-3.5 h-3.5 flex-shrink-0" style={{ color: gradientStops[0] }} strokeWidth={2.5} />
+          )}
+        </div>
+        {author.handle && <p className="text-[11px] text-white/45 truncate">@{author.handle}</p>}
+      </div>
+    </div>
+  );
 }
 
 // Subtle SVG noise overlay applied at low opacity — kills compression
@@ -41,7 +86,7 @@ interface FeedPostProps {
 const GRAIN_URL =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>\")";
 
-export function FeedPost({ post, gradientStops, onLockedClick, onLinkClick }: FeedPostProps) {
+export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkClick }: FeedPostProps) {
   // ── Paid-link variant — button wrapping a framed image card ──
   if (post.kind === 'link') {
     return (
@@ -51,7 +96,9 @@ export function FeedPost({ post, gradientStops, onLockedClick, onLinkClick }: Fe
         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         className="w-full"
       >
-        {/* Caption-style title above the card, like a post header */}
+        {author && <AuthorHeader author={author} gradientStops={gradientStops} />}
+
+        {/* Title + description — reads as post caption */}
         <div className="px-1 pb-2.5">
           <p className="text-[15px] leading-snug text-white font-medium line-clamp-2">{post.title}</p>
           {post.description && (
@@ -125,6 +172,8 @@ export function FeedPost({ post, gradientStops, onLockedClick, onLinkClick }: Fe
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="w-full"
     >
+      {author && <AuthorHeader author={author} gradientStops={gradientStops} />}
+
       {/* Caption above the card — reads like a social post */}
       {post.caption && (
         <p className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap">

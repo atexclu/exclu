@@ -13,6 +13,9 @@ import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 import { recordMarketingConsent } from '@/lib/recordConsent';
 
+const isValidEmail = (email: string) =>
+  /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
+
 interface CreatorPreview {
   id: string;
   display_name: string | null;
@@ -62,6 +65,11 @@ const FanSignup = () => {
 
     if (!email) {
       toast.error('Please enter your email');
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      toast.error('Please enter a valid email address');
       return;
     }
 

@@ -4,7 +4,7 @@
 
 **Goal:** Ship a reliable end-to-end payment pipeline on Exclu — country-based 2D/3D routing (US/CA → 2D, rest → 3D), full creator & fan subscription refactor driven by `/recurringtransactions` (no more fake wallet debits), pricing refonte (Free 15% / Pro 0%), and a Pro upgrade popup once per week.
 
-**Architecture:** Keep QuickPay for checkout (no PCI scope change), route to one of two MIDs based on fan billing country. Rebill subscriptions from our server via UG's Direct Rebilling API, so we fully control amount + cadence and can recharge any legit card without asking fans to re-enter it. Every wallet credit is strictly gated on a `state=Sale` (initial) or `state=Recurring` (rebill) ConfirmURL callback from UG — no more "verify = sale" pollution.
+**Architecture:** Keep QuickPay for checkout (no PCI scope change), route to one of two MIDs based on fan billing country. Rebill subscriptions from our server via UG's Direct Rebilling API, so we fully control amount + cadence and can recharge any legit card without asking fans to re-enter it. Initial Sales are confirmed via `ConfirmURL` (hosted-page callback); rebills are confirmed via the **synchronous JSON response** to `/recurringtransactions` AND an async `ListenerURL` postback with `TransactionState=Recurring` (per Derek 2026-04-20 — **the hosted-page `ConfirmURL` is NEVER invoked for server-initiated rebills**). No more "verify = sale" pollution; all credits are strictly gated on a `Successful` outcome on the correct event.
 
 **Tech Stack:** React 18 + TypeScript + Vite (frontend), Tailwind + shadcn/ui, Supabase (Postgres + Edge Functions in Deno), Vercel serverless + cron, UG Payments (QuickPay hosted for checkout, Direct Rebilling API for recurring), Brevo (emails).
 
@@ -46,15 +46,40 @@ creator + fan subscription flows:
 
 ## External Dependencies — Confirmed with Derek (2026-04-20)
 
-All 5 open questions answered. Derek is actively provisioning the new 2D US/CA MID; we start coding now and plug the credentials in when they arrive.
+Two rounds of questions answered. The key architectural clarification from the second round: **`ConfirmURL` is not invoked for server-initiated `/recurringtransactions` rebills** — only the synchronous JSON response and the `ListenerURL` postback carry rebill results. This moves the Recurring-state handler out of `ugp-confirm` and into `ugp-listener`. Every rebill-related task downstream reflects that.
+
+### Round 1 (original 5 questions) — still valid
 
 | Q | Topic | Answer | Plan impact |
 |---|---|---|---|
 | D1 | `/recurringtransactions` on QuickPay-originated TIDs | ✅ **Works — but ONLY on the original Sale TID**, never on a rebilled TID. For plan 11027 migration, we must FIRST cancel the UG-side plan enrollment (so UG stops its own $39 auto-rebill), THEN use the original Sale TID with `/recurringtransactions`. Cancelling the plan does NOT break rebill capability on the original TID. | Task 4.9 (migration) becomes: (a) cancel UG plan, (b) read original Sale TID from `payment_events`, (c) populate `subscription_ugp_transaction_id`. Always persist the ORIGINAL TID — never overwrite it with a rebilled one. |
-| D2 | New 2D US/CA MID returns its own credentials | ✅ **New `QuickPayToken`, new OAuth Bearer, new SiteID** (distinct from the existing `98845`). Derek will pre-configure the ConfirmURL / ListenerURL / Membership Postback URL on that MID to point at our existing endpoints. | Env var set per MID as planned — `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`. Plug in once Derek delivers. |
+| D2 | New 2D US/CA MID returns its own credentials | ✅ **New `QuickPayToken`, new OAuth Bearer, new SiteID** (distinct from the existing `98845`). Derek will pre-configure the ListenerURL / Membership Postback URL on that MID to point at our existing endpoints. **ConfirmURL is NOT server-configured — it is passed in the HTML form post per transaction.** | Env var set per MID as planned — `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`. Plug in once Derek delivers the Bearer — QuickPayToken + SiteID + MID already received 2026-04-20 afternoon (see §Credentials below). |
 | D3 | Card-expired `reasonCode` on rebill failures | ❌ **No uniform reason code.** Issuers return free-form messages ("insufficient funds", "expired card", etc.). We cannot reliably auto-detect "card expired" vs any other decline. | `ugRebill.ts` classification collapses to a single `declined` bucket. We retry N times on a schedule; after the final failure we suspend the subscription and email the creator/fan to update their card — same UX regardless of the underlying issuer message. |
 | D4 | TID portability across MIDs | ❌ **Not portable.** A TID can only rebill on the MID where the initial Sale was authenticated. | Plan keeps `subscription_mid` per row; rebill cron picks the right credentials per row. Unchanged. |
 | D5 | `/recurringtransactions` limits | ✅ **No UG-side limits** on amount or interval. Only the issuer's own response gates rebills. | Annual plan rebills 365 days later — no splitting needed. Our own sanity ceiling on the creator dashboard (min $5, max $100 for fan subs; fixed $39/$239.99 for Pro) is sufficient. |
+
+### Round 2 (afternoon 2026-04-20 — architectural clarifications)
+
+| Q | Topic | Answer | Plan impact |
+|---|---|---|---|
+| D6 | Where rebill events land | ❌ **`ConfirmURL` fires ONLY for customer-initiated transactions on the hosted payment page** (because the URL is passed in the HTML POST, not stored server-side). Server-initiated rebills (`/recurringtransactions`) do NOT hit ConfirmURL. Instead they fire: (1) immediate synchronous JSON response on the API call itself, (2) an async `ListenerURL` POST (`https://exclu.at/api/ugp-listener`) with `TransactionState=Recurring` — the **postback URL receives every Sale, Refund, Rebill, Void, Capture, CBK1 on the MID**. | **⚠️ Plan rewrite:** Task 4.5 moves from `ugp-confirm` to `ugp-listener`. All Recurring-state logic lives in `handleRecurring` inside the listener handler. `ugp-confirm` only handles customer-initiated events (`Sale` for link/tip/gift/sub initial, `Authorize` for requests). |
+| D7 | ConfirmURL retry SLA | ⏳ Derek checking with his dev team. No number yet. | Task 8.x (accounting) adds our own reconciliation cron that scans `payment_events` vs subscription/sale rows and alerts if drift > 10 min — our safety net regardless of UG's retry policy. |
+| D8 | `/recurringtransactions` idempotency | ❌ **No dedupe.** Two POSTs with the same TID + Amount charge TWICE. We must enforce our own single-in-flight lock. | Task 4.3 (rebill cron) gains an **advisory lock via unique constraint** on `rebill_attempts(subject_table, subject_id, billing_period_end)` — INSERT fails if a row exists for the same cycle. On conflict the cron skips (already rebilled or in-flight). |
+| D9 | TrackingId echo | ✅ **TrackingId passed in the rebill body is echoed back verbatim in the `ListenerURL` postback** (example from Derek: `TrackingId=34`, same value round-trips). | Task 4.3 sets `trackingId = rebill_attempts.id` so the listener can correlate `TransactionState=Recurring` postbacks to our attempt row in one query. |
+| D10 | Refund a specific rebill | ✅ **Call `/refundtransactions` with the REBILL TID** (the new `id` from the rebill response/listener), NOT the original Sale TID. | Task 7.x (refunds) and the existing `ugp-listener` refund path resolve the correct `ugp_transaction_id` by searching both `rebill_attempts.ugp_transaction_id` AND the legacy per-table `ugp_transaction_id` columns. |
+
+### Credentials received so far (2D US/CA MID)
+
+- `UGP_MID_US_2D = 103817`
+- `QUICKPAY_SITE_ID_US_2D = 98895`
+- `QUICKPAY_TOKEN_US_2D = AAEAAGj-xOMEnHXZ92ptIXCGj9d-VVPuz16o_Q_GKRXBlbLWbvw0itsJntoqacOOLahXnMey1UJXFFg5RUr8YPjPn4Sv1zgnwUeuQrNTQ98yUl3ilnLycIcujsJugMJOPhu9TPxWkXOUuOALm0GGnOTu4CNgID9h0B7rdYMOaPxf23EU4FVMLR3LXgH8EUdYNMMt6X7vJwVXmJj--YEatOlEHBIooFd7Raj3sdYuKI5J31c3RP3ZodYlBuhCcsvMqM5qjlV6sqs2ZfzKUSFb6740WD6tCj2RSVySy6mOnnAXaSHXo1EILEH6AmJ1NKNtWSALn2_vwFkHM9DvrqISYldfF0ykAQAAAAEAAF7QmDSh5_D_Ml2_dJhqEhUR6_hkU_rwnPMMVJhEz7OVXE8imdA-XxK01-YEDt39p2WX8hkp1oCA6-eff1EBK_KDImnpFbjcXKEa3ivSRh-TNFDObmhD17TAVGby6REg5VgOlNCRri1w9b4UXzkAgVc64FoWqmYSunzJ5AG-MLpVaVqmDPQJ2tSAEU931_TU3p7mD_AqDMAco9MMJUOYAGdTITclJIE9RgHbvolK7ks4dG-e-oUfhEuFUf_0oDhOT15hLnZsllDIgOnbkbekVePopBlF2gJIbCW-FhdtfOITEieX_VZVEZ2fNM4XF3eyDlMasZSgPkUkMT31ZZKRaYW6FIKsjVPT8SXP3XCX888YbqyFkrIMzOhNuEpIa0vQwRie9lrDjdYDk4YLFou1VAr4lbFsNC1b1AuxubtHHI7HlklyXotP8jMrbeCNvksM1BAU3WGxJx8ucRHJ7xxJWPxzCyV1e1drOBYpOgKiL8OLvPhXUTQorAeRtqPJR1tyshEPno0o99AimZQlnUHh1UCLU9rapuQ-sWBP87BthjYL`
+- `UGP_API_BEARER_TOKEN_US_2D = AAEAAJJ8CDfjErzpPCP08JF7Ga4EKsY0BZxaD4xR8rF8NU4IwsAs4dptqm1Jc_zJLmEy6aL_ywuQYsiNkf6H9swsPMZ1BfvFL1IqW2HhGI6-TQBwMA2AtxgKQCzICRr1RvAEBTEd-rQ7ZPf8sgxhVSNGr_3tLL5d1hhD8HoutccJG6qRvTFzhEJYWbjcrtXLeWkJgqA0T882WMASFOtKWfFLo145uuL8Sl4Ftwf7tT7XyTvBdARL2E6WF-Ya55-bXkVLDSm_GxCKKGrlA4AdKbYuJxHlmiqt7vvK5b7tbKRTAmWWIdFG2otICSw031E1Iofq-iCC1E1buSmDWquKb3JAJ5m0AQAAAAEAACWjn0lRQbvh56DXJiKfCRjAcG2vZcFDl2AiFZt5C02f76zPnea4dKMx_WPLkI61DuiX9xQIq7JvirEf9KiX8-EpyX70yoTcGO7EYgIcp4qhDl6Rtc3oaLuplD5GNaYjoxJGFZSP1RE_Cf_oP-Kf6A7oSQr_NA6kDrmHOdCIfWJQtrDRkMw0-hh9p07o4aI7vQhcparzBcaI2wdkEjqRo1QOypmUOTgwZbVklBG2na0zodQr3RX_N6o6uzSDKkUOWlKYoFn0aMlmN5IV5E9IwQLDbZxidaAF6IveNkI65Aq9BW6ZaZDS6T5GkUxK8xuvDVYZrTXcllfcGmAuXsf2f_RNuyCO1Z2ZfLkkMVK5kofeR26v4fVRfXxl197yB5SYNuuHptlob0CAyAUBLco6PPTkO-Knjmazvwp4B_UnmhoNB45YCXWUDTM0gCxVgL8L49lJT86HCc_sPOFgeSxRgWbXtHnf57U-anCbGPgzt5VPUzA45dHBVnCIkmeKvdE5O2xJRP9MYv1EsoZZ1zW5lwBKYJnXbwDcE5GbUao5OWYVBE5y-VGGvRbY4qcfp_bUYA`
+
+**✅ Derek 2026-04-23 evening:** OAuth Bearer Token received (above). Also confirmed `recurring ID 11034` is a default duplicate plan on the new MID — we **disregard** it. Our one-shot Sale + `/recurringtransactions` flow doesn't reference any SubscriptionPlanId, so no env var needed.
+
+**All four US_2D secrets are set in Supabase (`qexnwezetjlbwltyccks`):** `UGP_MID_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `QUICKPAY_TOKEN_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`.
+
+**No remaining Derek blocker for implementation.** D7 (ConfirmURL retry SLA) is still being checked by his dev team, but Phase 8's reconciliation cron handles that case regardless of their answer.
 
 ---
 
@@ -63,11 +88,11 @@ All 5 open questions answered. Derek is actively provisioning the new 2D US/CA M
 ### New files
 
 **Database migrations:**
-- `supabase/migrations/150_country_and_mid_routing.sql` — adds `profiles.country`, `profiles.billing_country`, `purchases.ugp_mid`, `tips.ugp_mid`, `gift_purchases.ugp_mid`, `custom_requests.ugp_mid`
-- `supabase/migrations/151_creator_subscription_refactor.sql` — new columns `subscription_plan`, `subscription_ugp_transaction_id`, `subscription_mid`, `subscription_amount_cents`, `subscription_period_start`, `subscription_period_end`, `subscription_cancel_at_period_end`, `subscription_last_pro_popup_at`, `subscription_suspended_at`; drop `subscription_ugp_member_id` usage (keep column for history)
-- `supabase/migrations/152_fan_subscription_refactor.sql` — adds `ugp_transaction_id`, `ugp_mid`, `next_rebill_at`, `suspended_at` to `fan_creator_subscriptions`; removes dependency on `QUICKPAY_FAN_SUB_PLAN_ID`
-- `supabase/migrations/153_rebill_attempts.sql` — retry tracking table
-- `supabase/migrations/154_pricing_commission_rates.sql` — updates existing succeeded rows' fee breakdown is out of scope; new txs pick up new rates via code
+- `supabase/migrations/164_country_and_mid_routing.sql` — adds `profiles.country`, `profiles.billing_country`, `purchases.ugp_mid`, `tips.ugp_mid`, `gift_purchases.ugp_mid`, `custom_requests.ugp_mid`
+- `supabase/migrations/165_creator_subscription_refactor.sql` — new columns `subscription_plan`, `subscription_ugp_transaction_id`, `subscription_mid`, `subscription_amount_cents`, `subscription_period_start`, `subscription_period_end`, `subscription_cancel_at_period_end`, `subscription_last_pro_popup_at`, `subscription_suspended_at`; drop `subscription_ugp_member_id` usage (keep column for history)
+- `supabase/migrations/166_fan_subscription_refactor.sql` — adds `ugp_transaction_id`, `ugp_mid`, `next_rebill_at`, `suspended_at` to `fan_creator_subscriptions`; removes dependency on `QUICKPAY_FAN_SUB_PLAN_ID`
+- `supabase/migrations/167_rebill_attempts.sql` — retry tracking table
+- `supabase/migrations/168_pricing_commission_rates.sql` — updates existing succeeded rows' fee breakdown is out of scope; new txs pick up new rates via code
 
 **Shared helpers:**
 - `src/lib/countryRouting.ts` — `isUS2DCountry(iso2) → boolean`, `routeMidForCountry(iso2) → 'us_2d' | 'intl_3d'`
@@ -121,15 +146,15 @@ All 5 open questions answered. Derek is actively provisioning the new 2D US/CA M
 
 ## Phase 0 — Schema & Shared Infrastructure (1 day)
 
-### Task 0.1 — Migration 150: country + MID columns
+### Task 0.1 — Migration 164: country + MID columns
 
 **Files:**
-- Create: `supabase/migrations/150_country_and_mid_routing.sql`
+- Create: `supabase/migrations/164_country_and_mid_routing.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 150_country_and_mid_routing.sql
+-- 164_country_and_mid_routing.sql
 -- Adds country tracking on profiles (for routing + compliance) and the MID
 -- used for each captured sale (so rebills can target the same MID).
 
@@ -168,21 +193,21 @@ supabase db push --linked
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/150_country_and_mid_routing.sql
+git add supabase/migrations/164_country_and_mid_routing.sql
 git commit -m "feat(db): add country + ugp_mid columns for payment routing"
 ```
 
 ---
 
-### Task 0.2 — Migration 151: creator subscription refactor columns
+### Task 0.2 — Migration 165: creator subscription refactor columns
 
 **Files:**
-- Create: `supabase/migrations/151_creator_subscription_refactor.sql`
+- Create: `supabase/migrations/165_creator_subscription_refactor.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 151_creator_subscription_refactor.sql
+-- 165_creator_subscription_refactor.sql
 -- Schema for the new creator subscription flow:
 --   - One-shot Sale at checkout, original ugp_transaction_id stored on the profile
 --   - Server-driven monthly rebills via /recurringtransactions
@@ -231,21 +256,21 @@ Expected: matches `count(*) where is_creator_subscribed = true`.
 
 ```bash
 supabase db push --linked
-git add supabase/migrations/151_creator_subscription_refactor.sql
+git add supabase/migrations/165_creator_subscription_refactor.sql
 git commit -m "feat(db): creator subscription refactor schema"
 ```
 
 ---
 
-### Task 0.3 — Migration 152: fan subscription refactor columns
+### Task 0.3 — Migration 166: fan subscription refactor columns
 
 **Files:**
-- Create: `supabase/migrations/152_fan_subscription_refactor.sql`
+- Create: `supabase/migrations/166_fan_subscription_refactor.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 152_fan_subscription_refactor.sql
+-- 166_fan_subscription_refactor.sql
 -- fan_creator_subscriptions was designed for QuickPay plans with a fixed
 -- QUICKPAY_FAN_SUB_PLAN_ID (which was never provisioned). Refactor to the
 -- same one-shot-Sale + /recurringtransactions model as creator Pro.
@@ -273,23 +298,30 @@ create index if not exists fan_subs_next_rebill_idx
 ```bash
 supabase db reset
 supabase db push --linked
-git add supabase/migrations/152_fan_subscription_refactor.sql
+git add supabase/migrations/166_fan_subscription_refactor.sql
 git commit -m "feat(db): fan subscription refactor schema"
 ```
 
 ---
 
-### Task 0.4 — Migration 153: rebill_attempts retry tracking
+### Task 0.4 — Migration 167: rebill_attempts retry tracking
 
 **Files:**
-- Create: `supabase/migrations/153_rebill_attempts.sql`
+- Create: `supabase/migrations/167_rebill_attempts.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 153_rebill_attempts.sql
+-- 167_rebill_attempts.sql
 -- Tracks every /recurringtransactions call with outcome for monitoring,
--- retry decisions, and reconciliation.
+-- retry decisions, reconciliation, and idempotency (D8 — UG does not dedupe).
+--
+-- Idempotency model: before any POST to /recurringtransactions we INSERT a
+-- row with status='pending' + a cycle_bucket derived from the billing cycle
+-- end date. A unique constraint on (subject_table, subject_id, cycle_bucket)
+-- causes the INSERT to fail if another cron run is already working this
+-- cycle — we skip on 23505. After the API responds (or the listener postback
+-- arrives — D9 echoes the id as TrackingId) we UPDATE the row in place.
 
 create table if not exists rebill_attempts (
   id uuid primary key default gen_random_uuid(),
@@ -299,17 +331,24 @@ create table if not exists rebill_attempts (
   reference_transaction_id text not null,
   amount_cents int not null,
   currency text not null default 'USD',
+  cycle_bucket date not null,                          -- DATE(period_end) at INSERT time
   attempt_number int not null default 1,
   status text not null check (status in ('pending', 'success', 'declined', 'error', 'transient')),
   ugp_response jsonb,
-  ugp_transaction_id text,
+  ugp_transaction_id text,                             -- the NEW rebill TID from UG
   reason_code text,
   message text,
-  created_at timestamptz not null default now()
+  responded_at timestamptz,                            -- when the sync JSON response came back
+  listener_confirmed_at timestamptz,                   -- when the async ListenerURL postback was received
+  created_at timestamptz not null default now(),
+  constraint rebill_attempts_cycle_unique unique (subject_table, subject_id, cycle_bucket)
 );
 
 create index rebill_attempts_subject_idx on rebill_attempts(subject_table, subject_id, created_at desc);
 create index rebill_attempts_status_idx on rebill_attempts(status, created_at desc);
+create index rebill_attempts_listener_pending_idx
+  on rebill_attempts(status, listener_confirmed_at)
+  where status = 'success' and listener_confirmed_at is null;
 ```
 
 - [ ] **Step 2: Apply + push + commit**
@@ -317,7 +356,7 @@ create index rebill_attempts_status_idx on rebill_attempts(status, created_at de
 ```bash
 supabase db reset
 supabase db push --linked
-git add supabase/migrations/153_rebill_attempts.sql
+git add supabase/migrations/167_rebill_attempts.sql
 git commit -m "feat(db): rebill_attempts table"
 ```
 
@@ -514,12 +553,14 @@ export async function rebillTransaction(
   creds: UgMidCredentials,
   referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (Derek Q1)
   amountCents: number,
+  trackingId: string,               // our rebill_attempts.id — echoed back in the Listener postback per Derek Q9
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {
     TransactionID: referenceTransactionId,
     Amount: (amountCents / 100).toFixed(2),
     Currency: 'USD',
+    TrackingId: trackingId,
   };
 
   const controller = new AbortController();
@@ -700,14 +741,24 @@ supabase secrets set --linked \
 # (the CLI only prints digests — use the dashboard Secrets panel for the actual values).
 ```
 
-⚠️ Blocking: Derek is provisioning the new 2D US/CA MID. As soon as he delivers the `QuickPayToken`, OAuth Bearer, SiteID, and MerchantID, set the `US_2D` family of secrets below.
-
-- [ ] **Step 3: Mirror in Vercel env vars**
+**2D US/CA MID credentials received from Derek 2026-04-20 afternoon** — set these now (OAuth Bearer still outstanding):
 
 ```bash
-vercel env add QUICKPAY_TOKEN_INTL_3D production preview development
-# ... etc for every new var
+supabase secrets set --linked \
+  UGP_MID_US_2D=103817 \
+  QUICKPAY_SITE_ID_US_2D=98895 \
+  QUICKPAY_TOKEN_US_2D="AAEAAGj-xOMEnHXZ92ptIXCGj9d-VVPuz16o_Q_GKRXBlbLWbvw0itsJntoqacOOLahXnMey1UJXFFg5RUr8YPjPn4Sv1zgnwUeuQrNTQ98yUl3ilnLycIcujsJugMJOPhu9TPxWkXOUuOALm0GGnOTu4CNgID9h0B7rdYMOaPxf23EU4FVMLR3LXgH8EUdYNMMt6X7vJwVXmJj--YEatOlEHBIooFd7Raj3sdYuKI5J31c3RP3ZodYlBuhCcsvMqM5qjlV6sqs2ZfzKUSFb6740WD6tCj2RSVySy6mOnnAXaSHXo1EILEH6AmJ1NKNtWSALn2_vwFkHM9DvrqISYldfF0ykAQAAAAEAAF7QmDSh5_D_Ml2_dJhqEhUR6_hkU_rwnPMMVJhEz7OVXE8imdA-XxK01-YEDt39p2WX8hkp1oCA6-eff1EBK_KDImnpFbjcXKEa3ivSRh-TNFDObmhD17TAVGby6REg5VgOlNCRri1w9b4UXzkAgVc64FoWqmYSunzJ5AG-MLpVaVqmDPQJ2tSAEU931_TU3p7mD_AqDMAco9MMJUOYAGdTITclJIE9RgHbvolK7ks4dG-e-oUfhEuFUf_0oDhOT15hLnZsllDIgOnbkbekVePopBlF2gJIbCW-FhdtfOITEieX_VZVEZ2fNM4XF3eyDlMasZSgPkUkMT31ZZKRaYW6FIKsjVPT8SXP3XCX888YbqyFkrIMzOhNuEpIa0vQwRie9lrDjdYDk4YLFou1VAr4lbFsNC1b1AuxubtHHI7HlklyXotP8jMrbeCNvksM1BAU3WGxJx8ucRHJ7xxJWPxzCyV1e1drOBYpOgKiL8OLvPhXUTQorAeRtqPJR1tyshEPno0o99AimZQlnUHh1UCLU9rapuQ-sWBP87BthjYL"
 ```
+
+**⚠️ Still blocked on Derek:** `UGP_API_BEARER_TOKEN_US_2D` (needed for rebills + refunds via Direct API on US/CA cards). Without it, Phase 4 + Phase 6 rebills fail for any subscriber paid via the 2D MID. The 3D MID rebill path is unaffected. Follow-up email sent 2026-04-20.
+
+**`UGP_SUBSCRIPTION_PLAN_ID_US_2D=11034`** — Derek confirmed 2026-04-23 evening this is a default duplicate plan we can **disregard entirely**. No env var needed — our one-shot Sale + `/recurringtransactions` flow never references any SubscriptionPlanId.
+
+- [ ] **Step 3: No Vercel mirror needed for MID credentials**
+
+The `QUICKPAY_TOKEN_*`, `QUICKPAY_SITE_ID_*`, `UGP_MID_*`, and `UGP_API_BEARER_TOKEN_*` secrets live **only in Supabase** — they're consumed by Edge Functions that call UG directly. Vercel serverless (`api/*`) never talks to UG; the ConfirmURL / ListenerURL / MembershipPostback endpoints are rewrites in `vercel.json` pointing at Supabase, so credentials stay on the Supabase side.
+
+The only Vercel env var we'll add later is `REBILL_CRON_SECRET` — introduced in Task 4.4 when we wire the daily cron, not here. See that task for the `vercel env add` command.
 
 - [ ] **Step 4: Commit the CLAUDE.md change**
 
@@ -1892,28 +1943,61 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
     : await computeCreatorMonthlyAmount(creator.id);
 
   const creds = getMidCredentials(mid);
-  const tracking = `rebill_cre_${creator.id}_${Date.now()}`;
-  const { count: priorAttempts } = await supabase.from('rebill_attempts')
+
+  // ── Idempotency guard (D8 — UG does NOT dedupe /recurringtransactions)
+  //
+  // We compute a cycle bucket from the subscription_period_end date. A unique
+  // constraint on (subject_table, subject_id, cycle_bucket) on rebill_attempts
+  // ensures only one in-flight attempt per billing cycle. We INSERT with
+  // status='pending' BEFORE calling /recurringtransactions and skip on conflict.
+  // The row id is used as TrackingId so the async listener postback can
+  // correlate back (D9).
+  const cycleBucket = String(creator.subscription_period_end).slice(0, 10); // YYYY-MM-DD
+
+  const { data: attemptInsert, error: attemptInsertErr } = await supabase
+    .from('rebill_attempts')
+    .insert({
+      subject_table: 'profiles',
+      subject_id: creator.id,
+      ugp_mid: mid,
+      reference_transaction_id: tid,
+      amount_cents: amount,
+      cycle_bucket: cycleBucket,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (attemptInsertErr) {
+    // 23505 = unique_violation → another cron run is already working this cycle.
+    if ((attemptInsertErr as any).code === '23505') {
+      console.log(`[rebill] creator ${creator.id} cycle ${cycleBucket} already in flight, skipping`);
+      return;
+    }
+    throw attemptInsertErr;
+  }
+  const attemptId = (attemptInsert as any).id as string;
+
+  // Count REAL historical attempts (pending excluded — same as declined/error/transient)
+  const { count: priorFinal } = await supabase.from('rebill_attempts')
     .select('id', { count: 'exact', head: true })
     .eq('subject_table', 'profiles').eq('subject_id', creator.id)
-    .gte('created_at', creator.subscription_period_end);
-  const attemptNumber = (priorAttempts ?? 0) + 1;
+    .neq('id', attemptId)
+    .in('status', ['declined', 'error']);
+  const attemptNumber = (priorFinal ?? 0) + 1;
 
-  const result = await rebillTransaction(creds, tid, amount, tracking);
+  // Pass TrackingId = attemptId so the listener postback echoes it back.
+  const result = await rebillTransaction(creds, tid, amount, attemptId);
 
-  await supabase.from('rebill_attempts').insert({
-    subject_table: 'profiles',
-    subject_id: creator.id,
-    ugp_mid: mid,
-    reference_transaction_id: tid,
-    amount_cents: amount,
+  await supabase.from('rebill_attempts').update({
     attempt_number: attemptNumber,
     status: result.classification,
     ugp_response: result.raw,
     ugp_transaction_id: result.transactionId,
     reason_code: result.reasonCode,
     message: result.message,
-  });
+    responded_at: new Date().toISOString(),
+  }).eq('id', attemptId);
 
   if (result.success) {
     const now = new Date();
@@ -1975,29 +2059,51 @@ async function rebillFanSubscription(sub: any): Promise<void> {
   }
   const amount = sub.price_cents as number; // grandfathered — locked at subscribe time
   const creds = getMidCredentials(mid);
-  const tracking = `rebill_fan_${sub.id}_${Date.now()}`;
 
-  const { count: priorAttempts } = await supabase.from('rebill_attempts')
+  // Idempotency guard — same pattern as creator rebill (see D8).
+  const cycleBucket = String(sub.next_rebill_at).slice(0, 10);
+
+  const { data: attemptInsert, error: attemptInsertErr } = await supabase
+    .from('rebill_attempts')
+    .insert({
+      subject_table: 'fan_creator_subscriptions',
+      subject_id: sub.id,
+      ugp_mid: mid,
+      reference_transaction_id: tid,
+      amount_cents: amount,
+      cycle_bucket: cycleBucket,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (attemptInsertErr) {
+    if ((attemptInsertErr as any).code === '23505') {
+      console.log(`[rebill] fan sub ${sub.id} cycle ${cycleBucket} already in flight, skipping`);
+      return;
+    }
+    throw attemptInsertErr;
+  }
+  const attemptId = (attemptInsert as any).id as string;
+
+  const { count: priorFinal } = await supabase.from('rebill_attempts')
     .select('id', { count: 'exact', head: true })
     .eq('subject_table', 'fan_creator_subscriptions').eq('subject_id', sub.id)
-    .gte('created_at', sub.next_rebill_at);
-  const attemptNumber = (priorAttempts ?? 0) + 1;
+    .neq('id', attemptId)
+    .in('status', ['declined', 'error']);
+  const attemptNumber = (priorFinal ?? 0) + 1;
 
-  const result = await rebillTransaction(creds, tid, amount, tracking);
+  const result = await rebillTransaction(creds, tid, amount, attemptId);
 
-  await supabase.from('rebill_attempts').insert({
-    subject_table: 'fan_creator_subscriptions',
-    subject_id: sub.id,
-    ugp_mid: mid,
-    reference_transaction_id: tid,
-    amount_cents: amount,
+  await supabase.from('rebill_attempts').update({
     attempt_number: attemptNumber,
     status: result.classification,
     ugp_response: result.raw,
     ugp_transaction_id: result.transactionId,
     reason_code: result.reasonCode,
     message: result.message,
-  });
+    responded_at: new Date().toISOString(),
+  }).eq('id', attemptId);
 
   if (result.success) {
     const now = new Date();
@@ -2206,49 +2312,210 @@ git commit -m "feat(cron): daily trigger for rebill-subscriptions"
 
 ---
 
-### Task 4.5 — Handle `state=Recurring` ConfirmURL callbacks
+### Task 4.5 — Handle `state=Recurring` postbacks in `ugp-listener` (NOT `ugp-confirm`)
 
-The Direct Rebilling doc §Confirm page confirms UG POSTs to our ConfirmURL after every rebill with `TransactionState=Recurring`. Our Phase 0 hotfix skips Recurring for `sub_` and `fsub_` — we now want to accept it (no-op other than logging, since the rebill cron already updated our DB from the synchronous API response).
+**⚠️ Architectural correction (Derek 2026-04-20 afternoon):** `ConfirmURL` is never invoked for server-initiated rebills. The HTTP callback for every `/recurringtransactions` success or failure arrives at the **`ListenerURL`** (`https://exclu.at/api/ugp-listener`) — same endpoint that already receives Refund / Chargeback / Void / Capture / CBK1. The initial Sale synchronous response is still our primary source of truth (we write to DB from there); the listener is the reconciliation / observability channel.
+
+Concretely, for any successful rebill we will receive the body below at our listener (Derek's example):
+
+```
+POST https://exclu.at/api/ugp-listener
+Content-Type: application/x-www-form-urlencoded
+
+TrackingId=34
+MerchantReference=34
+OMerchantReference=34
+ReferenceTransactionId=25990692
+CurrencyID=USD
+MemberId=18975710
+Amount=2.000000
+TransactionID=26033255
+TransactionState=Recurring
+TransactionStatus=Successful
+SiteID=77815
+CustomerEmail=...
+CustomerCountry=US
+```
+
+Fields of interest for us: `TrackingId` (we pass `rebill_attempts.id`, get it back), `ReferenceTransactionId` (original Sale TID we rebilled against), `TransactionID` (the NEW rebill TID — this is what `/refundtransactions` would target for a dispute on this specific charge), `TransactionState`, `TransactionStatus`, `Amount`.
 
 **Files:**
-- Modify: `supabase/functions/ugp-confirm/index.ts`
+- Modify: `supabase/functions/ugp-listener/index.ts`
+- Modify: `supabase/functions/ugp-confirm/index.ts` (REMOVE the wrong Recurring handling introduced in earlier drafts)
 
-- [ ] **Step 1: Add Recurring to actionable states**
+- [ ] **Step 1: Remove any Recurring handling from `ugp-confirm`**
+
+Open `supabase/functions/ugp-confirm/index.ts`. The `actionableStatesByType` map must NOT list Recurring — a Recurring state cannot legitimately arrive on this endpoint. Keep it narrow:
 
 ```ts
 const actionableStatesByType: Record<string, ReadonlySet<string>> = {
   link: new Set(['Sale']),
-  tip: new Set(['Sale']),
+  tip:  new Set(['Sale']),
   gift: new Set(['Sale']),
-  req: new Set(['Authorize']),
-  sub: new Set(['Sale', 'Recurring']),   // Recurring = rebill (no-op: cron already handled)
-  fsub: new Set(['Sale', 'Recurring']),
+  req:  new Set(['Authorize']),
+  sub:  new Set(['Sale']),   // initial Sale only; rebills go to listener
+  fsub: new Set(['Sale']),   // initial Sale only; rebills go to listener
 };
 ```
 
-- [ ] **Step 2: Short-circuit for Recurring (log only)**
+If a Recurring callback ever hits this endpoint (edge case: bug in UG or MID misconfig), log + mark `payment_events.processed=true` with `processing_result='unexpected-recurring-on-confirm'` and return 200.
 
-In the dispatcher, before calling `handleSubscription`, check:
+- [ ] **Step 2: Extend `ugp-listener` switch with `Recurring`**
+
+Edit `supabase/functions/ugp-listener/index.ts`:
 
 ```ts
-const isRecurringCallback = transactionState === 'Recurring';
-if (isRecurringCallback) {
-  // We already updated state from the synchronous /recurringtransactions response.
-  // Just mark the event processed and return.
-  await supabase.from('payment_events').update({
-    processed: true,
-    processing_result: `${parsed.type} recurring callback logged`,
-  }).eq('transaction_id', transactionId);
-  return new Response('OK', { status: 200 });
+switch (transactionState) {
+  case 'Refund':     await handleRefund(transactionId, merchantRef, amount); break;
+  case 'Chargeback':
+  case 'CBK1':       await handleChargeback(transactionId, merchantRef, amount); break;
+  case 'Void':       await handleVoid(transactionId, merchantRef); break;
+  case 'Capture':    await handleCapture(transactionId, merchantRef, amount); break;
+  case 'Recurring':  await handleRecurring(body); break;   // NEW
+  case 'Sale':       await handleListenerSale(body); break; // NEW — safety-net for Sales that bypassed ConfirmURL
+  default:           console.warn('Unknown listener TransactionState:', transactionState);
 }
 ```
 
-- [ ] **Step 3: Deploy + commit**
+- [ ] **Step 3: Implement `handleRecurring`**
+
+```ts
+// Inside ugp-listener/index.ts
+async function handleRecurring(body: Record<string, string>) {
+  const trackingId = body.TrackingId || '';
+  const transactionStatus = body.TransactionStatus || '';
+  const rebillTid = body.TransactionID || '';
+  const referenceTid = body.ReferenceTransactionId || '';
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+
+  // Correlate back to our rebill_attempts row via TrackingId (we passed it as rebill_attempts.id)
+  let attempt: any = null;
+  if (trackingId) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('id', trackingId)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  // Fallback: no TrackingId echoed (shouldn't happen per Derek but be robust) —
+  // find the most recent pending attempt for this reference_transaction_id.
+  if (!attempt && referenceTid) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('reference_transaction_id', referenceTid)
+      .in('status', ['pending', 'success'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  if (!attempt) {
+    console.error('handleRecurring: no rebill_attempts match for TrackingId=%s ref=%s', trackingId, referenceTid);
+    return;
+  }
+
+  // Idempotent: only advance state if we don't already have a successful outcome logged
+  const isSuccessful = (transactionStatus === 'Successful' || transactionStatus === 'Approved');
+  const finalStatus = isSuccessful ? 'success' : 'declined';
+
+  // Update the attempt row (may already be 'success' from sync response — OK, we re-affirm)
+  await supabase.from('rebill_attempts').update({
+    status: finalStatus,
+    ugp_transaction_id: rebillTid || attempt.ugp_transaction_id,
+    listener_confirmed_at: new Date().toISOString(),
+  }).eq('id', attempt.id);
+
+  if (!isSuccessful) {
+    // Retry / suspension logic is owned by the cron on next run; here we only
+    // record the listener confirmation. The cron inspects rebill_attempts and
+    // decides whether to schedule another attempt.
+    console.log('handleRecurring: decline recorded for attempt', attempt.id);
+    return;
+  }
+
+  // Advance subscription period end if the sync path failed to do so
+  // (it did write, but we might have hit an error between the API response and
+  // the DB update — this is the safety net).
+  if (attempt.subject_table === 'profiles') {
+    const { data: creator } = await supabase.from('profiles')
+      .select('subscription_plan, subscription_period_end')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (creator && creator.subscription_period_end && new Date(creator.subscription_period_end) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now);
+      if (creator.subscription_plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+      else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('profiles').update({
+        subscription_amount_cents: amountCents,
+        subscription_period_start: now.toISOString(),
+        subscription_period_end: nextEnd.toISOString(),
+        subscription_suspended_at: null,
+      }).eq('id', attempt.subject_id);
+      console.log('handleRecurring: advanced subscription_period_end for', attempt.subject_id);
+    }
+  } else if (attempt.subject_table === 'fan_creator_subscriptions') {
+    const { data: sub } = await supabase.from('fan_creator_subscriptions')
+      .select('next_rebill_at')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (sub && sub.next_rebill_at && new Date(sub.next_rebill_at) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now); nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('fan_creator_subscriptions').update({
+        period_start: now.toISOString(),
+        period_end: nextEnd.toISOString(),
+        next_rebill_at: nextEnd.toISOString(),
+        suspended_at: null,
+      }).eq('id', attempt.subject_id);
+    }
+  }
+
+  // Wallet credit for the creator — the rebill Sale just captured funds.
+  // This call MUST be idempotent against (attempt.id) so we don't double-credit.
+  // Implementation lives in the ledger helper from Task 8.3.
+  // (For MVP before Task 8 ships, we skip the credit here and only do it from
+  //  the sync response in the cron. The listener is reconciliation-only until
+  //  Task 8.3 wires the ledger through.)
+}
+
+async function handleListenerSale(body: Record<string, string>) {
+  // Safety-net only — Sales are normally handled by ConfirmURL. If a Sale
+  // arrives here with a matching MerchantReference in payment_events already
+  // marked processed, do nothing. Otherwise insert + log for admin alerting.
+  const transactionId = body.TransactionID || '';
+  const { data: existing } = await supabase.from('payment_events')
+    .select('id, processed')
+    .eq('transaction_id', transactionId)
+    .maybeSingle();
+  if (existing?.processed) return;
+  // If unprocessed: ConfirmURL may have failed. Log to payment_events so the
+  // reconciliation cron (Task 8.x) picks it up.
+  await supabase.from('payment_events').insert({
+    transaction_id: `listener_${transactionId}_Sale`,
+    merchant_reference: body.MerchantReference || '',
+    amount_decimal: body.Amount || '0',
+    transaction_state: 'Sale',
+    customer_email: body.CustomerEmail || null,
+    raw_payload: body,
+    processed: false,
+    processing_error: 'listener-sale-without-confirm — reconcile',
+  }).onConflict('transaction_id').ignoreDuplicates();
+}
+```
+
+- [ ] **Step 4: Deploy + commit**
+
+The `listener_confirmed_at` column + `rebill_attempts_listener_pending_idx` index used by this task are already defined in migration `167_rebill_attempts.sql` (Task 0.4). No additional migration required here.
 
 ```bash
 supabase functions deploy ugp-confirm --linked
-git add supabase/functions/ugp-confirm/index.ts
-git commit -m "feat(confirm): accept Recurring callbacks for sub/fsub"
+supabase functions deploy ugp-listener --linked
+
+git add supabase/functions/ugp-listener/index.ts supabase/functions/ugp-confirm/index.ts
+git commit -m "feat(listener): handle Recurring postbacks for rebills + Sale safety-net"
 ```
 
 ---
@@ -3002,10 +3269,10 @@ Once all legacy 11027 subs have naturally expired or been migrated (Task 4.9), w
 
 Delete the function definition (lines ~209-270) and remove the call site (`if (action === 'Rebill') await chargeProfileAddons(userId);`).
 
-- [ ] **Step 2: Drop the `addon_charges` table (new migration 155)**
+- [ ] **Step 2: Drop the `addon_charges` table (new migration 169)**
 
 ```sql
--- 155_drop_addon_charges.sql
+-- 169_drop_addon_charges.sql
 drop table if exists addon_charges;
 ```
 
@@ -3014,7 +3281,7 @@ drop table if exists addon_charges;
 ```bash
 supabase db push --linked
 supabase functions deploy ugp-membership-confirm --linked
-git add supabase/migrations/155_drop_addon_charges.sql supabase/functions/ugp-membership-confirm/index.ts
+git add supabase/migrations/169_drop_addon_charges.sql supabase/functions/ugp-membership-confirm/index.ts
 git commit -m "chore(sub): drop legacy addon_charges + chargeProfileAddons"
 ```
 
@@ -3162,17 +3429,17 @@ git commit -m "docs: update CLAUDE.md for payment pipeline refonte"
 >
 > **Model:** introduce a single append-only ledger (`wallet_transactions`). Every mutation to `profiles.wallet_balance_cents` / `profiles.total_earned_cents` / `profiles.chatter_earnings_cents` goes through one SECURITY DEFINER RPC so the running totals and the ledger can never disagree. Every other flow (tips / links / gifts / requests / subs / payouts / refunds / chargebacks) just inserts the right ledger row — the trigger keeps the balances in sync.
 
-### Task 8.1 — Migration 156: `wallet_transactions` ledger
+### Task 8.1 — Migration 170: `wallet_transactions` ledger
 
 **Files:**
-- Create: `supabase/migrations/156_wallet_ledger.sql`
+- Create: `supabase/migrations/170_wallet_ledger.sql`
 
 Append-only source of truth for every cent of creator/chatter earnings. No `UPDATE`s (ledgers never rewrite history). The 1:1 link to a `payment_events.transaction_id` + source row is what makes every credit traceable; the unique index on `(owner_id, source_type, source_id, direction, source_transaction_id)` is what makes every credit idempotent even if a ConfirmURL fires twice.
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- 156_wallet_ledger.sql
+-- 170_wallet_ledger.sql
 -- Append-only ledger for every credit/debit that touches:
 --   profiles.wallet_balance_cents
 --   profiles.total_earned_cents
@@ -3346,7 +3613,7 @@ Expected: both calls return the same id (second is idempotent short-circuit). On
 - [ ] **Step 3: Commit**
 
 ```bash
-git add supabase/migrations/156_wallet_ledger.sql
+git add supabase/migrations/170_wallet_ledger.sql
 git commit -m "feat(ledger): wallet_transactions + apply_wallet_transaction RPC"
 ```
 
@@ -3853,7 +4120,7 @@ No ledger change needed (hold already debited). Just update `payouts.status`, `p
 await supabase.rpc('increment_total_withdrawn', { p_user_id: creator.id, p_amount_cents: payout.amount_cents });
 ```
 
-Add that helper to migration 156 (or a follow-up 157):
+Add that helper to migration 170 (or a follow-up 171):
 
 ```sql
 create or replace function increment_total_withdrawn(p_user_id uuid, p_amount_cents bigint)
@@ -3866,7 +4133,7 @@ $$;
 
 ```bash
 supabase functions deploy request-withdrawal process-payout --linked
-git add supabase/functions/request-withdrawal/index.ts supabase/functions/process-payout/index.ts supabase/migrations/157_increment_total_withdrawn.sql
+git add supabase/functions/request-withdrawal/index.ts supabase/functions/process-payout/index.ts supabase/migrations/171_increment_total_withdrawn.sql
 git commit -m "feat(ledger): payout hold/release go through the ledger"
 ```
 
@@ -4003,10 +4270,10 @@ serve(async (req) => {
 
 - [ ] **Step 2: `find_wallet_drift` RPC**
 
-Append to migration 157 (or a new 158):
+Append to migration 171 (or a new 172):
 
 ```sql
--- 158_wallet_drift_rpc.sql
+-- 172_wallet_drift_rpc.sql
 create or replace function find_wallet_drift(p_tolerance_cents bigint default 1)
 returns table(user_id uuid, projection_cents bigint, ledger_cents bigint)
 language sql stable security definer as $$
@@ -4053,7 +4320,7 @@ supabase secrets set RECONCILE_CRON_SECRET=<paste> --linked
 vercel env add RECONCILE_CRON_SECRET production preview development
 supabase db push --linked
 supabase functions deploy reconcile-payments --linked
-git add supabase/migrations/158_wallet_drift_rpc.sql supabase/functions/reconcile-payments/ api/cron/reconcile-payments.ts vercel.json
+git add supabase/migrations/172_wallet_drift_rpc.sql supabase/functions/reconcile-payments/ api/cron/reconcile-payments.ts vercel.json
 git commit -m "feat(ledger): hourly reconciliation cron + drift alerting"
 ```
 
@@ -4292,7 +4559,7 @@ The 4 flows that MUST NOT credit a chatter are tips, gifts, creator Pro subs, fa
 
 **Layer 2 — DB CHECK constraint.**
 
-Already added in Task 8.1 migration 156:
+Already added in Task 8.1 migration 170:
 ```sql
 constraint wallet_tx_chatter_source_whitelist check (
   owner_kind <> 'chatter' or source_type in ('chatter_commission', 'refund', 'chargeback', 'manual_adjustment')
@@ -4626,11 +4893,18 @@ This is enforced three ways in the code (defense in depth):
 These aren't necessarily bugs — they're scenarios where the plan is silent and a design decision still has to be made. Worth flagging now so they don't become emergencies in production.
 
 - **Subscription currency other than USD.** Plan hardcodes USD. If we ever expand to EUR/GBP pricing, every `.toFixed(2)` + hardcoded `'USD'` needs auditing.
+
+-> QUE DES PAYMENTS USD POUR LE MOMENT
+
 - **PayPal / crypto / alt rails.** Everything assumes UG Payments. A design that lets us plug in an alternative processor later requires abstracting `{create checkout, rebill, refund}` behind an interface — worth at least noting in the future-proofing.
+
+-> PAS D'AUTRE SYSTEME DE PAIEMENTS
 - **Dunning retry schedule tuning.** The plan hardcodes `RETRY_DELAY_DAYS = [0, 3, 4]` (7 days total). Industry best-practice is smart dunning (retry on different days of the week, avoid weekends for certain issuers). Revisit when we have enough data.
 - **"Trying to cancel right before rebill day" race.** Fan hits Cancel at 07:59 UTC, cron runs at 08:00 UTC. Whose state wins? Our code: `cancel_at_period_end=true` set first, cron reads it and treats as cancelled. Safe, but worth a manual test.
 - **Recovery after ledger drift alert.** Task 8.7 emails admin on drift but doesn't auto-correct. Manual reconciliation runbook: query `find_wallet_drift` → inspect the offending rows → manually insert an adjustment via `apply_wallet_transaction` with `sourceType='manual_adjustment'` and `adminNotes` explaining. Worth writing this runbook before the first drift happens.
 - **GDPR "delete my data" request on a fan with subscription history.** If a fan asks for erasure, we must anonymise their PII but keep the ledger rows (financial law). Not in this plan; handle in a separate compliance pass.
+
+-> NON
 
 ---
 

@@ -130,6 +130,7 @@ function AcceptWithLinkModal({ request, creatorHandle, onClose, onAccepted }: Ac
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type')
         .eq('creator_id', user.id)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(20);
 

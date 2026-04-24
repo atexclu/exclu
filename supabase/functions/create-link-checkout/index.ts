@@ -116,7 +116,7 @@ serve(async (req) => {
     // ── Fetch link ────────────────────────────────────────────────────
     const { data: link, error: linkError } = await supabase
       .from('links')
-      .select('id, title, price_cents, currency, status, creator_id, slug')
+      .select('id, title, price_cents, currency, status, creator_id, slug, storage_path, is_support_link')
       .eq('slug', slug)
       .single();
 
@@ -130,6 +130,25 @@ serve(async (req) => {
 
     if (!link.price_cents || link.price_cents <= 0) {
       return jsonError('Invalid price for this link', 400, corsHeaders);
+    }
+
+    // Belt-and-braces check against the links_require_content DB trigger:
+    // refuse to sell a non-support link that has lost all its content (the
+    // trigger blocks new publishes but a legacy row could slip through).
+    if (!link.is_support_link && !link.storage_path) {
+      const { count: mediaCount, error: mediaCountError } = await supabase
+        .from('link_media')
+        .select('link_id', { count: 'exact', head: true })
+        .eq('link_id', link.id);
+
+      if (mediaCountError) {
+        console.error('link_media count check failed', mediaCountError);
+        return jsonError('Unable to verify link content', 500, corsHeaders);
+      }
+
+      if (!mediaCount || mediaCount === 0) {
+        return jsonError('This link has no content attached and cannot be purchased', 400, corsHeaders);
+      }
     }
 
     // ── Fetch creator profile ─────────────────────────────────────────

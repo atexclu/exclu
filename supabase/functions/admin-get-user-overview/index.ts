@@ -84,6 +84,14 @@ interface AdminUserMetrics {
     sales_count: number;
     revenue_cents: number;
   }>;
+  referrals: {
+    lifetime_earnings_cents: number;
+    commissions_row_sum_cents: number;
+    recruited_count: number;
+    converted_count: number;
+    payout_requested_at: string | null;
+    referred_by: { id: string; handle: string | null; display_name: string | null } | null;
+  };
   totals: {
     count: number;
     gross_cents: number;
@@ -323,6 +331,7 @@ serve(async (req) => {
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type, is_public, profile_id')
         .eq('creator_id', targetUserId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(30),
       supabaseAdmin

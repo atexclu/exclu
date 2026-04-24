@@ -184,15 +184,18 @@ const CreatorPublic = () => {
   const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
 
   // Desktop photo collapse on scroll.
-  // Keep it enabled only for the Links tab when the creator has > 5 links —
-  // the Feed tab intentionally stays in its original position so the card
-  // column never shifts horizontally while the viewer scrolls.
+  //  • Links tab: collapse when the creator has > 5 links and the viewer
+  //    scrolls past 35vh (the list gets long enough that hiding the photo
+  //    gives more breathing room).
+  //  • Feed tab: always collapse on scroll so the feed centers itself and
+  //    the posts feel like a social-media timeline.
   const [photoVisible, setPhotoVisible] = useState(true);
   useEffect(() => {
     const threshold = window.innerHeight * 0.35;
     const handleScroll = () => {
       if (activeTab === 'content') {
-        setPhotoVisible((prev) => (prev ? prev : true));
+        const shouldShow = window.scrollY < threshold;
+        setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
         return;
       }
       if (links.length <= 5) {
@@ -453,6 +456,7 @@ const CreatorPublic = () => {
           .from('assets')
           .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
           .eq('is_public', true)
+          .is('deleted_at', null)
           .order('is_feed_preview', { ascending: false })
           .order('created_at', { ascending: false });
 
@@ -899,6 +903,13 @@ const CreatorPublic = () => {
   const displayName = profile?.display_name || profile?.handle || handle || 'Creator';
   const aurora = getAuroraGradient(profile?.aurora_gradient || 'purple_dream');
   const gradientStops: [string, string] = [aurora.colors[0], aurora.colors[2]];
+  // Compact author identity embedded in each feed post's header.
+  const feedAuthor = {
+    displayName,
+    handle: profile?.handle ?? null,
+    avatarUrl: profile?.avatar_url ?? null,
+    verified: profile?.show_certification !== false,
+  };
   const socialLinks = profile?.social_links || {};
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
@@ -1282,6 +1293,7 @@ const CreatorPublic = () => {
                               coverUrl: item.coverUrl,
                             }
                       }
+                      author={feedAuthor}
                       gradientStops={gradientStops as [string, string]}
                       onLockedClick={() => setShowSubscribePopup(true)}
                       onLinkClick={(slug) => navigate(`/l/${slug}`)}
@@ -1419,7 +1431,7 @@ const CreatorPublic = () => {
         <div className={`px-6 lg:px-10 xl:px-16 pt-10 max-w-7xl mx-auto w-full ${shouldShowJoinBanner ? 'pb-[120px]' : 'pb-16'}`}>
           <div
             className="grid gap-8 items-start transition-[grid-template-columns] duration-500 ease-in-out"
-            style={{ gridTemplateColumns: photoVisible ? '400px 1fr' : '0px 1fr' }}
+            style={{ gridTemplateColumns: photoVisible ? '460px 1fr' : '0px 1fr' }}
           >
 
             {/* ── LEFT: Sticky photo card ── */}
@@ -1497,12 +1509,17 @@ const CreatorPublic = () => {
             </div>
 
             {/* ── RIGHT: Info card + content card ──
-                When the guest chat is active we cap the right column to the
-                viewport minus the top offset and the banner zone, so the chat
-                (which uses flex-1 below) is guaranteed to fit above the Join
-                banner with a comfortable margin. */}
+                The column is capped at ~660px (the natural 1fr width at max
+                viewport when the photo is visible) and centred with mx-auto.
+                This means:
+                  • photo visible → column fills its 1fr slot (≤ 660px)
+                  • photo hidden  → column stays 660px and centres on the page
+                …so Links / Feed / Wishlist all share the same width, matching
+                the info card above — no jumping width when the photo collapses.
+                When the guest chat is active we also cap the column height so
+                the chat fits above the Join banner with a comfortable margin. */}
             <div
-              className="flex flex-col gap-6 min-h-0"
+              className="flex flex-col gap-6 min-h-0 w-full max-w-[660px] mx-auto"
               style={
                 showGuestChat
                   ? {
@@ -1611,12 +1628,14 @@ const CreatorPublic = () => {
                 </div>
               )}
 
-              {/* BOTTOM RIGHT: Tabs + content card — hidden when guest chat is active */}
+              {/* BOTTOM RIGHT: Tabs + content card — hidden when guest chat is active.
+                  Same width across Links / Feed / Wishlist tabs, and matches
+                  the info card above so the right column reads as one column. */}
               {!showGuestChat && <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: 'easeOut', delay: 0.3 }}
-                className="relative overflow-hidden rounded-3xl border border-white/15 bg-black/60 backdrop-blur-xl shadow-xl"
+                className="relative w-full overflow-hidden rounded-3xl border border-white/15 bg-black/60 backdrop-blur-xl shadow-xl"
               >
                 {/* Subtle color glow bottom-left */}
                 <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full opacity-15 blur-3xl pointer-events-none"
@@ -1653,7 +1672,7 @@ const CreatorPublic = () => {
                     </div>
                   )}
 
-                  {/* Content area */}
+                  {/* Content area — same padding across Links / Feed / Wishlist. */}
                   <div className="p-6 space-y-3">
                     {isContentLoading && (
                       <div className="space-y-3">
@@ -1721,47 +1740,53 @@ const CreatorPublic = () => {
                       </div>
                     )}
 
-                    {/* Content Tab — vertical feed.
-                        Fixed width always; when the photo hides on scroll
-                        the feed simply re-centers via mx-auto on the wider column. */}
+                    {/* Content Tab — vertical feed. Cards span the full inner
+                        width of the card (the outer card is already capped at
+                        540px on the Feed tab, so posts feel intimate and
+                        centered). */}
                     {!isContentLoading && activeTab === 'content' && (
                       feedItems.length > 0 ? (
-                        <div className="space-y-6 mx-auto w-full max-w-[480px]">
-                          {feedItems.map((item) => (
-                            <FeedPost
+                        <div className="w-full">
+                          {feedItems.map((item, index) => (
+                            <div
                               key={`${item.kind}-${item.id}`}
-                              post={
-                                item.kind === 'asset'
-                                  ? {
-                                      kind: 'asset',
-                                      id: item.id,
-                                      previewUrl: item.previewUrl,
-                                      blurUrl: item.blurUrl,
-                                      mimeType: item.mimeType,
-                                      caption: item.caption,
-                                      isUnlocked: item.isPreview || isSubscribed,
-                                    }
-                                  : {
-                                      kind: 'link',
-                                      id: item.id,
-                                      slug: item.slug,
-                                      title: item.title,
-                                      description: item.description,
-                                      priceCents: item.priceCents,
-                                      coverUrl: item.coverUrl,
-                                    }
-                              }
-                              gradientStops={gradientStops as [string, string]}
-                              onLockedClick={() => setShowSubscribePopup(true)}
-                              onLinkClick={(slug) => navigate(`/l/${slug}`)}
-                            />
+                              className={`${index > 0 ? 'mt-5 pt-5 border-t border-white/10' : ''}`}
+                            >
+                              <FeedPost
+                                post={
+                                  item.kind === 'asset'
+                                    ? {
+                                        kind: 'asset',
+                                        id: item.id,
+                                        previewUrl: item.previewUrl,
+                                        blurUrl: item.blurUrl,
+                                        mimeType: item.mimeType,
+                                        caption: item.caption,
+                                        isUnlocked: item.isPreview || isSubscribed,
+                                      }
+                                    : {
+                                        kind: 'link',
+                                        id: item.id,
+                                        slug: item.slug,
+                                        title: item.title,
+                                        description: item.description,
+                                        priceCents: item.priceCents,
+                                        coverUrl: item.coverUrl,
+                                      }
+                                }
+                                author={feedAuthor}
+                                gradientStops={gradientStops as [string, string]}
+                                onLockedClick={() => setShowSubscribePopup(true)}
+                                onLinkClick={(slug) => navigate(`/l/${slug}`)}
+                              />
+                            </div>
                           ))}
                         </div>
                       ) : (
                         <button
                           type="button"
                           onClick={() => setShowSubscribePopup(true)}
-                          className="relative block w-full mx-auto max-w-[480px] aspect-[4/5] rounded-3xl overflow-hidden border border-white/10"
+                          className="relative block w-full aspect-[4/5] rounded-3xl overflow-hidden border border-white/10"
                         >
                           <div
                             className="absolute inset-0 scale-125 blur-[42px]"
@@ -1782,7 +1807,7 @@ const CreatorPublic = () => {
                     )}
 
                     {!isContentLoading && activeTab === 'content' && (
-                      <div className="mx-auto w-full max-w-[480px]">
+                      <div className="w-full mt-6 pt-6 border-t border-white/10">
                         <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
                       </div>
                     )}

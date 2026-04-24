@@ -61,6 +61,8 @@ const HowItWorksSection = () => {
     loop: false,
     skipSnaps: false,
     containScroll: 'trimSnaps',
+    dragThreshold: 6,
+    duration: 22,
   });
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -120,18 +122,32 @@ const HowItWorksSection = () => {
 
         {/* Steps — mobile Embla carousel */}
         <div className="md:hidden">
-          <div className="overflow-hidden -mx-6 px-6" ref={emblaRef}>
-            <div className="flex gap-4 touch-pan-y">
-              {steps.map((step) => (
-                <div
-                  key={step.number}
-                  className="flex-[0_0_82%] min-w-0 first:pl-0"
-                >
-                  <div className="relative h-full rounded-3xl border border-exclu-arsenic/40 bg-gradient-to-b from-exclu-ink/80 to-exclu-black/40 p-6 backdrop-blur-sm">
-                    <StepCard step={step} />
+          <div
+            ref={emblaRef}
+            className="overflow-hidden -mx-6 px-6 touch-pan-y select-none"
+            style={{ touchAction: 'pan-y' }}
+          >
+            <div className="flex gap-4">
+              {steps.map((step, i) => {
+                const isActive = i === selectedIndex;
+                return (
+                  <div
+                    key={step.number}
+                    className="flex-[0_0_84%] min-w-0"
+                    aria-current={isActive ? 'step' : undefined}
+                  >
+                    <div
+                      className={`relative h-full rounded-3xl border p-6 backdrop-blur-sm transition-all duration-500 ${
+                        isActive
+                          ? 'border-[#CFFF16]/40 bg-gradient-to-b from-exclu-ink/90 to-exclu-black/60 shadow-[0_20px_60px_-20px_rgba(207,255,22,0.25)] opacity-100 scale-100'
+                          : 'border-exclu-arsenic/30 bg-gradient-to-b from-exclu-ink/60 to-exclu-black/30 opacity-55 scale-[0.96]'
+                      }`}
+                    >
+                      <StepCard step={step} />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

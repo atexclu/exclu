@@ -834,76 +834,90 @@ const AppDashboard = () => {
 
         {activeTab === 'metrics' && (
           <>
-            <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {/* Profile visits metric */}
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'profile_views' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
-                onClick={() => { setActiveMetric('profile_views'); setHoveredPoint(null); }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Profile visits</p>
-                <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading || profileViewCount === null
-                    ? '—'
-                    : profileViewCount.toLocaleString('en-US')}
-                </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">
-                  Total visits on your public profile page.
-                </p>
-              </div>
-
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                  }`}
-                onClick={() => {
-                  setActiveMetric('sales');
-                  setHoveredPoint(null);
-                }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Total sales</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : totalSalesCount}</p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Number of purchases across all your links.</p>
-              </div>
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                  }`}
-                onClick={() => {
-                  setActiveMetric('revenue');
-                  setHoveredPoint(null);
-                }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Revenue</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `$${formattedRevenue} USD`}</p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Net earnings across every revenue stream.</p>
-              </div>
-            </section>
-
-            {/* Earnings breakdown — single consolidated view (replaces the old Tips tab) */}
-            <section className="mt-6">
-              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Revenue breakdown</p>
-                    <p className="text-sm text-exclu-space/80 mt-0.5">Net amount credited per stream — lifetime.</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {/* ───── Unified Performance card (metrics + breakdown merged) ───── */}
+            <section>
+              <div className="rounded-3xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] overflow-hidden">
+                {/* Primary metrics — click to drive the chart below */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/5 dark:divide-white/10">
                   {[
-                    { label: 'Links', value: (purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.05) * (1 - commissionRate))), 0)), icon: Zap },
-                    { label: 'Tips', value: tipsRevenueCents, icon: Heart },
-                    { label: 'Requests', value: requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0), icon: FileText },
-                    { label: 'Gifts', value: giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0), icon: Gift },
-                    { label: 'Subscriptions', value: fanSubStats.lifetimeNetCents, icon: Users },
-                  ].map(({ label, value, icon: Icon }) => (
-                    <div key={label} className="rounded-xl border border-exclu-arsenic/50 bg-black/30 p-4">
-                      <div className="flex items-center gap-2 text-exclu-space/70 mb-1.5">
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="text-[11px] font-medium uppercase tracking-wider">{label}</span>
-                      </div>
-                      <p className="text-lg font-bold text-exclu-cloud">
-                        {isLoading ? '—' : `$${(value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                      </p>
+                    {
+                      key: 'profile_views' as const,
+                      label: 'Profile visits',
+                      value: isLoading || profileViewCount === null ? '—' : profileViewCount.toLocaleString('en-US'),
+                      hint: 'Visits on your public profile',
+                    },
+                    {
+                      key: 'sales' as const,
+                      label: 'Total sales',
+                      value: isLoading ? '—' : totalSalesCount.toLocaleString('en-US'),
+                      hint: 'Purchases across all links',
+                    },
+                    {
+                      key: 'revenue' as const,
+                      label: 'Revenue',
+                      value: isLoading ? '—' : `$${formattedRevenue}`,
+                      hint: 'Net across every revenue stream',
+                    },
+                  ].map((m) => {
+                    const active = activeMetric === m.key;
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => { setActiveMetric(m.key); setHoveredPoint(null); }}
+                        className={`relative text-left p-5 sm:p-6 transition-colors ${
+                          active
+                            ? 'bg-[#CFFF16]/[0.08] dark:bg-[#CFFF16]/[0.05]'
+                            : 'hover:bg-foreground/[0.02] dark:hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        {active && (
+                          <span className="absolute top-0 left-4 right-4 sm:left-6 sm:right-6 h-[2px] rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.7)]" />
+                        )}
+                        <p className={`text-[10px] uppercase tracking-wider font-semibold ${
+                          active ? 'text-[#4a6304] dark:text-[#CFFF16]' : 'text-foreground/50 dark:text-white/50'
+                        }`}>
+                          {m.label}
+                        </p>
+                        <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-foreground dark:text-white tabular-nums">
+                          {m.value}
+                        </p>
+                        <p className="mt-1.5 text-[11px] text-foreground/50 dark:text-white/50">{m.hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Revenue breakdown — lifetime net per stream */}
+                <div className="border-t border-black/5 dark:border-white/10 p-5 sm:p-6">
+                  <div className="flex items-end justify-between gap-3 mb-4">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-foreground/55 dark:text-white/55 font-semibold">Revenue breakdown</p>
+                      <p className="text-[11px] text-foreground/50 dark:text-white/50 mt-1">Net amount credited per stream · lifetime</p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
+                    {[
+                      { label: 'Links', value: purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.05) * (1 - commissionRate))), 0), icon: Zap },
+                      { label: 'Tips', value: tipsRevenueCents, icon: Heart },
+                      { label: 'Requests', value: requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0), icon: FileText },
+                      { label: 'Gifts', value: giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0), icon: Gift },
+                      { label: 'Subscriptions', value: fanSubStats.lifetimeNetCents, icon: Users },
+                    ].map(({ label, value, icon: Icon }) => (
+                      <div
+                        key={label}
+                        className="rounded-xl border border-black/5 dark:border-white/10 bg-foreground/[0.02] dark:bg-white/[0.03] p-3.5 sm:p-4 transition-colors hover:border-[#CFFF16]/30"
+                      >
+                        <div className="flex items-center gap-1.5 text-foreground/55 dark:text-white/55 mb-1.5">
+                          <Icon className="w-3.5 h-3.5 text-[#CFFF16]" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+                        </div>
+                        <p className="text-base sm:text-lg font-bold text-foreground dark:text-white tabular-nums">
+                          {isLoading ? '—' : `$${(value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </section>

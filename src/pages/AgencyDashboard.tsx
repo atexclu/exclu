@@ -359,41 +359,45 @@ export default function AgencyDashboard() {
             <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 w-[380px] h-[380px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.12),transparent_60%)] blur-3xl opacity-40 dark:opacity-60" />
             <div aria-hidden className="pointer-events-none absolute inset-0 hidden dark:block opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-            <div className="relative">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
-                <span className="relative inline-flex h-1.5 w-1.5">
-                  <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
-                  <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
-                </span>
-                Portfolio revenue
+            <div className="relative lg:grid lg:grid-cols-[1fr,auto] lg:gap-10 lg:items-start">
+              {/* ── LEFT (desktop) / TOP (mobile) — label + revenue + stats ── */}
+              <div>
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
+                    <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
+                  </span>
+                  Portfolio revenue
+                </div>
+
+                <div className="mt-3 flex items-end gap-2.5">
+                  <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
+                    {formattedTotalRevenue}
+                  </span>
+                  <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+                </div>
+
+                <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
+                <div className="mt-5 grid grid-cols-3">
+                  {[
+                    { label: 'Profiles', value: profiles.length.toLocaleString('en-US') },
+                    { label: 'Total sales', value: totals.sales.toLocaleString('en-US') },
+                    { label: 'Profile visits', value: totals.views.toLocaleString('en-US') },
+                  ].map((stat, i) => (
+                    <div
+                      key={stat.label}
+                      className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
+                      <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="mt-3 flex items-end gap-2.5">
-                <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
-                  {formattedTotalRevenue}
-                </span>
-                <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
-              </div>
-
-              <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
-              <div className="mt-5 grid grid-cols-3">
-                {[
-                  { label: 'Profiles', value: profiles.length.toLocaleString('en-US') },
-                  { label: 'Total sales', value: totals.sales.toLocaleString('en-US') },
-                  { label: 'Profile visits', value: totals.views.toLocaleString('en-US') },
-                ].map((stat, i) => (
-                  <div
-                    key={stat.label}
-                    className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
-                  >
-                    <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
-                    <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-7 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-2">
+              {/* ── RIGHT (desktop, top-aligned) / BOTTOM (mobile, centered) — pills + CTA ── */}
+              <div className="mt-7 lg:mt-0 flex flex-col items-center lg:items-end gap-3 lg:gap-4">
+                <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2">
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
                     <Users className="w-3 h-3 text-[#CFFF16]" />
                     <span>{profiles.length} creator{profiles.length !== 1 ? 's' : ''} managed</span>
@@ -409,7 +413,7 @@ export default function AgencyDashboard() {
                 <button
                   type="button"
                   onClick={() => navigate('/app/profiles/new')}
-                  className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all"
+                  className="group relative w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all"
                 >
                   <Plus className="w-4 h-4" />
                   Add a new profile

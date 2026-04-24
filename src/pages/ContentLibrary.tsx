@@ -11,6 +11,7 @@ import { maybeConvertHeic } from '@/lib/convertHeic';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { generateBlurThumbnail } from '@/lib/blurThumbnail';
 import { useProfiles } from '@/contexts/ProfileContext';
+import { toast } from 'sonner';
 
 type LibraryAsset = {
   id: string;
@@ -78,6 +79,7 @@ const ContentLibrary = () => {
       const assetsQuery = supabase
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview, feed_blur_path')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       const { data, error } = activeProfile?.id
@@ -383,23 +385,27 @@ const ContentLibrary = () => {
     if (assetIds.length === 0) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${assetIds.length} content${assetIds.length > 1 ? 's' : ''}? This action cannot be undone.`
+      `Are you sure you want to delete ${assetIds.length} content${assetIds.length > 1 ? 's' : ''}? Links that already use this content will keep working.`
     );
 
     if (!confirmed) return;
 
+    // Soft-delete so any link_media / purchase that references the asset
+    // keeps resolving. The row + storage file stay; only the library hides it.
     const { error } = await supabase
       .from('assets')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .in('id', assetIds);
 
     if (error) {
       console.error('Error deleting assets', error);
+      toast.error('Failed to delete content. Please try again.');
       return;
     }
 
     setAssets((prev) => prev.filter((asset) => !assetIds.includes(asset.id)));
     setSelectedAssets(new Set());
+    toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} removed from your library.`);
   };
 
   const getFilteredAssets = () => {

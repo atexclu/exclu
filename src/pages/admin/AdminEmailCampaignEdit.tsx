@@ -4,7 +4,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useDebounce } from "use-debounce";
-import { adminCampaigns, type Campaign, type SegmentRules } from "@/lib/adminCampaigns";
+import {
+  adminCampaigns,
+  type Campaign,
+  type CampaignSendRow,
+  type SegmentRules,
+  type SendStatus,
+} from "@/lib/adminCampaigns";
 import { LintError } from "@/lib/adminEmails";
 import { lintEmail, type LintResult } from "@/lib/emailLint";
 import { EmailLintPanel } from "@/components/admin/EmailLintPanel";
@@ -40,11 +46,22 @@ import {
   Rocket,
   Pencil,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Sparkles,
   Users,
   Mail,
   MonitorSmartphone,
+  Search,
+  AlertTriangle,
+  AlertCircle,
+  MailOpen,
+  MousePointerClick,
+  Ban,
+  Clock,
+  CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -456,6 +473,13 @@ export default function AdminEmailCampaignEdit() {
           isSaved={Boolean(loaded)}
         />
       </StepCard>
+
+      {loaded && (loaded.total_recipients ?? 0) > 0 && (
+        <RecipientsPanel
+          campaignId={loaded.id}
+          live={loaded.status === "sending" || loaded.status === "scheduled"}
+        />
+      )}
     </div>
   );
 }
@@ -1255,5 +1279,358 @@ function Field({
       {children}
       {hint && <div className="text-[11px] text-muted-foreground mt-1.5">{hint}</div>}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Recipients panel — per-recipient send rows, live during sending.
+// Lets ops answer "who was contacted" / "who is queued" / "who bounced"
+// without digging in the DB. Auto-refreshes every 5s while the campaign
+// is in-flight so the list stays current during a launch.
+// ═══════════════════════════════════════════════════════════════════════
+
+const PAGE_SIZE = 50;
+
+const STATUS_ORDER: SendStatus[] = [
+  "queued",
+  "sending",
+  "retrying",
+  "sent",
+  "delivered",
+  "opened",
+  "clicked",
+  "bounced",
+  "complained",
+  "unsubscribed",
+  "failed",
+  "skipped",
+];
+
+const STATUS_LABEL: Record<SendStatus, string> = {
+  queued: "Queued",
+  sending: "Sending",
+  retrying: "Retrying",
+  sent: "Sent",
+  delivered: "Delivered",
+  opened: "Opened",
+  clicked: "Clicked",
+  bounced: "Bounced",
+  complained: "Complained",
+  unsubscribed: "Unsubscribed",
+  failed: "Failed",
+  skipped: "Skipped",
+};
+
+function statusStyle(status: SendStatus): {
+  Icon: React.ComponentType<{ className?: string }>;
+  className: string;
+} {
+  switch (status) {
+    case "queued":
+      return { Icon: Clock, className: "bg-muted text-muted-foreground" };
+    case "sending":
+      return { Icon: Loader2, className: "bg-amber-500/15 text-amber-400" };
+    case "retrying":
+      return { Icon: RefreshCw, className: "bg-amber-500/15 text-amber-400" };
+    case "sent":
+      return { Icon: Send, className: "bg-blue-500/15 text-blue-400" };
+    case "delivered":
+      return { Icon: CheckCircle2, className: "bg-emerald-500/15 text-emerald-400" };
+    case "opened":
+      return { Icon: MailOpen, className: "bg-emerald-500/15 text-emerald-400" };
+    case "clicked":
+      return { Icon: MousePointerClick, className: "bg-emerald-500/15 text-emerald-400" };
+    case "bounced":
+    case "complained":
+    case "failed":
+      return { Icon: AlertTriangle, className: "bg-red-500/15 text-red-400" };
+    case "unsubscribed":
+      return { Icon: AlertCircle, className: "bg-amber-500/15 text-amber-400" };
+    case "skipped":
+      return { Icon: Ban, className: "bg-muted text-muted-foreground" };
+  }
+}
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return "just now";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function RecipientsPanel({
+  campaignId,
+  live,
+}: {
+  campaignId: string;
+  live: boolean;
+}) {
+  const [statusFilter, setStatusFilter] = useState<SendStatus | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch] = useDebounce(searchInput, 300);
+  const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState(true);
+
+  // Reset pagination whenever filter/search changes — stale offsets lead
+  // to empty pages and confusing UX.
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, debouncedSearch]);
+
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ["admin-campaign-sends", campaignId, statusFilter, debouncedSearch, page],
+    queryFn: () =>
+      adminCampaigns.listCampaignSends({
+        id: campaignId,
+        status: statusFilter,
+        search: debouncedSearch.trim() || null,
+        offset: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+      }),
+    refetchInterval: live && expanded ? 5000 : false,
+    enabled: expanded,
+  });
+
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const counts = data?.status_counts;
+  const visibleStatuses = useMemo<SendStatus[]>(() => {
+    if (!counts) return [];
+    return STATUS_ORDER.filter((s) => (counts[s] ?? 0) > 0);
+  }, [counts]);
+  const grandTotal = useMemo(() => {
+    if (!counts) return 0;
+    return Object.values(counts).reduce((a, b) => a + b, 0);
+  }, [counts]);
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-border/60 hover:bg-muted/20 transition-colors"
+      >
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-muted text-muted-foreground">
+          <Users className="w-5 h-5" />
+        </div>
+        <div className="min-w-0 flex-1 text-left">
+          <h3 className="text-base sm:text-lg font-semibold text-foreground leading-tight">
+            Recipients
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {grandTotal > 0
+              ? `${grandTotal.toLocaleString()} total — see who has been contacted and who is still queued`
+              : "Per-recipient delivery status"}
+          </p>
+        </div>
+        {live && expanded && (
+          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500 flex-shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
+        )}
+        <ChevronDown
+          className={`w-4 h-4 text-muted-foreground transition-transform flex-shrink-0 ${
+            expanded ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="p-4 sm:p-5 space-y-4">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Input
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Search by email"
+                    className="pl-9 h-10"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  className="flex-shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              {/* Status pills */}
+              {counts && (
+                <div className="flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1 pb-1">
+                  <FilterPill
+                    active={statusFilter === null}
+                    onClick={() => setStatusFilter(null)}
+                    label={`All (${grandTotal.toLocaleString()})`}
+                  />
+                  {visibleStatuses.map((s) => (
+                    <FilterPill
+                      key={s}
+                      active={statusFilter === s}
+                      onClick={() => setStatusFilter(s)}
+                      label={`${STATUS_LABEL[s]} (${(counts[s] ?? 0).toLocaleString()})`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Body */}
+              {error ? (
+                <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+                  {(error as Error).message}
+                </div>
+              ) : !data ? (
+                <div className="flex items-center justify-center py-10 text-muted-foreground text-sm">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Loading recipients…
+                </div>
+              ) : data.sends.length === 0 ? (
+                <div className="rounded border border-border bg-muted/20 py-10 text-center text-sm text-muted-foreground">
+                  {debouncedSearch || statusFilter
+                    ? "No recipients match this filter."
+                    : "No recipients yet."}
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="max-h-[500px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40 sticky top-0 z-10">
+                          <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <th className="px-3 py-2 font-medium">Email</th>
+                            <th className="px-3 py-2 font-medium">Status</th>
+                            <th className="px-3 py-2 font-medium whitespace-nowrap">Last activity</th>
+                            <th className="px-3 py-2 font-medium text-right">Retries</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {data.sends.map((row) => (
+                            <RecipientRow key={row.id} row={row} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Pagination */}
+                  {pageCount > 1 && (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        {(page * PAGE_SIZE + 1).toLocaleString()}–
+                        {Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()} of{" "}
+                        {total.toLocaleString()}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page === 0}
+                          onClick={() => setPage((p) => Math.max(0, p - 1))}
+                          className="h-8 px-2"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </Button>
+                        <span className="tabular-nums px-2">
+                          {page + 1} / {pageCount}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page + 1 >= pageCount}
+                          onClick={() => setPage((p) => p + 1)}
+                          className="h-8 px-2"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function FilterPill({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+        active
+          ? "bg-primary text-primary-foreground"
+          : "bg-muted/30 text-muted-foreground hover:bg-muted/50"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function RecipientRow({ row }: { row: CampaignSendRow }) {
+  const { Icon, className } = statusStyle(row.status);
+  const spin = row.status === "sending";
+  const activity = row.last_event_at ?? row.sent_at ?? row.next_retry_at ?? row.created_at;
+
+  return (
+    <tr className="hover:bg-muted/20 transition-colors">
+      <td className="px-3 py-2 truncate max-w-[260px]" title={row.email}>
+        <span className="text-foreground">{row.email}</span>
+        {row.error && (
+          <div
+            className="text-[10px] text-red-400 truncate mt-0.5"
+            title={row.error}
+          >
+            {row.error}
+          </div>
+        )}
+      </td>
+      <td className="px-3 py-2">
+        <Badge className={`text-[10px] border-0 ${className}`}>
+          <Icon className={`w-3 h-3 mr-1 ${spin ? "animate-spin" : ""}`} />
+          {STATUS_LABEL[row.status]}
+        </Badge>
+      </td>
+      <td className="px-3 py-2 text-muted-foreground text-xs whitespace-nowrap">
+        {formatRelative(activity)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-xs text-muted-foreground">
+        {row.retry_count > 0 ? row.retry_count : "—"}
+      </td>
+    </tr>
   );
 }
