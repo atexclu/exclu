@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { ProfileSwitcherDropdown, ProfileSwitcherOverlay } from '@/components/ProfileSwitcher';
+import { ProUpgradePopup } from './ProUpgradePopup';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 
@@ -343,6 +344,8 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       <AnimatePresence>
         {showProfileSwitcher && location.pathname.startsWith('/app') && <ProfileSwitcherOverlay />}
       </AnimatePresence>
+
+      {location.pathname.startsWith('/app') && <ProUpgradePopup />}
     </div>
   );
 };
