@@ -119,6 +119,41 @@ export interface CampaignEvent {
   } | null;
 }
 
+export type SendStatus =
+  | "queued"
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "complained"
+  | "unsubscribed"
+  | "failed"
+  | "skipped"
+  | "retrying";
+
+export interface CampaignSendRow {
+  id: string;
+  email: string;
+  status: SendStatus;
+  brevo_message_id: string | null;
+  sent_at: string | null;
+  last_event_at: string | null;
+  error: string | null;
+  retry_count: number;
+  created_at: string;
+  next_retry_at: string | null;
+}
+
+export interface CampaignSendsPage {
+  sends: CampaignSendRow[];
+  total: number;
+  offset: number;
+  limit: number;
+  status_counts: Record<SendStatus, number>;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Segments
 // ═══════════════════════════════════════════════════════════════════════
@@ -171,4 +206,20 @@ export const adminCampaigns = {
   // Events / logs
   listRecentEvents: (limit = 100) =>
     call<{ events: CampaignEvent[] }>({ action: "list_recent_events", limit }),
+
+  listCampaignSends: (params: {
+    id: string;
+    status?: SendStatus | null;
+    search?: string | null;
+    offset?: number;
+    limit?: number;
+  }) =>
+    call<CampaignSendsPage>({
+      action: "list_campaign_sends",
+      id: params.id,
+      status: params.status ?? null,
+      search: params.search ?? null,
+      offset: params.offset ?? 0,
+      limit: params.limit ?? 50,
+    }),
 };

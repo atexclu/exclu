@@ -1,8 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PreCheckoutGate, isPreCheckoutReady, type PreCheckoutGateState } from '@/components/checkout/PreCheckoutGate';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase, supabaseAnon } from '@/lib/supabaseClient';
+import { canAccessPurchasedLink } from '@/lib/contentAccess';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Sparkles, Check, Download, Mail, ArrowUpRight, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -144,7 +146,7 @@ async function verifyPurchase(
       .eq('id', purchaseId)
       .maybeSingle();
 
-    if (purchase?.status === 'succeeded') {
+    if (canAccessPurchasedLink(purchase)) {
       return purchase as PurchaseData;
     }
 
@@ -235,17 +237,29 @@ const PublicLink = () => {
   const [paymentNotFound, setPaymentNotFound] = useState(false);
   const [unlockedContent, setUnlockedContent] = useState<ContentItem[]>([]);
   const [creator, setCreator] = useState<CreatorProfileData | null>(null);
-  const [buyerEmail, setBuyerEmail] = useState('');
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [gate, setGate] = useState<PreCheckoutGateState>({ email: '', country: null, ageAccepted: false });
+  // Keep legacy aliases pointing at the new state for minimal downstream churn:
+  const buyerEmail = gate.email;
+  const ageConfirmed = gate.ageAccepted;
   const [accessExpiresAt, setAccessExpiresAt] = useState<string | null>(null);
   const [purchaseData, setPurchaseData] = useState<PurchaseData | null>(null);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
-  // Pre-fill email for logged-in fans
+  // Pre-fill email + country for signed-in users
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data?.user?.email) setBuyerEmail(data.user.email);
+    let cancelled = false;
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (cancelled || !data?.user) return;
+      const email = data.user.email ?? '';
+      const { data: profile } = await supabase.from('profiles').select('country').eq('id', data.user.id).maybeSingle();
+      if (cancelled) return;
+      setGate(g => ({
+        ...g,
+        email: g.email || email,
+        country: g.country || (profile?.country ?? null),
+      }));
     });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -583,15 +597,16 @@ const PublicLink = () => {
   const handleUnlockClick = async () => {
     if (!slug || !link) return;
 
-    if (!ageConfirmed) {
-      toast.error('You must confirm that you are at least 18 years old');
+    if (!isPreCheckoutReady(gate, false)) {  // false = email not required for link checkout
+      if (!gate.ageAccepted) toast.error('You must confirm that you are at least 18 years old');
+      else if (!gate.country) toast.error('Please select your country');
       return;
     }
 
     setIsUnlocking(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-link-checkout', {
-        body: { slug, buyerEmail: buyerEmail || null, conversation_id: fromConversationId || null, chtref: chatterRef || null },
+        body: { slug, buyerEmail: gate.email || null, country: gate.country, conversation_id: fromConversationId || null, chtref: chatterRef || null },
       });
 
       if (error || !(data as any)?.fields) {
@@ -990,20 +1005,12 @@ const PublicLink = () => {
                         </motion.p>
                       </div>
 
-                      {/* 18+ Age Confirmation */}
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          checked={ageConfirmed}
-                          onChange={(e) => setAgeConfirmed(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded border-white/30 bg-black/40 text-primary focus:ring-primary/50 accent-[#CFFF16]"
-                        />
-                        <span className="text-[11px] text-white/60 leading-relaxed group-hover:text-white/80 transition-colors">
-                          I confirm that I am at least <strong className="text-white">18 years old</strong> and agree to the{' '}
-                          <a href="/terms" target="_blank" className="text-primary hover:underline">Terms</a> and{' '}
-                          <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
-                        </span>
-                      </label>
+                      {/* Checkout Gate: email (optional) + country + 18+ confirmation */}
+                      <PreCheckoutGate
+                        value={gate}
+                        onChange={setGate}
+                        requireEmail={false}
+                      />
 
                       {/* Unlock Button */}
                       <Button
@@ -1013,7 +1020,7 @@ const PublicLink = () => {
                           background: getAuroraGradient(creator?.aurora_gradient || creator?.theme_color || 'purple_dream').preview
                         }}
                         className="w-full rounded-2xl py-6 text-base font-bold shadow-2xl transition-all hover:scale-[1.02] active:scale-[0.98] hover:opacity-90"
-                        disabled={isUnlocking || !ageConfirmed}
+                        disabled={isUnlocking || !isPreCheckoutReady(gate, false)}
                         onClick={handleUnlockClick}
                       >
                         {isUnlocking ? (
@@ -1028,22 +1035,6 @@ const PublicLink = () => {
                           </span>
                         )}
                       </Button>
-
-                      {/* Email Input (hidden for support links — no content to deliver) */}
-                      {!link?.is_support_link && (
-                        <div className="space-y-3">
-                          <p className="text-xs text-white/60">
-                            Optional: enter your email to receive a copy of the content link
-                          </p>
-                          <Input
-                            type="email"
-                            value={buyerEmail}
-                            onChange={(e) => setBuyerEmail(e.target.value)}
-                            placeholder="you@example.com"
-                            className="h-11 bg-black/40 border-white/20 text-white placeholder:text-white/50 text-sm rounded-xl focus:ring-2 focus:ring-primary/50 transition-all"
-                          />
-                        </div>
-                      )}
 
                       {/* Info Text */}
                       <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[10px] sm:text-[11px] text-white/80">

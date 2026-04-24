@@ -8,12 +8,12 @@ const freeFeatures = [
   { icon: Check, text: 'Unlimited paid links' },
   { icon: Check, text: 'Basic analytics' },
   { icon: Check, text: 'Link-in-bio page' },
-  { icon: Shield, text: '5% processing fee for fans' },
+  { icon: Shield, text: '15% processing fee for fans' },
 ];
 
 const premiumFeatures = [
   { icon: Zap, text: '0% commission, keep everything' },
-  { icon: Shield, text: '5% processing fee for fans only' },
+  { icon: Shield, text: '15% processing fee for fans only' },
   { icon: Users, text: 'Unlimited paid links' },
   { icon: TrendingUp, text: 'Advanced analytics & insights' },
   { icon: Check, text: 'Priority support 24/7' },
@@ -56,7 +56,7 @@ const PricingSection = () => {
             Choose your plan. <span className="text-[#CFFF16]">Start earning.</span>
           </h2>
           <p className="text-lg text-exclu-space max-w-2xl mx-auto">
-            Start free with 10% commission, or go premium for 0% commission. Fans always pay a 5% processing fee.
+            Start free with 15% commission, or go premium for 0% commission. Fans always pay a 15% processing fee.
           </p>
         </motion.div>
 
@@ -79,7 +79,7 @@ const PricingSection = () => {
               </div>
               <p className="text-exclu-space text-sm">Get started with no upfront cost</p>
               <div className="mt-3 inline-block px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30">
-                <span className="text-amber-300 text-xs font-medium">10% commission on sales</span>
+                <span className="text-amber-300 text-xs font-medium">15% commission on sales</span>
               </div>
             </div>
 
@@ -137,7 +137,7 @@ const PricingSection = () => {
             <div className="text-center mb-8 relative z-10">
               <h3 className="text-xl font-bold text-exclu-cloud mb-4">Premium</h3>
               <div className="flex items-baseline justify-center gap-1 mb-3">
-                <span className="text-5xl font-extrabold text-exclu-white">$39</span>
+                <span className="text-5xl font-extrabold text-exclu-white">$39.99</span>
                 <span className="text-lg text-exclu-graphite">/month</span>
               </div>
               <p className="text-exclu-space text-sm">Maximum earnings for serious creators</p>

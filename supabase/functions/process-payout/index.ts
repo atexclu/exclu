@@ -11,6 +11,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
+import { reverseWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -93,6 +94,13 @@ serve(async (req) => {
     const creatorName = creatorProfile?.display_name || creatorProfile?.handle || creatorEmail || 'Creator';
 
     if (action === 'complete') {
+      // Increment the cumulative total-withdrawn tracker on the profile.
+      // (The wallet debit already happened at payout_hold time — no re-debit here.)
+      await supabase.rpc('increment_total_withdrawn', {
+        p_user_id: payout.creator_id,
+        p_amount_cents: payout.amount_cents,
+      });
+
       // Mark as completed
       const { error: updateErr } = await supabase
         .from('payouts')
@@ -130,16 +138,31 @@ serve(async (req) => {
     }
 
     if (action === 'reject') {
-      // Re-credit the wallet
-      try {
-        await supabase.rpc('credit_creator_wallet', {
-          p_creator_id: payout.creator_id,
-          p_amount_cents: payout.amount_cents,
-        });
-        console.log('Wallet re-credited for rejected payout:', payout.creator_id, '+', payout.amount_cents);
-      } catch (creditErr) {
-        console.error('CRITICAL: Failed to re-credit wallet on payout rejection:', creditErr);
-        return jsonError('Failed to re-credit wallet', 500, corsHeaders);
+      // Find the payout_hold ledger row so we can reverse it (credit funds back).
+      const { data: holdRow } = await supabase
+        .from('wallet_transactions')
+        .select('id')
+        .eq('source_type', 'payout_hold')
+        .eq('source_id', payoutId)
+        .eq('direction', 'debit')
+        .maybeSingle();
+
+      if (holdRow) {
+        try {
+          await reverseWalletTransaction(supabase, {
+            parentRowId: holdRow.id,
+            sourceType: 'payout_failure',
+            metadata: { rejection_reason: adminNotes ?? null },
+          });
+          console.log('Wallet re-credited via ledger reversal for rejected payout:', payoutId);
+        } catch (creditErr) {
+          console.error('CRITICAL: Failed to reverse ledger hold on payout rejection:', creditErr);
+          return jsonError('Failed to re-credit wallet', 500, corsHeaders);
+        }
+      } else {
+        // Legacy payout that pre-dates the ledger — no hold row to reverse.
+        // Skip ledger reversal; reconciliation cron (Task 8.7) handles these.
+        console.warn(`[process-payout] reject: no payout_hold ledger row for payout ${payoutId} — legacy row?`);
       }
 
       // Mark as rejected

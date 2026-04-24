@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera } from 'lucide-react';
+import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera, X as IconX } from 'lucide-react';
+import { FanFeedView } from '@/components/feed/FanFeedView';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import logoBlack from '@/assets/logo-black.svg';
@@ -118,7 +119,7 @@ const FanDashboard = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { resolvedTheme, setTheme } = useTheme();
-  const validTabs = ['favorites', 'tips', 'requests', 'messages', 'settings'] as const;
+  const validTabs = ['favorites', 'feed', 'tips', 'requests', 'messages', 'settings'] as const;
   const urlTab = searchParams.get('tab') as typeof validTabs[number] | null;
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(
     urlTab && validTabs.includes(urlTab) ? urlTab : 'favorites'
@@ -149,6 +150,17 @@ const FanDashboard = () => {
 
   // Request from favorites
   const [requestCreator, setRequestCreator] = useState<FavoriteCreator | null>(null);
+
+  // Active fan → creator subscriptions (for the settings tab cancel UI)
+  const [fanSubs, setFanSubs] = useState<Array<{
+    id: string;
+    creator_profile_id: string;
+    price_cents: number;
+    status: string;
+    period_end: string | null;
+    cancel_at_period_end: boolean;
+    creator_profile: { username: string | null; display_name: string | null; avatar_url: string | null } | null;
+  }>>([]);
 
   // Creator discovery
   const [discoveryCreators, setDiscoveryCreators] = useState<{ id: string; user_id: string; username: string; display_name: string | null; avatar_url: string | null; model_categories: string[] | null; }[]>([]);
@@ -291,6 +303,22 @@ const FanDashboard = () => {
       setGifts(giftsData.map((g: any) => ({ ...g, wishlist_item: g.wishlist_item, creator: g.creator })));
     }
 
+    // Fetch active / still-in-period subscriptions for the settings tab
+    const { data: subsData } = await supabase
+      .from('fan_creator_subscriptions')
+      .select(`
+        id, creator_profile_id, price_cents, status, period_end, cancel_at_period_end,
+        creator_profile:creator_profiles!fan_creator_subscriptions_creator_profile_id_fkey(username, display_name, avatar_url)
+      `)
+      .eq('fan_id', uid)
+      .in('status', ['active', 'cancelled'])
+      .gt('period_end', new Date().toISOString())
+      .order('period_end', { ascending: true });
+
+    if (subsData) {
+      setFanSubs(subsData as any);
+    }
+
     // Fetch custom requests (exclude incomplete checkouts)
     const { data: reqData } = await supabase
       .from('custom_requests')
@@ -427,6 +455,48 @@ const FanDashboard = () => {
     }
   };
 
+  /**
+   * Cancel a fan → creator subscription.
+   *
+   * The edge function flips cancel_at_period_end=true on our side and returns
+   * QuickPay Cancel form fields. The browser then POSTs to QuickPay, which
+   * stops billing and (per UGP lifecycle) fires a Cancel postback to
+   * ugp-membership-confirm that finalises the status. Access stays intact
+   * until period_end regardless of timing.
+   */
+  const handleCancelSub = async (subId: string) => {
+    if (!window.confirm("Cancel this subscription? You'll keep access until the end of the current period.")) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-fan-subscription', {
+        body: { subscription_id: subId },
+      });
+      if (error || !data?.fields) {
+        console.error('cancel-fan-subscription error', error);
+        toast.error('Unable to cancel right now');
+        return;
+      }
+      // Optimistic UI: reflect cancelling state while QuickPay's form round-trips.
+      setFanSubs((prev) => prev.map((s) => (s.id === subId ? { ...s, cancel_at_period_end: true } : s)));
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = data.action as string;
+      form.style.display = 'none';
+      for (const [name, value] of Object.entries(data.fields as Record<string, string>)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      console.error(err);
+      toast.error('Unable to cancel right now');
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!userId) return;
 
@@ -447,6 +517,7 @@ const FanDashboard = () => {
 
   const tabs = [
     { key: 'favorites' as const, label: 'My Creators', icon: Heart },
+    { key: 'feed' as const, label: 'Feed', icon: Compass },
     { key: 'messages' as const, label: 'Messages', icon: MessagesSquare },
     { key: 'tips' as const, label: 'Tips & Gifts', icon: DollarSign },
     { key: 'requests' as const, label: 'Links & Requests', icon: Unlock },
@@ -623,6 +694,7 @@ const FanDashboard = () => {
             const active = activeTab === key;
             const shortLabel =
               key === "favorites" ? "Creators" :
+              key === "feed" ? "Feed" :
               key === "messages" ? "Chat" :
               key === "tips" ? "Tips" :
               key === "requests" ? "Links" : "";
@@ -961,6 +1033,19 @@ const FanDashboard = () => {
                     </div>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── FEED TAB ── */}
+            {!isLoading && activeTab === 'feed' && (
+              <motion.div
+                key="feed"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 0.2 }}
+              >
+                <FanFeedView userId={userId} />
               </motion.div>
             )}
 
@@ -1466,6 +1551,69 @@ const FanDashboard = () => {
                     {resolvedTheme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                     {resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}
                   </Button>
+                </div>
+
+                {/* Creator subscriptions */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">Your creator subscriptions</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Active recurring payments to creators.</p>
+
+                  {fanSubs.length === 0 && (
+                    <p className="text-xs text-muted-foreground py-3">You don't subscribe to any creator right now.</p>
+                  )}
+
+                  {fanSubs.map((s, idx) => (
+                    <div
+                      key={s.id}
+                      className={`flex items-center justify-between gap-3 py-3 ${idx === 0 ? '' : 'border-t border-border/60'}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
+                          {s.creator_profile?.avatar_url ? (
+                            <img src={s.creator_profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-muted" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            @{s.creator_profile?.username ?? 'creator'}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            ${(s.price_cents / 100).toFixed(2)}/mo
+                            {s.cancel_at_period_end && s.period_end && (
+                              <> · access until {new Date(s.period_end).toLocaleDateString()}</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      {!s.cancel_at_period_end ? (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelSub(s.id)}
+                          className="text-xs font-semibold text-red-500 hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Cancelling</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* My subscriptions link */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">My subscriptions</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Manage your creator subscriptions.</p>
+                  </div>
+                  <Link
+                    to="/fan/subscriptions"
+                    className="text-xs font-semibold text-foreground hover:underline flex items-center gap-1"
+                  >
+                    View →
+                  </Link>
                 </div>
 
                 {/* Sign out */}

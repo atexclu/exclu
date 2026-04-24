@@ -7,7 +7,7 @@ const Terms = () => {
       <Navbar />
       <main className="max-w-4xl mx-auto px-6 pt-32 pb-16">
         <h1 className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud mb-2">Terms of Service</h1>
-        <p className="text-exclu-space/60 text-sm mb-10">Last updated: April 2, 2026 — Effective immediately</p>
+        <p className="text-exclu-space/60 text-sm mb-10">Last updated: April 23, 2026 — Effective immediately</p>
 
         <div className="prose prose-invert prose-sm max-w-none space-y-8 text-exclu-space/90 [&_h2]:text-exclu-cloud [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-10 [&_h2]:mb-4 [&_h3]:text-exclu-cloud [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_strong]:text-exclu-cloud [&_a]:text-[#CFFF16] [&_a]:no-underline hover:[&_a]:underline [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-1">
 
@@ -74,23 +74,23 @@ const Terms = () => {
             <li><strong>Tips:</strong> Voluntary one-time payments sent directly to a creator as a show of support. Minimum: $5 USD. Maximum: $500 USD.</li>
             <li><strong>Gifts (Wishlist):</strong> Purchases of items from a creator's wishlist on their behalf.</li>
             <li><strong>Custom Requests:</strong> Paid content requests submitted to a creator. The payment is pre-authorized and held until the creator accepts or declines. If the creator accepts and delivers the content, the payment is captured. If the creator declines or fails to respond within 6 days, the hold is released and the fan is not charged. Minimum: $20 USD. Maximum: $1,000 USD.</li>
-            <li><strong>Premium Subscription:</strong> A monthly subscription for creators at $39 USD/month that removes the platform commission on sales (0% instead of 10%).</li>
+            <li><strong>Premium Subscription:</strong> A monthly subscription for creators at $39.99 USD/month that removes the platform commission on sales (0% instead of 15%).</li>
           </ul>
 
           <h3>3.3 Processing Fee</h3>
-          <p>A <strong>5% processing fee</strong> is added to all fan-initiated transactions (paid links, tips, gifts, and custom requests). This fee is paid by the fan on top of the base price and covers payment processing costs.</p>
+          <p>A <strong>15% processing fee</strong> is added to all fan-initiated transactions (paid links, tips, gifts, and custom requests). This fee is paid by the fan on top of the base price and covers payment processing costs. Your bank may apply additional processing fees of up to 5.5% on international card transactions, which are deducted from the amount you see on your statement — not from the creator payout.</p>
 
           <h3>3.4 Platform Commission</h3>
           <ul>
-            <li><strong>Free Plan:</strong> Exclu retains a 10% commission on all creator earnings (tips, link sales, gifts, custom requests).</li>
-            <li><strong>Premium Plan ($39/month):</strong> 0% commission — creators keep 100% of their earnings.</li>
+            <li><strong>Free Plan:</strong> Exclu retains a 15% commission on all creator earnings (tips, link sales, gifts, custom requests).</li>
+            <li><strong>Premium Plan ($39.99/month):</strong> 0% commission — creators keep 100% of their earnings.</li>
           </ul>
 
           <h3>3.5 Creator Earnings and Wallet</h3>
           <p>Creator earnings are credited to an internal wallet on Exclu. Creators may request a withdrawal of their earnings to their registered bank account (IBAN) at any time, subject to a minimum withdrawal amount of <strong>$50 USD</strong>. Withdrawals are processed manually and typically completed within 1–5 business days.</p>
 
           <h3>3.6 Multi-Profile Pricing</h3>
-          <p>The Premium subscription includes up to 2 creator profiles. Each additional profile beyond 2 incurs an additional charge of <strong>$10 USD/month</strong>, deducted from the creator's wallet balance at each billing renewal.</p>
+          <p>The Premium subscription includes up to 2 creator profiles. Each additional profile beyond 2 incurs an additional charge of <strong>$10 USD/month</strong>. The full subscription amount (base $39.99 + extras) is billed directly to the creator's registered payment card at each monthly renewal — it is never debited from the creator's wallet.</p>
 
           <h3>3.7 Refunds</h3>
           <p>Purchases on Exclu are generally <strong>final and non-refundable</strong>. However, we reserve the right to issue refunds in our sole discretion in appropriate cases, such as:</p>
@@ -107,14 +107,14 @@ const Terms = () => {
           <p>You are solely responsible for determining and paying any taxes applicable to your transactions on Exclu. Exclu does not provide tax advice and is not responsible for your tax obligations.</p>
 
           <h2>4. Referral Program</h2>
-          <p>Exclu may provide creators with a unique referral link. When a new creator registers using your referral link and subscribes to the Premium plan, you earn a recurring commission of <strong>35% of the subscription price</strong> ($13.65 USD) for each billing cycle that the referred creator remains subscribed. Additional bonuses may apply (e.g., $100 bonus when a referred creator reaches $1,000 in net revenue within 90 days).</p>
+          <p>Exclu may provide creators with a unique referral link. When a new creator registers using your referral link and subscribes to the Premium plan, you earn a recurring commission of <strong>35% of the subscription price</strong> ($14.00 USD) for each billing cycle that the referred creator remains subscribed. Additional bonuses may apply (e.g., $100 bonus when a referred creator reaches $1,000 in net revenue within 90 days).</p>
 
           <h2>5. Chatter Revenue Sharing</h2>
           <p>When a sale is attributed to a chatter (team member managing conversations on behalf of a creator), the revenue is split as follows:</p>
           <ul>
             <li><strong>Creator:</strong> 60% of the base price</li>
             <li><strong>Chatter:</strong> 25% of the base price</li>
-            <li><strong>Platform:</strong> 15% of the base price + 5% processing fee</li>
+            <li><strong>Platform:</strong> 15% of the base price + 15% processing fee</li>
           </ul>
           <p>This split applies regardless of whether the creator is on the Free or Premium plan.</p>
 

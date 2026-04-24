@@ -16,11 +16,12 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
+import { applyWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
@@ -30,8 +31,12 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function parseMerchantRef(ref: string): { type: string; id: string } | null {
+function parseMerchantRef(ref: string): { type: string; id: string; subPlan?: 'monthly' | 'annual' } | null {
   if (!ref) return null;
+  // sub_monthly_<uuid> or sub_annual_<uuid> (new Phase 4 format)
+  const subMatch = ref.match(/^sub_(monthly|annual)_(.+)$/);
+  if (subMatch) return { type: 'sub', subPlan: subMatch[1] as 'monthly' | 'annual', id: subMatch[2] };
+  // Legacy: sub_<uuid>, link_<uuid>, tip_<uuid>, gift_<uuid>, req_<uuid>, fsub_<uuid>
   const idx = ref.indexOf('_');
   if (idx === -1) return null;
   return { type: ref.slice(0, idx), id: ref.slice(idx + 1) };
@@ -69,6 +74,53 @@ async function upsertMailingContactSafe(
   }
 }
 
+/**
+ * First-success-wins: persist the fan's billing_country from a QuickPay
+ * CustomerCountry field. Fire-and-forget — never blocks the credit path.
+ *
+ * Matches the fan by email via auth.admin.listUsers (Supabase SDK 2.43+
+ * supports a `filter` arg of the form `email.eq.<value>`). If no account
+ * exists for this email (guest checkout), silently skip — Task 1.1 will
+ * re-capture the country on their next checkout via the PreCheckoutGate.
+ *
+ * Only writes when billing_country IS NULL so we don't clobber a value the
+ * fan set explicitly during signup.
+ */
+async function persistFanBillingCountry(email: string | null, country: string | null): Promise<void> {
+  if (!email) return;
+  if (!country || country.length !== 2) return;
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedCountry = country.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalizedCountry)) return;
+
+  try {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      // @ts-expect-error — `filter` is supported since SDK 2.43 but types lag.
+      filter: `email.eq.${normalizedEmail}`,
+      perPage: 1,
+    });
+    if (error) {
+      console.warn('[ugp-confirm] listUsers failed while persisting billing_country', error.message);
+      return;
+    }
+    const userId = data?.users?.[0]?.id;
+    if (!userId) return;
+    // Defensive check: only update when the returned user email matches exactly
+    if (data?.users?.[0]?.email?.toLowerCase() !== normalizedEmail) return;
+
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ billing_country: normalizedCountry })
+      .eq('id', userId)
+      .is('billing_country', null);
+    if (updErr) {
+      console.warn('[ugp-confirm] profiles.billing_country update failed', updErr.message);
+    }
+  } catch (e) {
+    console.warn('[ugp-confirm] persistFanBillingCountry exception', (e as Error).message);
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -84,19 +136,31 @@ serve(async (req) => {
     return new Response('Bad request', { status: 400 });
   }
 
-  // ── 1. Log raw event ────────────────────────────────────────────────
-  const transactionId = body.TransactionID || '';
-  const merchantRef = body.MerchantReference || '';
-  const amount = body.Amount || '0';
+  // ── 1. Mandatory per-MID Key validation ─────────────────────────────
+  const siteId = String(body?.SiteID ?? '');
+  const midKey = midFromSiteId(siteId);
 
-  // ── 1. Verify Key if present (standard ConfirmURL callbacks don't include Key,
-  //       only Membership Postbacks do — so only validate when actually sent) ──
-  if (confirmKey && body.Key && body.Key !== confirmKey) {
-    console.error('Invalid Key in ConfirmURL callback. Got:', body.Key?.slice(0, 8) + '...');
+  let expectedKey: string;
+  try {
+    expectedKey = getMidConfirmKey(midKey);
+  } catch (e) {
+    console.error('[ugp-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
+    return new Response('Server misconfigured', { status: 503 });
+  }
+
+  if (String(body?.Key ?? '') !== expectedKey) {
+    console.error('[ugp-confirm] Key mismatch', {
+      siteId,
+      midKey,
+      provided: String(body?.Key ?? '').slice(0, 8) + '...',
+    });
     return new Response('Unauthorized', { status: 401 });
   }
 
   // ── 2. Log raw event (after key validation) ─────────────────────────
+  const transactionId = body.TransactionID || '';
+  const merchantRef = body.MerchantReference || '';
+  const amount = body.Amount || '0';
   try {
     await supabase.from('payment_events').insert({
       transaction_id: transactionId,
@@ -141,14 +205,18 @@ serve(async (req) => {
   // (see ugp-listener). The ConfirmURL should only ever actually mutate state for:
   //   - Sale      → direct one-time capture (link / tip / gift / initial sub)
   //   - Authorize → pre-auth hold for custom requests (captured later)
-  //   - Recurring → subscription rebill (goes through ugp-membership-confirm too)
+  //
+  // NOTE: Recurring (rebill) postbacks fire on the ListenerURL, NOT ConfirmURL.
+  // Server-initiated /recurringtransactions calls use the async listener path.
+  // A Recurring callback arriving at ConfirmURL would be a misconfiguration; it
+  // will hit the non-actionable guard below and be logged + no-op'd.
   const actionableStatesByType: Record<string, ReadonlySet<string>> = {
     link: new Set(['Sale']),
     tip: new Set(['Sale']),
     gift: new Set(['Sale']),
     req: new Set(['Authorize']),
-    sub: new Set(['Sale', 'Recurring']),
-    fsub: new Set(['Sale', 'Recurring']),
+    sub: new Set(['Sale']),   // initial Sale only; rebills go to ugp-listener
+    fsub: new Set(['Sale']),  // initial Sale only; rebills go to ugp-listener
   };
   const allowedStates = actionableStatesByType[parsed.type];
   if (allowedStates && !allowedStates.has(transactionState)) {
@@ -178,7 +246,10 @@ serve(async (req) => {
         await handleRequest(parsed.id, body, transactionState);
         break;
       case 'sub':
-        await handleSubscription(parsed.id, body);
+        await handleSubscription(parsed.id, body, parsed.subPlan ?? 'monthly');
+        break;
+      case 'fsub':
+        await handleFanSubscription(parsed.id, body);
         break;
       default:
         console.warn('Unknown transaction type:', parsed.type);
@@ -219,7 +290,7 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
   // Load the pre-created purchase record
   const { data: purchase, error: fetchErr } = await supabase
     .from('purchases')
-    .select('id, link_id, amount_cents, status, buyer_email, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents, chat_conversation_id')
+    .select('id, link_id, amount_cents, status, buyer_email, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents, chat_conversation_id, ugp_mid')
     .eq('id', purchaseId)
     .single();
 
@@ -234,14 +305,64 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     return;
   }
 
-  // Verify amount (tolerance of 2 cents for rounding)
+  // Amount verification — ledger is the point of no return, so gate on parity.
   const receivedCents = decimalToCents(body.Amount);
   const expectedCents = purchase.amount_cents;
   if (Math.abs(receivedCents - expectedCents) > 2) {
-    console.warn(`Amount mismatch for purchase ${purchaseId}: expected ${expectedCents}, received ${receivedCents}`);
+    await markEventError(body.TransactionID, `amount mismatch: expected ${expectedCents}, got ${receivedCents}`);
+    console.error(`[ugp-confirm] link ${purchaseId}: amount mismatch`, { expectedCents, receivedCents });
+    return;
   }
 
   const customerEmail = body.CustomerEmail || purchase.buyer_email || null;
+
+  // Load link info for email and wallet credit
+  const { data: link } = await supabase
+    .from('links')
+    .select('id, title, slug, creator_id')
+    .eq('id', purchase.link_id)
+    .single();
+
+  if (!link) {
+    console.error('Link not found for purchase:', purchase.link_id);
+    return;
+  }
+
+  // LEDGER FIRST — if this throws, we bail before touching purchase status.
+  const creatorNet = purchase.creator_net_cents || 0;
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: link.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'link_purchase',
+      sourceId: purchase.id,
+      sourceTransactionId: body.TransactionID,
+      sourceUgpMid: purchase.ugp_mid ?? null,
+      metadata: {
+        platform_fee_cents: purchase.platform_fee_cents,
+        buyer_email: customerEmail,
+        amount_paid_cents: receivedCents,
+      },
+    });
+    console.log('Creator wallet ledger credited:', link.creator_id, '+', creatorNet);
+  }
+
+  // Chatter commission (attribution enforced by the ledger's CHECK — links/requests only)
+  if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: purchase.chat_chatter_id,
+      ownerKind: 'chatter',
+      direction: 'credit',
+      amountCents: purchase.chatter_earnings_cents,
+      sourceType: 'chatter_commission',
+      sourceId: purchase.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: { creator_id: link.creator_id, purchase_link_id: link.id },
+    });
+    console.log('Chatter ledger credited:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
+  }
 
   // Update purchase to succeeded (keep existing access_token from creation)
   const { error: updateErr } = await supabase.from('purchases').update({
@@ -258,55 +379,15 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
 
   // Phase 3: register the buyer in the mailing contacts registry
   void upsertMailingContactSafe(customerEmail, 'link_purchase', purchaseId);
-
-  // Load link info for email and wallet credit
-  const { data: link } = await supabase
-    .from('links')
-    .select('id, title, slug, creator_id')
-    .eq('id', purchase.link_id)
-    .single();
-
-  if (!link) {
-    console.error('Link not found for purchase:', purchase.link_id);
-    return;
-  }
-
-  // Credit creator wallet
-  const creatorNet = purchase.creator_net_cents || 0;
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: link.creator_id,
-        p_amount_cents: creatorNet,
-      });
-      console.log('Creator wallet credited:', link.creator_id, '+', creatorNet);
-    } catch (walletErr) {
-      console.error('Error crediting creator wallet:', walletErr);
-    }
-  }
-
-  // Chatter earnings (60/25/15 split) — credit wallet + counter
-  if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
-    try {
-      // Credit chatter's wallet (withdrawable balance)
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: purchase.chat_chatter_id,
-        p_amount_cents: purchase.chatter_earnings_cents,
-      });
-      // Also update the chatter-specific counter
-      await supabase.rpc('increment_chatter_earnings', {
-        p_chatter_id: purchase.chat_chatter_id,
-        p_amount_cents: purchase.chatter_earnings_cents,
-      });
-      console.log('Chatter wallet + earnings credited:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
-    } catch (err) {
-      console.error('Error crediting chatter:', err);
-    }
-  }
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? purchase.buyer_email ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Conversation revenue tracking
   // Track conversation revenue using base price (without fan processing fee)
-  const basePriceCents = Math.round(purchase.amount_cents / 1.05);
+  const basePriceCents = Math.round(purchase.amount_cents / 1.15);
   if (purchase.chat_conversation_id && basePriceCents > 0) {
     try {
       await supabase.rpc('increment_conversation_revenue', {
@@ -412,14 +493,32 @@ async function handleTip(tipId: string, body: Record<string, string>) {
 
   // Fallback: recalculate if not pre-stored (e.g. legacy records)
   if (!creatorNet && tip.amount_cents > 0) {
-    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+    const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
     const platformCommission = Math.round(tip.amount_cents * commissionRate);
-    const fanFee = Math.round(tip.amount_cents * 0.05);
+    const fanFee = Math.round(tip.amount_cents * 0.15);
     creatorNet = tip.amount_cents - platformCommission;
     totalPlatformFee = platformCommission + fanFee;
   }
 
   const customerEmail = body.CustomerEmail || null;
+
+  // LEDGER FIRST — before any status flip; if this throws the status stays 'pending'.
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: tip.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'tip',
+      sourceId: tip.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: {
+        platform_fee_cents: totalPlatformFee,
+        amount_paid_cents: decimalToCents(body.Amount || '0'),
+      },
+    });
+    console.log('Creator wallet ledger credited (tip):', tip.creator_id, '+', creatorNet);
+  }
 
   await supabase.from('tips').update({
     status: 'succeeded',
@@ -432,18 +531,11 @@ async function handleTip(tipId: string, body: Record<string, string>) {
   }).eq('id', tipId);
 
   void upsertMailingContactSafe(customerEmail, 'tip', tipId, body.CustomerName ?? null);
-
-  // Credit creator wallet
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: tip.creator_id,
-        p_amount_cents: creatorNet,
-      });
-    } catch (err) {
-      console.error('Error crediting wallet for tip:', err);
-    }
-  }
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? customerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Send creator notification email
   if (creator) {
@@ -502,11 +594,29 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     .eq('id', gift.creator_id)
     .single();
 
-  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.10;
+  const commissionRate = creator?.is_creator_subscribed ? 0 : 0.15;
   const platformCommission = Math.round(gift.amount_cents * commissionRate);
-  const fanFee = Math.round(gift.amount_cents * 0.05);
+  const fanFee = Math.round(gift.amount_cents * 0.15);
   const creatorNet = gift.amount_cents - platformCommission;
   const totalPlatformFee = platformCommission + fanFee;
+
+  // LEDGER FIRST — before any status flip; if this throws the status stays 'pending'.
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: gift.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'gift_purchase',
+      sourceId: gift.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: {
+        platform_fee_cents: totalPlatformFee,
+        amount_paid_cents: decimalToCents(body.Amount || '0'),
+      },
+    });
+    console.log('Creator wallet ledger credited (gift):', gift.creator_id, '+', creatorNet);
+  }
 
   await supabase.from('gift_purchases').update({
     status: 'succeeded',
@@ -519,6 +629,11 @@ async function handleGift(giftId: string, body: Record<string, string>) {
   }).eq('id', giftId);
 
   void upsertMailingContactSafe(body.CustomerEmail, 'gift', giftId, body.CustomerName ?? null);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Increment wishlist gifted_count (read-then-write, single increment)
   const { data: item } = await supabase
@@ -531,18 +646,6 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     await supabase.from('wishlist_items')
       .update({ gifted_count: (item.gifted_count || 0) + 1 })
       .eq('id', gift.wishlist_item_id);
-  }
-
-  // Credit creator wallet
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: gift.creator_id,
-        p_amount_cents: creatorNet,
-      });
-    } catch (err) {
-      console.error('Error crediting wallet for gift:', err);
-    }
   }
 
   // Send creator notification
@@ -600,6 +703,11 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
   }).eq('id', requestId);
 
   void upsertMailingContactSafe(request.fan_email ?? body.CustomerEmail, 'custom_request', request.id, body.CustomerName ?? null);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    request.fan_email ?? body.CustomerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // DO NOT credit wallet here — funds are only held (Authorize), not captured yet
   // The wallet will be credited when the creator captures via manage-request
@@ -666,83 +774,171 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
 // Note: Renewals go to ugp-membership-confirm via Member Postback URL
 // ══════════════════════════════════════════════════════════════════════════
 
-async function handleSubscription(userId: string, body: Record<string, string>) {
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, is_creator_subscribed')
-    .eq('id', userId)
-    .single();
-
+async function handleSubscription(userId: string, body: Record<string, string>, subPlan: 'monthly' | 'annual' = 'monthly') {
+  const { data: profile } = await supabase.from('profiles')
+    .select('id, subscription_plan')
+    .eq('id', userId).single();
   if (!profile) {
     console.error('Profile not found for subscription:', userId);
     return;
   }
 
-  const wasSubscribed = profile.is_creator_subscribed;
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+  const now = new Date();
+  const periodEnd = new Date(now);
+  if (subPlan === 'annual') periodEnd.setUTCDate(periodEnd.getUTCDate() + 365);
+  else periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
 
-  const updatePayload: Record<string, unknown> = {
+  // MID: infer from SiteID on the callback — the SiteID unambiguously identifies the MID.
+  const siteIdFromCallback = body.SiteID || '';
+  const us2dSite = Deno.env.get('QUICKPAY_SITE_ID_US_2D') || '';
+  const mid = siteIdFromCallback && siteIdFromCallback === us2dSite ? 'us_2d' : 'intl_3d';
+
+  await supabase.from('profiles').update({
     is_creator_subscribed: true,
-  };
+    subscription_plan: subPlan,
+    subscription_ugp_transaction_id: body.TransactionID || null,
+    subscription_mid: mid,
+    subscription_amount_cents: amountCents,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: periodEnd.toISOString(),
+    subscription_cancel_at_period_end: false,
+    subscription_suspended_at: null,
+    show_join_banner: false,
+    show_certification: true,
+    show_deeplinks: true,
+    show_available_now: true,
+  }).eq('id', userId);
 
-  // First-time subscription flags
-  if (!wasSubscribed) {
-    updatePayload.show_join_banner = false;
-    updatePayload.show_certification = true;
-    updatePayload.show_deeplinks = true;
-    updatePayload.show_available_now = true;
+  await creditReferralCommission(userId, body.TransactionID);
+
+  console.log(`Creator sub activated: ${userId} plan=${subPlan} amount=${amountCents} period_end=${periodEnd.toISOString()}`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// FAN → CREATOR SUBSCRIPTION (initial Sale only — renewals/cancels go to
+// ugp-membership-confirm via the Member Postback URL)
+// ══════════════════════════════════════════════════════════════════════════
+
+async function handleFanSubscription(subscriptionId: string, body: Record<string, string>) {
+  const { data: sub, error: fetchErr } = await supabase
+    .from('fan_creator_subscriptions')
+    .select('id, fan_id, creator_user_id, creator_profile_id, status, price_cents, period_end, ugp_mid')
+    .eq('id', subscriptionId)
+    .maybeSingle();
+
+  if (fetchErr || !sub) {
+    console.error('Fan subscription not found:', subscriptionId, fetchErr);
+    return;
   }
 
-  await supabase.from('profiles').update(updatePayload).eq('id', userId);
+  // Idempotent: already active and period still valid
+  if (sub.status === 'active' && sub.period_end && new Date(sub.period_end) > new Date()) {
+    console.log('Fan subscription already active:', subscriptionId);
+    return;
+  }
 
-  // Referral commission (35% of $39 = 1365 cents)
-  await creditReferralCommission(userId);
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30); // 30-day cycle; rebill cron extends on each renewal
 
-  console.log('Subscription activated:', userId, wasSubscribed ? '(renewal)' : '(first-time)');
+  const mid = midFromSiteId(body.SiteID ?? '');
+
+  // Verify amount
+  const receivedCents = decimalToCents(body.Amount || '0');
+
+  // Look up the creator's plan to know the commission rate
+  const { data: creatorProfile } = await supabase
+    .from('profiles')
+    .select('subscription_plan')
+    .eq('id', sub.creator_user_id)
+    .single();
+  const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
+  const creatorNetCents = Math.round(sub.price_cents * (1 - platformRate));
+
+  // LEDGER FIRST — before status flip; if this throws we bail.
+  await applyWalletTransaction(supabase, {
+    ownerId: sub.creator_user_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: creatorNetCents,
+    sourceType: 'fan_subscription',
+    sourceId: sub.id,
+    sourceTransactionId: body.TransactionID,
+    sourceUgpMid: mid,
+    metadata: {
+      fan_id: sub.fan_id,
+      cycle_amount_cents: sub.price_cents,
+      platform_rate: platformRate,
+      kind: 'initial',
+      amount_paid_cents: receivedCents,
+    },
+  });
+  console.log('Creator wallet ledger credited (fan_sub initial):', sub.creator_user_id, '+', creatorNetCents);
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'active',
+    period_start: now.toISOString(),
+    period_end: periodEnd.toISOString(),
+    next_rebill_at: periodEnd.toISOString(),
+    ugp_transaction_id: body.TransactionID ?? null,
+    ugp_merchant_reference: body.MerchantReference ?? null,
+    ugp_mid: mid,
+    cancel_at_period_end: false,
+    suspended_at: null,
+  };
+  // Only stamp started_at on first activation
+  if (sub.status === 'pending' || !sub.status) {
+    updatePayload.started_at = now.toISOString();
+  }
+
+  const { error: updateErr } = await supabase
+    .from('fan_creator_subscriptions')
+    .update(updatePayload)
+    .eq('id', subscriptionId);
+
+  if (updateErr) {
+    console.error('Error activating fan subscription:', updateErr);
+    return;
+  }
+
+  console.log(`Fan sub activated: ${subscriptionId} amount=${sub.price_cents} period_end=${periodEnd.toISOString()}`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
 // SHARED HELPERS
 // ══════════════════════════════════════════════════════════════════════════
 
-async function creditReferralCommission(subscriberId: string) {
+async function creditReferralCommission(subscriberId: string, subTxnId: string) {
   const { data: referral } = await supabase
     .from('referrals')
-    .select('id, referrer_id, status')
+    .select('id, referrer_id')
     .eq('referred_id', subscriberId)
     .neq('status', 'inactive')
     .maybeSingle();
 
   if (!referral) return;
 
-  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  // 35% of the $39.99 initial Pro Monthly Sale — rounds to 1400 cents ($14.00)
+  const commissionCents = Math.round(3999 * 0.35);
 
-  // Update referral record
-  const { data: currentRef } = await supabase
-    .from('referrals')
-    .select('commission_earned_cents')
-    .eq('id', referral.id)
-    .single();
+  await applyWalletTransaction(supabase, {
+    ownerId: referral.referrer_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: commissionCents,
+    sourceType: 'creator_subscription',
+    sourceId: referral.id,
+    sourceTransactionId: subTxnId,
+    metadata: { kind: 'referral_commission_initial', subscriber_id: subscriberId },
+  });
 
   await supabase.from('referrals').update({
-    commission_earned_cents: (currentRef?.commission_earned_cents || 0) + commissionCents,
     status: 'converted',
     converted_at: new Date().toISOString(),
   }).eq('id', referral.id);
 
-  // Credit referrer's affiliate earnings
-  const { data: referrer } = await supabase
-    .from('profiles')
-    .select('affiliate_earnings_cents')
-    .eq('id', referral.referrer_id)
-    .single();
-
-  if (referrer) {
-    await supabase.from('profiles').update({
-      affiliate_earnings_cents: (referrer.affiliate_earnings_cents || 0) + commissionCents,
-    }).eq('id', referral.referrer_id);
-  }
-
-  console.log('Referral commission credited:', referral.referrer_id, '+', commissionCents, 'cents');
+  console.log('Referral commission ledger credited:', referral.referrer_id, '+', commissionCents, 'cents');
 }
 
 async function checkReferralBonus(creatorId: string) {

@@ -1,13 +1,14 @@
 import AppShell from '@/components/AppShell';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
+import BankDetailsForm, { BankData, getBankDisplayFields } from '@/components/BankDetailsForm';
 
 // --- SELF-HEALING & CACHE-BUSTING ---
 // Increment this version when making critical changes to force data re-fetch
@@ -26,10 +27,38 @@ const AppDashboard = () => {
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'metrics' | 'referral' | 'tips'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'subscriptions' | 'referral' | 'payouts'>('metrics');
+  // Fan → creator subscriptions (active period, past history)
+  const [fanSubscribers, setFanSubscribers] = useState<Array<{
+    id: string;
+    status: string;
+    price_cents: number;
+    creator_net_cents: number;
+    period_start: string | null;
+    period_end: string | null;
+    cancel_at_period_end: boolean;
+    started_at: string | null;
+    cancelled_at: string | null;
+    fan: { id: string; display_name: string | null; avatar_url: string | null } | null;
+  }>>([]);
+  const [fanSubStats, setFanSubStats] = useState<{
+    active: number;
+    lifetimeNetCents: number;
+    last30dNetCents: number;
+  }>({ active: 0, lifetimeNetCents: 0, last30dNetCents: 0 });
   const [tipsRaw, setTipsRaw] = useState<any[]>([]);
   const [giftsRaw, setGiftsRaw] = useState<any[]>([]);
   const [requestsRaw, setRequestsRaw] = useState<any[]>([]);
+  // Ledger-based earnings breakdown (wallet_transactions grouped by source_type)
+  const [byKind, setByKind] = useState<Record<string, number>>({
+    link_purchase: 0,
+    tip: 0,
+    gift_purchase: 0,
+    custom_request: 0,
+    fan_subscription: 0,
+    creator_subscription: 0,
+    chatter_commission: 0,
+  });
   // Referral state (recruteur)
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [affiliateEarningsCents, setAffiliateEarningsCents] = useState(0);
@@ -50,7 +79,17 @@ const AppDashboard = () => {
   const [profileViewCount, setProfileViewCount] = useState<number | null>(null);
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
-  const [commissionRate, setCommissionRate] = useState(0.10);
+  const [commissionRate, setCommissionRate] = useState(0.15);
+  // Wallet / payouts state (formerly /app/earnings)
+  const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState(0);
+  const [walletTotalWithdrawnCents, setWalletTotalWithdrawnCents] = useState(0);
+  const [walletPayouts, setWalletPayouts] = useState<any[]>([]);
+  const [bankData, setBankData] = useState<BankData | null>(null);
+  const [payoutSetupComplete, setPayoutSetupComplete] = useState(false);
+  const [isEditingBank, setIsEditingBank] = useState(false);
+  const [isRequestingWithdrawal, setIsRequestingWithdrawal] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const payoutsSectionRef = useRef<HTMLDivElement | null>(null);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,9 +141,10 @@ const AppDashboard = () => {
       }
 
       try {
+        if (isMounted) setUserId(user.id);
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents')
+          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country')
           .eq('id', user.id)
           .single();
 
@@ -141,11 +181,11 @@ const AppDashboard = () => {
           safePurchases = purchases ?? [];
         }
         const salesCount = safePurchases.length;
-        // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
+        // Creator net: strip 15% fan fee, then deduct 15% platform commission if not premium
         const isPremium = profile?.is_creator_subscribed === true;
-        const rate = isPremium ? 0 : 0.10;
+        const rate = isPremium ? 0 : 0.15;
         const revenueSum = safePurchases.reduce(
-          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - rate)), 0
+          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.15 * (1 - rate)), 0
         );
 
         // Tips revenue — fetch full details for the Tips tab display
@@ -192,7 +232,7 @@ const AppDashboard = () => {
         // Payouts for earnings view
         const { data: payoutsData, error: payoutsError } = await supabase
           .from('payouts')
-          .select('id, amount_cents, status, created_at, paid_at')
+          .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
           .eq('creator_id', user.id)
           .order('created_at', { ascending: false });
 
@@ -219,6 +259,72 @@ const AppDashboard = () => {
           return sum + Math.round((r.proposed_amount_cents ?? 0) * (1 - rate));
         }, 0);
 
+        // Fan → creator subscriptions (active + history, for the Subscriptions tab and Overview breakdown)
+        const { data: fanSubRows } = await supabase
+          .from('fan_creator_subscriptions')
+          .select('id, fan_id, status, price_cents, creator_net_cents, period_start, period_end, cancel_at_period_end, started_at, cancelled_at')
+          .eq('creator_user_id', user.id)
+          .order('started_at', { ascending: false, nullsFirst: false });
+        const safeFanSubs = fanSubRows ?? [];
+
+        // Resolve fan meta (profiles.id = auth.users.id)
+        const fanSubIds = [...new Set(safeFanSubs.filter((s: any) => s.fan_id).map((s: any) => s.fan_id))];
+        const fanSubProfiles = new Map<string, { id: string; display_name: string | null; avatar_url: string | null }>();
+        if (fanSubIds.length) {
+          const { data: fans } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', fanSubIds);
+          (fans ?? []).forEach((p: any) => fanSubProfiles.set(p.id, { id: p.id, display_name: p.display_name, avatar_url: p.avatar_url }));
+        }
+        const fanSubscribersEnriched = safeFanSubs.map((s: any) => ({ ...s, fan: s.fan_id ? fanSubProfiles.get(s.fan_id) ?? null : null }));
+
+        const now = Date.now();
+        const windowStart = now - 30 * 24 * 60 * 60 * 1000;
+        const subsStats = fanSubscribersEnriched.reduce(
+          (acc, s: any) => {
+            // "Active" = still within period_end, status in active/cancelled (cancelled keeps access until period ends)
+            const periodEnd = s.period_end ? new Date(s.period_end).getTime() : 0;
+            const isLive = (s.status === 'active' || s.status === 'cancelled') && periodEnd > now;
+            if (isLive) acc.active += 1;
+            const net = s.creator_net_cents ?? 0;
+            if (s.started_at) acc.lifetimeNetCents += net;
+            if (s.period_start && new Date(s.period_start).getTime() >= windowStart) acc.last30dNetCents += net;
+            return acc;
+          },
+          { active: 0, lifetimeNetCents: 0, last30dNetCents: 0 },
+        );
+
+        if (isMounted) {
+          setFanSubscribers(fanSubscribersEnriched);
+          setFanSubStats(subsStats);
+        }
+
+        // Ledger query — wallet_transactions grouped by source_type
+        // Post-deploy rows carry precise creator_net_cents already; legacy rows fall back below.
+        const { data: ledgerRows } = await supabase
+          .from('wallet_transactions')
+          .select('source_type, direction, amount_cents')
+          .eq('owner_id', user.id)
+          .eq('owner_kind', 'creator');
+
+        const newByKind: Record<string, number> = {
+          link_purchase: 0,
+          tip: 0,
+          gift_purchase: 0,
+          custom_request: 0,
+          fan_subscription: 0,
+          creator_subscription: 0,
+          chatter_commission: 0,
+        };
+        for (const row of ledgerRows ?? []) {
+          const signed = row.direction === 'credit' ? row.amount_cents : -row.amount_cents;
+          if (row.source_type in newByKind) {
+            newByKind[row.source_type as keyof typeof newByKind] += signed;
+          }
+        }
+        if (isMounted) setByKind(newByKind);
+
         const safePayouts = payoutsData ?? [];
         const totalPayoutsCents = safePayouts
           .filter((p: any) => p.status !== 'failed')
@@ -231,16 +337,18 @@ const AppDashboard = () => {
 
         if (!isMounted) return;
 
+        // Gifts + subscriptions roll up into the same revenue picture.
+        const giftsRevenue = safeGifts.reduce((sum: number, g: any) => sum + (g.creator_net_cents ?? 0), 0);
+
         setTotalLinks(linksCount);
         setPublishedLinksCount(publishedCount);
         setTotalSalesCount(salesCount + safeRequests.length);
         // Use DB total_earned_cents as source of truth (matches wallet credits)
-        // Fallback to frontend calc if not available
+        // Fallback to frontend calc if not available (now includes subs + gifts)
         const dbTotalEarned = profile?.total_earned_cents;
+        const fallbackTotal = revenueSum + tipsSum + requestsRevenue + giftsRevenue + subsStats.lifetimeNetCents;
         setTotalRevenueCents(
-          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0
-            ? dbTotalEarned
-            : revenueSum + tipsSum + requestsRevenue
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0 ? dbTotalEarned : fallbackTotal,
         );
         setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
@@ -249,12 +357,30 @@ const AppDashboard = () => {
         setPayouts(safePayouts);
         setGiftsRaw(safeGifts);
         setRequestsRaw(safeRequests);
+        setWalletPayouts(safePayouts);
+        setWalletTotalEarnedCents(
+          typeof dbTotalEarned === 'number' && dbTotalEarned >= 0 ? dbTotalEarned : fallbackTotal,
+        );
+        setWalletTotalWithdrawnCents(
+          typeof profile?.total_withdrawn_cents === 'number' ? profile.total_withdrawn_cents : totalPayoutsCents
+        );
         if (profile) {
+          setPayoutSetupComplete(profile.payout_setup_complete === true);
+          setBankData({
+            bank_account_type: profile.bank_account_type ?? undefined,
+            bank_iban: profile.bank_iban ?? undefined,
+            bank_holder_name: profile.bank_holder_name ?? undefined,
+            bank_bic: profile.bank_bic ?? undefined,
+            bank_account_number: profile.bank_account_number ?? undefined,
+            bank_routing_number: profile.bank_routing_number ?? undefined,
+            bank_bsb: profile.bank_bsb ?? undefined,
+            bank_country: profile.bank_country ?? undefined,
+          });
           setProfileName(activeProfile?.display_name || profile.display_name || 'Creator');
           setProfileHandle(activeProfile?.username || profile.handle || null);
           setProfileViewCount(activeProfile?.profile_view_count ?? profile.profile_view_count ?? 0);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
-          setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
+          setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.15);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
           if (profile.affiliate_payout_requested_at) setPayoutRequested(true);
 
@@ -340,6 +466,52 @@ const AppDashboard = () => {
     setShowPayoutModal(false);
   };
 
+  const goToPayouts = () => {
+    setActiveTab('payouts');
+    requestAnimationFrame(() => {
+      payoutsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const handleRequestWithdrawal = async () => {
+    if (!userId) return;
+    if (walletBalanceCents < 5000) {
+      toast.error('Minimum withdrawal is $50.00');
+      return;
+    }
+    if (!payoutSetupComplete) {
+      toast.error('Please set up your bank details first.');
+      goToPayouts();
+      return;
+    }
+    setIsRequestingWithdrawal(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+        body: {},
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (error || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Withdrawal request failed');
+      }
+      toast.success('Withdrawal requested! Funds typically arrive within 3–5 business days.');
+      if ((data as any)?.new_balance !== undefined) {
+        setWalletBalanceCents((data as any).new_balance);
+      }
+      const { data: refreshedPayouts } = await supabase
+        .from('payouts')
+        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
+        .eq('creator_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (refreshedPayouts) setWalletPayouts(refreshedPayouts);
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to request withdrawal');
+    } finally {
+      setIsRequestingWithdrawal(false);
+    }
+  };
+
   const formattedRevenue = (totalRevenueCents / 100).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -381,7 +553,7 @@ const AppDashboard = () => {
       if (purchase.created_at) {
         const d = new Date(purchase.created_at);
         d.setHours(0, 0, 0, 0);
-        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
+        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.15 * (1 - commissionRate));
         events.push({ date: d, value });
       }
     });
@@ -480,7 +652,7 @@ const AppDashboard = () => {
                   className="w-full rounded-full"
                   onClick={() => {
                     handleDismissPayoutModal();
-                    window.location.href = '/app/earnings';
+                    goToPayouts();
                   }}
                 >
                   <Landmark className="w-4 h-4 mr-2" />
@@ -500,16 +672,16 @@ const AppDashboard = () => {
       </AnimatePresence>
 
       <main className="px-4 lg:px-6 pb-16 w-full">
-        {/* Simple header with greeting */}
-        <section className="mt-4 sm:mt-6 mb-6">
+        {/* Header — title + quick profile actions */}
+        <section className="mt-4 sm:mt-6 mb-5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud truncate">
-                <span>Welcome back{profileName ? <>, <span className="text-black dark:text-[#CFFF16]">{profileName}</span></> : ''}</span>
-              </h1>
-              <p className="text-sm text-exclu-space/70 mt-1">
-                Here's an overview of your performance
+              <p className="text-[10px] uppercase tracking-[0.22em] text-exclu-space/60 mb-1 font-semibold">
+                {profileName ? `${profileName}'s wallet` : 'Wallet'}
               </p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-exclu-cloud truncate tracking-tight">
+                Earnings
+              </h1>
             </div>
             <div className="flex items-center gap-2">
               {publicProfileUrl && (
@@ -564,20 +736,127 @@ const AppDashboard = () => {
           <p className="text-sm text-red-400 mb-4 max-w-xl">{error}</p>
         )}
 
+        {/* ───────────── Wallet Hero ───────────── */}
+        <section className="mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-3xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-6 sm:p-8 lg:p-10 shadow-[0_24px_80px_-40px_rgba(207,255,22,0.22)] dark:shadow-[0_30px_100px_-50px_rgba(207,255,22,0.4)]"
+          >
+            {/* Lime aurora corners — single accent, no blue */}
+            <div aria-hidden className="pointer-events-none absolute -top-32 -right-20 w-[460px] h-[460px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.28),transparent_60%)] blur-3xl opacity-80 dark:opacity-95" />
+            <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 w-[380px] h-[380px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.12),transparent_60%)] blur-3xl opacity-40 dark:opacity-60" />
+            {/* Grain — dark only */}
+            <div aria-hidden className="pointer-events-none absolute inset-0 hidden dark:block opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-        {/* Metrics / Earnings / Referral toggle */}
+            <div className="relative lg:grid lg:grid-cols-[1fr,auto] lg:gap-10 lg:items-start">
+              {/* ── LEFT (desktop) / TOP (mobile) — label + balance + stats ── */}
+              <div>
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
+                    <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
+                  </span>
+                  Available to withdraw
+                </div>
+
+                <div className="mt-3 flex items-end gap-2.5">
+                  <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
+                    ${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+                </div>
+
+                <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
+                <div className="mt-5 grid grid-cols-3">
+                  {[
+                    { label: 'Total earned', value: `$${Math.round(walletTotalEarnedCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Withdrawn', value: `$${Math.round(walletTotalWithdrawnCents / 100).toLocaleString('en-US')}` },
+                    { label: 'Sales', value: totalSalesCount.toLocaleString('en-US') },
+                  ].map((stat, i) => (
+                    <div
+                      key={stat.label}
+                      className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
+                      <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── RIGHT (desktop, top-aligned) / BOTTOM (mobile, centered) — pills + Withdraw ── */}
+              <div className="mt-7 lg:mt-0 flex flex-col items-center lg:items-end gap-3 lg:gap-4">
+                {/* Pills — centered on mobile, right-aligned on desktop */}
+                <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={goToPayouts}
+                    className={`group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-all ${
+                      payoutSetupComplete
+                        ? 'border-[#CFFF16]/45 bg-[#CFFF16]/12 text-[#4a6304] dark:text-[#CFFF16] hover:bg-[#CFFF16]/20'
+                        : 'border-amber-500/45 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/15'
+                    }`}
+                  >
+                    <span className="relative flex h-2 w-2">
+                      {!payoutSetupComplete && (
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                      )}
+                      <span className={`relative inline-flex h-2 w-2 rounded-full ${payoutSetupComplete ? 'bg-[#CFFF16] shadow-[0_0_8px_rgba(207,255,22,0.8)]' : 'bg-amber-400'}`} />
+                    </span>
+                    {payoutSetupComplete ? 'Bank account connected' : 'Connect bank'}
+                    <ArrowUpRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  </button>
+
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
+                    <Sparkles className="w-3 h-3 text-[#CFFF16]" />
+                    {isCreatorSubscribed
+                      ? <>Premium · <span className="text-[#4a6304] dark:text-[#CFFF16] font-semibold">0% commission</span></>
+                      : <>Free · {Math.round(commissionRate * 100)}% commission</>}
+                  </div>
+                </div>
+
+                {/* Withdraw CTA — full-width mobile, right-aligned compact on desktop */}
+                <div className="flex flex-col items-stretch lg:items-end gap-1.5 w-full lg:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleRequestWithdrawal}
+                    disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                    className="group relative w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
+                  >
+                    {isRequestingWithdrawal ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                    ) : (
+                      <>
+                        <ArrowDownToLine className="w-4 h-4" />
+                        Withdraw {walletBalanceCents >= 5000 ? `$${(walletBalanceCents / 100).toFixed(2)}` : ''}
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-foreground/45 dark:text-white/45 tracking-wide text-center lg:text-right">
+                    Min. <span className="text-foreground/75 dark:text-white/75 font-semibold">$50.00</span> · 3–5 business days
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* Tab toggle */}
         <section className="mt-1 mb-4">
-          <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+          <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 max-w-full overflow-x-auto scrollbar-hide">
             {[
-              { key: 'metrics', label: 'Metrics' },
+              { key: 'metrics', label: 'Overview' },
+              { key: 'subscriptions', label: 'Subscriptions' },
               { key: 'referral', label: 'Referral' },
-              { key: 'tips', label: 'Tips' },
+              { key: 'payouts', label: 'Payouts' },
             ].map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key as 'metrics' | 'referral' | 'tips')}
-                className={`px-4 py-1.5 rounded-full font-medium transition-all ${activeTab === tab.key
+                onClick={() => setActiveTab(tab.key as 'metrics' | 'subscriptions' | 'referral' | 'payouts')}
+                className={`px-4 py-1.5 rounded-full font-medium transition-all whitespace-nowrap ${activeTab === tab.key
                   ? 'bg-primary text-white dark:text-black shadow-sm'
                   : 'hover:text-exclu-cloud'
                   }`}
@@ -590,46 +869,100 @@ const AppDashboard = () => {
 
         {activeTab === 'metrics' && (
           <>
-            <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {/* Profile visits metric */}
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'profile_views' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
-                onClick={() => { setActiveMetric('profile_views'); setHoveredPoint(null); }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Profile visits</p>
-                <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading || profileViewCount === null
-                    ? '—'
-                    : profileViewCount.toLocaleString('en-US')}
-                </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">
-                  Total visits on your public profile page.
-                </p>
-              </div>
+            {/* ───── Unified Performance card (metrics + breakdown merged) ───── */}
+            <section>
+              <div className="rounded-3xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] overflow-hidden">
+                {/* Primary metrics — click to drive the chart below */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/5 dark:divide-white/10">
+                  {[
+                    {
+                      key: 'profile_views' as const,
+                      label: 'Profile visits',
+                      value: isLoading || profileViewCount === null ? '—' : profileViewCount.toLocaleString('en-US'),
+                      hint: 'Visits on your public profile',
+                    },
+                    {
+                      key: 'sales' as const,
+                      label: 'Total sales',
+                      value: isLoading ? '—' : totalSalesCount.toLocaleString('en-US'),
+                      hint: 'Purchases across all links',
+                    },
+                    {
+                      key: 'revenue' as const,
+                      label: 'Revenue',
+                      value: isLoading ? '—' : `$${formattedRevenue}`,
+                      hint: 'Net across every revenue stream',
+                    },
+                  ].map((m) => {
+                    const active = activeMetric === m.key;
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => { setActiveMetric(m.key); setHoveredPoint(null); }}
+                        className={`relative text-left p-5 sm:p-6 transition-colors ${
+                          active
+                            ? 'bg-[#CFFF16]/[0.08] dark:bg-[#CFFF16]/[0.05]'
+                            : 'hover:bg-foreground/[0.02] dark:hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        {active && (
+                          <span className="absolute top-0 left-4 right-4 sm:left-6 sm:right-6 h-[2px] rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.7)]" />
+                        )}
+                        <p className={`text-[10px] uppercase tracking-wider font-semibold ${
+                          active ? 'text-[#4a6304] dark:text-[#CFFF16]' : 'text-foreground/50 dark:text-white/50'
+                        }`}>
+                          {m.label}
+                        </p>
+                        <p className="mt-1.5 text-2xl sm:text-3xl font-bold text-foreground dark:text-white tabular-nums">
+                          {m.value}
+                        </p>
+                        <p className="mt-1.5 text-[11px] text-foreground/50 dark:text-white/50">{m.hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
 
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                  }`}
-                onClick={() => {
-                  setActiveMetric('sales');
-                  setHoveredPoint(null);
-                }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Total sales</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : totalSalesCount}</p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Number of purchases across all your links.</p>
-              </div>
-              <div
-                className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''
-                  }`}
-                onClick={() => {
-                  setActiveMetric('revenue');
-                  setHoveredPoint(null);
-                }}
-              >
-                <p className="text-xs text-exclu-space mb-1">Revenue</p>
-                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : `$${formattedRevenue} USD`}</p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Total revenue from successful purchases.</p>
+                {/* Revenue breakdown — lifetime net per stream */}
+                <div className="border-t border-black/5 dark:border-white/10 p-5 sm:p-6">
+                  <div className="flex items-end justify-between gap-3 mb-4">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-foreground/55 dark:text-white/55 font-semibold">Revenue breakdown</p>
+                      <p className="text-[11px] text-foreground/50 dark:text-white/50 mt-1">Net amount credited per stream · lifetime</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
+                    {(() => {
+                      // Prefer ledger sums for post-deploy rows. Legacy pre-ledger rows are still
+                      // totaled via the manual reduce below — can remove once backfill is complete.
+                      const legacyLinks = purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.15) * (1 - commissionRate))), 0);
+                      const legacyTips = tipsRevenueCents;
+                      const legacyRequests = requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0);
+                      const legacyGifts = giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0);
+                      const legacySubs = fanSubStats.lifetimeNetCents;
+                      return [
+                        { label: 'Links', value: byKind.link_purchase > 0 ? byKind.link_purchase : legacyLinks, icon: Zap },
+                        { label: 'Tips', value: byKind.tip > 0 ? byKind.tip : legacyTips, icon: Heart },
+                        { label: 'Requests', value: byKind.custom_request > 0 ? byKind.custom_request : legacyRequests, icon: FileText },
+                        { label: 'Gifts', value: byKind.gift_purchase > 0 ? byKind.gift_purchase : legacyGifts, icon: Gift },
+                        { label: 'Subscriptions', value: byKind.fan_subscription > 0 ? byKind.fan_subscription : legacySubs, icon: Users },
+                      ];
+                    })().map(({ label, value, icon: Icon }) => (
+                      <div
+                        key={label}
+                        className="rounded-xl border border-black/5 dark:border-white/10 bg-foreground/[0.02] dark:bg-white/[0.03] p-3.5 sm:p-4 transition-colors hover:border-[#CFFF16]/30"
+                      >
+                        <div className="flex items-center gap-1.5 text-foreground/55 dark:text-white/55 mb-1.5">
+                          <Icon className="w-3.5 h-3.5 text-[#CFFF16]" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
+                        </div>
+                        <p className="text-base sm:text-lg font-bold text-foreground dark:text-white tabular-nums">
+                          {isLoading ? '—' : `$${(value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -785,7 +1118,7 @@ const AppDashboard = () => {
                                 stroke="currentColor"
                                 strokeWidth={2}
                                 points={pointsAttr}
-                                className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
+                                className="drop-shadow-[0_0_10px_rgba(207,255,22,0.7)] transition-all duration-500"
                               />
 
                               {/* Hover points */}
@@ -887,7 +1220,7 @@ const AppDashboard = () => {
                   {[
                     ...purchasesRaw.map((p: any) => ({
                       type: 'sale' as const,
-                      amount_cents: Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
+                      amount_cents: Math.round((p.amount_cents ?? 0) / 1.15 * (1 - commissionRate)),
                       raw_cents: p.amount_cents,
                       date: p.created_at,
                       label: linksRaw.find((l: any) => l.id === p.link_id)?.title || 'Link purchase',
@@ -1270,72 +1603,291 @@ const AppDashboard = () => {
           );
         })()}
 
-        {activeTab === 'tips' && (
+        {activeTab === 'subscriptions' && (
           <section className="mt-2 space-y-4">
             {/* Stats cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
-                <p className="text-xs text-exclu-space mb-1">Total tips earned</p>
-                <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading ? '—' : `$${(tipsRevenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`}
-                </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Net after platform commission.</p>
+                <p className="text-xs text-exclu-space mb-1">Active subscribers</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fanSubStats.active}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Fans currently within their paid period.</p>
               </div>
               <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
-                <p className="text-xs text-exclu-space mb-1">Tips received</p>
+                <p className="text-xs text-exclu-space mb-1">Lifetime earnings</p>
                 <p className="text-2xl font-bold text-exclu-cloud">
-                  {isLoading ? '—' : tipsRaw.length}
+                  {isLoading
+                    ? '—'
+                    : `$${((byKind.fan_subscription > 0 ? byKind.fan_subscription : fanSubStats.lifetimeNetCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </p>
-                <p className="text-[11px] text-exclu-space/80 mt-1">Successful tips from fans.</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Net credited to your wallet.</p>
+              </div>
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Last 30 days</p>
+                <p className="text-2xl font-bold text-exclu-cloud">
+                  {isLoading
+                    ? '—'
+                    : `$${(fanSubStats.last30dNetCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Rolling 30-day subscription revenue.</p>
+              </div>
+              <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5">
+                <p className="text-xs text-exclu-space mb-1">Total history</p>
+                <p className="text-2xl font-bold text-exclu-cloud">{isLoading ? '—' : fanSubscribers.length}</p>
+                <p className="text-[11px] text-exclu-space/80 mt-1">Every fan who ever subscribed.</p>
               </div>
             </div>
 
-            {/* Tips list — same UI as Sales History */}
+            {/* Subscribers list */}
             <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 overflow-hidden">
-              <div className="px-5 py-4 border-b border-exclu-arsenic/40">
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Tips history</p>
+              <div className="px-5 py-4 border-b border-exclu-arsenic/40 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70">Subscribers</p>
+                <p className="text-[11px] text-exclu-space/60">Sorted by most recent</p>
               </div>
 
               {isLoading && (
-                <p className="px-5 py-4 text-sm text-exclu-space/80">Loading tips…</p>
+                <p className="px-5 py-4 text-sm text-exclu-space/80">Loading subscribers…</p>
               )}
 
-              {!isLoading && tipsRaw.length === 0 && (
+              {!isLoading && fanSubscribers.length === 0 && (
                 <p className="px-5 py-6 text-sm text-exclu-space/80">
-                  No tips received yet. Enable tips in your profile settings so fans can support you directly.
+                  No subscribers yet. Share your profile link — the Discover popup on your public page lets fans subscribe in one click.
                 </p>
               )}
 
-              {!isLoading && tipsRaw.length > 0 && (
-                <div className="divide-y divide-exclu-arsenic/40 max-h-[500px] overflow-y-auto">
-                  {tipsRaw.map((tip: any) => {
-                    const net = typeof tip.creator_net_cents === 'number' && tip.creator_net_cents > 0
-                      ? tip.creator_net_cents
-                      : Math.round((tip.amount_cents ?? 0) * (1 - commissionRate));
+              {!isLoading && fanSubscribers.length > 0 && (
+                <div className="divide-y divide-exclu-arsenic/40 max-h-[600px] overflow-y-auto">
+                  {fanSubscribers.map((sub) => {
+                    const now = Date.now();
+                    const periodEnd = sub.period_end ? new Date(sub.period_end).getTime() : 0;
+                    const isLive = (sub.status === 'active' || sub.status === 'cancelled') && periodEnd > now;
+                    const isExpired = periodEnd > 0 && periodEnd <= now;
                     return (
-                      <div key={tip.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                      <div key={sub.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-full bg-pink-500/20 flex-shrink-0 flex items-center justify-center">
-                            <Heart className="w-3.5 h-3.5 text-pink-400" />
+                          <div className="w-9 h-9 rounded-full overflow-hidden bg-primary/15 flex-shrink-0">
+                            {sub.fan?.avatar_url ? (
+                              <img src={sub.fan.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Users className="w-4 h-4 text-primary/80" />
+                              </div>
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-exclu-cloud truncate">
-                              {tip.is_anonymous ? 'Anonymous' : (tip.fan?.display_name || tip.fan_name || 'Fan')}
+                              {sub.fan?.display_name || 'Fan'}
                             </p>
                             <p className="text-[11px] text-exclu-space/60">
-                              {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {tip.message && ` · "${tip.message.slice(0, 40)}${tip.message.length > 40 ? '…' : ''}"`}
+                              Started {sub.started_at ? new Date(sub.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                              {isLive && sub.period_end && (
+                                <> · renews {sub.cancel_at_period_end ? 'no — ends ' : ''}
+                                  {new Date(sub.period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
+                              )}
+                              {isExpired && ' · expired'}
                             </p>
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-sm font-bold text-green-400">
-                            +${(net / 100).toFixed(2)}
+                            +${((sub.creator_net_cents || 0) / 100).toFixed(2)}
                           </p>
                           <p className="text-[10px] text-exclu-space/50">
-                            ${(tip.amount_cents / 100).toFixed(2)} total
+                            ${(sub.price_cents / 100).toFixed(2)} / mo
                           </p>
+                          {isLive && (
+                            <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider ${sub.cancel_at_period_end ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
+                              <span className={`w-1 h-1 rounded-full ${sub.cancel_at_period_end ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+                              {sub.cancel_at_period_end ? 'Cancelling' : 'Active'}
+                            </span>
+                          )}
                         </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'payouts' && (
+          <section ref={payoutsSectionRef} className="mt-2 space-y-4 scroll-mt-24">
+            {/* Quick withdrawal stat row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Available', value: walletBalanceCents, accent: 'text-[#4a6304] dark:text-[#CFFF16]' },
+                { label: 'Total earned', value: walletTotalEarnedCents, accent: 'text-foreground dark:text-white' },
+                { label: 'Withdrawn', value: walletTotalWithdrawnCents, accent: 'text-foreground dark:text-white' },
+                {
+                  label: 'In progress',
+                  value: walletPayouts
+                    .filter((p: any) => ['pending', 'processing', 'requested'].includes(p.status))
+                    .reduce((s: number, p: any) => s + (p.amount_cents ?? 0), 0),
+                  accent: 'text-foreground/70 dark:text-white/70',
+                },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-foreground/50 dark:text-white/50 font-semibold">{stat.label}</p>
+                  <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${stat.accent}`}>
+                    ${(stat.value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Bank Account card */}
+            <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-foreground/50 dark:text-white/50 font-semibold mb-1">Payout method</p>
+                  <h2 className="text-lg sm:text-xl font-bold text-foreground dark:text-white">Bank account</h2>
+                </div>
+                {payoutSetupComplete && !isEditingBank && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingBank(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[11px] font-medium text-foreground/70 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:border-foreground/20 dark:hover:border-white/20 transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                )}
+              </div>
+
+              {payoutSetupComplete && !isEditingBank ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Visual bank "card" — lime gradient, no emerald */}
+                  <div className="relative overflow-hidden rounded-2xl border border-[#CFFF16]/30 bg-gradient-to-br from-[#CFFF16]/12 via-transparent to-[#CFFF16]/8 dark:from-[#CFFF16]/14 dark:via-transparent dark:to-[#CFFF16]/6 p-5 min-h-[180px]">
+                    <div aria-hidden className="pointer-events-none absolute -top-12 -right-12 w-44 h-44 rounded-full bg-[#CFFF16]/25 blur-3xl" />
+                    <div aria-hidden className="pointer-events-none absolute -bottom-16 -left-16 w-44 h-44 rounded-full bg-[#CFFF16]/10 blur-3xl" />
+                    <div className="relative flex items-center justify-between">
+                      <div className="inline-flex items-center gap-1.5 rounded-full bg-[#CFFF16]/15 border border-[#CFFF16]/50 px-2.5 py-1 text-[10px] font-semibold text-[#4a6304] dark:text-[#CFFF16]">
+                        <ShieldCheck className="w-3 h-3" /> Verified
+                      </div>
+                      <Landmark className="w-6 h-6 text-[#4a6304]/70 dark:text-[#CFFF16]/80" />
+                    </div>
+                    <div className="relative mt-10">
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/55 dark:text-white/55 font-semibold">Account holder</p>
+                      <p className="text-base font-bold text-foreground dark:text-white truncate mt-0.5">{bankData?.bank_holder_name || '—'}</p>
+                    </div>
+                    <div className="relative mt-3 font-mono text-sm tracking-wider text-foreground/90 dark:text-white/90">
+                      {bankData?.bank_iban
+                        ? bankData.bank_iban.replace(/(.{4})/g, '$1 ').trim()
+                        : bankData?.bank_account_number || '••••  ••••  ••••'}
+                    </div>
+                  </div>
+
+                  {/* Field details */}
+                  <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-foreground/[0.02] dark:bg-white/[0.03] p-5 space-y-1 text-sm">
+                    {getBankDisplayFields(bankData).map((f) => (
+                      <div key={f.label} className="flex justify-between gap-4 py-1.5 border-b border-foreground/5 dark:border-white/5 last:border-b-0">
+                        <span className="text-foreground/60 dark:text-white/60 text-xs">{f.label}</span>
+                        <span className="text-foreground dark:text-white font-mono text-xs truncate">{f.value}</span>
+                      </div>
+                    ))}
+                    {bankData?.bank_country && (
+                      <div className="flex justify-between gap-4 py-1.5">
+                        <span className="text-foreground/60 dark:text-white/60 text-xs">Country</span>
+                        <span className="text-foreground dark:text-white text-xs">{bankData.bank_country}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#CFFF16]/40 bg-[#CFFF16]/5 p-4 mb-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-[#4a6304] dark:text-[#CFFF16] flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-foreground dark:text-white">{isEditingBank ? 'Update your bank details' : 'Set up your payout method'}</p>
+                    <p className="text-xs text-foreground/70 dark:text-white/70 mt-0.5">
+                      {isEditingBank
+                        ? 'Save the new details and we\'ll send your next payout to this account.'
+                        : 'Add a bank account to receive your earnings. We support IBAN, US (ACH), AU (BSB) and more.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(!payoutSetupComplete || isEditingBank) && (
+                <div className="mt-4">
+                  <BankDetailsForm
+                    initialData={bankData}
+                    payoutSetupComplete={payoutSetupComplete}
+                    onSaved={(data) => {
+                      setBankData(data);
+                      setPayoutSetupComplete(true);
+                      setIsEditingBank(false);
+                      toast.success('Bank account saved.');
+                    }}
+                    onCancel={isEditingBank ? () => setIsEditingBank(false) : undefined}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Withdrawal History */}
+            <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] overflow-hidden">
+              <div className="px-5 py-4 border-b border-black/5 dark:border-white/10 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-foreground/50 dark:text-white/50 font-semibold">Withdrawal history</p>
+                  <p className="text-sm text-foreground dark:text-white font-bold mt-0.5">{walletPayouts.length} {walletPayouts.length === 1 ? 'payout' : 'payouts'}</p>
+                </div>
+                {walletBalanceCents >= 5000 && payoutSetupComplete && (
+                  <Button
+                    type="button"
+                    onClick={handleRequestWithdrawal}
+                    disabled={isRequestingWithdrawal}
+                    size="sm"
+                    className="rounded-full gap-1.5 bg-[#CFFF16] text-black hover:bg-[#bef200] shadow-[0_6px_20px_-6px_rgba(207,255,22,0.55)]"
+                  >
+                    {isRequestingWithdrawal
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Requesting</>
+                      : <><ArrowDownToLine className="w-3.5 h-3.5" /> Cash out</>}
+                  </Button>
+                )}
+              </div>
+
+              {walletPayouts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-foreground/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center justify-center">
+                    <Banknote className="w-6 h-6 text-foreground/50 dark:text-white/50" />
+                  </div>
+                  <p className="text-sm text-foreground/70 dark:text-white/70">No withdrawals yet</p>
+                  <p className="text-[11px] text-foreground/50 dark:text-white/50 max-w-xs text-center">
+                    Reach <span className="text-foreground dark:text-white font-semibold">$50</span> in your wallet then request a payout — funds arrive in 3–5 business days.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-black/5 dark:divide-white/10 max-h-[520px] overflow-y-auto">
+                  {walletPayouts.map((payout) => {
+                    const isPaid = payout.status === 'completed' || payout.status === 'paid';
+                    const isFailed = payout.status === 'failed' || payout.status === 'rejected';
+                    const dotClass = isPaid
+                      ? 'bg-[#CFFF16]/15 text-[#4a6304] dark:text-[#CFFF16] border border-[#CFFF16]/40'
+                      : isFailed
+                        ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30'
+                        : 'bg-foreground/5 dark:bg-white/5 text-foreground/70 dark:text-white/70 border border-foreground/10 dark:border-white/10';
+                    const Icon = isPaid ? CircleCheck : isFailed ? CircleX : Clock;
+                    return (
+                      <div key={payout.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${dotClass}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-foreground dark:text-white tabular-nums">
+                              ${(payout.amount_cents / 100).toFixed(2)}
+                            </p>
+                            <p className="text-[11px] text-foreground/55 dark:text-white/55">
+                              Requested {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {payout.paid_at && ` · paid ${new Date(payout.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                            </p>
+                            {payout.rejection_reason && (
+                              <p className="text-[11px] text-red-500/80 dark:text-red-300/80 mt-1">Reason: {payout.rejection_reason}</p>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${dotClass}`}>
+                          {payout.status}
+                        </span>
                       </div>
                     );
                   })}

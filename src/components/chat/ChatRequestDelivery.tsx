@@ -61,6 +61,7 @@ export function ChatRequestDelivery({ profileId, requestId, onDelivered, onClose
         .from('assets')
         .select('id, title, storage_path, mime_type, is_public')
         .eq('profile_id', profileId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -161,7 +162,8 @@ export function ChatRequestDelivery({ profileId, requestId, onDelivered, onClose
     try {
       const slug = generateSlug(requestId);
 
-      // Create delivery link (price = 0, hidden from profile)
+      // 1. Create delivery link as draft — publish after attaching media so
+      // the links_require_content DB trigger doesn't reject the insert.
       const { data: linkRows, error: linkError } = await supabase
         .from('links')
         .insert({
@@ -172,7 +174,7 @@ export function ChatRequestDelivery({ profileId, requestId, onDelivered, onClose
           price_cents: 0,
           currency: 'USD',
           slug,
-          status: 'published',
+          status: 'draft',
           show_on_profile: false,
         })
         .select('id, slug');
@@ -180,7 +182,7 @@ export function ChatRequestDelivery({ profileId, requestId, onDelivered, onClose
       if (linkError || !linkRows?.length) throw new Error('Failed to create delivery link');
       const linkId = linkRows[0].id;
 
-      // Attach selected assets
+      // 2. Attach selected assets
       const selectedAssets = assets.filter((a) => selectedIds.has(a.id));
       const linkMediaRows = selectedAssets.map((asset, index) => ({
         link_id: linkId,
@@ -189,8 +191,19 @@ export function ChatRequestDelivery({ profileId, requestId, onDelivered, onClose
       }));
 
       if (linkMediaRows.length > 0) {
-        await supabase.from('link_media').insert(linkMediaRows);
+        const { error: mediaError } = await supabase.from('link_media').insert(linkMediaRows);
+        if (mediaError) {
+          await supabase.from('links').delete().eq('id', linkId);
+          throw new Error('Failed to attach content to the delivery link.');
+        }
       }
+
+      // 3. Publish the link
+      const { error: publishError } = await supabase
+        .from('links')
+        .update({ status: 'published' })
+        .eq('id', linkId);
+      if (publishError) throw new Error('Delivery link created but could not be published.');
 
       // Capture payment via manage-request
       const { data: result, error: fnError } = await supabase.functions.invoke('manage-request', {

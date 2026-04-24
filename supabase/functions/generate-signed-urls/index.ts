@@ -12,6 +12,12 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+// Mirrored from src/lib/contentAccess.ts (can't cross-import src/ into Deno).
+// Must stay in sync; if you touch either, touch both.
+function canAccessPurchasedLink(p: { status?: string } | null | undefined): boolean {
+  return !!p && p.status === 'succeeded';
+}
+
 const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
@@ -55,7 +61,7 @@ serve(async (req: Request) => {
     // - Direct purchase ID (UGPayments flow: session_id = purchase UUID)
     // - Legacy session ID (stripe_session_id field, pre-UGP purchases)
     // - Custom request delivery (session_id = "req_<request_id>")
-    let purchase: { id: string } | null = null;
+    let purchase: { id: string; status?: string } | null = null;
     let purchaseError: any = null;
 
     // Custom request delivery: session_id starts with "req_"
@@ -75,35 +81,32 @@ serve(async (req: Request) => {
         // Also check if a purchase record exists for this delivery link
         const { data: deliveryPurchase } = await supabase
           .from('purchases')
-          .select('id')
+          .select('id, status')
           .eq('link_id', link_id)
-          .eq('status', 'succeeded')
           .maybeSingle();
-        if (deliveryPurchase) purchase = deliveryPurchase;
+        if (canAccessPurchasedLink(deliveryPurchase)) purchase = deliveryPurchase;
       }
     } else {
       // Try by purchase ID first (UGPayments flow)
       const { data: byId } = await supabase
         .from('purchases')
-        .select('id')
+        .select('id, status')
         .eq('id', session_id)
         .eq('link_id', link_id)
-        .eq('status', 'succeeded')
         .maybeSingle();
 
-      if (byId) {
+      if (canAccessPurchasedLink(byId)) {
         purchase = byId;
       } else {
         // Fallback: try by stripe_session_id (legacy pre-UGP purchases)
         const { data: byStripe, error: byStripeErr } = await supabase
           .from('purchases')
-          .select('id')
+          .select('id, status')
           .eq('stripe_session_id', session_id)
           .eq('link_id', link_id)
-          .eq('status', 'succeeded')
           .maybeSingle();
-        purchase = byStripe;
         purchaseError = byStripeErr;
+        if (canAccessPurchasedLink(byStripe)) purchase = byStripe;
       }
     }
 

@@ -1,12 +1,13 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { LogOut, LayoutDashboard, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus } from 'lucide-react';
+import { LogOut, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { ProfileSwitcherDropdown, ProfileSwitcherOverlay } from '@/components/ProfileSwitcher';
+import { ProUpgradePopup } from './ProUpgradePopup';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 
@@ -29,7 +30,7 @@ const navSections: { label: string; items: NavItem[] }[] = [
     label: 'General',
     items: [
       { path: '/app/profile', label: 'Profile', icon: Palette },
-      { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/app/dashboard', label: 'Earnings', icon: DollarSign },
       { path: '/app/links', label: 'Links', icon: Link2 },
       { path: '/app/content', label: 'Content', icon: ImageIcon },
       { path: '/app/chat', label: 'Chat', icon: MessageSquare },
@@ -39,7 +40,6 @@ const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: 'Monetize',
     items: [
-      { path: '/app/earnings', label: 'Earnings', icon: DollarSign },
       { path: '/app/agency', label: 'Agency Panel', icon: Building2, agencyOnly: true },
       { path: '/app/referral', label: 'Referrals', icon: UserPlus },
     ],
@@ -84,13 +84,13 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
   }, [location.pathname]);
 
   const isActive = (path: string) => {
-    if (path === '/app/dashboard') return location.pathname === '/app/dashboard';
+    if (path === '/app/dashboard')
+      return location.pathname === '/app/dashboard' || location.pathname === '/app/earnings';
     if (path === '/app/profile') return location.pathname === '/app/profile';
     if (path === '/app/links') return location.pathname === '/app/links' || location.pathname.startsWith('/app/links/');
     if (path === '/app/content') return location.pathname === '/app/content';
     if (path === '/app/chat') return location.pathname === '/app/chat';
     if (path === '/app/wishlist') return location.pathname === '/app/wishlist';
-    if (path === '/app/earnings') return location.pathname === '/app/earnings';
     if (path === '/app/agency') return location.pathname === '/app/agency';
     if (path === '/app/referral') return location.pathname === '/app/referral';
     if (path === '/admin/users') return location.pathname === '/admin/users' || location.pathname.startsWith('/admin/users/');
@@ -344,6 +344,8 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       <AnimatePresence>
         {showProfileSwitcher && location.pathname.startsWith('/app') && <ProfileSwitcherOverlay />}
       </AnimatePresence>
+
+      {location.pathname.startsWith('/app') && <ProUpgradePopup />}
     </div>
   );
 };

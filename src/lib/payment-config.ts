@@ -14,16 +14,9 @@ export const PAYMENT_CONFIG = {
   CURRENCY: 'USD',
 
   // Fee structure
-  PROCESSING_FEE_RATE: 0.05,       // 5% added on top for the fan
-  COMMISSION_RATE_FREE: 0.10,      // 10% platform commission (free plan)
+  PROCESSING_FEE_RATE: 0.15,       // 15% added on top for the fan
+  COMMISSION_RATE_FREE: 0.15,      // 15% platform commission (free plan)
   COMMISSION_RATE_PREMIUM: 0,      // 0% platform commission (premium plan)
-
-  // Premium subscription
-  PREMIUM_PRICE_CENTS: 3900,       // $39/month
-  PREMIUM_PRICE_USD: 39,
-  SUBSCRIPTION_PLAN_ID: '11027',
-  ADDON_PROFILE_PRICE_CENTS: 1000, // $10/month per additional profile beyond 2
-  INCLUDED_PROFILES: 2,
 
   // Withdrawal limits
   MIN_WITHDRAWAL_CENTS: 5000,      // $50 minimum withdrawal
@@ -46,12 +39,12 @@ export const PAYMENT_CONFIG = {
   CHATTER_SPLIT: {
     CREATOR: 0.60,   // 60% to creator
     CHATTER: 0.25,   // 25% to chatter
-    PLATFORM: 0.15,  // 15% to platform (+ 5% processing fee)
+    PLATFORM: 0.15,  // 15% to platform (+ 15% processing fee)
   },
 } as const;
 
 /**
- * Calculate the total amount the fan pays (base price + 5% processing fee).
+ * Calculate the total amount the fan pays (base price + 15% processing fee).
  * @param baseCents - Base price in cents
  * @returns Total fan pays in cents
  */
@@ -61,7 +54,7 @@ export function calculateFanTotal(baseCents: number): number {
 
 /**
  * Calculate the commission split for a transaction.
- * @param baseCents - Base price in cents (before 5% fee)
+ * @param baseCents - Base price in cents (before 15% fee)
  * @param isPremium - Whether the creator has an active premium subscription
  * @returns Object with creatorNet, platformFee, fanProcessingFee
  */
@@ -122,15 +115,3 @@ export function decimalToCents(decimal: string): number {
   return Math.round(parseFloat(decimal) * 100);
 }
 
-/**
- * Calculate monthly subscription price based on active profile count.
- * @param profileCount - Number of active creator profiles
- * @returns Monthly price in cents
- */
-export function calculateSubscriptionPrice(profileCount: number): number {
-  if (profileCount <= PAYMENT_CONFIG.INCLUDED_PROFILES) {
-    return PAYMENT_CONFIG.PREMIUM_PRICE_CENTS;
-  }
-  const extraProfiles = profileCount - PAYMENT_CONFIG.INCLUDED_PROFILES;
-  return PAYMENT_CONFIG.PREMIUM_PRICE_CENTS + (extraProfiles * PAYMENT_CONFIG.ADDON_PROFILE_PRICE_CENTS);
-}

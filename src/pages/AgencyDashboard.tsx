@@ -16,6 +16,8 @@ import {
   Tag,
   X,
   Loader2,
+  Sparkles,
+  Users,
 } from 'lucide-react';
 import { AgencyCategoryConfig, EMPTY_AGENCY_CATEGORIES, type AgencyCategoryData } from '@/components/ui/AgencyCategoryConfig';
 
@@ -58,7 +60,7 @@ export default function AgencyDashboard() {
         .single();
       const premium = profileData?.is_creator_subscribed === true;
       setIsPremium(premium);
-      const rate = premium ? 0 : 0.10;
+      const rate = premium ? 0 : 0.15;
 
       // Fetch RPC stats
       const { data, error } = await supabase.rpc('get_user_profiles', {
@@ -71,10 +73,10 @@ export default function AgencyDashboard() {
         return;
       }
 
-      // Revenue from RPC is raw amount_cents — we need to strip 5% fan fee + platform commission
+      // Revenue from RPC is raw amount_cents — we need to strip 15% fan fee + platform commission
       const stats: ProfileStats[] = (data ?? []).map((row: any) => {
         const rawRevenue = Number(row.total_revenue_cents ?? 0);
-        const netRevenue = Math.round(rawRevenue / 1.05 * (1 - rate));
+        const netRevenue = Math.round(rawRevenue / 1.15 * (1 - rate));
         return {
           id: row.profile_id,
           username: row.username,
@@ -169,7 +171,7 @@ export default function AgencyDashboard() {
     if (!error) setShowCategories(false);
   };
 
-  const commissionRate = isPremium ? 0 : 0.10;
+  const commissionRate = isPremium ? 0 : 0.15;
 
   const totals = profileStats.reduce(
     (acc, p) => ({
@@ -236,7 +238,7 @@ export default function AgencyDashboard() {
       if (purchase.created_at) {
         const d = new Date(purchase.created_at);
         d.setHours(0, 0, 0, 0);
-        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
+        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.15 * (1 - commissionRate));
         events.push({ date: d, value });
       }
     });
@@ -275,32 +277,35 @@ export default function AgencyDashboard() {
 
   return (
     <AppShell>
-      <main className="px-4 pb-16 max-w-6xl mx-auto">
-        {/* Header */}
-        <section className="mt-4 sm:mt-6 mb-6">
+      <main className="px-4 lg:px-6 pb-16 w-full max-w-6xl mx-auto">
+        {/* Header — title + quick actions (harmonized with Earnings) */}
+        <section className="mt-4 sm:mt-6 mb-5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-extrabold text-exclu-cloud">Agency Panel</h1>
-              <p className="text-sm text-exclu-space/70">
-                {profiles.length} profile{profiles.length !== 1 ? 's' : ''} managed
+              <p className="text-[10px] uppercase tracking-[0.22em] text-foreground/55 dark:text-white/55 mb-1 font-semibold">
+                Agency
               </p>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground dark:text-white truncate tracking-tight">
+                Agency Panel
+              </h1>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
+              <button
+                type="button"
                 onClick={() => setShowCategories(!showCategories)}
-                className="gap-2 rounded-xl border-exclu-arsenic/60"
+                className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground/70 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:border-foreground/20 dark:hover:border-white/20 transition-colors"
               >
-                <Tag className="w-4 h-4" />
+                <Tag className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Categories</span>
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={() => navigate('/app/profiles/new')}
-                className="gap-2 rounded-xl"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#CFFF16] px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#bef200] shadow-[0_6px_20px_-6px_rgba(207,255,22,0.5)] transition-all"
               >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">New Profile</span>
-              </Button>
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">New profile</span>
+              </button>
             </div>
           </div>
 
@@ -311,19 +316,19 @@ export default function AgencyDashboard() {
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.2 }}
-              className="mt-4 rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5"
+              className="mt-4 rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-5"
             >
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-exclu-cloud">Agency Categories</p>
-                  <p className="text-[11px] text-exclu-space/60">How your agency appears in the directory</p>
+                  <p className="text-sm font-semibold text-foreground dark:text-white">Agency categories</p>
+                  <p className="text-[11px] text-foreground/55 dark:text-white/55">How your agency appears in the directory</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     onClick={handleSaveCategories}
                     disabled={isSavingCategories}
-                    className="rounded-lg text-xs h-8 px-4"
+                    className="rounded-full text-xs h-8 px-4 bg-[#CFFF16] text-black hover:bg-[#bef200]"
                   >
                     {isSavingCategories ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : null}
                     {isSavingCategories ? 'Saving…' : 'Save'}
@@ -331,7 +336,7 @@ export default function AgencyDashboard() {
                   <button
                     type="button"
                     onClick={() => setShowCategories(false)}
-                    className="p-1 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space"
+                    className="p-1.5 rounded-full hover:bg-foreground/5 dark:hover:bg-white/10 transition-colors text-foreground/60 dark:text-white/60"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -342,45 +347,118 @@ export default function AgencyDashboard() {
           )}
         </section>
 
-        {/* Metric cards — identical style to AppDashboard */}
-        <section className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'profile_views' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
-            onClick={() => { setActiveMetric('profile_views'); setHoveredPoint(null); }}
+        {/* ───────────── Agency Hero (mirrors Earnings hero) ───────────── */}
+        <section className="mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-3xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-6 sm:p-8 lg:p-10 shadow-[0_24px_80px_-40px_rgba(207,255,22,0.22)] dark:shadow-[0_30px_100px_-50px_rgba(207,255,22,0.4)]"
           >
-            <p className="text-xs text-exclu-space mb-1">Total profile visits</p>
-            <p className="text-2xl font-bold text-exclu-cloud">
-              {totals.views.toLocaleString('en-US')}
-            </p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">Combined views across all profiles.</p>
-          </div>
+            <div aria-hidden className="pointer-events-none absolute -top-32 -right-20 w-[460px] h-[460px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.28),transparent_60%)] blur-3xl opacity-80 dark:opacity-95" />
+            <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 w-[380px] h-[380px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.12),transparent_60%)] blur-3xl opacity-40 dark:opacity-60" />
+            <div aria-hidden className="pointer-events-none absolute inset-0 hidden dark:block opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'sales' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
-            onClick={() => { setActiveMetric('sales'); setHoveredPoint(null); }}
-          >
-            <p className="text-xs text-exclu-space mb-1">Total sales</p>
-            <p className="text-2xl font-bold text-exclu-cloud">{totals.sales.toLocaleString()}</p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">Purchases across all profiles.</p>
-          </div>
+            <div className="relative lg:grid lg:grid-cols-[1fr,auto] lg:gap-10 lg:items-start">
+              {/* ── LEFT (desktop) / TOP (mobile) — label + revenue + stats ── */}
+              <div>
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/60 dark:text-white/60">
+                  <span className="relative inline-flex h-1.5 w-1.5">
+                    <span className="absolute inset-0 rounded-full bg-[#CFFF16] animate-ping opacity-50" />
+                    <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-[#CFFF16] shadow-[0_0_10px_rgba(207,255,22,0.9)]" />
+                  </span>
+                  Portfolio revenue
+                </div>
 
-          <div
-            className={`rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 cursor-pointer transition-colors ${activeMetric === 'revenue' ? 'ring-1 ring-primary/70 border-primary/70' : ''}`}
-            onClick={() => { setActiveMetric('revenue'); setHoveredPoint(null); }}
-          >
-            <p className="text-xs text-exclu-space mb-1">Total revenue</p>
-            <p className="text-2xl font-bold text-exclu-cloud">{formattedTotalRevenue} USD</p>
-            <p className="text-[11px] text-exclu-space/80 mt-1">Net revenue after fees.</p>
-          </div>
+                <div className="mt-3 flex items-end gap-2.5">
+                  <span className="text-[3.25rem] leading-[0.9] sm:text-7xl lg:text-[5.25rem] font-black tracking-[-0.045em] text-foreground dark:text-white tabular-nums">
+                    {formattedTotalRevenue}
+                  </span>
+                  <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+                </div>
+
+                <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
+                <div className="mt-5 grid grid-cols-3">
+                  {[
+                    { label: 'Profiles', value: profiles.length.toLocaleString('en-US') },
+                    { label: 'Total sales', value: totals.sales.toLocaleString('en-US') },
+                    { label: 'Profile visits', value: totals.views.toLocaleString('en-US') },
+                  ].map((stat, i) => (
+                    <div
+                      key={stat.label}
+                      className={i > 0 ? 'pl-4 sm:pl-6 border-l border-foreground/10 dark:border-white/10' : ''}
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-foreground/45 dark:text-white/45 font-semibold">{stat.label}</p>
+                      <p className="text-lg sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{stat.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── RIGHT (desktop, top-aligned) / BOTTOM (mobile, centered) — pills + CTA ── */}
+              <div className="mt-7 lg:mt-0 flex flex-col items-center lg:items-end gap-3 lg:gap-4">
+                <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
+                    <Users className="w-3 h-3 text-[#CFFF16]" />
+                    <span>{profiles.length} creator{profiles.length !== 1 ? 's' : ''} managed</span>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
+                    <Sparkles className="w-3 h-3 text-[#CFFF16]" />
+                    {isPremium
+                      ? <>Premium · <span className="text-[#4a6304] dark:text-[#CFFF16] font-semibold">0% commission</span></>
+                      : <>Free · {Math.round(commissionRate * 100)}% commission</>}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/profiles/new')}
+                  className="group relative w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add a new profile
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </section>
 
-        {/* Analytics chart — identical to AppDashboard */}
-        <section className="mt-6">
-          <div className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-5 sm:p-6">
+        {/* Metric cards — drill-down selector for chart */}
+        <section className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
+          {[
+            { key: 'profile_views' as const, label: 'Profile visits', value: totals.views.toLocaleString('en-US'), hint: 'Combined views' },
+            { key: 'sales' as const, label: 'Sales', value: totals.sales.toLocaleString('en-US'), hint: 'Purchases across profiles' },
+            { key: 'revenue' as const, label: 'Revenue', value: `${formattedTotalRevenue}`, hint: 'Net after fees' },
+          ].map((m) => {
+            const active = activeMetric === m.key;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => { setActiveMetric(m.key); setHoveredPoint(null); }}
+                className={`text-left rounded-2xl border p-4 sm:p-5 transition-all ${
+                  active
+                    ? 'border-[#CFFF16]/50 bg-[#CFFF16]/8 dark:bg-[#CFFF16]/5 shadow-[0_12px_32px_-16px_rgba(207,255,22,0.35)]'
+                    : 'border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] hover:border-foreground/20 dark:hover:border-white/20'
+                }`}
+              >
+                <p className={`text-[10px] uppercase tracking-wider font-semibold ${active ? 'text-[#4a6304] dark:text-[#CFFF16]' : 'text-foreground/50 dark:text-white/50'}`}>
+                  {m.label}
+                </p>
+                <p className="text-xl sm:text-2xl font-bold text-foreground dark:text-white mt-1 tabular-nums">{m.value}</p>
+                <p className="text-[11px] text-foreground/50 dark:text-white/50 mt-1">{m.hint}</p>
+              </button>
+            );
+          })}
+        </section>
+
+        {/* Analytics chart */}
+        <section className="mt-4">
+          <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-5 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-exclu-space/70 mb-1">Growth over time</p>
-                <p className="text-sm text-exclu-space/80">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-foreground/55 dark:text-white/55 font-semibold mb-1">Growth over time</p>
+                <p className="text-sm text-foreground/80 dark:text-white/80">
                   {activeMetric === 'profile_views'
                     ? 'Profile views'
                     : activeMetric === 'sales'
@@ -389,15 +467,15 @@ export default function AgencyDashboard() {
                   over the last {activeRange === '7d' ? '7 days' : activeRange === '30d' ? '30 days' : '12 months'}.
                 </p>
               </div>
-              <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
+              <div className="inline-flex rounded-full border border-black/5 dark:border-white/10 bg-foreground/5 dark:bg-white/5 p-0.5 text-[11px] text-foreground/70 dark:text-white/70">
                 {([{ key: '7d' as const, label: '7D' }, { key: '30d' as const, label: '30D' }, { key: '365d' as const, label: '1Y' }]).map((item) => (
                   <button
                     key={item.key}
                     type="button"
                     onClick={() => { setActiveRange(item.key); setHoveredPoint(null); }}
                     className={`px-3 py-1 rounded-full transition-colors ${activeRange === item.key
-                      ? 'bg-exclu-cloud text-white dark:text-black shadow-sm'
-                      : 'text-exclu-space hover:text-exclu-cloud'
+                      ? 'bg-[#CFFF16] text-black shadow-sm font-semibold'
+                      : 'hover:text-foreground dark:hover:text-white'
                     }`}
                   >
                     {item.label}
@@ -503,7 +581,7 @@ export default function AgencyDashboard() {
                           stroke="currentColor"
                           strokeWidth={2}
                           points={pointsAttr}
-                          className="drop-shadow-[0_0_10px_rgba(56,189,248,0.7)] transition-all duration-500"
+                          className="drop-shadow-[0_0_10px_rgba(207,255,22,0.7)] transition-all duration-500"
                         />
                         <g>
                           {computedPoints.map((pt, index) => (
@@ -519,7 +597,7 @@ export default function AgencyDashboard() {
                           ))}
                         </g>
                       </svg>
-                      <div className="mt-2 flex justify-between text-[10px] text-exclu-space/70">
+                      <div className="mt-2 flex justify-between text-[10px] text-foreground/55 dark:text-white/55">
                         {series.map((point, index) => (
                           <span key={index} className="min-w-0 truncate">
                             {index === 0 || index === series.length - 1 || series.length <= 7 ? point.label : ''}
@@ -529,7 +607,7 @@ export default function AgencyDashboard() {
                     </div>
                   </div>
                   {tooltipPoint && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-exclu-space/80">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-foreground/70 dark:text-white/70">
                       <span>
                         {activeMetric === 'profile_views' ? 'Views on' : 'Total'}{' '}
                         {activeMetric === 'revenue'
@@ -538,7 +616,7 @@ export default function AgencyDashboard() {
                         on {lastPoint.label}
                       </span>
                       {hoveredPoint && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 px-2.5 py-1 text-[10px] text-exclu-cloud">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[#CFFF16]/40 bg-[#CFFF16]/10 px-2.5 py-1 text-[10px] text-[#4a6304] dark:text-[#CFFF16] font-semibold">
                           {tooltipPoint.label} ·{' '}
                           {activeMetric === 'revenue'
                             ? `${formatRevenue(tooltipPoint.value)} USD`
@@ -553,11 +631,11 @@ export default function AgencyDashboard() {
           </div>
         </section>
 
-        {/* Profiles List */}
-        <section className="mt-8">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">My Profiles</h2>
-            <span className="text-xs text-muted-foreground">{profileStats.length} profile{profileStats.length !== 1 ? 's' : ''}</span>
+        {/* Profiles list */}
+        <section className="mt-6">
+          <div className="mb-3 flex items-center justify-between px-1">
+            <p className="text-[10px] uppercase tracking-[0.22em] font-semibold text-foreground/55 dark:text-white/55">Managed profiles</p>
+            <span className="text-[11px] text-foreground/55 dark:text-white/55">{profileStats.length} profile{profileStats.length !== 1 ? 's' : ''}</span>
           </div>
 
           <div className="space-y-3">
@@ -568,7 +646,7 @@ export default function AgencyDashboard() {
                 variants={cardVariants}
                 initial="hidden"
                 animate="visible"
-                className="rounded-2xl border border-border/50 bg-card p-4 sm:p-5 hover:border-primary/30 transition-colors"
+                className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4 sm:p-5 hover:border-[#CFFF16]/40 dark:hover:border-[#CFFF16]/30 transition-colors"
               >
                 <div className="flex items-center gap-4">
                   <div className="flex-shrink-0">
@@ -576,64 +654,63 @@ export default function AgencyDashboard() {
                       <img
                         src={profile.avatar_url}
                         alt={profile.display_name || ''}
-                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border border-border/40"
+                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border border-black/10 dark:border-white/10"
                       />
                     ) : (
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-border/40 flex items-center justify-center text-lg font-semibold text-foreground/60">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-[#CFFF16]/20 to-[#CFFF16]/5 border border-[#CFFF16]/30 flex items-center justify-center text-lg font-semibold text-[#4a6304] dark:text-[#CFFF16]">
                         {(profile.display_name || profile.username || '?')[0]?.toUpperCase()}
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-semibold truncate">
+                      <p className="font-semibold text-foreground dark:text-white truncate">
                         {profile.display_name || profile.username || 'Unnamed'}
                       </p>
                       {profile.username && (
-                        <span className="text-xs text-muted-foreground">@{profile.username}</span>
+                        <span className="text-xs text-foreground/55 dark:text-white/55">@{profile.username}</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
+                    <div className="flex items-center gap-4 mt-1 text-xs text-foreground/60 dark:text-white/60">
+                      <span className="flex items-center gap-1 tabular-nums">
                         <DollarSign className="w-3 h-3" />
                         {formatRevenueShort(profile.total_revenue_cents)}
                       </span>
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 tabular-nums">
                         <ShoppingBag className="w-3 h-3" />
                         {profile.total_sales} sales
                       </span>
-                      <span className="hidden sm:flex items-center gap-1">
+                      <span className="hidden sm:flex items-center gap-1 tabular-nums">
                         <Eye className="w-3 h-3" />
                         {profile.profile_view_count.toLocaleString()} views
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <button
+                      type="button"
                       onClick={() => handleEditProfile(profile.id)}
-                      className="hidden sm:flex gap-1.5 rounded-lg text-xs"
+                      className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground/70 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:border-foreground/20 dark:hover:border-white/20 transition-colors"
                     >
                       <Palette className="w-3.5 h-3.5" />
                       Edit
-                    </Button>
-                    <Button
-                      size="sm"
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleManageProfile(profile.id)}
-                      className="gap-1.5 rounded-lg text-xs"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#CFFF16] px-3.5 py-1.5 text-xs font-bold text-black hover:bg-[#bef200] shadow-[0_6px_20px_-6px_rgba(207,255,22,0.45)] transition-all"
                     >
                       Manage
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
+                    </button>
                     {profile.username && (
                       <a
                         href={`/${profile.username}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg border border-border/60 hover:bg-muted/50 transition-colors"
+                        className="hidden sm:flex items-center justify-center w-8 h-8 rounded-full border border-foreground/10 dark:border-white/10 hover:bg-foreground/5 dark:hover:bg-white/10 transition-colors"
                       >
-                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                        <ExternalLink className="w-3.5 h-3.5 text-foreground/60 dark:text-white/60" />
                       </a>
                     )}
                   </div>
@@ -647,12 +724,12 @@ export default function AgencyDashboard() {
               initial="hidden"
               animate="visible"
               onClick={() => navigate('/app/profiles/new')}
-              className="w-full rounded-2xl border-2 border-dashed border-border/50 p-6 flex flex-col items-center justify-center gap-2 hover:border-primary/40 hover:bg-muted/20 transition-colors cursor-pointer"
+              className="w-full rounded-2xl border-2 border-dashed border-foreground/15 dark:border-white/15 p-6 flex flex-col items-center justify-center gap-2 hover:border-[#CFFF16]/60 hover:bg-[#CFFF16]/5 transition-colors cursor-pointer"
             >
-              <div className="w-10 h-10 rounded-full border border-dashed border-border/60 flex items-center justify-center">
-                <Plus className="w-5 h-5 text-muted-foreground" />
+              <div className="w-10 h-10 rounded-full border border-dashed border-foreground/20 dark:border-white/20 flex items-center justify-center">
+                <Plus className="w-5 h-5 text-foreground/60 dark:text-white/60" />
               </div>
-              <p className="text-sm text-muted-foreground font-medium">Add a new profile</p>
+              <p className="text-sm text-foreground/70 dark:text-white/70 font-medium">Add a new profile</p>
             </motion.button>
           </div>
         </section>

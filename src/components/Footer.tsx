@@ -17,15 +17,9 @@ const Footer = () => {
   const links = {
     product: [
       { label: 'Features', href: '/#features' },
-      { label: 'Pricing', href: '/#pricing' },
-      { label: 'Creators', href: '/#creators' },
-      { label: 'FAQ', href: '/#faq' },
-    ],
-    company: [
-      { label: 'About', href: '#' },
+      { label: 'How it works', href: '/#how-it-works' },
+      { label: 'Pricing', href: '/pricing' },
       { label: 'Blog', href: '/blog' },
-      { label: 'Careers', href: '#' },
-      { label: 'Press', href: '#' },
     ],
     legal: [
       { label: 'Privacy', href: '/privacy' },

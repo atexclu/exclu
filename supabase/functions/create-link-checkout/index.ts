@@ -14,18 +14,14 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-}
-if (!quickPayToken) {
-  throw new Error('Missing QUICKPAY_TOKEN');
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
@@ -101,6 +97,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
     const slug = body?.slug as string | undefined;
 
     const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';
@@ -116,7 +116,7 @@ serve(async (req) => {
     // ── Fetch link ────────────────────────────────────────────────────
     const { data: link, error: linkError } = await supabase
       .from('links')
-      .select('id, title, price_cents, currency, status, creator_id, slug')
+      .select('id, title, price_cents, currency, status, creator_id, slug, storage_path, is_support_link')
       .eq('slug', slug)
       .single();
 
@@ -130,6 +130,25 @@ serve(async (req) => {
 
     if (!link.price_cents || link.price_cents <= 0) {
       return jsonError('Invalid price for this link', 400, corsHeaders);
+    }
+
+    // Belt-and-braces check against the links_require_content DB trigger:
+    // refuse to sell a non-support link that has lost all its content (the
+    // trigger blocks new publishes but a legacy row could slip through).
+    if (!link.is_support_link && !link.storage_path) {
+      const { count: mediaCount, error: mediaCountError } = await supabase
+        .from('link_media')
+        .select('link_id', { count: 'exact', head: true })
+        .eq('link_id', link.id);
+
+      if (mediaCountError) {
+        console.error('link_media count check failed', mediaCountError);
+        return jsonError('Unable to verify link content', 500, corsHeaders);
+      }
+
+      if (!mediaCount || mediaCount === 0) {
+        return jsonError('This link has no content attached and cannot be purchased', 400, corsHeaders);
+      }
     }
 
     // ── Fetch creator profile ─────────────────────────────────────────
@@ -164,7 +183,7 @@ serve(async (req) => {
 
     // ── Calculate pricing ─────────────────────────────────────────────
     const baseCents = link.price_cents;
-    const fanProcessingFeeCents = Math.round(baseCents * 0.05);
+    const fanProcessingFeeCents = Math.round(baseCents * 0.15);
     const totalFanPaysCents = baseCents + fanProcessingFeeCents;
 
     let chatterEarningsCents = 0;
@@ -179,7 +198,7 @@ serve(async (req) => {
     } else {
       // Standard split
       const isSubscribed = creatorProfile.is_creator_subscribed === true;
-      const commissionRate = isSubscribed ? 0 : 0.10;
+      const commissionRate = isSubscribed ? 0 : 0.15;
       const platformCommissionCents = Math.round(baseCents * commissionRate);
       creatorNetCents = baseCents - platformCommissionCents;
       platformFeeCents = platformCommissionCents + fanProcessingFeeCents;
@@ -197,6 +216,7 @@ serve(async (req) => {
         buyer_email: buyerEmail || null,
         creator_net_cents: creatorNetCents,
         platform_fee_cents: platformFeeCents,
+        ugp_mid: midKey,
         ...(conversationId ? { chat_conversation_id: conversationId } : {}),
         ...(resolvedChatterId ? {
           chat_chatter_id: resolvedChatterId,
@@ -216,14 +236,14 @@ serve(async (req) => {
 
     // ── Build QuickPay form fields ────────────────────────────────────
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
       AmountTotal: amountDecimal,
       CurrencyID: 'USD',
       'ItemName[0]': `Unlock: ${(link.title || 'Exclusive content').slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': 'One-time access to exclusive content on Exclu (includes 5% processing fee)',
+      'ItemDesc[0]': 'One-time access to exclusive content on Exclu (includes 15% processing fee)',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

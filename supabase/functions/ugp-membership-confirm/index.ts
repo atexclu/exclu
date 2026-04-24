@@ -7,19 +7,27 @@
  *   Action = 'Cancel'   → Subscription cancelled
  *   Action = 'Inactive' → Subscription deactivated
  *
+ * Handles legacy plan 11027 creator Pro postbacks and fan→creator subscription
+ * postbacks. New creators go through rebill-subscriptions cron (Phase 4 Task 4.3)
+ * which bills base + extras at source — no wallet debit needed here.
+ *
  * Handles:
  *   - Activating/deactivating premium status
  *   - First-time subscription flags (certification, deeplinks, etc.)
- *   - Referral commission (35% of $39 at each renewal)
- *   - Multi-profile addon charges (debit wallet for extra profiles)
+ *   - Referral commission (35% of $39.99 at each renewal)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
-const confirmKey = Deno.env.get('QUICKPAY_CONFIRM_KEY');
+// Plan IDs used to disambiguate creator-premium vs fan→creator subscriptions.
+// Creator plan id is the legacy one (defaults to '11027'); fan plan id is
+// provisioned with Derek and may be unset during rollout (we just skip fan handling then).
+const creatorPlanId = Deno.env.get('QUICKPAY_SUB_PLAN_ID') || '11027';
+const fanPlanId = Deno.env.get('QUICKPAY_FAN_SUB_PLAN_ID') || '';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
@@ -40,7 +48,6 @@ serve(async (req) => {
   }
 
   const action = body.Action || '';
-  const key = body.Key || '';
   const username = body.Username || ''; // This is the user.id we set as MembershipUsername
   const memberId = body.MemberId || '';
   const subscriptionPlanId = body.SubscriptionPlanId || '';
@@ -49,9 +56,24 @@ serve(async (req) => {
 
   console.log(`Membership postback: action=${action} username=${username} memberId=${memberId} planId=${subscriptionPlanId}`);
 
-  // Verify Key (only reject if both confirmKey is set AND Key is provided but mismatched)
-  if (confirmKey && key && key !== confirmKey) {
-    console.error('Invalid Key in membership postback');
+  // ── Mandatory per-MID Key validation ─────────────────────────────────
+  const siteId = String(body?.SiteID ?? '');
+  const midKey = midFromSiteId(siteId);
+
+  let expectedKey: string;
+  try {
+    expectedKey = getMidConfirmKey(midKey);
+  } catch (e) {
+    console.error('[ugp-membership-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
+    return new Response('Server misconfigured', { status: 503 });
+  }
+
+  if (String(body?.Key ?? '') !== expectedKey) {
+    console.error('[ugp-membership-confirm] Key mismatch', {
+      siteId,
+      midKey,
+      provided: String(body?.Key ?? '').slice(0, 8) + '...',
+    });
     return new Response('Unauthorized', { status: 401 });
   }
 
@@ -62,20 +84,41 @@ serve(async (req) => {
     return new Response('OK', { status: 200 });
   }
 
+  // Route by SubscriptionPlanId: our creator Pro plan uses its own id, fan subs use fanPlanId.
+  // If fanPlanId is unset (rollout in progress), fan postbacks fall through to the default
+  // creator handler — harmless since their Username isn't a profile id and handleActivation
+  // bails gracefully when no profile is found.
+  const isFanSubPlan = !!fanPlanId && subscriptionPlanId === fanPlanId;
+
   try {
-    switch (action) {
-      case 'Add':
-      case 'Rebill':
-        await handleActivation(userId, memberId, action);
-        break;
-
-      case 'Cancel':
-      case 'Inactive':
-        await handleDeactivation(userId, action);
-        break;
-
-      default:
-        console.warn('Unknown membership action:', action);
+    if (isFanSubPlan) {
+      // Fan → creator subscription. Username = fan_creator_subscriptions.id.
+      switch (action) {
+        case 'Add':
+        case 'Rebill':
+          await handleFanActivation(userId, memberId, action);
+          break;
+        case 'Cancel':
+        case 'Inactive':
+          await handleFanDeactivation(userId, action);
+          break;
+        default:
+          console.warn('Unknown fan-sub membership action:', action);
+      }
+    } else {
+      // Creator Pro subscription (existing behaviour).
+      switch (action) {
+        case 'Add':
+        case 'Rebill':
+          await handleActivation(userId, memberId, action);
+          break;
+        case 'Cancel':
+        case 'Inactive':
+          await handleDeactivation(userId, action);
+          break;
+        default:
+          console.warn('Unknown membership action:', action);
+      }
     }
   } catch (err) {
     console.error('Error processing membership postback:', err);
@@ -117,13 +160,8 @@ async function handleActivation(userId: string, memberId: string, action: string
 
   await supabase.from('profiles').update(updatePayload).eq('id', userId);
 
-  // ── Referral commission (35% of $39 = 1365 cents) ─────────────────
+  // ── Referral commission (35% of $39.99 = 1400 cents) ──────────────
   await creditReferralCommission(userId);
-
-  // ── Multi-profile addon charge (at each renewal) ──────────────────
-  if (action === 'Rebill') {
-    await chargeProfileAddons(userId);
-  }
 
   console.log(`Subscription ${action}:`, userId);
 }
@@ -155,7 +193,7 @@ async function creditReferralCommission(subscriberId: string) {
 
   if (!referral) return;
 
-  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  const commissionCents = Math.round(3999 * 0.35); // $14.00
 
   // Increment referral commission
   await supabase.from('referrals').update({
@@ -180,65 +218,60 @@ async function creditReferralCommission(subscriberId: string) {
   console.log('Referral commission:', referral.referrer_id, '+', commissionCents, 'cents');
 }
 
-// ── Multi-profile addon charges ──────────────────────────────────────────
+// ── FAN → CREATOR SUBSCRIPTION HANDLERS ─────────────────────────────────
 
-async function chargeProfileAddons(userId: string) {
-  const { data: profiles } = await supabase
-    .from('creator_profiles')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('is_active', true);
+/**
+ * Add (first activation) or Rebill (monthly renewal) on a fan subscription.
+ * We extend period_end by 30 days from now. cancel_at_period_end is reset
+ * because a rebill implicitly means the fan didn't cancel.
+ */
+async function handleFanActivation(subId: string, memberId: string, action: string) {
+  const { data: sub } = await supabase
+    .from('fan_creator_subscriptions')
+    .select('id, status, period_end')
+    .eq('id', subId)
+    .single();
 
-  const profileCount = profiles?.length || 1;
-  const includedProfiles = 2;
-  const extraProfiles = Math.max(0, profileCount - includedProfiles);
-  const addonCents = extraProfiles * 1000; // $10 per extra profile
-
-  if (addonCents <= 0) return;
-
-  console.log(`Addon charge: ${extraProfiles} extra profiles = ${addonCents} cents for user ${userId}`);
-
-  try {
-    await supabase.rpc('debit_creator_wallet', {
-      p_creator_id: userId,
-      p_amount_cents: addonCents,
-    });
-
-    await supabase.from('addon_charges').insert({
-      creator_id: userId,
-      amount_cents: addonCents,
-      profile_count: profileCount,
-      extra_profiles: extraProfiles,
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      status: 'charged',
-      charged_at: new Date().toISOString(),
-    });
-
-    console.log('Addon charge successful:', userId, addonCents, 'cents');
-  } catch (err) {
-    console.error('Addon charge failed (insufficient wallet?):', err);
-
-    await supabase.from('addon_charges').insert({
-      creator_id: userId,
-      amount_cents: addonCents,
-      profile_count: profileCount,
-      extra_profiles: extraProfiles,
-      period_start: new Date().toISOString().slice(0, 10),
-      period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      status: 'failed',
-    });
-
-    // Send warning email to creator
-    const { data: creatorAuth } = await supabase.auth.admin.getUserById(userId);
-    if (creatorAuth?.user?.email) {
-      const { sendBrevoEmail, formatUSD } = await import('../_shared/brevo.ts');
-      await sendBrevoEmail({
-        to: creatorAuth.user.email,
-        subject: `⚠️ Profile addon charge failed — ${formatUSD(addonCents)}`,
-        htmlContent: `<p>Your monthly addon charge of <strong>${formatUSD(addonCents)}</strong> for ${extraProfiles} additional profile(s) could not be deducted from your wallet.</p>
-          <p>Please add funds to your wallet to avoid service interruption.</p>`,
-      });
-    }
+  if (!sub) {
+    console.error('Fan sub not found for activation:', subId);
+    return;
   }
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'active',
+    period_start: now.toISOString(),
+    period_end: periodEnd.toISOString(),
+    ugp_member_id: memberId,
+    cancel_at_period_end: false,
+  };
+  // Only stamp started_at on first activation (Add action or previously pending).
+  if (!sub.status || sub.status === 'pending') {
+    updatePayload.started_at = now.toISOString();
+  }
+
+  await supabase.from('fan_creator_subscriptions').update(updatePayload).eq('id', subId);
+  console.log(`Fan sub ${action}:`, subId, 'period_end=', periodEnd.toISOString());
 }
+
+/**
+ * Cancel/Inactive on a fan subscription. We flip status to 'cancelled' and
+ * stamp cancelled_at, but KEEP period_end intact — has_active_fan_subscription
+ * grants access until that date.
+ */
+async function handleFanDeactivation(subId: string, action: string) {
+  await supabase
+    .from('fan_creator_subscriptions')
+    .update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancel_at_period_end: true,
+    })
+    .eq('id', subId);
+
+  console.log(`Fan sub ${action}:`, subId);
+}
+

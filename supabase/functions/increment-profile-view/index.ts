@@ -86,85 +86,21 @@ serve(async (req) => {
       });
     }
 
-    // Step 1: Find the profile — try profiles.handle first, then creator_profiles.username
-    let userId: string | null = null;
-    let creatorProfileId: string | null = profileIdParam || null;
+    // Single atomic RPC (migration 157). Replaces the previous 4-roundtrip
+    // read-modify-write pattern that showed up as a CPU hotspot in the
+    // 2026-04-21 incident postmortem (27k UPDATEs on profiles, 8k on
+    // creator_profiles, with a lost-update race under concurrent views).
+    const { error: rpcError } = await supabaseAdmin.rpc('increment_profile_views_atomic', {
+      p_handle: handle,
+      p_profile_id: profileIdParam ?? null,
+    });
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, profile_view_count, is_creator')
-      .eq('handle', handle)
-      .maybeSingle();
-
-    if (profile) {
-      userId = (profile as any).id;
-
-      // Only increment for creator profiles
-      if ((profile as any).is_creator === false) {
-        return new Response(JSON.stringify({ success: true }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // Always increment on profiles table (account-level counter)
-      const currentViews = (profile as any).profile_view_count ?? 0;
-      await supabaseAdmin
-        .from('profiles')
-        .update({ profile_view_count: currentViews + 1 })
-        .eq('id', userId);
-
-      console.log('[increment-profile-view] profiles.profile_view_count:', currentViews + 1);
-    } else {
-      // Try creator_profiles.username for additional profiles
-      const { data: cpData } = await supabaseAdmin
-        .from('creator_profiles')
-        .select('id, user_id, profile_view_count')
-        .eq('username', handle)
-        .maybeSingle();
-
-      if (!cpData) {
-        console.error('Error loading profile for view increment', profileError);
-        return new Response(JSON.stringify({ error: 'Profile not found' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      userId = (cpData as any).user_id;
-      creatorProfileId = (cpData as any).id;
-    }
-
-    // Step 2: Increment on creator_profiles (per-profile counter)
-    if (creatorProfileId) {
-      const { data: cpRow } = await supabaseAdmin
-        .from('creator_profiles')
-        .select('profile_view_count')
-        .eq('id', creatorProfileId)
-        .maybeSingle();
-
-      const cpViews = (cpRow as any)?.profile_view_count ?? 0;
-      const { error: cpUpdateError } = await supabaseAdmin
-        .from('creator_profiles')
-        .update({ profile_view_count: cpViews + 1 })
-        .eq('id', creatorProfileId);
-
-      if (cpUpdateError) {
-        console.warn('[increment-profile-view] Failed to increment creator_profiles view count:', JSON.stringify(cpUpdateError));
-      } else {
-        console.log('[increment-profile-view] creator_profiles.profile_view_count:', cpViews + 1);
-      }
-    }
-
-    // Step 3: Atomically increment daily profile views in profile_analytics
-    // Use userId for backward compat (profile_analytics.profile_id = profiles.id)
-    if (userId) {
-      const { error: analyticsError } = await supabaseAdmin
-        .rpc('increment_profile_daily_views', { p_profile_id: userId });
-
-      if (analyticsError) {
-        console.warn('[increment-profile-view] Failed to increment profile_analytics:', JSON.stringify(analyticsError));
-      }
+    if (rpcError) {
+      console.error('[increment-profile-view] increment_profile_views_atomic failed', rpcError);
+      return new Response(JSON.stringify({ error: 'increment_failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     return new Response(JSON.stringify({ success: true }), {

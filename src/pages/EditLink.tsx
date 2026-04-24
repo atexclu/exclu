@@ -40,6 +40,7 @@ const EditLink = () => {
   const [initialAttachedMedia, setInitialAttachedMedia] = useState<AttachedMedia[]>([]);
   const [showOnProfile, setShowOnProfile] = useState(false);
   const [isSupportLink, setIsSupportLink] = useState(false);
+  const [initialStoragePath, setInitialStoragePath] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchLink = async () => {
@@ -64,6 +65,7 @@ const EditLink = () => {
       setPrice(String((data.price_cents ?? 0) / 100 || 0));
       setShowOnProfile(data.show_on_profile ?? false);
       setIsSupportLink(data.is_support_link === true);
+      setInitialStoragePath(data.storage_path ?? null);
 
       // Load existing media preview if storage_path exists
       if (data.storage_path) {
@@ -198,6 +200,16 @@ const EditLink = () => {
     const priceNumber = Number(price);
     if (!Number.isFinite(priceNumber) || priceNumber < 5) {
       toast.error('Minimum price is $5.00.');
+      return;
+    }
+
+    // Mirrors the links_require_content DB trigger so users get a friendly
+    // error instead of a raw 23514 check_violation.
+    const willHaveContent = Boolean(
+      file || attachedMedia.length > 0 || initialStoragePath,
+    );
+    if (!isSupportLink && !willHaveContent) {
+      toast.error('This link has no content attached. Upload a file or attach a library asset before saving.');
       return;
     }
 

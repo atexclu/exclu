@@ -16,6 +16,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { ugpCapture, ugpVoid, UgpApiError } from '../_shared/ugp-api.ts';
 import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
+import { applyWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -113,7 +114,7 @@ serve(async (req) => {
 
       // Capture the pre-authorized payment via UGPayments API
       const amountCents = request.proposed_amount_cents;
-      const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+      const fanProcessingFeeCents = Math.round(amountCents * 0.15);
       const totalFanPaysCents = amountCents + fanProcessingFeeCents;
       const captureAmountDecimal = totalFanPaysCents / 100;
 
@@ -169,41 +170,43 @@ serve(async (req) => {
         chatterEarningsCents = Math.round(amountCents * 0.25);
         totalPlatformFee = Math.round(amountCents * 0.15) + fanProcessingFeeCents;
       } else {
-        const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.1;
+        const commissionRate = creatorProfile?.is_creator_subscribed ? 0 : 0.15;
         const platformCommissionCents = Math.round(amountCents * commissionRate);
         creatorNetCents = amountCents - platformCommissionCents;
         totalPlatformFee = platformCommissionCents + fanProcessingFeeCents;
       }
 
-      // Credit the creator's wallet
-      try {
-        await supabase.rpc('credit_creator_wallet', {
-          p_creator_id: user.id,
-          p_amount_cents: creatorNetCents,
-        });
-        console.log('Creator wallet credited:', user.id, '+', creatorNetCents, 'cents');
-      } catch (walletErr) {
-        console.error('Error crediting wallet after capture:', walletErr);
-      }
+      // LEDGER FIRST — if this throws, we bail before flipping status to 'delivered'.
+      // sourceTransactionId = original pre-auth TID (capture re-uses the same TID).
+      await applyWalletTransaction(supabase, {
+        ownerId: request.creator_id,
+        ownerKind: 'creator',
+        direction: 'credit',
+        amountCents: creatorNetCents,
+        sourceType: 'custom_request',
+        sourceId: request.id,
+        sourceTransactionId: request.ugp_transaction_id,
+        sourceUgpMid: null,
+        metadata: { fan_email: request.fan_email ?? null, kind: 'capture' },
+      });
+      console.log('Creator wallet ledger credited (request capture):', request.creator_id, '+', creatorNetCents, 'cents');
 
-      // Credit chatter wallet if applicable
+      // Chatter split if attributed (custom_request is an allowed source for chatter)
       if (chatterId && chatterEarningsCents > 0) {
-        try {
-          await supabase.rpc('credit_creator_wallet', {
-            p_creator_id: chatterId,
-            p_amount_cents: chatterEarningsCents,
-          });
-          await supabase.rpc('increment_chatter_earnings', {
-            p_chatter_id: chatterId,
-            p_amount_cents: chatterEarningsCents,
-          });
-          console.log('Chatter wallet + earnings credited:', chatterId, '+', chatterEarningsCents, 'cents');
-        } catch (err) {
-          console.error('Error crediting chatter:', err);
-        }
+        await applyWalletTransaction(supabase, {
+          ownerId: chatterId,
+          ownerKind: 'chatter',
+          direction: 'credit',
+          amountCents: chatterEarningsCents,
+          sourceType: 'chatter_commission',
+          sourceId: request.id,
+          sourceTransactionId: request.ugp_transaction_id,
+          metadata: { creator_id: request.creator_id, kind: 'capture' },
+        });
+        console.log('Chatter ledger credited (request capture):', chatterId, '+', chatterEarningsCents, 'cents');
       }
 
-      // Update request to delivered
+      // Update request to delivered — AFTER ledger succeeds
       const { error: updateErr } = await supabase
         .from('custom_requests')
         .update({
@@ -271,7 +274,7 @@ serve(async (req) => {
           // If void fails, try refund (for Sale transactions that can't be voided)
           try {
             const { ugpRefund } = await import('../_shared/ugp-api.ts');
-            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.05)) / 100;
+            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.15)) / 100;
             await ugpRefund(request.ugp_transaction_id, refundAmount);
             console.log('UGP refund success (Sale → refund) for request:', requestId);
           } catch (refundErr) {

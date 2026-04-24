@@ -1,0 +1,2 @@
+# supabase/functions/reconcile-payments/config.toml
+verify_jwt = false

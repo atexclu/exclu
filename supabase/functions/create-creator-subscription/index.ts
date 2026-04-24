@@ -1,118 +1,121 @@
 /**
- * create-creator-subscription — UGPayments QuickPay version.
+ * create-creator-subscription — initial checkout for a creator Pro subscription.
  *
- * For non-subscribers: returns { fields } for QuickPay subscription form.
- * For existing subscribers: returns { manage: true } (frontend shows manage UI).
- *
- * Auth: Required (creator must be logged in)
+ * Issues a QuickPay ONE-SHOT Sale for the total amount (base + extras). The
+ * ConfirmURL callback (state=Sale) stores the TransactionID on profiles.
+ * From there, rebill-subscriptions cron drives monthly charges via
+ * /recurringtransactions — UG no longer manages a subscription plan for us.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
-const subscriptionPlanId = Deno.env.get('QUICKPAY_SUB_PLAN_ID') || '11027';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
+const BASE_MONTHLY_CENTS = 3999;   // $39.99
+const ADDON_PER_PROFILE_CENTS = 1000; // $10
+const INCLUDED_PROFILES = 2;
+const ANNUAL_CENTS = 23999;        // $239.99
 
-const normalizedSiteOrigin = siteUrl;
-const allowedOrigins = [
-  normalizedSiteOrigin,
-  'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
-  'http://localhost:8083', 'http://localhost:8084', 'http://localhost:5173',
-];
+type Plan = 'monthly' | 'annual';
 
-function getCorsHeaders(req: Request) {
+function corsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  const allowed = allowedOrigins.includes(origin) ? origin : normalizedSiteOrigin;
+  const allowed = ['http://localhost:8080', 'http://localhost:5173', siteUrl];
   return {
-    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : siteUrl,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 }
 
-function jsonOk(data: Record<string, unknown>, cors: Record<string, string>) {
-  return new Response(JSON.stringify(data), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
-function jsonError(msg: string, status: number, cors: Record<string, string>) {
-  return new Response(JSON.stringify({ error: msg }), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
-
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const cors = corsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
-    // ── Auth required ─────────────────────────────────────────────────
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return jsonError('Missing authorization header', 401, corsHeaders);
+    const auth = req.headers.get('Authorization');
+    if (!auth) return new Response(JSON.stringify({ error: 'Missing authorization header' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    if (userError || !user) return jsonError('Invalid or expired token', 401, corsHeaders);
+    const token = auth.replace('Bearer ', '');
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-    // ── Fetch profile ─────────────────────────────────────────────────
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, is_creator_subscribed, subscription_ugp_username')
-      .eq('id', user.id)
-      .single();
+    const body = await req.json().catch(() => ({}));
 
-    if (profileError || !profile) return jsonError('Profile not found', 400, corsHeaders);
-
-    // ── Already subscribed → return manage flag ───────────────────────
-    // The frontend will show the manage UI (cancel button, pricing info)
-    // instead of a new checkout form. Cancellation is done via HTML form
-    // posted directly to QuickPay Cancel endpoint (see Profile.tsx).
-    if (profile.is_creator_subscribed) {
-      return jsonOk({
-        manage: true,
-        subscription_username: profile.subscription_ugp_username || user.id,
-      }, corsHeaders);
+    // Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on link
+    // purchases + custom request captures. Tips, gifts, and subs never split revenue
+    // with a chatter. If a legacy client still sends `chtref` on this flow, drop it
+    // and log for observability — we do NOT propagate it to the created row.
+    const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+    if (rogueChtref) {
+      console.warn(`[create-creator-subscription] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
     }
 
-    // ── Build QuickPay subscription form fields ───────────────────────
-    const merchantReference = `sub_${user.id}`;
+    const plan: Plan = body?.plan === 'annual' ? 'annual' : 'monthly';
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+
+    // Fetch current profile count for monthly pricing
+    const { data: profilesRows } = await supabase
+      .from('creator_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('is_active', true);
+    const profileCount = Math.max(1, profilesRows?.length ?? 1);
+
+    const extraProfiles = Math.max(0, profileCount - INCLUDED_PROFILES);
+    const amountCents = plan === 'annual'
+      ? ANNUAL_CENTS
+      : BASE_MONTHLY_CENTS + extraProfiles * ADDON_PER_PROFILE_CENTS;
+
+    // Don't allow double-subscribe
+    const { data: profile } = await supabase.from('profiles')
+      .select('subscription_plan, subscription_period_end')
+      .eq('id', user.id).maybeSingle();
+    if (profile?.subscription_plan !== 'free') {
+      return new Response(JSON.stringify({ error: 'Already subscribed' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
+    const merchantReference = `sub_${plan}_${user.id}`;
+    const amountDecimal = (amountCents / 100).toFixed(2);
 
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
-      AmountTotal: '0.00', // Subscription amount is managed by the plan
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
+      AmountTotal: amountDecimal,
       CurrencyID: 'USD',
+      'ItemName[0]': plan === 'annual' ? 'Exclu Pro Annual' : 'Exclu Pro Monthly',
+      'ItemQuantity[0]': '1',
+      'ItemAmount[0]': amountDecimal,
+      'ItemDesc[0]': plan === 'annual'
+        ? 'Pro Annual subscription — 0% commission, unlimited profiles'
+        : `Pro Monthly — 0% commission, ${profileCount} profile(s)`,
       AmountShipping: '0.00',
       ShippingRequired: 'false',
-      MembershipRequired: 'true',
-      ShowUserNamePassword: 'false',
-      MembershipUsername: user.id, // UUID as membership username (used for cancel)
-      SubscriptionPlanId: subscriptionPlanId,
-      'ItemName[0]': 'Exclu Premium Creator Plan',
-      'ItemQuantity[0]': '1',
-      'ItemAmount[0]': '0.00',
-      'ItemDesc[0]': 'Monthly subscription — 0% commission on all sales ($39/month)',
+      MembershipRequired: 'false',
+      // CRITICAL: tags this TID as rebill-eligible at the UG gateway. Without
+      // this, future /recurringtransactions calls against this TID may be
+      // rejected. Confirmed required per QuickPay doc §QUICKPAY FIELDS and
+      // DirectSale doc §SaleTransactions ("isInitialForRecurring mandatory").
+      IsInitialForRecurring: 'true',
       ApprovedURL: `${siteUrl}/app?subscription=success`,
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/app?subscription=failed`,
       MerchantReference: merchantReference,
-      Email: user.email || '',
+      Email: user.email ?? '',
     };
 
-    // Store the username we're using for later cancel operations
-    await supabaseAdmin.from('profiles').update({
-      subscription_ugp_username: user.id,
-    }).eq('id', user.id);
-
-    return jsonOk({ fields }, corsHeaders);
-
-  } catch (error) {
-    console.error('Error in create-creator-subscription:', error);
-    return jsonError('Unable to start subscription checkout', 500, corsHeaders);
+    return new Response(JSON.stringify({ fields, amountCents, plan, mid: midKey }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+  } catch (err) {
+    console.error('create-creator-subscription error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to start checkout' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
   }
 });

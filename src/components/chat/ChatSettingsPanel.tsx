@@ -444,7 +444,7 @@ export function ChatSettingsPanel({ profileId, onClose }: ChatSettingsPanelProps
                               </li>
                             </ul>
                             <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">
-                              +5% de frais de traitement à la charge du fan. Les ventes que vous réalisez vous-même ne sont pas soumises à cette commission.
+                              +15% de frais de traitement à la charge du fan. Les ventes que vous réalisez vous-même ne sont pas soumises à cette commission.
                             </p>
                           </div>
                         </div>

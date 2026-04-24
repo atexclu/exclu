@@ -17,7 +17,6 @@ if (!supabaseAnonKey) {
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-// CORS: restrict to the main site URL + local dev origins instead of wildcard "*".
 const normalizedSiteOrigin = siteUrl.replace(/\/$/, '');
 const allowedOrigins = [
   normalizedSiteOrigin,
@@ -40,9 +39,8 @@ function getCorsHeaders(req: Request) {
   };
 }
 
-// Lightweight in-memory rate limiting per IP
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 30; // per IP per window
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 30;
 const ipHits = new Map<string, { count: number; windowStart: number }>();
 
 function isRateLimited(ip: string): boolean {
@@ -57,6 +55,48 @@ function isRateLimited(ip: string): boolean {
   existing.count += 1;
   ipHits.set(ip, existing);
   return existing.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+interface MetricsBucket {
+  cnt: number;
+  gross_cents: number;
+  net_cents: number;
+}
+
+interface AdminUserMetrics {
+  purchases: MetricsBucket;
+  tips: MetricsBucket;
+  gifts: MetricsBucket;
+  custom_requests: MetricsBucket;
+  fan_subscriptions: {
+    active_count: number;
+    total_count: number;
+    monthly_revenue_cents: number;
+  };
+  last_30d: {
+    sales_count: number;
+    revenue_cents: number;
+  };
+  top_links: Array<{
+    id: string;
+    title: string | null;
+    slug: string | null;
+    sales_count: number;
+    revenue_cents: number;
+  }>;
+  referrals: {
+    lifetime_earnings_cents: number;
+    commissions_row_sum_cents: number;
+    recruited_count: number;
+    converted_count: number;
+    payout_requested_at: string | null;
+    referred_by: { id: string; handle: string | null; display_name: string | null } | null;
+  };
+  totals: {
+    count: number;
+    gross_cents: number;
+    net_cents: number;
+  };
 }
 
 interface UserOverviewPayload {
@@ -85,9 +125,12 @@ interface UserOverviewPayload {
   } | null;
   links: Array<{
     id: string;
+    slug?: string | null;
     title: string | null;
     description: string | null;
     status: string | null;
+    show_on_profile?: boolean | null;
+    profile_id?: string | null;
     price_cents: number | null;
     created_at: string | null;
     published_at: string | null;
@@ -107,7 +150,10 @@ interface UserOverviewPayload {
     title: string | null;
     created_at: string | null;
     mime_type: string | null;
+    is_public?: boolean | null;
+    profile_id?: string | null;
     preview_url: string | null;
+    storage_path?: string | null;
   }>;
   sales: Array<{
     id: string;
@@ -127,6 +173,7 @@ interface UserOverviewPayload {
     requested_at: string | null;
     processed_at: string | null;
   }>;
+  metrics: AdminUserMetrics | null;
 }
 
 function detectMimeType(path: string): string {
@@ -134,10 +181,27 @@ function detectMimeType(path: string): string {
   const videoExts = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'wmv'];
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp'];
 
-  if (videoExts.includes(ext)) return 'video/mp4'; // Default to mp4 for playback
-  if (imageExts.includes(ext)) return 'image/jpeg'; // Default to jpeg
+  if (videoExts.includes(ext)) return 'video/mp4';
+  if (imageExts.includes(ext)) return 'image/jpeg';
   if (ext === 'zip') return 'application/zip';
   return 'application/octet-stream';
+}
+
+// Sign a storage path, transparently retrying with/without the legacy "paid-content/" prefix.
+async function signStoragePath(path: string): Promise<string | null> {
+  const cleanPath = path.startsWith('paid-content/')
+    ? path.slice('paid-content/'.length)
+    : path;
+
+  const candidates = cleanPath !== path ? [cleanPath, path] : [path, `paid-content/${path}`];
+
+  for (const candidate of candidates) {
+    const { data, error } = await supabaseAdmin.storage
+      .from('paid-content')
+      .createSignedUrl(candidate, 60 * 60);
+    if (!error && data?.signedUrl) return data.signedUrl;
+  }
+  return null;
 }
 
 serve(async (req) => {
@@ -167,7 +231,6 @@ serve(async (req) => {
       });
     }
 
-    // Get the admin user from the Supabase access token passed via x-supabase-auth
     const rawToken = req.headers.get('x-supabase-auth') ?? '';
     const token = rawToken.replace(/^Bearer\s+/i, '').trim();
 
@@ -179,7 +242,6 @@ serve(async (req) => {
     }
 
     const supabaseAuthClient = createClient(supabaseUrl, supabaseAnonKey);
-
     const {
       data: { user },
       error: userError,
@@ -193,7 +255,6 @@ serve(async (req) => {
       });
     }
 
-    // Ensure the caller is an admin according to the profiles table
     const { data: adminProfile, error: adminProfileError } = await supabaseAdmin
       .from('profiles')
       .select('id, is_admin')
@@ -225,274 +286,198 @@ serve(async (req) => {
       });
     }
 
-    // Load the target user's profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select(
-        'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed',
-      )
-      .eq('id', targetUserId)
-      .maybeSingle();
+    // ── Fire every independent query in parallel ───────────────────────────
+    const [
+      profileRes,
+      linksRes,
+      assetsRes,
+      payoutsRes,
+      directoryVisRes,
+      creatorLinkIdsRes,
+      metricsRes,
+      authUserRes,
+    ] = await Promise.all([
+      supabaseAdmin
+        .from('profiles')
+        .select(
+          'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed',
+        )
+        .eq('id', targetUserId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('links')
+        .select(`
+          id,
+          slug,
+          title,
+          description,
+          status,
+          show_on_profile,
+          price_cents,
+          created_at,
+          storage_path,
+          mime_type,
+          profile_id,
+          link_media(
+            asset_id,
+            position,
+            assets(id, title, storage_path, mime_type)
+          )
+        `)
+        .eq('creator_id', targetUserId)
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabaseAdmin
+        .from('assets')
+        .select('id, title, created_at, storage_path, mime_type, is_public, profile_id')
+        .eq('creator_id', targetUserId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabaseAdmin
+        .from('payouts')
+        .select('id, amount_cents, status, created_at, requested_at, processed_at')
+        .eq('creator_id', targetUserId)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabaseAdmin
+        .from('creator_profiles')
+        .select('is_directory_visible')
+        .eq('user_id', targetUserId)
+        .eq('is_active', true)
+        .maybeSingle(),
+      // All link IDs for this creator (used to scope the sales list properly).
+      supabaseAdmin
+        .from('links')
+        .select('id')
+        .eq('creator_id', targetUserId)
+        .range(0, 99999),
+      supabaseAdmin.rpc('admin_user_metrics', { p_user_id: targetUserId }),
+      supabaseAdmin.auth.admin.getUserById(targetUserId),
+    ]);
 
-    if (profileError) {
-      console.error('Error loading target profile in admin-get-user-overview', profileError);
+    if (profileRes.error) {
+      console.error('Error loading target profile in admin-get-user-overview', profileRes.error);
       return new Response(JSON.stringify({ error: 'Failed to load user profile' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Resolve the target user's auth email via the Admin API.
-    let authEmail: string | null = null;
-    try {
-      const { data: authUser, error: authUserError } =
-        await supabaseAdmin.auth.admin.getUserById(targetUserId);
-
-      if (authUserError) {
-        console.error('Error loading auth user in admin-get-user-overview', authUserError);
-      } else {
-        authEmail = authUser?.user?.email ?? null;
-      }
-    } catch (e) {
-      console.error('Unexpected error loading auth user in admin-get-user-overview', e);
-    }
-
-    // Load a list of the target user's links (most recent first)
-    const { data: linksData, error: linksError } = await supabaseAdmin
-      .from('links')
-      .select(`
-        id, 
-        slug,
-        title,
-        description,
-        status, 
-        show_on_profile,
-        price_cents, 
-        created_at, 
-        storage_path, 
-        mime_type,
-        profile_id,
-        link_media(
-          asset_id,
-          position,
-          assets(id, title, storage_path, mime_type)
-        )
-      `)
-      .eq('creator_id', targetUserId)
-      .order('created_at', { ascending: false })
-      .limit(30);
-
-    if (linksError) {
-      console.error('Error loading target links in admin-get-user-overview', linksError);
+    if (linksRes.error) {
+      console.error('Error loading target links in admin-get-user-overview', linksRes.error);
       return new Response(JSON.stringify({ error: 'Failed to load user links' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Generate signed URLs for link previews
-    const links: Array<{
-      id: string;
-      title: string | null;
-      description: string | null;
-      status: string | null;
-      price_cents: number | null;
-      created_at: string | null;
-      published_at: string | null;
-      storage_path: string | null;
-      mime_type: string | null;
-      profile_id?: string | null;
-      previewUrl?: string | null;
-      media: Array<{
-        id: string;
-        storage_path: string;
-        mime_type: string | null;
-        title: string | null;
-        preview_url: string | null;
-      }>;
-    }> = [];
+    if (metricsRes.error) {
+      console.error('admin_user_metrics RPC failed', metricsRes.error);
+    }
 
-    if (linksData && linksData.length > 0) {
-      for (const link of linksData as any[]) {
+    const profile = profileRes.data as any;
+    const linksData = linksRes.data ?? [];
+    const assets = assetsRes.data ?? [];
+    const payoutsData = payoutsRes.data ?? [];
+    const isDirectoryVisible: boolean | null = directoryVisRes.data?.is_directory_visible ?? true;
+    const allCreatorLinkIds = (creatorLinkIdsRes.data ?? []).map((r: any) => r.id as string);
+    const metrics = (metricsRes.data ?? null) as AdminUserMetrics | null;
+
+    if (authUserRes.error) {
+      console.error('Error loading auth user in admin-get-user-overview', authUserRes.error);
+    }
+
+    // ── Sign all link media + asset previews in parallel ──────────────────
+    type SignedMedia = {
+      id: string;
+      storage_path: string;
+      mime_type: string | null;
+      title: string | null;
+      preview_url: string | null;
+    };
+
+    const signedLinks = await Promise.all(
+      (linksData as any[]).map(async (link) => {
         const primaryStoragePath = link.storage_path as string | null;
         const linkMedia = (link.link_media ?? []) as any[];
-
-        // Sort link_media by position
         linkMedia.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-        const mediaItems: Array<{
-          id: string;
-          storage_path: string;
-          mime_type: string | null;
-          title: string | null;
-          preview_url: string | null;
-        }> = [];
-
-        // Helper to sign and push
-        const addMedia = async (id: string, path: string, mType: string | null, label: string) => {
-          if (!path) return;
-          try {
-            // Clean path if it has leading bucket name (sometimes happens in legacy data)
-            const cleanPath = path.startsWith('paid-content/') ? path.replace('paid-content/', '') : path;
-
-            const { data: signed, error: signError } = await supabaseAdmin.storage
-              .from('paid-content')
-              .createSignedUrl(cleanPath, 60 * 60);
-
-            if (signError) {
-              console.warn(`[admin-get-user-overview] Failed to sign cleanPath ${cleanPath}:`, signError);
-
-              // Fallback: try with original path if different
-              if (cleanPath !== path) {
-                const { data: signedOrig } = await supabaseAdmin.storage
-                  .from('paid-content')
-                  .createSignedUrl(path, 60 * 60);
-                if (signedOrig?.signedUrl) {
-                  mediaItems.push({
-                    id,
-                    storage_path: path,
-                    mime_type: mType || detectMimeType(path),
-                    title: label,
-                    preview_url: signedOrig.signedUrl,
-                  });
-                  return;
-                }
-              }
-            }
-
-            mediaItems.push({
-              id,
-              storage_path: path,
-              mime_type: mType || detectMimeType(path),
-              title: label,
-              preview_url: signed?.signedUrl ?? null,
-            });
-          } catch (e) {
-            console.error(`[admin-get-user-overview] Error signing media ${id}:`, e);
-          }
-        };
-
-        // 1. Add additional media from link_media
+        const mediaTargets: Array<{ id: string; path: string; mime: string | null; label: string | null }> = [];
         for (const lm of linkMedia) {
           const asset = lm.assets;
-          if (asset && asset.storage_path) {
-            await addMedia(asset.id, asset.storage_path, asset.mime_type, asset.title);
+          if (asset?.storage_path) {
+            mediaTargets.push({
+              id: asset.id,
+              path: asset.storage_path,
+              mime: asset.mime_type ?? null,
+              label: asset.title ?? null,
+            });
           }
         }
-
-        // 2. Fallback: if no link_media but primary storage_path exists (legacy links), add it
-        if (mediaItems.length === 0 && primaryStoragePath) {
-          await addMedia('primary', primaryStoragePath, link.mime_type, 'Primary Content');
+        if (mediaTargets.length === 0 && primaryStoragePath) {
+          mediaTargets.push({
+            id: 'primary',
+            path: primaryStoragePath,
+            mime: link.mime_type ?? null,
+            label: 'Primary Content',
+          });
         }
 
-        links.push({
+        const mediaItems: SignedMedia[] = await Promise.all(
+          mediaTargets.map(async (t) => ({
+            id: t.id,
+            storage_path: t.path,
+            mime_type: t.mime || detectMimeType(t.path),
+            title: t.label,
+            preview_url: await signStoragePath(t.path),
+          })),
+        );
+
+        return {
           id: link.id as string,
+          slug: (link.slug as string | null) ?? null,
           title: (link.title as string | null) ?? null,
           description: (link.description as string | null) ?? null,
           status: (link.status as string | null) ?? null,
+          show_on_profile: (link.show_on_profile as boolean | null) ?? null,
           price_cents: (link.price_cents as number | null) ?? null,
           created_at: (link.created_at as string | null) ?? null,
-          published_at: (link.published_at as string | null) ?? null,
+          published_at: null as string | null,
           storage_path: primaryStoragePath,
           mime_type: (link.mime_type as string | null) ?? mediaItems[0]?.mime_type ?? null,
           profile_id: (link.profile_id as string | null) ?? null,
           previewUrl: mediaItems[0]?.preview_url ?? null,
           media: mediaItems,
-        });
-      }
-    }
+        };
+      }),
+    );
 
-    // Load a subset of the target user's content library assets with signed preview URLs.
-    const { data: assets, error: assetsError } = await supabaseAdmin
-      .from('assets')
-      .select('id, title, created_at, storage_path, mime_type, is_public, profile_id')
-      .eq('creator_id', targetUserId)
-      .order('created_at', { ascending: false })
-      .limit(30);
+    const safeAssets = await Promise.all(
+      (assets as any[]).map(async (asset) => ({
+        id: asset.id as string,
+        title: (asset.title as string | null) ?? null,
+        created_at: (asset.created_at as string | null) ?? null,
+        mime_type: (asset.mime_type as string | null) ?? null,
+        is_public: (asset.is_public as boolean | null) ?? false,
+        profile_id: (asset.profile_id as string | null) ?? null,
+        storage_path: (asset.storage_path as string | null) ?? null,
+        preview_url: asset.storage_path ? await signStoragePath(asset.storage_path as string) : null,
+      })),
+    );
 
-    if (assetsError) {
-      console.error('Error loading target assets in admin-get-user-overview', assetsError);
-    }
-
-    const safeAssets: {
-      id: string;
-      title: string | null;
-      created_at: string | null;
-      mime_type: string | null;
-      is_public?: boolean | null;
-      profile_id?: string | null;
-      preview_url: string | null;
-    }[] = [];
-
-    if (assets && assets.length > 0) {
-      for (const asset of assets as any[]) {
-        const storagePath = asset.storage_path as string | null;
-        let previewUrl: string | null = null;
-
-        if (storagePath) {
-          // Try the path as-is first, then try with/without 'paid-content/' prefix
-          const candidates = [storagePath];
-          if (storagePath.startsWith('paid-content/')) {
-            candidates.push(storagePath.slice('paid-content/'.length));
-          } else {
-            candidates.push('paid-content/' + storagePath);
-          }
-
-          for (const candidate of candidates) {
-            try {
-              const { data: signed, error: signError } = await supabaseAdmin.storage
-                .from('paid-content')
-                .createSignedUrl(candidate, 60 * 60);
-
-              if (!signError && signed?.signedUrl) {
-                previewUrl = signed.signedUrl;
-                break;
-              }
-            } catch {}
-          }
-
-          if (!previewUrl) {
-            console.warn('Asset preview failed for all path variants:', asset.id, storagePath);
-          }
-        }
-
-        safeAssets.push({
-          id: asset.id as string,
-          title: (asset.title as string | null) ?? null,
-          created_at: (asset.created_at as string | null) ?? null,
-          mime_type: (asset.mime_type as string | null) ?? null,
-          is_public: (asset.is_public as boolean | null) ?? false,
-          profile_id: (asset.profile_id as string | null) ?? null,
-          preview_url: previewUrl,
-        });
-      }
-    }
-
-    // Compute a simple sales history based on purchases of the target user's recent links.
+    // ── Sales list across ALL the creator's links (not just the 30 shown) ─
     const linkTitleById = new Map<string, string | null>();
-    for (const l of (links ?? []) as any[]) {
-      if (l.id) {
-        linkTitleById.set(l.id as string, (l.title as string | null) ?? null);
-      }
+    for (const l of signedLinks) {
+      if (l.id) linkTitleById.set(l.id, l.title);
     }
 
-    let sales: {
-      id: string;
-      link_id: string | null;
-      link_title: string | null;
-      buyer_email: string | null;
-      amount_cents: number | null;
-      currency: string | null;
-      status: string;
-      created_at: string | null;
-    }[] = [];
-
-    const linkIds = Array.from(linkTitleById.keys());
-    if (linkIds.length > 0) {
+    let sales: UserOverviewPayload['sales'] = [];
+    if (allCreatorLinkIds.length > 0) {
       const { data: purchases, error: purchasesError } = await supabaseAdmin
         .from('purchases')
         .select('id, link_id, buyer_email, amount_cents, currency, status, created_at')
-        .in('link_id', linkIds)
+        .in('link_id', allCreatorLinkIds)
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -515,60 +500,12 @@ serve(async (req) => {
       }
     }
 
-    // Fetch is_directory_visible from creator_profiles
-    let isDirectoryVisible: boolean | null = true;
-    {
-      const { data: cpVis } = await supabaseAdmin
-        .from('creator_profiles')
-        .select('is_directory_visible')
-        .eq('user_id', targetUserId)
-        .eq('is_active', true)
-        .maybeSingle();
-      if (cpVis) {
-        isDirectoryVisible = cpVis.is_directory_visible ?? true;
-      }
-    }
+    // ── Wallet totals reconciliation (keeps pre-wallet-migration parity) ──
+    const computedEarnedCents = metrics?.totals?.net_cents ?? 0;
+    const computedWithdrawnCents = (payoutsData as any[])
+      .filter((p) => p.status === 'completed' || p.status === 'approved' || p.status === 'processing')
+      .reduce((s, p) => s + (p.amount_cents || 0), 0);
 
-    // Fetch payouts for this user
-    const { data: payoutsData } = await supabaseAdmin
-      .from('payouts')
-      .select('id, amount_cents, status, created_at, requested_at, processed_at')
-      .eq('creator_id', targetUserId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    // Compute actual earned totals from transaction tables (fallback for pre-wallet-migration sales)
-    let computedEarnedCents = 0;
-    try {
-      const { data: purchaseSums } = await supabaseAdmin
-        .from('purchases')
-        .select('creator_net_cents')
-        .eq('status', 'succeeded')
-        .in('link_id', linkIds.length > 0 ? linkIds : ['__none__']);
-      computedEarnedCents += (purchaseSums ?? []).reduce((s: number, p: any) => s + (p.creator_net_cents || 0), 0);
-
-      const { data: tipSums } = await supabaseAdmin
-        .from('tips')
-        .select('creator_net_cents')
-        .eq('creator_id', targetUserId)
-        .eq('status', 'succeeded');
-      computedEarnedCents += (tipSums ?? []).reduce((s: number, t: any) => s + (t.creator_net_cents || 0), 0);
-
-      const { data: giftSums } = await supabaseAdmin
-        .from('gift_purchases')
-        .select('creator_net_cents')
-        .eq('creator_id', targetUserId)
-        .eq('status', 'succeeded');
-      computedEarnedCents += (giftSums ?? []).reduce((s: number, g: any) => s + (g.creator_net_cents || 0), 0);
-    } catch (e) {
-      console.error('Error computing earned totals:', e);
-    }
-
-    const computedWithdrawnCents = (payoutsData ?? [])
-      .filter((p: any) => p.status === 'completed' || p.status === 'approved' || p.status === 'processing')
-      .reduce((s: number, p: any) => s + (p.amount_cents || 0), 0);
-
-    // Use the larger of wallet columns vs computed values (handles pre-migration sales)
     const finalEarned = Math.max(profile?.total_earned_cents ?? 0, computedEarnedCents);
     const finalWithdrawn = Math.max(profile?.total_withdrawn_cents ?? 0, computedWithdrawnCents);
     const finalBalance = finalEarned - finalWithdrawn;
@@ -599,10 +536,11 @@ serve(async (req) => {
           payout_setup_complete: profile.payout_setup_complete ?? false,
         }
         : null,
-      links: links,
+      links: signedLinks,
       assets: safeAssets,
       sales,
-      payouts: payoutsData ?? [],
+      payouts: payoutsData as any,
+      metrics,
     };
 
     return new Response(JSON.stringify(payload), {

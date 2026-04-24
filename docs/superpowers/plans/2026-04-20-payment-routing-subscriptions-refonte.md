@@ -1,0 +1,4917 @@
+# Payment Routing & Subscriptions Refonte — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship a reliable end-to-end payment pipeline on Exclu — country-based 2D/3D routing (US/CA → 2D, rest → 3D), full creator & fan subscription refactor driven by `/recurringtransactions` (no more fake wallet debits), pricing refonte (Free 15% / Pro 0%), and a Pro upgrade popup once per week.
+
+**Architecture:** Keep QuickPay for checkout (no PCI scope change), route to one of two MIDs based on fan billing country. Rebill subscriptions from our server via UG's Direct Rebilling API, so we fully control amount + cadence and can recharge any legit card without asking fans to re-enter it. Initial Sales are confirmed via `ConfirmURL` (hosted-page callback); rebills are confirmed via the **synchronous JSON response** to `/recurringtransactions` AND an async `ListenerURL` postback with `TransactionState=Recurring` (per Derek 2026-04-20 — **the hosted-page `ConfirmURL` is NEVER invoked for server-initiated rebills**). No more "verify = sale" pollution; all credits are strictly gated on a `Successful` outcome on the correct event.
+
+**Tech Stack:** React 18 + TypeScript + Vite (frontend), Tailwind + shadcn/ui, Supabase (Postgres + Edge Functions in Deno), Vercel serverless + cron, UG Payments (QuickPay hosted for checkout, Direct Rebilling API for recurring), Brevo (emails).
+
+---
+
+## UG API Cross-Check (2026-04-21)
+
+Every endpoint, field and state used below has been verified against the four
+reference documents in `docs/documentation api ugc payment.md`,
+`docs/documentation api ugc payment 2.md`, and the PDFs in
+`docs/Documentation API UG Payment/`. The verifications that matter for the
+creator + fan subscription flows:
+
+| Topic | Plan assumption | Doc reference |
+| --- | --- | --- |
+| QuickPay hosted checkout URL | `https://quickpay.ugpayments.ch/` | QuickPay v1.3 §PROCESS FOR QUICKPAY PAGE |
+| `IsInitialForRecurring: 'true'` on any Sale we'll rebill later | Required — Task 4.1, Task 6.1 | QuickPay v1.3 §QUICKPAY FIELDS; DirectSale v1.14 §SALE TRANSACTIONS |
+| `/recurringtransactions` URL | `https://api.ugpayments.ch/merchants/[MerchantId]/recurringtransactions` | DirectSale v1.14 §RECURRING/REBILL; Direct Rebilling 1.0 §SALE REBILL |
+| `/recurringtransactions` body | `TransactionID`, `Amount`, `Currency` | Direct Rebilling 1.0 §SALE REBILL REQUEST (authoritative for our QuickPay → rebill scenario). DirectSale v1.14 shows a 4-field variant for DirectSale-originated subs but we never use DirectSale for checkout. |
+| `/recurringtransactions` response | `{id, message, state, status, reasoncode, trackingid}` | DirectSale v1.14 §HTTP RESPONSE; Direct Rebilling 1.0 §SALE REBILL RESPONSE |
+| ConfirmURL fires for state=Recurring | Yes — handled in Task 4.5 as idempotent no-op | Direct Rebilling 1.0 §CONFIRM PAGE |
+| ConfirmURL fields we consume | `TransactionID`, `TransactionState`, `Amount`, `MerchantReference`, `SiteID`, `CustomerEmail`, `CustomerCountry`, `TrackingId`, `Key` | DirectSale v1.14 §CONFIRM PAGE; QuickPay v1.3 §CONFIRM PAGE |
+| Transaction states we act on (per type) | `link/tip/gift = Sale`, `req = Authorize`, `sub/fsub = Sale + Recurring` | QuickPay v1.3 Appendix A |
+| Transaction statuses we treat as success | `Successful`, `Approved` | QuickPay v1.3 Appendix B; DirectSale v1.14 Appendix B |
+| Cancel flow on new subs | Internal flag (no UG call) — we never enroll in a UG plan | N/A (our design) |
+| Cancel flow on legacy plan 11027 migration | POST to `https://quickpay.ugpayments.ch/Cancel` with `username` = `MembershipUsername` | QuickPay v1.3 §CANCEL FORM |
+| Refund endpoint | `/merchants/[MerchantId]/refundtransactions` with `{referencetransactionid, amount}` | DirectSale v1.14 §REFUND TRANSACTIONS |
+| Key validation on ConfirmURL | Mandatory per-MID (Task 0.6b) | QuickPay v1.3 §CONFIRM PAGE `[Key]`; DirectSale v1.14 §CONFIRM PAGE `[Key]` |
+
+**Creator Pro Monthly ($39.99 + $10/extra profile)**: variable amount per cycle → one-shot Sale at signup with `IsInitialForRecurring=true`, merchant-managed rebill via `/recurringtransactions` (Task 4.1 + Task 4.3). UG-managed plan mode (SubscriptionPlanId) not usable because of variable amount.
+
+**Creator Pro Annual ($239.99 fixed)**: same one-shot Sale + rebill pattern, period advances by 365 days. Task 4.1 branch + Task 4.3.
+
+**Fan → Creator Subscription ($5–$100, creator-set)**: variable per creator → one-shot Sale with `IsInitialForRecurring=true` at subscribe time, merchant-managed rebill every 30 days. Task 6.1 + Task 4.3 (`rebillFanSubscription`). Creator's share credited on EACH cycle (Task 8.3 Step 4).
+
+**Legacy plan 11027 (UG-managed subscription, fixed $39)**: kept for existing subs until migration drains them (Task 4.9 cancels the UG plan enrollment then rebills the original Sale TID via `/recurringtransactions`). New creators never land on plan 11027.
+
+---
+
+## External Dependencies — Confirmed with Derek (2026-04-20)
+
+Two rounds of questions answered. The key architectural clarification from the second round: **`ConfirmURL` is not invoked for server-initiated `/recurringtransactions` rebills** — only the synchronous JSON response and the `ListenerURL` postback carry rebill results. This moves the Recurring-state handler out of `ugp-confirm` and into `ugp-listener`. Every rebill-related task downstream reflects that.
+
+### Round 1 (original 5 questions) — still valid
+
+| Q | Topic | Answer | Plan impact |
+|---|---|---|---|
+| D1 | `/recurringtransactions` on QuickPay-originated TIDs | ✅ **Works — but ONLY on the original Sale TID**, never on a rebilled TID. For plan 11027 migration, we must FIRST cancel the UG-side plan enrollment (so UG stops its own $39 auto-rebill), THEN use the original Sale TID with `/recurringtransactions`. Cancelling the plan does NOT break rebill capability on the original TID. | Task 4.9 (migration) becomes: (a) cancel UG plan, (b) read original Sale TID from `payment_events`, (c) populate `subscription_ugp_transaction_id`. Always persist the ORIGINAL TID — never overwrite it with a rebilled one. |
+| D2 | New 2D US/CA MID returns its own credentials | ✅ **New `QuickPayToken`, new OAuth Bearer, new SiteID** (distinct from the existing `98845`). Derek will pre-configure the ListenerURL / Membership Postback URL on that MID to point at our existing endpoints. **ConfirmURL is NOT server-configured — it is passed in the HTML form post per transaction.** | Env var set per MID as planned — `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`. Plug in once Derek delivers the Bearer — QuickPayToken + SiteID + MID already received 2026-04-20 afternoon (see §Credentials below). |
+| D3 | Card-expired `reasonCode` on rebill failures | ❌ **No uniform reason code.** Issuers return free-form messages ("insufficient funds", "expired card", etc.). We cannot reliably auto-detect "card expired" vs any other decline. | `ugRebill.ts` classification collapses to a single `declined` bucket. We retry N times on a schedule; after the final failure we suspend the subscription and email the creator/fan to update their card — same UX regardless of the underlying issuer message. |
+| D4 | TID portability across MIDs | ❌ **Not portable.** A TID can only rebill on the MID where the initial Sale was authenticated. | Plan keeps `subscription_mid` per row; rebill cron picks the right credentials per row. Unchanged. |
+| D5 | `/recurringtransactions` limits | ✅ **No UG-side limits** on amount or interval. Only the issuer's own response gates rebills. | Annual plan rebills 365 days later — no splitting needed. Our own sanity ceiling on the creator dashboard (min $5, max $100 for fan subs; fixed $39.99/$239.99 for Pro) is sufficient. |
+
+### Round 2 (afternoon 2026-04-20 — architectural clarifications)
+
+| Q | Topic | Answer | Plan impact |
+|---|---|---|---|
+| D6 | Where rebill events land | ❌ **`ConfirmURL` fires ONLY for customer-initiated transactions on the hosted payment page** (because the URL is passed in the HTML POST, not stored server-side). Server-initiated rebills (`/recurringtransactions`) do NOT hit ConfirmURL. Instead they fire: (1) immediate synchronous JSON response on the API call itself, (2) an async `ListenerURL` POST (`https://exclu.at/api/ugp-listener`) with `TransactionState=Recurring` — the **postback URL receives every Sale, Refund, Rebill, Void, Capture, CBK1 on the MID**. | **⚠️ Plan rewrite:** Task 4.5 moves from `ugp-confirm` to `ugp-listener`. All Recurring-state logic lives in `handleRecurring` inside the listener handler. `ugp-confirm` only handles customer-initiated events (`Sale` for link/tip/gift/sub initial, `Authorize` for requests). |
+| D7 | ConfirmURL retry SLA | ⏳ Derek checking with his dev team. No number yet. | Task 8.x (accounting) adds our own reconciliation cron that scans `payment_events` vs subscription/sale rows and alerts if drift > 10 min — our safety net regardless of UG's retry policy. |
+| D8 | `/recurringtransactions` idempotency | ❌ **No dedupe.** Two POSTs with the same TID + Amount charge TWICE. We must enforce our own single-in-flight lock. | Task 4.3 (rebill cron) gains an **advisory lock via unique constraint** on `rebill_attempts(subject_table, subject_id, billing_period_end)` — INSERT fails if a row exists for the same cycle. On conflict the cron skips (already rebilled or in-flight). |
+| D9 | TrackingId echo | ✅ **TrackingId passed in the rebill body is echoed back verbatim in the `ListenerURL` postback** (example from Derek: `TrackingId=34`, same value round-trips). | Task 4.3 sets `trackingId = rebill_attempts.id` so the listener can correlate `TransactionState=Recurring` postbacks to our attempt row in one query. |
+| D10 | Refund a specific rebill | ✅ **Call `/refundtransactions` with the REBILL TID** (the new `id` from the rebill response/listener), NOT the original Sale TID. | Task 7.x (refunds) and the existing `ugp-listener` refund path resolve the correct `ugp_transaction_id` by searching both `rebill_attempts.ugp_transaction_id` AND the legacy per-table `ugp_transaction_id` columns. |
+
+### Credentials received so far (2D US/CA MID)
+
+- `UGP_MID_US_2D = 103817`
+- `QUICKPAY_SITE_ID_US_2D = 98895`
+- `QUICKPAY_TOKEN_US_2D = AAEAAGj-xOMEnHXZ92ptIXCGj9d-VVPuz16o_Q_GKRXBlbLWbvw0itsJntoqacOOLahXnMey1UJXFFg5RUr8YPjPn4Sv1zgnwUeuQrNTQ98yUl3ilnLycIcujsJugMJOPhu9TPxWkXOUuOALm0GGnOTu4CNgID9h0B7rdYMOaPxf23EU4FVMLR3LXgH8EUdYNMMt6X7vJwVXmJj--YEatOlEHBIooFd7Raj3sdYuKI5J31c3RP3ZodYlBuhCcsvMqM5qjlV6sqs2ZfzKUSFb6740WD6tCj2RSVySy6mOnnAXaSHXo1EILEH6AmJ1NKNtWSALn2_vwFkHM9DvrqISYldfF0ykAQAAAAEAAF7QmDSh5_D_Ml2_dJhqEhUR6_hkU_rwnPMMVJhEz7OVXE8imdA-XxK01-YEDt39p2WX8hkp1oCA6-eff1EBK_KDImnpFbjcXKEa3ivSRh-TNFDObmhD17TAVGby6REg5VgOlNCRri1w9b4UXzkAgVc64FoWqmYSunzJ5AG-MLpVaVqmDPQJ2tSAEU931_TU3p7mD_AqDMAco9MMJUOYAGdTITclJIE9RgHbvolK7ks4dG-e-oUfhEuFUf_0oDhOT15hLnZsllDIgOnbkbekVePopBlF2gJIbCW-FhdtfOITEieX_VZVEZ2fNM4XF3eyDlMasZSgPkUkMT31ZZKRaYW6FIKsjVPT8SXP3XCX888YbqyFkrIMzOhNuEpIa0vQwRie9lrDjdYDk4YLFou1VAr4lbFsNC1b1AuxubtHHI7HlklyXotP8jMrbeCNvksM1BAU3WGxJx8ucRHJ7xxJWPxzCyV1e1drOBYpOgKiL8OLvPhXUTQorAeRtqPJR1tyshEPno0o99AimZQlnUHh1UCLU9rapuQ-sWBP87BthjYL`
+- `UGP_API_BEARER_TOKEN_US_2D = AAEAAJJ8CDfjErzpPCP08JF7Ga4EKsY0BZxaD4xR8rF8NU4IwsAs4dptqm1Jc_zJLmEy6aL_ywuQYsiNkf6H9swsPMZ1BfvFL1IqW2HhGI6-TQBwMA2AtxgKQCzICRr1RvAEBTEd-rQ7ZPf8sgxhVSNGr_3tLL5d1hhD8HoutccJG6qRvTFzhEJYWbjcrtXLeWkJgqA0T882WMASFOtKWfFLo145uuL8Sl4Ftwf7tT7XyTvBdARL2E6WF-Ya55-bXkVLDSm_GxCKKGrlA4AdKbYuJxHlmiqt7vvK5b7tbKRTAmWWIdFG2otICSw031E1Iofq-iCC1E1buSmDWquKb3JAJ5m0AQAAAAEAACWjn0lRQbvh56DXJiKfCRjAcG2vZcFDl2AiFZt5C02f76zPnea4dKMx_WPLkI61DuiX9xQIq7JvirEf9KiX8-EpyX70yoTcGO7EYgIcp4qhDl6Rtc3oaLuplD5GNaYjoxJGFZSP1RE_Cf_oP-Kf6A7oSQr_NA6kDrmHOdCIfWJQtrDRkMw0-hh9p07o4aI7vQhcparzBcaI2wdkEjqRo1QOypmUOTgwZbVklBG2na0zodQr3RX_N6o6uzSDKkUOWlKYoFn0aMlmN5IV5E9IwQLDbZxidaAF6IveNkI65Aq9BW6ZaZDS6T5GkUxK8xuvDVYZrTXcllfcGmAuXsf2f_RNuyCO1Z2ZfLkkMVK5kofeR26v4fVRfXxl197yB5SYNuuHptlob0CAyAUBLco6PPTkO-Knjmazvwp4B_UnmhoNB45YCXWUDTM0gCxVgL8L49lJT86HCc_sPOFgeSxRgWbXtHnf57U-anCbGPgzt5VPUzA45dHBVnCIkmeKvdE5O2xJRP9MYv1EsoZZ1zW5lwBKYJnXbwDcE5GbUao5OWYVBE5y-VGGvRbY4qcfp_bUYA`
+
+**✅ Derek 2026-04-23 evening:** OAuth Bearer Token received (above). Also confirmed `recurring ID 11034` is a default duplicate plan on the new MID — we **disregard** it. Our one-shot Sale + `/recurringtransactions` flow doesn't reference any SubscriptionPlanId, so no env var needed.
+
+**All four US_2D secrets are set in Supabase (`qexnwezetjlbwltyccks`):** `UGP_MID_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `QUICKPAY_TOKEN_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`.
+
+**No remaining Derek blocker for implementation.** D7 (ConfirmURL retry SLA) is still being checked by his dev team, but Phase 8's reconciliation cron handles that case regardless of their answer.
+
+---
+
+## File Structure
+
+### New files
+
+**Database migrations:**
+- `supabase/migrations/164_country_and_mid_routing.sql` — adds `profiles.country`, `profiles.billing_country`, `purchases.ugp_mid`, `tips.ugp_mid`, `gift_purchases.ugp_mid`, `custom_requests.ugp_mid`
+- `supabase/migrations/165_creator_subscription_refactor.sql` — new columns `subscription_plan`, `subscription_ugp_transaction_id`, `subscription_mid`, `subscription_amount_cents`, `subscription_period_start`, `subscription_period_end`, `subscription_cancel_at_period_end`, `subscription_last_pro_popup_at`, `subscription_suspended_at`; drop `subscription_ugp_member_id` usage (keep column for history)
+- `supabase/migrations/166_fan_subscription_refactor.sql` — adds `ugp_transaction_id`, `ugp_mid`, `next_rebill_at`, `suspended_at` to `fan_creator_subscriptions`; removes dependency on `QUICKPAY_FAN_SUB_PLAN_ID`
+- `supabase/migrations/167_rebill_attempts.sql` — retry tracking table
+- `supabase/migrations/168_pricing_commission_rates.sql` — updates existing succeeded rows' fee breakdown is out of scope; new txs pick up new rates via code
+
+**Shared helpers:**
+- `src/lib/countryRouting.ts` — `isUS2DCountry(iso2) → boolean`, `routeMidForCountry(iso2) → 'us_2d' | 'intl_3d'`
+- `src/lib/countryList.ts` — ISO-3166 country list with names, with US/CA/AU/UK/FR/DE/ES/IT/CH/NL pinned to top
+- `supabase/functions/_shared/ugRouting.ts` — Deno equivalent of `countryRouting.ts` + credential resolver (`getMidCredentials(mid)`)
+- `supabase/functions/_shared/ugRebill.ts` — `rebillTransaction(mid, tid, amountCents, tracking)` wrapper around `/recurringtransactions`
+
+**UI components:**
+- `src/components/checkout/CountrySelect.tsx` — searchable country dropdown with pinned top list
+- `src/components/checkout/PreCheckoutGate.tsx` — extracts the +18 + Terms + Country inline form from `PublicLink.tsx` into a reusable component used across link/tip/gift/request checkouts
+- `src/components/ProUpgradePopup.tsx` — weekly nudge popup for Free creators
+- `src/components/pricing/PlanCard.tsx` — reusable card for a plan (Free / Monthly / Annual)
+- `src/components/settings/PlanManagement.tsx` — UI in Settings showing current plan + upgrade/downgrade
+
+**Pages:**
+- `src/pages/FanSubscriptions.tsx` — `/fan/subscriptions` page listing active fan→creator subscriptions
+- *(Pricing page already exists; we refactor)*
+
+**Edge Functions:**
+- `supabase/functions/rebill-subscriptions/index.ts` — cron-called entry point
+- `supabase/functions/rebill-subscriptions/config.toml` — `verify_jwt = false`
+
+**Vercel cron:**
+- `api/cron/rebill-subscriptions.ts` — triggers the edge function daily
+
+### Modified files
+
+- `src/pages/PublicLink.tsx` — extract checkout gate, add country dropdown
+- `src/pages/LinkDetail.tsx` *(already fixed Buyers list in earlier commit)*
+- `src/pages/Auth.tsx` or `src/pages/fan/FanSignup.tsx` — add optional country to onboarding
+- `src/pages/Pricing.tsx` — new 3-plan layout
+- `src/pages/CreateProfile.tsx` — plan selector + dynamic pricing
+- `src/pages/Profile.tsx` (settings section) — new PlanManagement component
+- `src/pages/Terms.tsx` — updated commission text + bank fee mention
+- `src/components/AppShell.tsx` — mount ProUpgradePopup globally for signed-in Free creators
+- `src/lib/payment-config.ts` — new constants for pricing refonte, remove legacy plan-related constants after cleanup
+- `supabase/functions/create-link-checkout/index.ts` — new commission rates + MID routing + store `ugp_mid`
+- `supabase/functions/create-tip-checkout/index.ts` — same
+- `supabase/functions/create-gift-checkout/index.ts` — same
+- `supabase/functions/create-request-checkout/index.ts` — same
+- `supabase/functions/create-creator-subscription/index.ts` — refactor from plan 11027 to one-shot Sale
+- `supabase/functions/create-fan-subscription-checkout/index.ts` — refactor from fan plan to one-shot Sale
+- `supabase/functions/ugp-confirm/index.ts` — handle new flows (`sub_`, `fsub_` via Sale; `rebill_` trigger)
+- `supabase/functions/ugp-membership-confirm/index.ts` — deprecate `chargeProfileAddons`, return early for creator Pro (new flow doesn't use Member Postbacks); keep for legacy subs still on plan 11027 until drained
+- `supabase/functions/cancel-creator-subscription/index.ts` — flip to `cancel_at_period_end=true` model
+- `supabase/functions/cancel-fan-subscription/index.ts` — same
+- `vercel.json` — add `/fan/subscriptions` rewrite + new cron
+- `src/App.tsx` — new `/fan/subscriptions` route
+
+---
+
+## Phase 0 — Schema & Shared Infrastructure (1 day)
+
+### Task 0.1 — Migration 164: country + MID columns
+
+**Files:**
+- Create: `supabase/migrations/164_country_and_mid_routing.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 164_country_and_mid_routing.sql
+-- Adds country tracking on profiles (for routing + compliance) and the MID
+-- used for each captured sale (so rebills can target the same MID).
+
+alter table profiles
+  add column if not exists country text check (country is null or country ~ '^[A-Z]{2}$'),
+  add column if not exists billing_country text check (billing_country is null or billing_country ~ '^[A-Z]{2}$');
+
+alter table purchases
+  add column if not exists ugp_mid text;
+alter table tips
+  add column if not exists ugp_mid text;
+alter table gift_purchases
+  add column if not exists ugp_mid text;
+alter table custom_requests
+  add column if not exists ugp_mid text;
+
+-- Indexes only where we filter/aggregate on country
+create index if not exists profiles_country_idx on profiles(country) where country is not null;
+```
+
+- [ ] **Step 2: Apply locally, verify**
+
+```bash
+supabase db reset  # fresh local DB applies all migrations
+supabase db remote show schema-only | grep -E "country|ugp_mid"
+```
+
+Expected: `country`, `billing_country`, `ugp_mid` columns exist.
+
+- [ ] **Step 3: Push to prod**
+
+```bash
+supabase db push --linked
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add supabase/migrations/164_country_and_mid_routing.sql
+git commit -m "feat(db): add country + ugp_mid columns for payment routing"
+```
+
+---
+
+### Task 0.2 — Migration 165: creator subscription refactor columns
+
+**Files:**
+- Create: `supabase/migrations/165_creator_subscription_refactor.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 165_creator_subscription_refactor.sql
+-- Schema for the new creator subscription flow:
+--   - One-shot Sale at checkout, original ugp_transaction_id stored on the profile
+--   - Server-driven monthly rebills via /recurringtransactions
+--   - Amount recomputed each cycle from current profile count (Monthly plan)
+--   - Annual plan = fixed 239.99 for 365 days, unlimited profiles (soft cap 50)
+
+do $$ begin
+  create type subscription_plan_type as enum ('free', 'monthly', 'annual');
+exception when duplicate_object then null; end $$;
+
+alter table profiles
+  add column if not exists subscription_plan subscription_plan_type not null default 'free',
+  add column if not exists subscription_ugp_transaction_id text,
+  add column if not exists subscription_mid text,
+  add column if not exists subscription_amount_cents int,
+  add column if not exists subscription_currency text default 'USD',
+  add column if not exists subscription_period_start timestamptz,
+  add column if not exists subscription_period_end timestamptz,
+  add column if not exists subscription_cancel_at_period_end boolean not null default false,
+  add column if not exists subscription_suspended_at timestamptz,
+  add column if not exists subscription_last_pro_popup_at timestamptz;
+
+-- Backfill: any profile currently is_creator_subscribed=true is on the legacy plan
+update profiles
+  set subscription_plan = 'monthly'
+  where is_creator_subscribed = true and subscription_plan = 'free';
+
+create index if not exists profiles_subscription_period_end_idx
+  on profiles(subscription_period_end)
+  where subscription_plan in ('monthly', 'annual') and subscription_suspended_at is null;
+```
+
+- [ ] **Step 2: Apply locally + run prod-safe backfill check**
+
+```bash
+supabase db reset
+```
+
+Then with SUPABASE_SERVICE_ROLE_KEY set:
+```bash
+deno eval 'import { createClient } from "npm:@supabase/supabase-js@2"; const sb = createClient("https://qexnwezetjlbwltyccks.supabase.co", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")); const { count } = await sb.from("profiles").select("id", { count: "exact", head: true }).eq("subscription_plan", "monthly"); console.log("monthly count:", count);'
+```
+Expected: matches `count(*) where is_creator_subscribed = true`.
+
+- [ ] **Step 3: Push + commit**
+
+```bash
+supabase db push --linked
+git add supabase/migrations/165_creator_subscription_refactor.sql
+git commit -m "feat(db): creator subscription refactor schema"
+```
+
+---
+
+### Task 0.3 — Migration 166: fan subscription refactor columns
+
+**Files:**
+- Create: `supabase/migrations/166_fan_subscription_refactor.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 166_fan_subscription_refactor.sql
+-- fan_creator_subscriptions was designed for QuickPay plans with a fixed
+-- QUICKPAY_FAN_SUB_PLAN_ID (which was never provisioned). Refactor to the
+-- same one-shot-Sale + /recurringtransactions model as creator Pro.
+
+alter table fan_creator_subscriptions
+  add column if not exists ugp_mid text,
+  add column if not exists next_rebill_at timestamptz,
+  add column if not exists suspended_at timestamptz;
+
+-- ugp_transaction_id already exists on this table (added in 147_fan_creator_subscriptions.sql)
+-- price_cents already exists and is locked at subscribe time (grandfathered semantics)
+
+-- Backfill next_rebill_at from period_end for any currently active rows
+update fan_creator_subscriptions
+  set next_rebill_at = period_end
+  where status = 'active' and next_rebill_at is null;
+
+create index if not exists fan_subs_next_rebill_idx
+  on fan_creator_subscriptions(next_rebill_at)
+  where status = 'active' and suspended_at is null and cancel_at_period_end = false;
+```
+
+- [ ] **Step 2: Apply + push + commit**
+
+```bash
+supabase db reset
+supabase db push --linked
+git add supabase/migrations/166_fan_subscription_refactor.sql
+git commit -m "feat(db): fan subscription refactor schema"
+```
+
+---
+
+### Task 0.4 — Migration 167: rebill_attempts retry tracking
+
+**Files:**
+- Create: `supabase/migrations/167_rebill_attempts.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 167_rebill_attempts.sql
+-- Tracks every /recurringtransactions call with outcome for monitoring,
+-- retry decisions, reconciliation, and idempotency (D8 — UG does not dedupe).
+--
+-- Idempotency model: before any POST to /recurringtransactions we INSERT a
+-- row with status='pending' + a cycle_bucket derived from the billing cycle
+-- end date. A unique constraint on (subject_table, subject_id, cycle_bucket)
+-- causes the INSERT to fail if another cron run is already working this
+-- cycle — we skip on 23505. After the API responds (or the listener postback
+-- arrives — D9 echoes the id as TrackingId) we UPDATE the row in place.
+
+create table if not exists rebill_attempts (
+  id uuid primary key default gen_random_uuid(),
+  subject_table text not null check (subject_table in ('profiles', 'fan_creator_subscriptions')),
+  subject_id uuid not null,
+  ugp_mid text not null,
+  reference_transaction_id text not null,
+  amount_cents int not null,
+  currency text not null default 'USD',
+  cycle_bucket date not null,                          -- DATE(period_end) at INSERT time
+  attempt_number int not null default 1,
+  status text not null check (status in ('pending', 'success', 'declined', 'error', 'transient')),
+  ugp_response jsonb,
+  ugp_transaction_id text,                             -- the NEW rebill TID from UG
+  reason_code text,
+  message text,
+  responded_at timestamptz,                            -- when the sync JSON response came back
+  listener_confirmed_at timestamptz,                   -- when the async ListenerURL postback was received
+  created_at timestamptz not null default now(),
+  constraint rebill_attempts_cycle_unique unique (subject_table, subject_id, cycle_bucket)
+);
+
+create index rebill_attempts_subject_idx on rebill_attempts(subject_table, subject_id, created_at desc);
+create index rebill_attempts_status_idx on rebill_attempts(status, created_at desc);
+create index rebill_attempts_listener_pending_idx
+  on rebill_attempts(status, listener_confirmed_at)
+  where status = 'success' and listener_confirmed_at is null;
+```
+
+- [ ] **Step 2: Apply + push + commit**
+
+```bash
+supabase db reset
+supabase db push --linked
+git add supabase/migrations/167_rebill_attempts.sql
+git commit -m "feat(db): rebill_attempts table"
+```
+
+---
+
+### Task 0.5 — Shared country helpers (frontend)
+
+**Files:**
+- Create: `src/lib/countryList.ts`
+- Create: `src/lib/countryRouting.ts`
+
+- [ ] **Step 1: Write the country list**
+
+```ts
+// src/lib/countryList.ts
+export type Country = { code: string; name: string };
+
+export const PINNED_COUNTRIES: Country[] = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'FR', name: 'France' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'CH', name: 'Switzerland' },
+];
+
+export const ALL_COUNTRIES: Country[] = [
+  // Full ISO-3166-1 alpha-2 list — ~250 entries. Generate once via
+  //   `node -e "console.log(JSON.stringify(require('i18n-iso-countries').getNames('en'), null, 2))"`
+  // and inline. (Do not ship a runtime dependency on i18n-iso-countries.)
+  // Omitted here for brevity — TASK owner must paste the full list.
+  // Sample starter:
+  { code: 'AF', name: 'Afghanistan' },
+  { code: 'AL', name: 'Albania' },
+  { code: 'DZ', name: 'Algeria' },
+  // ... complete list required
+];
+
+export function searchCountries(query: string): Country[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...PINNED_COUNTRIES, ...ALL_COUNTRIES.filter(c => !PINNED_COUNTRIES.find(p => p.code === c.code))];
+  return ALL_COUNTRIES.filter(c =>
+    c.name.toLowerCase().startsWith(q) || c.code.toLowerCase() === q
+  );
+}
+```
+
+- [ ] **Step 2: Write the routing helper**
+
+```ts
+// src/lib/countryRouting.ts
+import { PAYMENT_CONFIG } from './payment-config';
+
+export type UgMidKey = 'us_2d' | 'intl_3d';
+
+const US_2D_COUNTRIES: ReadonlySet<string> = new Set(['US', 'CA']);
+
+/** Returns the MID key to use for this country. Falls back to 3D if unknown. */
+export function routeMidForCountry(countryCode: string | null | undefined): UgMidKey {
+  if (countryCode && US_2D_COUNTRIES.has(countryCode.toUpperCase())) {
+    return 'us_2d';
+  }
+  return 'intl_3d';
+}
+
+export function midKeyToLabel(key: UgMidKey): string {
+  return key === 'us_2d' ? 'US/CA 2D' : 'International 3DS';
+}
+```
+
+- [ ] **Step 3: Unit tests**
+
+Create `src/lib/countryRouting.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { routeMidForCountry } from './countryRouting';
+
+describe('routeMidForCountry', () => {
+  it('routes US to 2D', () => expect(routeMidForCountry('US')).toBe('us_2d'));
+  it('routes CA to 2D', () => expect(routeMidForCountry('CA')).toBe('us_2d'));
+  it('routes FR to 3D', () => expect(routeMidForCountry('FR')).toBe('intl_3d'));
+  it('routes unknown to 3D', () => expect(routeMidForCountry(null)).toBe('intl_3d'));
+  it('is case-insensitive', () => expect(routeMidForCountry('us')).toBe('us_2d'));
+});
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+npm run test -- src/lib/countryRouting.test.ts
+```
+Expected: 5 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/country*.ts
+git commit -m "feat(routing): country list + MID routing helpers"
+```
+
+---
+
+### Task 0.6 — Shared UG routing + rebill helpers (edge functions)
+
+**Files:**
+- Create: `supabase/functions/_shared/ugRouting.ts`
+- Create: `supabase/functions/_shared/ugRebill.ts`
+
+- [ ] **Step 1: Write `ugRouting.ts`**
+
+```ts
+// supabase/functions/_shared/ugRouting.ts
+//
+// Resolves the per-MID credentials and endpoints for UG payments.
+// Per Derek (2026-04-20) each MID ships its own full credential set, so the
+// env vars below MUST both be present in prod:
+//   QUICKPAY_TOKEN_INTL_3D        / QUICKPAY_SITE_ID_INTL_3D        / UGP_MID_INTL_3D        / UGP_API_BEARER_TOKEN_INTL_3D
+//   QUICKPAY_TOKEN_US_2D          / QUICKPAY_SITE_ID_US_2D          / UGP_MID_US_2D          / UGP_API_BEARER_TOKEN_US_2D
+// ConfirmURL / ListenerURL / Member Postback URLs are pre-configured on the
+// UG side by Derek to point at our existing endpoints — no extra wiring here.
+
+const US_2D_COUNTRIES = new Set(['US', 'CA']);
+
+export type UgMidKey = 'us_2d' | 'intl_3d';
+
+export interface UgMidCredentials {
+  key: UgMidKey;
+  quickPayToken: string;
+  siteId: string;
+  merchantId: string;
+  oauthBearer: string;
+}
+
+export function routeMidForCountry(country: string | null | undefined): UgMidKey {
+  if (country && US_2D_COUNTRIES.has(country.toUpperCase())) return 'us_2d';
+  return 'intl_3d';
+}
+
+export function getMidCredentials(key: UgMidKey): UgMidCredentials {
+  const prefix = key === 'us_2d' ? 'US_2D' : 'INTL_3D';
+  const creds = {
+    key,
+    quickPayToken: Deno.env.get(`QUICKPAY_TOKEN_${prefix}`) ?? '',
+    siteId: Deno.env.get(`QUICKPAY_SITE_ID_${prefix}`) ?? '',
+    merchantId: Deno.env.get(`UGP_MID_${prefix}`) ?? '',
+    oauthBearer: Deno.env.get(`UGP_API_BEARER_TOKEN_${prefix}`) ?? '',
+  };
+  if (!creds.quickPayToken || !creds.siteId || !creds.merchantId) {
+    throw new Error(`Missing UG credentials for MID ${key}`);
+  }
+  return creds;
+}
+```
+
+- [ ] **Step 2: Write `ugRebill.ts`**
+
+```ts
+// supabase/functions/_shared/ugRebill.ts
+//
+// Thin wrapper around UG Payments' /recurringtransactions endpoint.
+//
+// We rebill QuickPay-originated Sales. Body follows the authoritative spec
+// Direct Rebilling 1.0 §SALE REBILL REQUEST:
+//   - TransactionID: the ORIGINAL Sale TID we want to rebill
+//   - Amount:        decimal-as-string, e.g. "39.00"
+//   - Currency:      ISO-4217, MUST match the original Sale's currency
+//
+// Derek confirmed (2026-04-20) there's no uniform card-expired reason code —
+// each issuer returns its own free-form message. Classification is binary
+// (success / declined / error); the caller decides the retry policy on top.
+//
+// Transient errors (5xx / network timeout) are classified `transient` so the
+// cron does NOT count them against the 3-attempt cap — UG being down is not
+// the creator's fault.
+import type { UgMidCredentials } from './ugRouting.ts';
+
+export interface RebillResult {
+  success: boolean;
+  transactionId: string | null;  // NEW rebill TID (not the reference)
+  reasonCode: string | null;
+  message: string | null;
+  classification: 'success' | 'declined' | 'error' | 'transient';
+  raw: unknown;
+}
+
+const REBILL_TIMEOUT_MS = 15_000;
+
+export async function rebillTransaction(
+  creds: UgMidCredentials,
+  referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (Derek Q1)
+  amountCents: number,
+  trackingId: string,               // our rebill_attempts.id — echoed back in the Listener postback per Derek Q9
+): Promise<RebillResult> {
+  const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
+  const body = {
+    TransactionID: referenceTransactionId,
+    Amount: (amountCents / 100).toFixed(2),
+    Currency: 'USD',
+    TrackingId: trackingId,
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REBILL_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${creds.oauthBearer}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeout);
+    // Network failure / timeout / abort — transient. The cron will retry next run.
+    return {
+      success: false,
+      transactionId: null,
+      reasonCode: null,
+      message: (e as Error).message,
+      classification: 'transient',
+      raw: null,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // 5xx from UG itself = transient; 4xx = a real decline/validation error.
+  if (res.status >= 500) {
+    const raw = await res.json().catch(() => null);
+    return {
+      success: false,
+      transactionId: null,
+      reasonCode: null,
+      message: `UG 5xx: ${res.status}`,
+      classification: 'transient',
+      raw,
+    };
+  }
+
+  const raw = await res.json().catch(() => null);
+  // Direct Rebilling 1.0 §APPENDIX B transaction statuses: Successful / Error
+  //   / Declined / Pending / Scrubbed / Fraud / Unconfirmed. Response example
+  //   uses lowercase field names (`reasoncode`); the legacy DirectSale v1.14
+  //   doc also mentions `reasonCode`. Accept either.
+  const status = String(raw?.status ?? '').toLowerCase();
+  const reasonCode = raw?.reasoncode
+    ? String(raw.reasoncode)
+    : raw?.reasonCode
+    ? String(raw.reasonCode)
+    : null;
+  const message = raw?.message ? String(raw.message) : null;
+  const tid = raw?.id ? String(raw.id) : null;
+
+  if (status === 'successful' || status === 'approved') {
+    return { success: true, transactionId: tid, reasonCode, message, classification: 'success', raw };
+  }
+  if (status === 'declined' || status === 'scrubbed' || status === 'fraud') {
+    return { success: false, transactionId: tid, reasonCode, message, classification: 'declined', raw };
+  }
+  if (status === 'pending' || status === 'unconfirmed' || status === 'error') {
+    // UG's own side is uncertain — treat as transient so we don't burn a retry slot.
+    return { success: false, transactionId: tid, reasonCode, message, classification: 'transient', raw };
+  }
+  return { success: false, transactionId: tid, reasonCode, message, classification: 'error', raw };
+}
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/_shared/ugRouting.ts supabase/functions/_shared/ugRebill.ts
+git commit -m "feat(payments): shared UG routing + rebill helpers"
+```
+
+---
+
+### Task 0.6b — Harden ConfirmURL Key validation
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+- Modify: `supabase/functions/ugp-membership-confirm/index.ts`
+- Modify: `supabase/functions/ugp-listener/index.ts`
+
+Per the QuickPay ConfirmURL doc, every callback carries a `[Key]` field "supplied from portal from UnicornPayment". Today our code validates the Key **only when the incoming payload includes one** (see `ugp-confirm` lines 94–97). That's a prod foot-gun: if the portal Key gets dropped by accident, unsigned callbacks silently get accepted.
+
+**Required production invariant:** `QUICKPAY_CONFIRM_KEY` is set on both MIDs (portal config), and any inbound callback without a matching `Key` is rejected with 401.
+
+- [ ] **Step 1: Change the key-present-only check to a mandatory check**
+
+```ts
+// supabase/functions/ugp-confirm/index.ts — replace the existing guard
+if (!confirmKey) {
+  console.error('[ugp-confirm] QUICKPAY_CONFIRM_KEY is not set — refusing to process callbacks');
+  return new Response('Server misconfigured', { status: 503 });
+}
+if (body.Key !== confirmKey) {
+  console.error('[ugp-confirm] Key mismatch', { provided: body.Key?.slice(0, 8) + '...' });
+  return new Response('Unauthorized', { status: 401 });
+}
+```
+
+Apply the same shape to `ugp-membership-confirm/index.ts` and `ugp-listener/index.ts` (each already has a `confirmKey` and a soft check — tighten all three).
+
+- [ ] **Step 2: Set the Key in BOTH UG portals**
+
+In the UG merchant portal (Merchant Setup → Sites):
+- 3D MID (existing, SiteID 98845): set the "Key" field in the ConfirmURL row → copy the value into Supabase `QUICKPAY_CONFIRM_KEY` secret.
+- 2D MID (new, once Derek delivers): same — set the Key, copy into `QUICKPAY_CONFIRM_KEY_US_2D`.
+
+If the two MIDs use different keys, we pick the right one per inbound request by matching `body.SiteID` to the stored SiteID of each MID, then comparing against the MID-specific key.
+
+- [ ] **Step 3: Extend ugRouting to expose the per-MID confirm key**
+
+```ts
+// supabase/functions/_shared/ugRouting.ts
+export function getMidConfirmKey(key: UgMidKey): string {
+  const env = key === 'us_2d' ? 'QUICKPAY_CONFIRM_KEY_US_2D' : 'QUICKPAY_CONFIRM_KEY_INTL_3D';
+  const value = Deno.env.get(env) ?? Deno.env.get('QUICKPAY_CONFIRM_KEY') ?? '';
+  if (!value) throw new Error(`Missing ${env}`);
+  return value;
+}
+
+// Given an inbound callback SiteID, find the matching MID.
+export function midFromSiteId(siteId: string): UgMidKey {
+  const us2d = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  return siteId && siteId === us2d ? 'us_2d' : 'intl_3d';
+}
+```
+
+- [ ] **Step 4: Use per-MID key validation in ugp-confirm**
+
+```ts
+import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
+// ...
+const midKey = midFromSiteId(body.SiteID ?? '');
+const expectedKey = getMidConfirmKey(midKey);
+if (body.Key !== expectedKey) { return new Response('Unauthorized', { status: 401 }); }
+```
+
+- [ ] **Step 5: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-confirm ugp-membership-confirm ugp-listener --linked
+git add supabase/functions/
+git commit -m "feat(security): mandatory Key validation per MID on every UG callback"
+```
+
+---
+
+### Task 0.7 — Env vars provisioning
+
+- [ ] **Step 1: Document required env vars in `CLAUDE.md`**
+
+Append to the "Base de données (Supabase)" or a new "Payments — MID Credentials" section:
+
+```md
+### UG Payments — Per-MID credentials
+
+Both MIDs MUST have the following secrets set on Supabase and Vercel:
+
+- `QUICKPAY_TOKEN_INTL_3D` / `QUICKPAY_SITE_ID_INTL_3D` / `UGP_MID_INTL_3D` / `UGP_API_BEARER_TOKEN_INTL_3D` — existing MID 103799 (3DS)
+- `QUICKPAY_TOKEN_US_2D` / `QUICKPAY_SITE_ID_US_2D` / `UGP_MID_US_2D` / `UGP_API_BEARER_TOKEN_US_2D` — new MID for US/CA (2D)
+
+Legacy aliases kept during rollout: `QUICKPAY_TOKEN`, `QUICKPAY_SITE_ID`, `UGP_MERCHANT_ID`, `UGP_API_BEARER_TOKEN` — all point at the INTL_3D MID.
+```
+
+- [ ] **Step 2: Set the INTL_3D secrets (aliased from existing)**
+
+```bash
+supabase secrets set --linked \
+  QUICKPAY_TOKEN_INTL_3D="$(supabase secrets list --linked | awk '/QUICKPAY_TOKEN /{print $3}')"
+# Repeat for the 3 other INTL_3D vars by copying the existing values via the Supabase dashboard
+# (the CLI only prints digests — use the dashboard Secrets panel for the actual values).
+```
+
+**2D US/CA MID credentials received from Derek 2026-04-20 afternoon** — set these now (OAuth Bearer still outstanding):
+
+```bash
+supabase secrets set --linked \
+  UGP_MID_US_2D=103817 \
+  QUICKPAY_SITE_ID_US_2D=98895 \
+  QUICKPAY_TOKEN_US_2D="AAEAAGj-xOMEnHXZ92ptIXCGj9d-VVPuz16o_Q_GKRXBlbLWbvw0itsJntoqacOOLahXnMey1UJXFFg5RUr8YPjPn4Sv1zgnwUeuQrNTQ98yUl3ilnLycIcujsJugMJOPhu9TPxWkXOUuOALm0GGnOTu4CNgID9h0B7rdYMOaPxf23EU4FVMLR3LXgH8EUdYNMMt6X7vJwVXmJj--YEatOlEHBIooFd7Raj3sdYuKI5J31c3RP3ZodYlBuhCcsvMqM5qjlV6sqs2ZfzKUSFb6740WD6tCj2RSVySy6mOnnAXaSHXo1EILEH6AmJ1NKNtWSALn2_vwFkHM9DvrqISYldfF0ykAQAAAAEAAF7QmDSh5_D_Ml2_dJhqEhUR6_hkU_rwnPMMVJhEz7OVXE8imdA-XxK01-YEDt39p2WX8hkp1oCA6-eff1EBK_KDImnpFbjcXKEa3ivSRh-TNFDObmhD17TAVGby6REg5VgOlNCRri1w9b4UXzkAgVc64FoWqmYSunzJ5AG-MLpVaVqmDPQJ2tSAEU931_TU3p7mD_AqDMAco9MMJUOYAGdTITclJIE9RgHbvolK7ks4dG-e-oUfhEuFUf_0oDhOT15hLnZsllDIgOnbkbekVePopBlF2gJIbCW-FhdtfOITEieX_VZVEZ2fNM4XF3eyDlMasZSgPkUkMT31ZZKRaYW6FIKsjVPT8SXP3XCX888YbqyFkrIMzOhNuEpIa0vQwRie9lrDjdYDk4YLFou1VAr4lbFsNC1b1AuxubtHHI7HlklyXotP8jMrbeCNvksM1BAU3WGxJx8ucRHJ7xxJWPxzCyV1e1drOBYpOgKiL8OLvPhXUTQorAeRtqPJR1tyshEPno0o99AimZQlnUHh1UCLU9rapuQ-sWBP87BthjYL"
+```
+
+**⚠️ Still blocked on Derek:** `UGP_API_BEARER_TOKEN_US_2D` (needed for rebills + refunds via Direct API on US/CA cards). Without it, Phase 4 + Phase 6 rebills fail for any subscriber paid via the 2D MID. The 3D MID rebill path is unaffected. Follow-up email sent 2026-04-20.
+
+**`UGP_SUBSCRIPTION_PLAN_ID_US_2D=11034`** — Derek confirmed 2026-04-23 evening this is a default duplicate plan we can **disregard entirely**. No env var needed — our one-shot Sale + `/recurringtransactions` flow never references any SubscriptionPlanId.
+
+- [ ] **Step 3: No Vercel mirror needed for MID credentials**
+
+The `QUICKPAY_TOKEN_*`, `QUICKPAY_SITE_ID_*`, `UGP_MID_*`, and `UGP_API_BEARER_TOKEN_*` secrets live **only in Supabase** — they're consumed by Edge Functions that call UG directly. Vercel serverless (`api/*`) never talks to UG; the ConfirmURL / ListenerURL / MembershipPostback endpoints are rewrites in `vercel.json` pointing at Supabase, so credentials stay on the Supabase side.
+
+The only Vercel env var we'll add later is `REBILL_CRON_SECRET` — introduced in Task 4.4 when we wire the daily cron, not here. See that task for the `vercel env add` command.
+
+- [ ] **Step 4: Commit the CLAUDE.md change**
+
+```bash
+git add CLAUDE.md
+git commit -m "docs: document per-MID payment credentials"
+```
+
+---
+
+## Phase 1 — Country Detection & Pre-Checkout UX (1.5 days)
+
+### Task 1.1 — IP geolocation helper (frontend)
+
+**Files:**
+- Create: `src/lib/ipGeo.ts`
+- Create: `api/ipgeo.ts`
+
+Vercel exposes `x-vercel-ip-country` on request headers to serverless functions. Frontend calls our small `/api/ipgeo` to read it.
+
+- [ ] **Step 1: Write the Vercel function**
+
+```ts
+// api/ipgeo.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+export default function handler(req: VercelRequest, res: VercelResponse) {
+  const country = (req.headers['x-vercel-ip-country'] as string) || null;
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.status(200).json({ country });
+}
+```
+
+- [ ] **Step 2: Add rewrite in `vercel.json`** (none needed — `/api/*` passes through already)
+
+Verify by running `curl -I https://exclu.at/api/ipgeo` (after deploy).
+
+- [ ] **Step 3: Write the client helper**
+
+```ts
+// src/lib/ipGeo.ts
+let cache: string | null | undefined = undefined;
+
+export async function getGeoCountry(): Promise<string | null> {
+  if (cache !== undefined) return cache;
+  try {
+    const res = await fetch('/api/ipgeo', { headers: { accept: 'application/json' } });
+    const data = await res.json();
+    cache = (data?.country as string | null) ?? null;
+  } catch {
+    cache = null;
+  }
+  return cache;
+}
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add api/ipgeo.ts src/lib/ipGeo.ts
+git commit -m "feat(geo): IP-based country detection helper"
+```
+
+---
+
+### Task 1.2 — CountrySelect component
+
+**Files:**
+- Create: `src/components/checkout/CountrySelect.tsx`
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// src/components/checkout/CountrySelect.tsx
+import { useEffect, useMemo, useState } from 'react';
+import { Check, ChevronsUpDown } from 'lucide-react';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { PINNED_COUNTRIES, ALL_COUNTRIES, searchCountries, type Country } from '@/lib/countryList';
+
+interface Props {
+  value: string | null;
+  onChange: (code: string) => void;
+  autoDetectedCountry?: string | null;
+  placeholder?: string;
+  required?: boolean;
+  id?: string;
+}
+
+export function CountrySelect({ value, onChange, autoDetectedCountry, placeholder = 'Select country…', required, id }: Props) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const results = useMemo(() => searchCountries(query), [query]);
+
+  const selectedName = useMemo(() => {
+    if (!value) return null;
+    return ALL_COUNTRIES.find(c => c.code === value)?.name ?? value;
+  }, [value]);
+
+  // Auto-preselect from IP geo on first render
+  useEffect(() => {
+    if (!value && autoDetectedCountry) {
+      onChange(autoDetectedCountry);
+    }
+  }, [value, autoDetectedCountry, onChange]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          id={id}
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-required={required}
+          className={cn(
+            'w-full justify-between font-normal',
+            !value && 'text-muted-foreground',
+          )}
+        >
+          {selectedName || placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Type to search…" value={query} onValueChange={setQuery} />
+          <CommandList>
+            <CommandEmpty>No country found.</CommandEmpty>
+            {!query && (
+              <CommandGroup heading="Common">
+                {PINNED_COUNTRIES.map(c => (
+                  <CountryRow key={c.code} country={c} selected={value === c.code} onSelect={(code) => { onChange(code); setOpen(false); }} />
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading={query ? 'Results' : 'All'}>
+              {results
+                .filter(c => query || !PINNED_COUNTRIES.find(p => p.code === c.code))
+                .map(c => (
+                  <CountryRow key={c.code} country={c} selected={value === c.code} onSelect={(code) => { onChange(code); setOpen(false); }} />
+                ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function CountryRow({ country, selected, onSelect }: { country: Country; selected: boolean; onSelect: (code: string) => void }) {
+  return (
+    <CommandItem value={country.code} onSelect={() => onSelect(country.code)}>
+      <Check className={cn('mr-2 h-4 w-4', selected ? 'opacity-100' : 'opacity-0')} />
+      <span className="flex-1">{country.name}</span>
+      <span className="text-xs text-muted-foreground">{country.code}</span>
+    </CommandItem>
+  );
+}
+```
+
+- [ ] **Step 2: Quick smoke render test**
+
+Add a simple test in `src/components/checkout/CountrySelect.test.tsx` that imports and renders (RTL):
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import { CountrySelect } from './CountrySelect';
+
+test('renders placeholder when no value', () => {
+  render(<CountrySelect value={null} onChange={() => {}} placeholder="Your country" />);
+  expect(screen.getByRole('combobox')).toHaveTextContent('Your country');
+});
+```
+
+```bash
+npm run test -- CountrySelect.test.tsx
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/checkout/CountrySelect.tsx src/components/checkout/CountrySelect.test.tsx
+git commit -m "feat(checkout): searchable CountrySelect component"
+```
+
+---
+
+### Task 1.3 — Extract PreCheckoutGate from PublicLink
+
+**Files:**
+- Create: `src/components/checkout/PreCheckoutGate.tsx`
+- Modify: `src/pages/PublicLink.tsx`
+
+Currently PublicLink.tsx renders the +18 + Terms checkbox + email input inline. We extract a reusable gate that wraps those + the new country field.
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// src/components/checkout/PreCheckoutGate.tsx
+import { useEffect, useState } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { CountrySelect } from './CountrySelect';
+import { getGeoCountry } from '@/lib/ipGeo';
+
+export interface PreCheckoutGateState {
+  email: string;
+  country: string | null;
+  ageAccepted: boolean;
+}
+
+interface Props {
+  value: PreCheckoutGateState;
+  onChange: (next: PreCheckoutGateState) => void;
+  emailLocked?: boolean;
+  requireEmail?: boolean;
+  countryHiddenIfSignedIn?: boolean;
+  signedInCountry?: string | null;
+}
+
+export function PreCheckoutGate({ value, onChange, emailLocked, requireEmail, countryHiddenIfSignedIn, signedInCountry }: Props) {
+  const [detected, setDetected] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!value.country && !signedInCountry) {
+      getGeoCountry().then((c) => { if (c) setDetected(c); });
+    }
+  }, [value.country, signedInCountry]);
+
+  const shouldShowCountry = !(countryHiddenIfSignedIn && signedInCountry);
+  const currentCountry = value.country ?? signedInCountry ?? null;
+
+  return (
+    <div className="space-y-3">
+      {!emailLocked && (
+        <div>
+          <label htmlFor="pre-checkout-email" className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 block mb-1.5">
+            Email {requireEmail ? <span className="text-red-400">*</span> : null}
+          </label>
+          <Input
+            id="pre-checkout-email"
+            type="email"
+            required={requireEmail}
+            value={value.email}
+            onChange={(e) => onChange({ ...value, email: e.target.value })}
+            placeholder="you@email.com"
+          />
+        </div>
+      )}
+
+      {shouldShowCountry && (
+        <div>
+          <label htmlFor="pre-checkout-country" className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 block mb-1.5">
+            Country <span className="text-red-400">*</span>
+          </label>
+          <CountrySelect
+            id="pre-checkout-country"
+            value={currentCountry}
+            autoDetectedCountry={detected}
+            onChange={(code) => onChange({ ...value, country: code })}
+            required
+            placeholder="Select your country"
+          />
+          <p className="text-[11px] text-exclu-space/60 mt-1">
+            We use this to route your payment through the right network for your bank.
+          </p>
+        </div>
+      )}
+
+      <label className="flex items-start gap-2.5 cursor-pointer group">
+        <Checkbox
+          checked={value.ageAccepted}
+          onCheckedChange={(v) => onChange({ ...value, ageAccepted: v === true })}
+        />
+        <span className="text-[11px] text-white/60 leading-relaxed group-hover:text-white/80 transition-colors">
+          I confirm that I am at least <strong className="text-white">18 years old</strong> and agree to the{' '}
+          <a href="/terms" target="_blank" className="text-primary hover:underline">Terms</a> and{' '}
+          <a href="/privacy" target="_blank" className="text-primary hover:underline">Privacy Policy</a>.
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/** Convenience — is the gate complete enough to submit the checkout form? */
+export function isPreCheckoutReady(state: PreCheckoutGateState, requireEmail = true): boolean {
+  if (!state.ageAccepted) return false;
+  if (!state.country) return false;
+  if (requireEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)) return false;
+  return true;
+}
+```
+
+- [ ] **Step 2: Swap into PublicLink.tsx**
+
+Open `src/pages/PublicLink.tsx`. Locate the existing +18 checkbox block (around line 1000) and the email input block (around line 1040). Replace both with a single `<PreCheckoutGate>` instance whose state is lifted into the component. The submit button is enabled only when `isPreCheckoutReady` returns true.
+
+Example snippet for the submit handler:
+
+```tsx
+const [gate, setGate] = useState<PreCheckoutGateState>({ email: '', country: null, ageAccepted: false });
+
+// On mount, if signed in, preload email + country from profile
+useEffect(() => {
+  supabase.auth.getUser().then(async ({ data }) => {
+    if (!data?.user) return;
+    setGate(g => ({ ...g, email: data.user.email ?? g.email }));
+    const { data: profile } = await supabase.from('profiles').select('country').eq('id', data.user.id).maybeSingle();
+    if (profile?.country) setGate(g => ({ ...g, country: profile.country }));
+  });
+}, []);
+
+// Send gate.country to the checkout edge function:
+await supabase.functions.invoke('create-link-checkout', {
+  body: { slug, buyerEmail: gate.email || null, country: gate.country, /* ... */ },
+});
+```
+
+- [ ] **Step 3: Verify in browser**
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:8080/l/<some-link-slug>`. Confirm:
+- Country dropdown appears, pre-filled from IP
+- Checkbox still present and required
+- Submit blocked until all 3 gate conditions pass
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/components/checkout/PreCheckoutGate.tsx src/pages/PublicLink.tsx
+git commit -m "feat(checkout): PreCheckoutGate with country selector"
+```
+
+---
+
+### Task 1.4 — Add country to fan onboarding (optional step)
+
+**Files:**
+- Modify: `src/pages/FanSignup.tsx` (or wherever fan signup lives — check `src/pages/FanDashboard.tsx` for onboarding flow)
+
+- [ ] **Step 1: Identify the fan signup component**
+
+```bash
+grep -rn "fan_signup\|fan/signup\|FanSignup\|fan onboarding" src/ | head
+```
+
+- [ ] **Step 2: Add country field after avatar upload, marked optional**
+
+```tsx
+<div>
+  <label className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 block mb-1.5">
+    Country <span className="text-xs normal-case text-exclu-space/50">(optional, helps us process your payments)</span>
+  </label>
+  <CountrySelect value={country} onChange={setCountry} autoDetectedCountry={detectedCountry} placeholder="Skip or pick your country" />
+</div>
+```
+
+- [ ] **Step 3: Persist on signup**
+
+When the fan submits onboarding:
+```ts
+if (country) {
+  await supabase.from('profiles').update({ country }).eq('id', user.id);
+}
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/pages/FanSignup.tsx
+git commit -m "feat(fan): optional country field in signup onboarding"
+```
+
+---
+
+### Task 1.5 — MID routing in `create-link-checkout`
+
+**Files:**
+- Modify: `supabase/functions/create-link-checkout/index.ts`
+
+- [ ] **Step 1: Update signature + imports**
+
+At the top of the file, import the helpers:
+
+```ts
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
+```
+
+Remove:
+```ts
+const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
+const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
+```
+
+- [ ] **Step 2: Accept `country` from request body**
+
+```ts
+const body = await req.json();
+const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+// ...existing buyerEmail / slug / chtref parsing
+```
+
+- [ ] **Step 3: Resolve MID per request**
+
+Right before building the QuickPay fields:
+
+```ts
+const midKey = routeMidForCountry(country);
+const creds = getMidCredentials(midKey);
+```
+
+Replace references to `quickPayToken` with `creds.quickPayToken`, `siteId` with `creds.siteId`.
+
+- [ ] **Step 4: Persist `ugp_mid` on the pre-created purchase**
+
+In the `insert` call:
+```ts
+.insert({
+  // ... existing fields
+  ugp_mid: midKey,
+})
+```
+
+- [ ] **Step 5: Deploy + smoke test**
+
+```bash
+supabase functions deploy create-link-checkout --linked
+```
+
+Then from the browser, trigger a checkout while the PreCheckoutGate has country=US and confirm the returned `fields.SiteID` equals the US_2D SiteID.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/functions/create-link-checkout/index.ts
+git commit -m "feat(checkout): route links through country-specific MID"
+```
+
+---
+
+### Task 1.6 — Same MID routing for tip/gift/request checkouts
+
+**Files:**
+- Modify: `supabase/functions/create-tip-checkout/index.ts`
+- Modify: `supabase/functions/create-gift-checkout/index.ts`
+- Modify: `supabase/functions/create-request-checkout/index.ts`
+
+Each function replays the pattern in Task 1.5:
+1. Import `routeMidForCountry` + `getMidCredentials`
+2. Accept `country` on the request
+3. Resolve MID per request
+4. Use `creds.quickPayToken` / `creds.siteId`
+5. Store `ugp_mid` on the inserted row
+
+- [ ] **Step 1: Tip checkout**
+
+Edit `supabase/functions/create-tip-checkout/index.ts` following Task 1.5 pattern. The row is inserted into `tips`, so add `ugp_mid: midKey` there.
+
+- [ ] **Step 2: Gift checkout**
+
+Edit `supabase/functions/create-gift-checkout/index.ts`. Row goes into `gift_purchases`.
+
+- [ ] **Step 3: Request checkout**
+
+Edit `supabase/functions/create-request-checkout/index.ts`. Row goes into `custom_requests`.
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy create-tip-checkout --linked
+supabase functions deploy create-gift-checkout --linked
+supabase functions deploy create-request-checkout --linked
+
+git add supabase/functions/create-tip-checkout/index.ts supabase/functions/create-gift-checkout/index.ts supabase/functions/create-request-checkout/index.ts
+git commit -m "feat(checkout): country-based MID routing for tips/gifts/requests"
+```
+
+---
+
+### Task 1.7 — Store country on fan profile from first successful checkout
+
+So repeat buyers don't see the country prompt again.
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+
+- [ ] **Step 1: In `handleLinkPurchase`, after updating the purchase to succeeded**
+
+```ts
+// Persist billing_country on the fan's profile if present and not set yet
+const billingCountry = body.CustomerCountry ? body.CustomerCountry.toUpperCase() : null;
+if (billingCountry && billingCountry.length === 2 && purchase.chat_conversation_id /* proxy: there's a fan behind */) {
+  // Find the fan via buyer_email → profiles (best effort)
+  if (customerEmail) {
+    await supabase.from('profiles')
+      .update({ billing_country: billingCountry })
+      .eq('id',
+        (await supabase.auth.admin.listUsers({ filter: `email.eq.${customerEmail}`, perPage: 1 }))?.data?.users?.[0]?.id
+      )
+      .is('billing_country', null);
+  }
+}
+```
+
+Apply the same block in `handleTip`, `handleGift`, and `handleRequest`.
+
+- [ ] **Step 2: Deploy**
+
+```bash
+supabase functions deploy ugp-confirm --linked
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/ugp-confirm/index.ts
+git commit -m "feat(routing): persist fan billing_country from confirmed checkouts"
+```
+
+---
+
+## Phase 2 — Pricing Refonte (0.5 day, independent)
+
+### Task 2.1 — Update commission rates
+
+**Files:**
+- Modify: `src/lib/payment-config.ts`
+- Modify: `supabase/functions/create-link-checkout/index.ts`
+- Modify: `supabase/functions/create-tip-checkout/index.ts`
+- Modify: `supabase/functions/create-gift-checkout/index.ts`
+- Modify: `supabase/functions/create-request-checkout/index.ts`
+
+- [ ] **Step 1: Update `payment-config.ts`**
+
+```ts
+// src/lib/payment-config.ts (line 17-19)
+PROCESSING_FEE_RATE: 0.15,       // 15% fan fee (was 0.05)
+COMMISSION_RATE_FREE: 0.15,      // 15% platform commission on Free (was 0.10)
+COMMISSION_RATE_PREMIUM: 0,      // unchanged
+```
+
+- [ ] **Step 2: Update each edge function's rate**
+
+In each of the 4 checkout edge functions, find `fanProcessingFeeCents = Math.round(baseCents * 0.05)` and change `0.05` → `0.15`. Find `commissionRate = isSubscribed ? 0 : 0.10` and change `0.10` → `0.15`.
+
+Use the `fan_processing_fee_rate_v2` constant if helpful, but inline is fine — these are small numbers.
+
+- [ ] **Step 3: Update UI displays that hard-coded 5% or 10%**
+
+```bash
+grep -rn "1\.05\|0\.10\|/1\.05\|\\b5%\\b\|\\b10%\\b" src/ | grep -v node_modules | grep -v '.test'
+```
+
+Fix every match that's related to payments — especially:
+- `src/pages/LinkDetail.tsx` — revenue calc uses `/1.05 * 0.9`, update to `/1.15 * 0.85`
+- `src/pages/AppDashboard.tsx` — same pattern
+- `src/pages/Terms.tsx` — the 5% bank fee line
+- Any help page mentioning "10%"
+
+- [ ] **Step 4: Deploy all 4 edge functions**
+
+```bash
+for fn in create-link-checkout create-tip-checkout create-gift-checkout create-request-checkout; do
+  supabase functions deploy "$fn" --linked
+done
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/lib/payment-config.ts src/pages/LinkDetail.tsx src/pages/AppDashboard.tsx src/pages/Terms.tsx supabase/functions/create-*-checkout/index.ts
+git commit -m "feat(pricing): update rates to 15% platform / 15% fan fee"
+```
+
+---
+
+### Task 2.2 — Update Terms page
+
+**Files:**
+- Modify: `src/pages/Terms.tsx`
+
+- [ ] **Step 1: Find and update the pricing section**
+
+Search for "10%" and "5%" — rewrite to 15% platform commission on Free plan, 0% on Pro, and note the 15% fan processing fee. Add a line: "Your bank may apply additional processing fees of up to 5.5% on international card transactions, which are deducted from the amount you see on your statement — not from the creator payout."
+
+Also update the "Multi-Profile Pricing" section (§3.6) to describe the **new** charging model: the full subscription amount (base + extras) is billed directly to the creator's card each month, not debited from wallet.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/pages/Terms.tsx
+git commit -m "docs(terms): reflect new commission rates + multi-profile billing model"
+```
+
+---
+
+## Phase 3 — Pricing Page + Pro Upgrade Popup (1 day)
+
+### Task 3.1 — PlanCard component
+
+**Files:**
+- Create: `src/components/pricing/PlanCard.tsx`
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// src/components/pricing/PlanCard.tsx
+import { Check } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+export interface PlanCardProps {
+  name: string;
+  priceLabel: string;
+  priceSuffix?: string;
+  description: string;
+  features: string[];
+  highlighted?: boolean;
+  badge?: string;
+  ctaLabel: string;
+  onCta: () => void;
+  ctaDisabled?: boolean;
+}
+
+export function PlanCard({ name, priceLabel, priceSuffix, description, features, highlighted, badge, ctaLabel, onCta, ctaDisabled }: PlanCardProps) {
+  return (
+    <div
+      className={cn(
+        'relative flex flex-col rounded-2xl border bg-card p-6',
+        highlighted ? 'border-primary shadow-glow-lg' : 'border-border',
+      )}
+    >
+      {badge && (
+        <span className="absolute -top-3 left-6 rounded-full bg-primary px-3 py-0.5 text-xs font-semibold text-primary-foreground">
+          {badge}
+        </span>
+      )}
+      <h3 className="text-lg font-bold text-foreground">{name}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-4 flex items-baseline gap-1">
+        <span className="text-3xl font-extrabold text-foreground">{priceLabel}</span>
+        {priceSuffix && <span className="text-sm text-muted-foreground">{priceSuffix}</span>}
+      </div>
+      <ul className="mt-6 space-y-3 text-sm flex-1">
+        {features.map((f) => (
+          <li key={f} className="flex items-start gap-2">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span className="text-foreground/90">{f}</span>
+          </li>
+        ))}
+      </ul>
+      <Button
+        type="button"
+        onClick={onCta}
+        variant={highlighted ? 'hero' : 'outline'}
+        disabled={ctaDisabled}
+        className="mt-6 w-full"
+      >
+        {ctaLabel}
+      </Button>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/components/pricing/PlanCard.tsx
+git commit -m "feat(pricing): PlanCard component"
+```
+
+---
+
+### Task 3.2 — Refactor `/pricing` page with 3 plans
+
+**Files:**
+- Modify: `src/pages/Pricing.tsx` (find current pricing page path first)
+
+```bash
+grep -rn "path.*pricing\|route.*pricing" src/App.tsx
+```
+
+- [ ] **Step 1: Update the page**
+
+```tsx
+// src/pages/Pricing.tsx (section within the page)
+import { PlanCard } from '@/components/pricing/PlanCard';
+import { useNavigate } from 'react-router-dom';
+
+export function PricingPlans() {
+  const navigate = useNavigate();
+  const goSubscribe = (plan: 'monthly' | 'annual') =>
+    navigate(`/app/settings?subscribe=${plan}`);
+
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-3 max-w-5xl mx-auto">
+      <PlanCard
+        name="Free"
+        priceLabel="$0"
+        priceSuffix="/forever"
+        description="Start selling with no upfront cost."
+        features={[
+          '15% platform commission',
+          '15% processing fee paid by the fan',
+          'Unlimited links, tips, custom requests, and gifts',
+          'Single creator profile',
+        ]}
+        ctaLabel="Current plan"
+        onCta={() => {}}
+        ctaDisabled
+      />
+      <PlanCard
+        name="Pro Monthly"
+        priceLabel="$39.99"
+        priceSuffix="/month"
+        description="Keep 100% of your sales. Up to 2 profiles included, $10/mo per extra profile."
+        features={[
+          '0% platform commission on every sale',
+          'Up to 2 profiles included',
+          'Additional profiles $10/mo each, billed monthly',
+          'All Free features',
+        ]}
+        badge="Popular"
+        highlighted
+        ctaLabel="Upgrade to Monthly"
+        onCta={() => goSubscribe('monthly')}
+      />
+      <PlanCard
+        name="Pro Annual"
+        priceLabel="$239.99"
+        priceSuffix="/year"
+        description="Best value. Unlimited profiles, save 50% vs monthly."
+        features={[
+          '0% platform commission',
+          'Unlimited profiles (up to 50)',
+          '2 months free vs monthly billing',
+          'All Free features',
+        ]}
+        badge="Best value"
+        ctaLabel="Upgrade to Annual"
+        onCta={() => goSubscribe('annual')}
+      />
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Wire the CTAs to trigger the new checkout flow (Phase 4)**
+
+The `?subscribe=monthly|annual` query param is read by `Profile.tsx` (Settings) to auto-trigger the subscription checkout.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/Pricing.tsx
+git commit -m "feat(pricing): /pricing page with Free/Monthly/Annual plans"
+```
+
+---
+
+### Task 3.3 — ProUpgradePopup with weekly throttle
+
+**Files:**
+- Create: `src/components/ProUpgradePopup.tsx`
+- Modify: `src/components/AppShell.tsx`
+
+- [ ] **Step 1: Write the popup**
+
+```tsx
+// src/components/ProUpgradePopup.tsx
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabaseClient';
+import { Button } from '@/components/ui/button';
+
+const LAST_SHOWN_KEY = 'exclu_pro_popup_last_shown';
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function ProUpgradePopup() {
+  const [visible, setVisible] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (checked) return;
+    (async () => {
+      setChecked(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from('profiles')
+        .select('subscription_plan, subscription_last_pro_popup_at')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!profile || profile.subscription_plan !== 'free') return;
+
+      const localLast = Number(localStorage.getItem(LAST_SHOWN_KEY) ?? 0);
+      const dbLast = profile.subscription_last_pro_popup_at
+        ? new Date(profile.subscription_last_pro_popup_at).getTime()
+        : 0;
+      const lastShown = Math.max(localLast, dbLast);
+      if (Date.now() - lastShown < WEEK_MS) return;
+
+      setVisible(true);
+      localStorage.setItem(LAST_SHOWN_KEY, String(Date.now()));
+      await supabase.from('profiles')
+        .update({ subscription_last_pro_popup_at: new Date().toISOString() })
+        .eq('id', user.id);
+    })();
+  }, [checked]);
+
+  if (!visible) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-primary/40 bg-card p-5 shadow-glow-lg"
+      >
+        <button
+          type="button"
+          onClick={() => setVisible(false)}
+          className="absolute right-3 top-3 rounded-full p-1 text-muted-foreground hover:text-foreground"
+          aria-label="Dismiss"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="flex items-center gap-2 text-primary">
+          <Sparkles className="h-4 w-4" />
+          <span className="text-[11px] uppercase tracking-widest font-semibold">Keep 100% of sales</span>
+        </div>
+        <h4 className="mt-2 text-lg font-bold text-foreground">Go Pro today</h4>
+        <p className="mt-1 text-sm text-muted-foreground">
+          From $39.99/month. Zero commission on every sale — pays for itself after $260 of monthly revenue.
+        </p>
+        <Button
+          type="button"
+          variant="hero"
+          className="mt-4 w-full"
+          onClick={() => { setVisible(false); navigate('/pricing'); }}
+        >
+          See plans
+        </Button>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+```
+
+- [ ] **Step 2: Mount it in AppShell (only on `/app/*` routes)**
+
+```tsx
+// src/components/AppShell.tsx
+import { ProUpgradePopup } from './ProUpgradePopup';
+
+// Inside the main return, next to existing shell:
+return (
+  <>
+    {/* existing content */}
+    <ProUpgradePopup />
+  </>
+);
+```
+
+- [ ] **Step 3: Smoke test**
+
+```bash
+npm run dev
+# Sign in as a Free creator. The popup should appear on first /app/* load.
+# Reload — should NOT appear again for 7 days.
+# Clear localStorage + subscription_last_pro_popup_at in DB — should appear again.
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/components/ProUpgradePopup.tsx src/components/AppShell.tsx
+git commit -m "feat(pricing): weekly Pro upgrade popup for Free creators"
+```
+
+---
+
+## Phase 4 — Creator Pro Refactor (Monthly) (2 days)
+
+### Task 4.1 — Refactor `create-creator-subscription` to one-shot Sale
+
+**Files:**
+- Modify: `supabase/functions/create-creator-subscription/index.ts`
+
+- [ ] **Step 1: Rewrite body**
+
+Replace the file's content with:
+
+```ts
+/**
+ * create-creator-subscription — initial checkout for a creator Pro subscription.
+ *
+ * Issues a QuickPay ONE-SHOT Sale for the total amount (base + extras). The
+ * ConfirmURL callback (state=Sale) stores the TransactionID on profiles.
+ * From there, rebill-subscriptions cron drives monthly charges via
+ * /recurringtransactions — UG no longer manages a subscription plan for us.
+ */
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
+
+const supabaseUrl = Deno.env.get('PROJECT_URL');
+const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
+
+if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+const BASE_MONTHLY_CENTS = 3999;   // $39.99
+const ADDON_PER_PROFILE_CENTS = 1000; // $10
+const INCLUDED_PROFILES = 2;
+const ANNUAL_CENTS = 23999;        // $239.99
+
+type Plan = 'monthly' | 'annual';
+
+function corsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ['http://localhost:8080', 'http://localhost:5173', siteUrl];
+  return {
+    'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : siteUrl,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
+
+serve(async (req) => {
+  const cors = corsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+
+  try {
+    const auth = req.headers.get('Authorization');
+    if (!auth) return new Response(JSON.stringify({ error: 'Missing authorization header' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+
+    const token = auth.replace('Bearer ', '');
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
+
+    const body = await req.json().catch(() => ({}));
+    const plan: Plan = body?.plan === 'annual' ? 'annual' : 'monthly';
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+
+    // Fetch current profile count for monthly pricing
+    const { data: profilesRows } = await supabase
+      .from('creator_profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('is_active', true);
+    const profileCount = Math.max(1, profilesRows?.length ?? 1);
+
+    const extraProfiles = Math.max(0, profileCount - INCLUDED_PROFILES);
+    const amountCents = plan === 'annual'
+      ? ANNUAL_CENTS
+      : BASE_MONTHLY_CENTS + extraProfiles * ADDON_PER_PROFILE_CENTS;
+
+    // Don't allow double-subscribe
+    const { data: profile } = await supabase.from('profiles')
+      .select('subscription_plan, subscription_period_end')
+      .eq('id', user.id).maybeSingle();
+    if (profile?.subscription_plan !== 'free') {
+      return new Response(JSON.stringify({ error: 'Already subscribed' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    }
+
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
+    const merchantReference = `sub_${plan}_${user.id}`;
+    const amountDecimal = (amountCents / 100).toFixed(2);
+
+    const fields: Record<string, string> = {
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
+      AmountTotal: amountDecimal,
+      CurrencyID: 'USD',
+      'ItemName[0]': plan === 'annual' ? 'Exclu Pro Annual' : 'Exclu Pro Monthly',
+      'ItemQuantity[0]': '1',
+      'ItemAmount[0]': amountDecimal,
+      'ItemDesc[0]': plan === 'annual'
+        ? 'Pro Annual subscription — 0% commission, unlimited profiles'
+        : `Pro Monthly — 0% commission, ${profileCount} profile(s)`,
+      AmountShipping: '0.00',
+      ShippingRequired: 'false',
+      MembershipRequired: 'false',
+      // CRITICAL: tags this TID as rebill-eligible at the UG gateway. Without
+      // this, future /recurringtransactions calls against this TID may be
+      // rejected. Confirmed required per QuickPay doc §QUICKPAY FIELDS and
+      // DirectSale doc §SaleTransactions ("isInitialForRecurring mandatory").
+      IsInitialForRecurring: 'true',
+      ApprovedURL: `${siteUrl}/app?subscription=success`,
+      ConfirmURL: `${siteUrl}/api/ugp-confirm`,
+      DeclinedURL: `${siteUrl}/app?subscription=failed`,
+      MerchantReference: merchantReference,
+      Email: user.email ?? '',
+    };
+
+    return new Response(JSON.stringify({ fields, amountCents, plan, mid: midKey }), { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+  } catch (err) {
+    console.error('create-creator-subscription error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to start checkout' }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } });
+  }
+});
+```
+
+- [ ] **Step 2: Deploy + smoke test**
+
+```bash
+supabase functions deploy create-creator-subscription --linked
+```
+
+Trigger from the Profile settings UI (once Task 4.7 is done) and confirm the returned `fields.MerchantReference` is `sub_monthly_<uuid>` or `sub_annual_<uuid>`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/create-creator-subscription/index.ts
+git commit -m "refactor(sub): creator Pro checkout as one-shot Sale"
+```
+
+---
+
+### Task 4.2 — Handle `sub_monthly_*` / `sub_annual_*` in ugp-confirm
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+
+Currently `handleSubscription` sets `is_creator_subscribed=true`. We rewrite it to populate the new schema.
+
+- [ ] **Step 1: Update the dispatcher**
+
+Find the switch statement in the handler (around line 131) and the MerchantReference parser. Extend to support `sub_monthly_*` and `sub_annual_*`:
+
+```ts
+function parseMerchantRef(ref: string): { type: string; id: string; subPlan?: 'monthly' | 'annual' } | null {
+  if (!ref) return null;
+  // sub_monthly_<uuid> or sub_annual_<uuid> or sub_<uuid> (legacy)
+  const subMatch = ref.match(/^sub_(monthly|annual)_(.+)$/);
+  if (subMatch) return { type: 'sub', subPlan: subMatch[1] as 'monthly' | 'annual', id: subMatch[2] };
+  // fall back to legacy sub_<uuid>
+  const idx = ref.indexOf('_');
+  if (idx === -1) return null;
+  return { type: ref.slice(0, idx), id: ref.slice(idx + 1) };
+}
+```
+
+Update `actionableStatesByType`: `sub` still accepts `Sale` (and `Recurring` for rebills — see Task 4.5).
+
+- [ ] **Step 2: Rewrite `handleSubscription`**
+
+```ts
+async function handleSubscription(userId: string, body: Record<string, string>, subPlan: 'monthly' | 'annual' = 'monthly') {
+  const { data: profile } = await supabase.from('profiles')
+    .select('id, subscription_plan')
+    .eq('id', userId).single();
+  if (!profile) {
+    console.error('Profile not found for subscription:', userId);
+    return;
+  }
+
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+  const now = new Date();
+  const periodEnd = new Date(now);
+  if (subPlan === 'annual') periodEnd.setUTCDate(periodEnd.getUTCDate() + 365);
+  else periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
+
+  // MID: infer from SiteID (the incoming callback carries it)
+  const siteIdFromCallback = body.SiteID || '';
+  const intlSite = Deno.env.get('QUICKPAY_SITE_ID_INTL_3D') || '';
+  const us2dSite = Deno.env.get('QUICKPAY_SITE_ID_US_2D') || '';
+  const mid = siteIdFromCallback === us2dSite ? 'us_2d' : 'intl_3d';
+
+  await supabase.from('profiles').update({
+    is_creator_subscribed: true,
+    subscription_plan: subPlan,
+    subscription_ugp_transaction_id: body.TransactionID || null,
+    subscription_mid: mid,
+    subscription_amount_cents: amountCents,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: periodEnd.toISOString(),
+    subscription_cancel_at_period_end: false,
+    subscription_suspended_at: null,
+    show_join_banner: false,
+    show_certification: true,
+    show_deeplinks: true,
+    show_available_now: true,
+  }).eq('id', userId);
+
+  await creditReferralCommission(userId);
+
+  console.log(`Creator sub activated: ${userId} plan=${subPlan} amount=${amountCents} period_end=${periodEnd.toISOString()}`);
+}
+```
+
+Update the dispatcher call: `await handleSubscription(parsed.id, body, parsed.subPlan ?? 'monthly');`
+
+- [ ] **Step 3: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-confirm --linked
+git add supabase/functions/ugp-confirm/index.ts
+git commit -m "feat(sub): store TID + plan + MID on new creator sub activation"
+```
+
+---
+
+### Task 4.3 — Rebill cron edge function
+
+**Files:**
+- Create: `supabase/functions/rebill-subscriptions/index.ts`
+- Create: `supabase/functions/rebill-subscriptions/config.toml`
+
+- [ ] **Step 1: Write config.toml**
+
+```toml
+# supabase/functions/rebill-subscriptions/config.toml
+verify_jwt = false
+```
+
+- [ ] **Step 2: Write the function**
+
+```ts
+// supabase/functions/rebill-subscriptions/index.ts
+//
+// Daily cron: finds creator subs and fan subs whose period ends today or
+// earlier, rebills them via /recurringtransactions on the MID used for the
+// original Sale, and updates state accordingly.
+//
+// Auth: requires Authorization: Bearer <REBILL_CRON_SECRET>
+
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getMidCredentials } from '../_shared/ugRouting.ts';
+import { rebillTransaction } from '../_shared/ugRebill.ts';
+
+const supabaseUrl = Deno.env.get('PROJECT_URL')!;
+const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!;
+const cronSecret = Deno.env.get('REBILL_CRON_SECRET');
+
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_DAYS = [0, 3, 4]; // total ~7 days across 3 attempts
+const BASE_MONTHLY_CENTS = 3999;    // $39.99
+const ADDON_PER_PROFILE_CENTS = 1000;
+const INCLUDED_PROFILES = 2;
+const ANNUAL_CENTS = 23999;         // $239.99
+
+async function computeCreatorMonthlyAmount(userId: string): Promise<number> {
+  const { data: profiles } = await supabase.from('creator_profiles')
+    .select('id').eq('user_id', userId).eq('is_active', true);
+  const count = Math.max(1, profiles?.length ?? 1);
+  const extras = Math.max(0, count - INCLUDED_PROFILES);
+  return BASE_MONTHLY_CENTS + extras * ADDON_PER_PROFILE_CENTS;
+}
+
+async function rebillCreatorSubscription(creator: any): Promise<void> {
+  const mid = creator.subscription_mid as 'us_2d' | 'intl_3d' | null;
+  const tid = creator.subscription_ugp_transaction_id as string | null;
+  if (!mid || !tid) {
+    console.error(`[rebill] creator ${creator.id}: missing mid or tid, skipping`);
+    return;
+  }
+
+  const plan = creator.subscription_plan as 'monthly' | 'annual';
+  const amount = plan === 'annual'
+    ? ANNUAL_CENTS
+    : await computeCreatorMonthlyAmount(creator.id);
+
+  const creds = getMidCredentials(mid);
+
+  // ── Idempotency guard (D8 — UG does NOT dedupe /recurringtransactions)
+  //
+  // We compute a cycle bucket from the subscription_period_end date. A unique
+  // constraint on (subject_table, subject_id, cycle_bucket) on rebill_attempts
+  // ensures only one in-flight attempt per billing cycle. We INSERT with
+  // status='pending' BEFORE calling /recurringtransactions and skip on conflict.
+  // The row id is used as TrackingId so the async listener postback can
+  // correlate back (D9).
+  const cycleBucket = String(creator.subscription_period_end).slice(0, 10); // YYYY-MM-DD
+
+  const { data: attemptInsert, error: attemptInsertErr } = await supabase
+    .from('rebill_attempts')
+    .insert({
+      subject_table: 'profiles',
+      subject_id: creator.id,
+      ugp_mid: mid,
+      reference_transaction_id: tid,
+      amount_cents: amount,
+      cycle_bucket: cycleBucket,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (attemptInsertErr) {
+    // 23505 = unique_violation → another cron run is already working this cycle.
+    if ((attemptInsertErr as any).code === '23505') {
+      console.log(`[rebill] creator ${creator.id} cycle ${cycleBucket} already in flight, skipping`);
+      return;
+    }
+    throw attemptInsertErr;
+  }
+  const attemptId = (attemptInsert as any).id as string;
+
+  // Count REAL historical attempts (pending excluded — same as declined/error/transient)
+  const { count: priorFinal } = await supabase.from('rebill_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('subject_table', 'profiles').eq('subject_id', creator.id)
+    .neq('id', attemptId)
+    .in('status', ['declined', 'error']);
+  const attemptNumber = (priorFinal ?? 0) + 1;
+
+  // Pass TrackingId = attemptId so the listener postback echoes it back.
+  const result = await rebillTransaction(creds, tid, amount, attemptId);
+
+  await supabase.from('rebill_attempts').update({
+    attempt_number: attemptNumber,
+    status: result.classification,
+    ugp_response: result.raw,
+    ugp_transaction_id: result.transactionId,
+    reason_code: result.reasonCode,
+    message: result.message,
+    responded_at: new Date().toISOString(),
+  }).eq('id', attemptId);
+
+  if (result.success) {
+    const now = new Date();
+    const nextEnd = new Date(now);
+    if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+    else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+    // The actual wallet credit happens in Task 8.3 Step 4 (extended ledger
+    // integration). Here we only advance the period after a successful rebill.
+    await supabase.from('profiles').update({
+      subscription_amount_cents: amount,
+      subscription_period_start: now.toISOString(),
+      subscription_period_end: nextEnd.toISOString(),
+      subscription_suspended_at: null,
+      // NEVER overwrite subscription_ugp_transaction_id — only the ORIGINAL Sale TID is rebillable.
+    }).eq('id', creator.id);
+    console.log(`[rebill] creator ${creator.id} accepted, next: ${nextEnd.toISOString()}`);
+    return;
+  }
+
+  // Transient failure (network / UG 5xx / Pending status) — do NOT count
+  // against the attempt cap. Just leave period_end untouched so next cron
+  // run tries again. We still log the attempt for observability.
+  if (result.classification === 'transient') {
+    console.warn(`[rebill] creator ${creator.id} transient failure, will retry next cron run`, result.message);
+    return;
+  }
+
+  // Real decline / error — retry N times, then suspend.
+  if (attemptNumber >= MAX_ATTEMPTS) {
+    await supabase.from('profiles').update({
+      is_creator_subscribed: false,
+      subscription_plan: 'free',
+      subscription_suspended_at: new Date().toISOString(),
+      show_certification: false,
+      show_deeplinks: false,
+      show_available_now: false,
+    }).eq('id', creator.id);
+    // TODO: send suspension email via Brevo helper — "Your Pro subscription
+    // couldn't be rebilled. Please update your card."
+    console.log(`[rebill] creator ${creator.id} suspended after ${attemptNumber} attempts`);
+    return;
+  }
+
+  // Schedule retry
+  const retryIn = RETRY_DELAY_DAYS[Math.min(attemptNumber, RETRY_DELAY_DAYS.length - 1)];
+  const nextTry = new Date(Date.now() + retryIn * 86400000);
+  await supabase.from('profiles').update({
+    subscription_period_end: nextTry.toISOString(),
+  }).eq('id', creator.id);
+  console.log(`[rebill] creator ${creator.id} retry scheduled for ${nextTry.toISOString()}`);
+}
+
+async function rebillFanSubscription(sub: any): Promise<void> {
+  const mid = sub.ugp_mid as 'us_2d' | 'intl_3d' | null;
+  const tid = sub.ugp_transaction_id as string | null;
+  if (!mid || !tid) {
+    console.error(`[rebill] fan sub ${sub.id}: missing mid or tid, skipping`);
+    return;
+  }
+  const amount = sub.price_cents as number; // grandfathered — locked at subscribe time
+  const creds = getMidCredentials(mid);
+
+  // Idempotency guard — same pattern as creator rebill (see D8).
+  const cycleBucket = String(sub.next_rebill_at).slice(0, 10);
+
+  const { data: attemptInsert, error: attemptInsertErr } = await supabase
+    .from('rebill_attempts')
+    .insert({
+      subject_table: 'fan_creator_subscriptions',
+      subject_id: sub.id,
+      ugp_mid: mid,
+      reference_transaction_id: tid,
+      amount_cents: amount,
+      cycle_bucket: cycleBucket,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (attemptInsertErr) {
+    if ((attemptInsertErr as any).code === '23505') {
+      console.log(`[rebill] fan sub ${sub.id} cycle ${cycleBucket} already in flight, skipping`);
+      return;
+    }
+    throw attemptInsertErr;
+  }
+  const attemptId = (attemptInsert as any).id as string;
+
+  const { count: priorFinal } = await supabase.from('rebill_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('subject_table', 'fan_creator_subscriptions').eq('subject_id', sub.id)
+    .neq('id', attemptId)
+    .in('status', ['declined', 'error']);
+  const attemptNumber = (priorFinal ?? 0) + 1;
+
+  const result = await rebillTransaction(creds, tid, amount, attemptId);
+
+  await supabase.from('rebill_attempts').update({
+    attempt_number: attemptNumber,
+    status: result.classification,
+    ugp_response: result.raw,
+    ugp_transaction_id: result.transactionId,
+    reason_code: result.reasonCode,
+    message: result.message,
+    responded_at: new Date().toISOString(),
+  }).eq('id', attemptId);
+
+  if (result.success) {
+    const now = new Date();
+    const nextEnd = new Date(now); nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+    await supabase.from('fan_creator_subscriptions').update({
+      period_start: now.toISOString(),
+      period_end: nextEnd.toISOString(),
+      next_rebill_at: nextEnd.toISOString(),
+      suspended_at: null,
+    }).eq('id', sub.id);
+    return;
+  }
+
+  // Transient failure — don't burn an attempt slot, just wait for the next cron.
+  if (result.classification === 'transient') {
+    console.warn(`[rebill] fan sub ${sub.id} transient failure, will retry next cron run`, result.message);
+    return;
+  }
+
+  if (attemptNumber >= MAX_ATTEMPTS) {
+    await supabase.from('fan_creator_subscriptions').update({
+      status: 'past_due',
+      suspended_at: new Date().toISOString(),
+    }).eq('id', sub.id);
+    // TODO: email the fan to update their card.
+    return;
+  }
+
+  const retryIn = RETRY_DELAY_DAYS[Math.min(attemptNumber, RETRY_DELAY_DAYS.length - 1)];
+  const next = new Date(Date.now() + retryIn * 86400000);
+  await supabase.from('fan_creator_subscriptions').update({
+    next_rebill_at: next.toISOString(),
+  }).eq('id', sub.id);
+}
+
+serve(async (req) => {
+  // Auth gate
+  const providedSecret = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
+  if (!cronSecret || providedSecret !== cronSecret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const now = new Date().toISOString();
+
+  // ── Creator subs ─────────────────────────────────────────────────
+  const { data: creators } = await supabase.from('profiles')
+    .select('id, subscription_plan, subscription_ugp_transaction_id, subscription_mid, subscription_period_end, subscription_cancel_at_period_end, subscription_suspended_at')
+    .in('subscription_plan', ['monthly', 'annual'])
+    .lte('subscription_period_end', now)
+    .is('subscription_suspended_at', null);
+
+  let creatorOk = 0, creatorFail = 0;
+  for (const c of creators ?? []) {
+    if (c.subscription_cancel_at_period_end) {
+      await supabase.from('profiles').update({
+        is_creator_subscribed: false,
+        subscription_plan: 'free',
+      }).eq('id', c.id);
+      continue;
+    }
+    try {
+      await rebillCreatorSubscription(c);
+      creatorOk++;
+    } catch (e) {
+      console.error('rebill creator error', c.id, e);
+      creatorFail++;
+    }
+  }
+
+  // ── Fan subs ─────────────────────────────────────────────────────
+  // NB: extra select fields needed by Task 8.3 Step 4 (ledger credit per cycle).
+  // Also pull the creator_profile so we can skip subs whose creator has
+  // disabled fan subscriptions or whose profile was deactivated mid-cycle.
+  const { data: fanSubs } = await supabase.from('fan_creator_subscriptions')
+    .select(`
+      id, fan_id, creator_user_id, creator_profile_id, ugp_transaction_id, ugp_mid,
+      price_cents, next_rebill_at, cancel_at_period_end,
+      creator_profile:creator_profiles!fan_creator_subscriptions_creator_profile_id_fkey(
+        is_active, fan_subscription_enabled
+      )
+    `)
+    .eq('status', 'active')
+    .lte('next_rebill_at', now)
+    .is('suspended_at', null);
+
+  let fanOk = 0, fanFail = 0, fanSkipped = 0;
+  for (const s of fanSubs ?? []) {
+    if (s.cancel_at_period_end) {
+      await supabase.from('fan_creator_subscriptions').update({ status: 'cancelled' }).eq('id', s.id);
+      continue;
+    }
+    // Creator took down their sub feature or deactivated the profile → skip
+    // the rebill (their intent is "no more subs"). Mark the sub cancelled so
+    // the fan doesn't keep seeing "active" in their dashboard.
+    const creatorProfile = (s as any).creator_profile;
+    if (!creatorProfile?.is_active || !creatorProfile?.fan_subscription_enabled) {
+      await supabase.from('fan_creator_subscriptions')
+        .update({ status: 'cancelled', cancel_at_period_end: true, cancelled_at: new Date().toISOString() })
+        .eq('id', s.id);
+      fanSkipped++;
+      continue;
+    }
+    try {
+      await rebillFanSubscription(s);
+      fanOk++;
+    } catch (e) {
+      console.error('rebill fan sub error', s.id, e);
+      fanFail++;
+    }
+  }
+
+  return new Response(JSON.stringify({ creatorOk, creatorFail, fanOk, fanFail, fanSkipped }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
+```
+
+- [ ] **Step 3: Provision secret**
+
+```bash
+openssl rand -hex 32 | pbcopy
+supabase secrets set REBILL_CRON_SECRET=<paste>
+vercel env add REBILL_CRON_SECRET production preview development   # same value
+```
+
+- [ ] **Step 4: Deploy**
+
+```bash
+supabase functions deploy rebill-subscriptions --linked
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add supabase/functions/rebill-subscriptions/
+git commit -m "feat(sub): rebill cron for creator Pro + fan subs"
+```
+
+---
+
+### Task 4.4 — Vercel cron entrypoint
+
+**Files:**
+- Create: `api/cron/rebill-subscriptions.ts`
+- Modify: `vercel.json`
+
+- [ ] **Step 1: Write the entrypoint**
+
+```ts
+// api/cron/rebill-subscriptions.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+const SUPABASE_FN_URL = 'https://qexnwezetjlbwltyccks.supabase.co/functions/v1/rebill-subscriptions';
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Vercel signs cron invocations with a header matching CRON_SECRET
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const r = await fetch(SUPABASE_FN_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.REBILL_CRON_SECRET}`,
+      'apikey': process.env.SUPABASE_ANON_KEY ?? '',
+    },
+  });
+  const body = await r.text();
+  res.status(r.status).setHeader('Content-Type', 'application/json').send(body);
+}
+```
+
+- [ ] **Step 2: Register the cron in vercel.json**
+
+```json
+"crons": [
+  { "path": "/api/cron/drain-campaigns", "schedule": "* * * * *" },
+  { "path": "/api/cron/rebill-subscriptions", "schedule": "0 8 * * *" }
+]
+```
+
+(Runs every day at 08:00 UTC.)
+
+- [ ] **Step 3: Set `CRON_SECRET` in Vercel (Vercel auto-signs cron calls with this)**
+
+```bash
+vercel env add CRON_SECRET production preview development
+# Enter a value (e.g., the output of `openssl rand -hex 32`)
+```
+
+- [ ] **Step 4: Smoke test locally**
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/rebill-subscriptions
+```
+
+Expected: JSON `{ "creatorOk": 0, ... }` (if no subs are due).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/cron/rebill-subscriptions.ts vercel.json
+git commit -m "feat(cron): daily trigger for rebill-subscriptions"
+```
+
+---
+
+### Task 4.5 — Handle `state=Recurring` postbacks in `ugp-listener` (NOT `ugp-confirm`)
+
+**⚠️ Architectural correction (Derek 2026-04-20 afternoon):** `ConfirmURL` is never invoked for server-initiated rebills. The HTTP callback for every `/recurringtransactions` success or failure arrives at the **`ListenerURL`** (`https://exclu.at/api/ugp-listener`) — same endpoint that already receives Refund / Chargeback / Void / Capture / CBK1. The initial Sale synchronous response is still our primary source of truth (we write to DB from there); the listener is the reconciliation / observability channel.
+
+Concretely, for any successful rebill we will receive the body below at our listener (Derek's example):
+
+```
+POST https://exclu.at/api/ugp-listener
+Content-Type: application/x-www-form-urlencoded
+
+TrackingId=34
+MerchantReference=34
+OMerchantReference=34
+ReferenceTransactionId=25990692
+CurrencyID=USD
+MemberId=18975710
+Amount=2.000000
+TransactionID=26033255
+TransactionState=Recurring
+TransactionStatus=Successful
+SiteID=77815
+CustomerEmail=...
+CustomerCountry=US
+```
+
+Fields of interest for us: `TrackingId` (we pass `rebill_attempts.id`, get it back), `ReferenceTransactionId` (original Sale TID we rebilled against), `TransactionID` (the NEW rebill TID — this is what `/refundtransactions` would target for a dispute on this specific charge), `TransactionState`, `TransactionStatus`, `Amount`.
+
+**Files:**
+- Modify: `supabase/functions/ugp-listener/index.ts`
+- Modify: `supabase/functions/ugp-confirm/index.ts` (REMOVE the wrong Recurring handling introduced in earlier drafts)
+
+- [ ] **Step 1: Remove any Recurring handling from `ugp-confirm`**
+
+Open `supabase/functions/ugp-confirm/index.ts`. The `actionableStatesByType` map must NOT list Recurring — a Recurring state cannot legitimately arrive on this endpoint. Keep it narrow:
+
+```ts
+const actionableStatesByType: Record<string, ReadonlySet<string>> = {
+  link: new Set(['Sale']),
+  tip:  new Set(['Sale']),
+  gift: new Set(['Sale']),
+  req:  new Set(['Authorize']),
+  sub:  new Set(['Sale']),   // initial Sale only; rebills go to listener
+  fsub: new Set(['Sale']),   // initial Sale only; rebills go to listener
+};
+```
+
+If a Recurring callback ever hits this endpoint (edge case: bug in UG or MID misconfig), log + mark `payment_events.processed=true` with `processing_result='unexpected-recurring-on-confirm'` and return 200.
+
+- [ ] **Step 2: Extend `ugp-listener` switch with `Recurring`**
+
+Edit `supabase/functions/ugp-listener/index.ts`:
+
+```ts
+switch (transactionState) {
+  case 'Refund':     await handleRefund(transactionId, merchantRef, amount); break;
+  case 'Chargeback':
+  case 'CBK1':       await handleChargeback(transactionId, merchantRef, amount); break;
+  case 'Void':       await handleVoid(transactionId, merchantRef); break;
+  case 'Capture':    await handleCapture(transactionId, merchantRef, amount); break;
+  case 'Recurring':  await handleRecurring(body); break;   // NEW
+  case 'Sale':       await handleListenerSale(body); break; // NEW — safety-net for Sales that bypassed ConfirmURL
+  default:           console.warn('Unknown listener TransactionState:', transactionState);
+}
+```
+
+- [ ] **Step 3: Implement `handleRecurring`**
+
+```ts
+// Inside ugp-listener/index.ts
+async function handleRecurring(body: Record<string, string>) {
+  const trackingId = body.TrackingId || '';
+  const transactionStatus = body.TransactionStatus || '';
+  const rebillTid = body.TransactionID || '';
+  const referenceTid = body.ReferenceTransactionId || '';
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+
+  // Correlate back to our rebill_attempts row via TrackingId (we passed it as rebill_attempts.id)
+  let attempt: any = null;
+  if (trackingId) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('id', trackingId)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  // Fallback: no TrackingId echoed (shouldn't happen per Derek but be robust) —
+  // find the most recent pending attempt for this reference_transaction_id.
+  if (!attempt && referenceTid) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('reference_transaction_id', referenceTid)
+      .in('status', ['pending', 'success'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  if (!attempt) {
+    console.error('handleRecurring: no rebill_attempts match for TrackingId=%s ref=%s', trackingId, referenceTid);
+    return;
+  }
+
+  // Idempotent: only advance state if we don't already have a successful outcome logged
+  const isSuccessful = (transactionStatus === 'Successful' || transactionStatus === 'Approved');
+  const finalStatus = isSuccessful ? 'success' : 'declined';
+
+  // Update the attempt row (may already be 'success' from sync response — OK, we re-affirm)
+  await supabase.from('rebill_attempts').update({
+    status: finalStatus,
+    ugp_transaction_id: rebillTid || attempt.ugp_transaction_id,
+    listener_confirmed_at: new Date().toISOString(),
+  }).eq('id', attempt.id);
+
+  if (!isSuccessful) {
+    // Retry / suspension logic is owned by the cron on next run; here we only
+    // record the listener confirmation. The cron inspects rebill_attempts and
+    // decides whether to schedule another attempt.
+    console.log('handleRecurring: decline recorded for attempt', attempt.id);
+    return;
+  }
+
+  // Advance subscription period end if the sync path failed to do so
+  // (it did write, but we might have hit an error between the API response and
+  // the DB update — this is the safety net).
+  if (attempt.subject_table === 'profiles') {
+    const { data: creator } = await supabase.from('profiles')
+      .select('subscription_plan, subscription_period_end')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (creator && creator.subscription_period_end && new Date(creator.subscription_period_end) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now);
+      if (creator.subscription_plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+      else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('profiles').update({
+        subscription_amount_cents: amountCents,
+        subscription_period_start: now.toISOString(),
+        subscription_period_end: nextEnd.toISOString(),
+        subscription_suspended_at: null,
+      }).eq('id', attempt.subject_id);
+      console.log('handleRecurring: advanced subscription_period_end for', attempt.subject_id);
+    }
+  } else if (attempt.subject_table === 'fan_creator_subscriptions') {
+    const { data: sub } = await supabase.from('fan_creator_subscriptions')
+      .select('next_rebill_at')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (sub && sub.next_rebill_at && new Date(sub.next_rebill_at) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now); nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('fan_creator_subscriptions').update({
+        period_start: now.toISOString(),
+        period_end: nextEnd.toISOString(),
+        next_rebill_at: nextEnd.toISOString(),
+        suspended_at: null,
+      }).eq('id', attempt.subject_id);
+    }
+  }
+
+  // Wallet credit for the creator — the rebill Sale just captured funds.
+  // This call MUST be idempotent against (attempt.id) so we don't double-credit.
+  // Implementation lives in the ledger helper from Task 8.3.
+  // (For MVP before Task 8 ships, we skip the credit here and only do it from
+  //  the sync response in the cron. The listener is reconciliation-only until
+  //  Task 8.3 wires the ledger through.)
+}
+
+async function handleListenerSale(body: Record<string, string>) {
+  // Safety-net only — Sales are normally handled by ConfirmURL. If a Sale
+  // arrives here with a matching MerchantReference in payment_events already
+  // marked processed, do nothing. Otherwise insert + log for admin alerting.
+  const transactionId = body.TransactionID || '';
+  const { data: existing } = await supabase.from('payment_events')
+    .select('id, processed')
+    .eq('transaction_id', transactionId)
+    .maybeSingle();
+  if (existing?.processed) return;
+  // If unprocessed: ConfirmURL may have failed. Log to payment_events so the
+  // reconciliation cron (Task 8.x) picks it up.
+  await supabase.from('payment_events').insert({
+    transaction_id: `listener_${transactionId}_Sale`,
+    merchant_reference: body.MerchantReference || '',
+    amount_decimal: body.Amount || '0',
+    transaction_state: 'Sale',
+    customer_email: body.CustomerEmail || null,
+    raw_payload: body,
+    processed: false,
+    processing_error: 'listener-sale-without-confirm — reconcile',
+  }).onConflict('transaction_id').ignoreDuplicates();
+}
+```
+
+- [ ] **Step 4: Deploy + commit**
+
+The `listener_confirmed_at` column + `rebill_attempts_listener_pending_idx` index used by this task are already defined in migration `167_rebill_attempts.sql` (Task 0.4). No additional migration required here.
+
+```bash
+supabase functions deploy ugp-confirm --linked
+supabase functions deploy ugp-listener --linked
+
+git add supabase/functions/ugp-listener/index.ts supabase/functions/ugp-confirm/index.ts
+git commit -m "feat(listener): handle Recurring postbacks for rebills + Sale safety-net"
+```
+
+---
+
+### Task 4.6 — Handle failed rebills (email notifications)
+
+**Files:**
+- Create: `supabase/functions/_shared/rebillEmails.ts`
+- Modify: `supabase/functions/rebill-subscriptions/index.ts`
+
+- [ ] **Step 1: Write email helpers**
+
+```ts
+// supabase/functions/_shared/rebillEmails.ts
+import { sendBrevoEmail, formatUSD } from './brevo.ts';
+const siteUrl = Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at';
+
+export async function emailRebillFailedRetry(toEmail: string, name: string, amountCents: number, attempt: number, nextAttemptAt: Date) {
+  return sendBrevoEmail({
+    to: toEmail,
+    subject: `⚠️ Subscription renewal couldn't be charged (attempt ${attempt})`,
+    htmlContent: `<p>Hi ${name},</p>
+      <p>Your Exclu Pro subscription renewal for ${formatUSD(amountCents)} could not be charged on your card. We'll try again on ${nextAttemptAt.toUTCString()}.</p>
+      <p>If you've changed cards recently, please update your payment method in <a href="${siteUrl}/app/settings">Settings</a>.</p>`,
+  });
+}
+
+export async function emailRebillSuspended(toEmail: string, name: string, amountCents: number) {
+  return sendBrevoEmail({
+    to: toEmail,
+    subject: `Your Exclu Pro subscription has been paused`,
+    htmlContent: `<p>Hi ${name},</p>
+      <p>After 3 failed attempts to renew your Pro subscription (${formatUSD(amountCents)}), we've paused your plan. Your Pro features are temporarily disabled until you resubscribe.</p>
+      <p><a href="${siteUrl}/pricing">Reactivate my Pro plan</a></p>`,
+  });
+}
+
+export async function emailFanSubSuspended(toEmail: string, creatorName: string, amountCents: number) {
+  return sendBrevoEmail({
+    to: toEmail,
+    subject: `Your subscription to ${creatorName} has been paused`,
+    htmlContent: `<p>We couldn't renew your ${formatUSD(amountCents)}/month subscription to ${creatorName}. Your access is paused until you update your payment method.</p>
+      <p><a href="${siteUrl}/fan/subscriptions">Manage my subscriptions</a></p>`,
+  });
+}
+```
+
+- [ ] **Step 2: Wire into rebill-subscriptions**
+
+In `rebillCreatorSubscription`:
+
+```ts
+// On retry scheduled:
+const { data: authUser } = await supabase.auth.admin.getUserById(creator.id);
+if (authUser?.user?.email) {
+  await emailRebillFailedRetry(authUser.user.email, /*name*/ '', amount, attemptNumber, nextTry);
+}
+
+// On suspension:
+await emailRebillSuspended(authUser.user.email, '', amount);
+```
+
+Same pattern in `rebillFanSubscription`.
+
+- [ ] **Step 3: Deploy + commit**
+
+```bash
+supabase functions deploy rebill-subscriptions --linked
+git add supabase/functions/_shared/rebillEmails.ts supabase/functions/rebill-subscriptions/index.ts
+git commit -m "feat(sub): email notifications on rebill retry + suspension"
+```
+
+---
+
+### Task 4.7 — Settings PlanManagement UI
+
+**Files:**
+- Create: `src/components/settings/PlanManagement.tsx`
+- Modify: `src/pages/Profile.tsx` (find the settings subscription section)
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// src/components/settings/PlanManagement.tsx
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { QuickPayForm } from '@/components/payment/QuickPayForm';
+
+interface SubState {
+  plan: 'free' | 'monthly' | 'annual';
+  amount_cents: number | null;
+  period_end: string | null;
+  cancel_at_period_end: boolean;
+}
+
+export function PlanManagement() {
+  const [sub, setSub] = useState<SubState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pendingFields, setPendingFields] = useState<Record<string, string> | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      const { data } = await supabase.from('profiles')
+        .select('subscription_plan, subscription_amount_cents, subscription_period_end, subscription_cancel_at_period_end')
+        .eq('id', user.id).maybeSingle();
+      if (data) setSub({
+        plan: data.subscription_plan,
+        amount_cents: data.subscription_amount_cents,
+        period_end: data.subscription_period_end,
+        cancel_at_period_end: data.subscription_cancel_at_period_end,
+      });
+    });
+  }, []);
+
+  const startCheckout = async (plan: 'monthly' | 'annual') => {
+    setBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('create-creator-subscription', {
+        body: { plan, country: null /* UI will prompt later via PreCheckoutGate */ },
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (error) throw error;
+      setPendingFields((data as any).fields);
+    } catch (e: any) {
+      toast.error(e?.message || 'Unable to start checkout');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelAtEnd = async () => {
+    if (!confirm('Cancel at end of period? You keep Pro until then.')) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.functions.invoke('cancel-creator-subscription', {
+      headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+    });
+    if (error) return toast.error('Cancellation failed');
+    toast.success('Your subscription will end on ' + sub?.period_end?.slice(0,10));
+  };
+
+  if (!sub) return null;
+
+  if (pendingFields) {
+    return <QuickPayForm fields={pendingFields} />; // existing component auto-submits
+  }
+
+  if (sub.plan === 'free') {
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        <Button variant="hero" onClick={() => startCheckout('monthly')} disabled={busy}>
+          Start Monthly — $39.99/mo
+        </Button>
+        <Button variant="outline" onClick={() => startCheckout('annual')} disabled={busy}>
+          Start Annual — $239.99/yr
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-lg font-bold">{sub.plan === 'annual' ? 'Pro Annual' : 'Pro Monthly'}</h3>
+        <span className="text-sm text-muted-foreground">
+          {sub.amount_cents ? `$${(sub.amount_cents / 100).toFixed(2)}` : '—'} • renews {sub.period_end?.slice(0, 10)}
+        </span>
+      </div>
+      {!sub.cancel_at_period_end ? (
+        <Button variant="outline" onClick={cancelAtEnd}>Cancel at end of period</Button>
+      ) : (
+        <p className="text-sm text-amber-400">Your plan will end on {sub.period_end?.slice(0, 10)}. No further charges.</p>
+      )}
+      {sub.plan === 'monthly' && (
+        <Button variant="ghost" onClick={() => navigate('/pricing')}>
+          Switch to Annual (save 50%)
+        </Button>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Mount in Profile settings**
+
+In `src/pages/Profile.tsx`, find the "Subscription" / "Premium" section and replace with `<PlanManagement />`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/settings/PlanManagement.tsx src/pages/Profile.tsx
+git commit -m "feat(settings): new PlanManagement UI with Monthly/Annual selection"
+```
+
+---
+
+### Task 4.8 — Refactor cancel-creator-subscription to flag-based
+
+**Files:**
+- Modify: `supabase/functions/cancel-creator-subscription/index.ts`
+
+Instead of calling the QuickPay cancel endpoint, simply flip `subscription_cancel_at_period_end = true`. The cron handles the actual downgrade when `period_end` elapses.
+
+- [ ] **Step 1: Rewrite**
+
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const sbUrl = Deno.env.get('PROJECT_URL')!;
+const sbKey = Deno.env.get('SERVICE_ROLE_KEY')!;
+const sb = createClient(sbUrl, sbKey);
+
+serve(async (req) => {
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+  const auth = req.headers.get('Authorization') || '';
+  const { data: { user }, error } = await sb.auth.getUser(auth.replace('Bearer ', ''));
+  if (error || !user) return new Response('Unauthorized', { status: 401 });
+
+  await sb.from('profiles').update({
+    subscription_cancel_at_period_end: true,
+  }).eq('id', user.id);
+
+  return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+});
+```
+
+- [ ] **Step 2: Deploy + commit**
+
+```bash
+supabase functions deploy cancel-creator-subscription --linked
+git add supabase/functions/cancel-creator-subscription/index.ts
+git commit -m "refactor(sub): cancel creator sub via cancel_at_period_end flag"
+```
+
+---
+
+### Task 4.9 — Migrate existing `plan 11027` subscribers
+
+**Files:**
+- Create: `scripts/migrate-legacy-creator-subs.ts`
+
+Per Derek (2026-04-20), the migration is a **two-step operation per creator**:
+
+1. **Cancel the UG-side plan enrollment** (so UG stops its own $39 auto-rebill via `ugp-membership-confirm`). This uses the existing `cancel-creator-subscription` edge function — which posts to `https://quickpay.ugpayments.ch/Cancel` — OR we can issue the same POST in bulk from this script using the service role. Cancelling the plan does **NOT** break the ability to rebill the original Sale TID via `/recurringtransactions`.
+2. **Record the original Sale TID + MID** on `profiles` so the new rebill cron (Task 4.5) picks it up. **Only use the ORIGINAL Sale TID — never a Rebill TID.** Derek was explicit: rebilled TIDs do not work with `/recurringtransactions`.
+
+The script is idempotent — re-running it is safe as long as `subscription_ugp_transaction_id IS NULL`.
+
+- [ ] **Step 1: Write the script**
+
+```ts
+// scripts/migrate-legacy-creator-subs.ts
+//
+// For every creator still on legacy plan 11027:
+//   1. Look up their initial Sale event from `payment_events`
+//      (state=Sale, prefix sub_<user_id>) — this is the TID we'll rebill.
+//   2. Cancel their plan 11027 enrollment on UG so UG stops auto-rebilling.
+//   3. Write subscription_ugp_transaction_id + subscription_mid on profiles.
+//
+// Idempotent — safe to re-run; a creator with subscription_ugp_transaction_id
+// already set is skipped.
+
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const sb = createClient('https://qexnwezetjlbwltyccks.supabase.co', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+const QUICKPAY_TOKEN = Deno.env.get('QUICKPAY_TOKEN')!; // still the INTL_3D token
+const QUICKPAY_SITE_ID = Deno.env.get('QUICKPAY_SITE_ID') ?? '98845';
+
+async function cancelUgPlan(username: string) {
+  // Same shape as cancel-creator-subscription's Cancel form POST.
+  const body = new URLSearchParams({
+    QuickpayToken: QUICKPAY_TOKEN,
+    username,
+    SiteID: QUICKPAY_SITE_ID,
+  });
+  const res = await fetch('https://quickpay.ugpayments.ch/Cancel', { method: 'POST', body });
+  if (!res.ok) throw new Error(`UG cancel failed: ${res.status} ${await res.text()}`);
+}
+
+const { data: subs } = await sb.from('profiles')
+  .select('id, subscription_plan, subscription_ugp_transaction_id, subscription_ugp_username, is_creator_subscribed')
+  .eq('is_creator_subscribed', true)
+  .is('subscription_ugp_transaction_id', null);
+
+console.log('Migrating', subs?.length, 'creators');
+
+for (const s of subs ?? []) {
+  // 1) Find the initial Sale event (ORIGINAL TID only — Rebill events are skipped).
+  const { data: event } = await sb.from('payment_events')
+    .select('transaction_id, raw_payload, processed, transaction_state, created_at')
+    .eq('merchant_reference', `sub_${s.id}`)
+    .eq('transaction_state', 'Sale')
+    .eq('processed', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!event?.transaction_id) {
+    console.log('❌ no initial Sale event for', s.id);
+    continue;
+  }
+
+  // 2) Cancel the UG-side plan enrollment. Safe before the TID is moved to
+  //    /recurringtransactions — Derek confirmed this doesn't break rebillability.
+  const username = (s.subscription_ugp_username ?? s.id) as string;
+  try {
+    await cancelUgPlan(username);
+    console.log('   UG plan cancelled for', s.id);
+  } catch (err) {
+    console.error(`   UG cancel failed for ${s.id}:`, err);
+    continue; // don't record TID if we couldn't cancel — we'd double-bill
+  }
+
+  // 3) Write the ORIGINAL Sale TID + MID on the profile.
+  const siteId = String((event.raw_payload as any)?.SiteID ?? '');
+  const us2dSite = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  const mid = siteId && us2dSite && siteId === us2dSite ? 'us_2d' : 'intl_3d';
+
+  await sb.from('profiles').update({
+    subscription_ugp_transaction_id: event.transaction_id,
+    subscription_mid: mid,
+    subscription_amount_cents: 3900, // legacy base; the new cron recomputes per cycle
+  }).eq('id', s.id);
+
+  console.log('✅', s.id, 'TID', event.transaction_id, 'MID', mid);
+}
+```
+
+- [ ] **Step 2: Dry-run in staging first**
+
+```bash
+# Run on a staging DB copy; verify UG cancel + TID recording flow end-to-end
+# on 1-2 real subscribers before touching prod.
+SUPABASE_SERVICE_ROLE_KEY=... QUICKPAY_TOKEN=... deno run -A scripts/migrate-legacy-creator-subs.ts
+```
+
+- [ ] **Step 3: Run on prod**
+
+```bash
+SUPABASE_SERVICE_ROLE_KEY=... QUICKPAY_TOKEN=... deno run -A scripts/migrate-legacy-creator-subs.ts
+```
+
+- [ ] **Step 4: Disable `chargeProfileAddons`**
+
+In `supabase/functions/ugp-membership-confirm/index.ts`, comment out the `await chargeProfileAddons(userId);` line. After step 3 UG no longer fires Rebill postbacks for plan 11027 (we've cancelled them), but we want the fallback path neutralised regardless.
+
+```bash
+supabase functions deploy ugp-membership-confirm --linked
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add scripts/migrate-legacy-creator-subs.ts supabase/functions/ugp-membership-confirm/index.ts
+git commit -m "feat(sub): migrate legacy plan 11027 subs to /recurringtransactions flow"
+```
+
+---
+
+## Phase 5 — Creator Pro Annual (0.5 day)
+
+### Task 5.1 — Annual logic already in place
+
+Task 4.1 already branches on `plan === 'annual'` for amount and Task 4.2 extends period_end by 365 days. Task 4.3 rebills annual subs with the $239.99 fixed amount. Task 4.7 lets the creator choose Annual at checkout.
+
+The only remaining work is the **profile cap**:
+
+**Files:**
+- Modify: `src/pages/CreateProfile.tsx`
+- Modify: `supabase/functions/create-fan-subscription-checkout/index.ts` (no, this is fan subs)
+
+- [ ] **Step 1: Add 50-profile cap in UI**
+
+In `CreateProfile.tsx`, before submitting a new profile, check the current count:
+
+```tsx
+const HARD_CAP = 50;
+if (profiles.length >= HARD_CAP) {
+  toast.error('You have reached the 50-profile limit. Contact support if you need more.');
+  return;
+}
+```
+
+- [ ] **Step 2: Enforce server-side** — add a check in the profile creation RPC (`create_creator_profile` or equivalent; find with `grep -rn "create_creator_profile\|creator_profiles.*insert" supabase/`)
+
+If it's RPC:
+```sql
+if (select count(*) from creator_profiles where user_id = p_user_id and is_active) >= 50 then
+  raise exception 'Profile cap reached';
+end if;
+```
+
+If it's direct insert in an Edge Function, add a count check before `.insert()`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/CreateProfile.tsx supabase/functions/<profile-creation-fn>/index.ts
+git commit -m "feat(sub): hard cap 50 profiles per account"
+```
+
+---
+
+## Phase 6 — Fan → Creator Subscriptions Refactor (1.5 days)
+
+### Task 6.1 — Refactor `create-fan-subscription-checkout`
+
+**Files:**
+- Modify: `supabase/functions/create-fan-subscription-checkout/index.ts`
+
+The current implementation (from the `feat/fan-subs-and-feed` branch) builds a QuickPay subscription form with `SubscriptionPlanId=QUICKPAY_FAN_SUB_PLAN_ID`. Derek confirmed this won't work — rewrite as one-shot Sale.
+
+- [ ] **Step 1: Rewrite to one-shot Sale**
+
+```ts
+// supabase/functions/create-fan-subscription-checkout/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
+
+const sbUrl = Deno.env.get('PROJECT_URL')!;
+const sbKey = Deno.env.get('SERVICE_ROLE_KEY')!;
+const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
+const sb = createClient(sbUrl, sbKey);
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok');
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+  const auth = req.headers.get('Authorization') ?? '';
+  const { data: { user } } = await sb.auth.getUser(auth.replace('Bearer ', ''));
+  if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const creatorProfileId = body?.creator_profile_id;
+  const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+  if (!creatorProfileId) return new Response(JSON.stringify({ error: 'Missing creator_profile_id' }), { status: 400 });
+
+  const { data: creatorProfile } = await sb.from('creator_profiles')
+    .select('id, user_id, fan_sub_price_cents, display_name')
+    .eq('id', creatorProfileId).maybeSingle();
+  if (!creatorProfile?.fan_sub_price_cents) return new Response(JSON.stringify({ error: 'Creator not accepting subs' }), { status: 400 });
+
+  const priceCents = creatorProfile.fan_sub_price_cents;
+
+  // Create the pending subscription row
+  const { data: subRow, error: insErr } = await sb.from('fan_creator_subscriptions').insert({
+    fan_id: user.id,
+    creator_profile_id: creatorProfile.id,
+    price_cents: priceCents,
+    status: 'pending',
+  }).select('id').single();
+  if (insErr) return new Response(JSON.stringify({ error: 'Insert failed' }), { status: 500 });
+
+  const midKey = routeMidForCountry(country);
+  const creds = getMidCredentials(midKey);
+  const amountDecimal = (priceCents / 100).toFixed(2);
+  const merchantReference = `fsub_${subRow.id}`;
+
+  const fields: Record<string, string> = {
+    QuickPayToken: creds.quickPayToken,
+    SiteID: creds.siteId,
+    AmountTotal: amountDecimal,
+    CurrencyID: 'USD',
+    'ItemName[0]': `Monthly subscription to ${creatorProfile.display_name}`,
+    'ItemQuantity[0]': '1',
+    'ItemAmount[0]': amountDecimal,
+    'ItemDesc[0]': 'Exclu fan subscription — monthly',
+    AmountShipping: '0.00',
+    ShippingRequired: 'false',
+    MembershipRequired: 'false',
+    // Same note as Task 4.1 — tags this TID as rebill-eligible. Mandatory
+    // because our cron will call /recurringtransactions on this TID every 30 days.
+    IsInitialForRecurring: 'true',
+    ApprovedURL: `${siteUrl}/fan/subscriptions?subscribed=${creatorProfile.id}`,
+    ConfirmURL: `${siteUrl}/api/ugp-confirm`,
+    DeclinedURL: `${siteUrl}/fan/subscriptions?failed=${creatorProfile.id}`,
+    MerchantReference: merchantReference,
+    Email: user.email ?? '',
+  };
+
+  return new Response(JSON.stringify({ fields, subscription_id: subRow.id }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
+```
+
+- [ ] **Step 2: Extend ugp-confirm handleFanSubscription**
+
+In `supabase/functions/ugp-confirm/index.ts`, update `handleFanSubscription` to store `ugp_transaction_id`, `ugp_mid`, `next_rebill_at`:
+
+```ts
+async function handleFanSubscription(subscriptionId: string, body: Record<string, string>) {
+  const { data: sub } = await supabase.from('fan_creator_subscriptions')
+    .select('id, status').eq('id', subscriptionId).maybeSingle();
+  if (!sub) return;
+  if (sub.status === 'active') return; // idempotent
+
+  const now = new Date();
+  const periodEnd = new Date(now); periodEnd.setUTCDate(periodEnd.getUTCDate() + 30);
+  const siteId = body.SiteID || '';
+  const intl = Deno.env.get('QUICKPAY_SITE_ID_INTL_3D') ?? '';
+  const us2d = Deno.env.get('QUICKPAY_SITE_ID_US_2D') ?? '';
+  const mid = siteId === us2d ? 'us_2d' : 'intl_3d';
+
+  await supabase.from('fan_creator_subscriptions').update({
+    status: 'active',
+    period_start: now.toISOString(),
+    period_end: periodEnd.toISOString(),
+    next_rebill_at: periodEnd.toISOString(),
+    started_at: now.toISOString(),
+    ugp_transaction_id: body.TransactionID || null,
+    ugp_mid: mid,
+    cancel_at_period_end: false,
+    suspended_at: null,
+  }).eq('id', subscriptionId);
+}
+```
+
+- [ ] **Step 3: Deploy + commit**
+
+```bash
+supabase functions deploy create-fan-subscription-checkout --linked
+supabase functions deploy ugp-confirm --linked
+git add supabase/functions/create-fan-subscription-checkout/index.ts supabase/functions/ugp-confirm/index.ts
+git commit -m "refactor(fan-sub): one-shot Sale + server-driven rebills"
+```
+
+---
+
+### Task 6.2 — `/fan/subscriptions` page
+
+**Files:**
+- Create: `src/pages/FanSubscriptions.tsx`
+- Modify: `src/App.tsx`
+- Modify: `vercel.json`
+
+- [ ] **Step 1: Write the page**
+
+```tsx
+// src/pages/FanSubscriptions.tsx
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
+
+type Row = {
+  id: string;
+  creator_handle: string | null;
+  creator_name: string | null;
+  price_cents: number;
+  period_end: string;
+  cancel_at_period_end: boolean;
+  status: string;
+};
+
+export default function FanSubscriptions() {
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { load(); }, []);
+
+  const load = async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from('fan_creator_subscriptions')
+      .select('id, price_cents, period_end, cancel_at_period_end, status, creator_profile:creator_profiles!inner(handle, display_name)')
+      .eq('fan_id', user.id)
+      .in('status', ['active', 'past_due', 'cancelled'])
+      .order('period_end', { ascending: false });
+    setRows((data ?? []).map((r: any) => ({
+      id: r.id,
+      creator_handle: r.creator_profile?.handle ?? null,
+      creator_name: r.creator_profile?.display_name ?? null,
+      price_cents: r.price_cents,
+      period_end: r.period_end,
+      cancel_at_period_end: r.cancel_at_period_end,
+      status: r.status,
+    })));
+    setLoading(false);
+  };
+
+  const cancel = async (id: string) => {
+    if (!confirm('Cancel at end of billing period? You keep access until then.')) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.functions.invoke('cancel-fan-subscription', {
+      body: { subscription_id: id },
+      headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+    });
+    if (error) return toast.error('Cancel failed');
+    toast.success('Will end on period close');
+    await load();
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold">My subscriptions</h1>
+      {loading && <p className="text-muted-foreground mt-4">Loading…</p>}
+      {!loading && rows.length === 0 && <p className="mt-4 text-muted-foreground">You're not subscribed to any creator yet.</p>}
+      <ul className="mt-6 space-y-3">
+        {rows.map((r) => (
+          <li key={r.id} className="rounded-xl border border-border bg-card p-4 flex items-center justify-between">
+            <div>
+              <Link to={`/${r.creator_handle}`} className="font-semibold hover:underline">{r.creator_name || r.creator_handle}</Link>
+              <p className="text-sm text-muted-foreground">${(r.price_cents/100).toFixed(2)}/mo • next charge {r.period_end.slice(0, 10)}</p>
+              {r.cancel_at_period_end && <p className="text-xs text-amber-400 mt-1">Ends on {r.period_end.slice(0, 10)}</p>}
+              {r.status === 'past_due' && <p className="text-xs text-red-400 mt-1">Payment failed — update your card</p>}
+            </div>
+            {r.status === 'active' && !r.cancel_at_period_end && (
+              <Button variant="outline" size="sm" onClick={() => cancel(r.id)}>Cancel</Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Add route in App.tsx**
+
+Find the routes block and add **before** the `/:handle` wildcard:
+
+```tsx
+<Route path="/fan/subscriptions" element={<FanSubscriptions />} />
+```
+
+- [ ] **Step 3: Add rewrite in vercel.json**
+
+```json
+{ "source": "/fan/subscriptions", "destination": "/index.html" }
+```
+
+Place **before** the `/:handle` rewrite.
+
+- [ ] **Step 4: Link from FanDashboard / settings**
+
+Find the fan settings section (Profile.tsx when `?role=fan` or `FanDashboard.tsx`) and add:
+```tsx
+<Link to="/fan/subscriptions" className="...">My subscriptions</Link>
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/pages/FanSubscriptions.tsx src/App.tsx vercel.json src/pages/FanDashboard.tsx
+git commit -m "feat(fan): /fan/subscriptions page with cancel"
+```
+
+---
+
+### Task 6.3 — Refactor `cancel-fan-subscription`
+
+**Files:**
+- Modify: `supabase/functions/cancel-fan-subscription/index.ts`
+
+Similar to Task 4.8 — flip a flag, don't call UG.
+
+- [ ] **Step 1: Rewrite**
+
+```ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const sb = createClient(Deno.env.get('PROJECT_URL')!, Deno.env.get('SERVICE_ROLE_KEY')!);
+
+serve(async (req) => {
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+  const { data: { user } } = await sb.auth.getUser((req.headers.get('Authorization') ?? '').replace('Bearer ', ''));
+  if (!user) return new Response('Unauthorized', { status: 401 });
+
+  const body = await req.json();
+  const subId = body?.subscription_id;
+  if (!subId) return new Response(JSON.stringify({ error: 'Missing subscription_id' }), { status: 400 });
+
+  // Authorize: fan must own the sub
+  const { data: sub } = await sb.from('fan_creator_subscriptions')
+    .select('id, fan_id, status').eq('id', subId).maybeSingle();
+  if (!sub || sub.fan_id !== user.id) return new Response('Forbidden', { status: 403 });
+  if (sub.status !== 'active') return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+
+  await sb.from('fan_creator_subscriptions').update({
+    cancel_at_period_end: true,
+  }).eq('id', subId);
+
+  return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+});
+```
+
+- [ ] **Step 2: Deploy + commit**
+
+```bash
+supabase functions deploy cancel-fan-subscription --linked
+git add supabase/functions/cancel-fan-subscription/index.ts
+git commit -m "refactor(fan-sub): cancel via cancel_at_period_end flag"
+```
+
+---
+
+### Task 6.4 — Mini sub status on creator public profile
+
+**Files:**
+- Modify: `src/pages/CreatorPublic.tsx` (locate the subscribe button)
+
+- [ ] **Step 1: Show active sub state on creator profile**
+
+When a logged-in fan views a creator who has fan subs enabled:
+- If fan has active sub → show "✓ Subscribed — ends <date>" with a small "Manage" link to `/fan/subscriptions`
+- Otherwise → show the "Subscribe for $X/mo" button
+
+Query:
+```ts
+const { data: mySub } = await supabase.from('fan_creator_subscriptions')
+  .select('id, status, period_end, cancel_at_period_end')
+  .eq('fan_id', user.id)
+  .eq('creator_profile_id', creatorProfile.id)
+  .in('status', ['active', 'past_due'])
+  .order('period_end', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/pages/CreatorPublic.tsx
+git commit -m "feat(creator): show subscription status on public profile"
+```
+
+---
+
+## Phase 7 — Cleanup & Hardening (1 day)
+
+### Task 7.1 — Remove legacy addon debit code
+
+**Files:**
+- Modify: `supabase/functions/ugp-membership-confirm/index.ts`
+
+Once all legacy 11027 subs have naturally expired or been migrated (Task 4.9), we can fully remove `chargeProfileAddons` and its dependencies.
+
+- [ ] **Step 1: Delete `chargeProfileAddons` and `addon_charges` references**
+
+Delete the function definition (lines ~209-270) and remove the call site (`if (action === 'Rebill') await chargeProfileAddons(userId);`).
+
+- [ ] **Step 2: Drop the `addon_charges` table (new migration 169)**
+
+```sql
+-- 169_drop_addon_charges.sql
+drop table if exists addon_charges;
+```
+
+- [ ] **Step 3: Deploy + commit**
+
+```bash
+supabase db push --linked
+supabase functions deploy ugp-membership-confirm --linked
+git add supabase/migrations/169_drop_addon_charges.sql supabase/functions/ugp-membership-confirm/index.ts
+git commit -m "chore(sub): drop legacy addon_charges + chargeProfileAddons"
+```
+
+---
+
+### Task 7.2 — Remove legacy env vars
+
+Once everything is migrated:
+
+- [ ] **Step 1: Remove from Supabase + Vercel**
+
+```bash
+supabase secrets unset QUICKPAY_TOKEN QUICKPAY_SITE_ID QUICKPAY_SUB_PLAN_ID QUICKPAY_FAN_SUB_PLAN_ID UGP_MERCHANT_ID UGP_API_BEARER_TOKEN --linked
+# Vercel: use dashboard or: vercel env rm <name> production preview development
+```
+
+- [ ] **Step 2: Remove from `payment-config.ts` + any code still referencing them**
+
+```bash
+grep -rn "QUICKPAY_SUB_PLAN_ID\|QUICKPAY_FAN_SUB_PLAN_ID\|PREMIUM_PRICE_CENTS" src/ supabase/
+```
+
+Clean each match.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/lib/payment-config.ts supabase/functions/
+git commit -m "chore: remove legacy QuickPay env vars"
+```
+
+---
+
+### Task 7.3 — Integration tests for ugp-confirm
+
+**Files:**
+- Create: `supabase/functions/ugp-confirm/handler.test.ts`
+
+A deferred want from the April 19 incident: confirm that our handler rejects `Verify` events and accepts only `Sale`/`Authorize`/`Recurring` per-type.
+
+- [ ] **Step 1: Write a Deno test**
+
+```ts
+// supabase/functions/ugp-confirm/handler.test.ts
+import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
+
+// We need to refactor index.ts to expose a pure handler function to test.
+// Sketch: extract the body of serve() into an exported `handle(req: Request): Promise<Response>`
+// and verify:
+//   - POST with TransactionState=Verify + MerchantReference=link_<uuid> returns 200
+//     AND does NOT credit the wallet (check via a mock supabase client)
+//   - POST with TransactionState=Sale + MerchantReference=sub_monthly_<uuid> updates the profile
+//   - POST with TransactionState=Recurring + MerchantReference=sub_monthly_<uuid> is a no-op
+
+Deno.test('Verify on link_ is a no-op', async () => {
+  // Mock Supabase client + call handle()
+  // ...
+  assertEquals(1, 1); // placeholder — task owner writes real assertions
+});
+```
+
+*(Task owner: extract handler to `handler.ts`, mock `createClient`, assert expected DB writes.)*
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add supabase/functions/ugp-confirm/handler.test.ts supabase/functions/ugp-confirm/handler.ts supabase/functions/ugp-confirm/index.ts
+git commit -m "test(confirm): integration tests for state filtering"
+```
+
+---
+
+### Task 7.4 — Admin monitoring dashboard for rebills
+
+**Files:**
+- Modify: `src/pages/AdminPayments.tsx` (or new `AdminRebills.tsx`)
+
+Add a section: "Recent rebill attempts" — last 50 from `rebill_attempts`, grouped by status, with counts of `success` / `declined` / `error` in the last 24h. (No dedicated card-expired bucket — Derek confirmed UG returns no uniform code; admins can click through to the issuer message per-row to triage.)
+
+- [ ] **Step 1: Add the query + card**
+
+```tsx
+// Inside AdminPayments.tsx
+const [stats, setStats] = useState<{ ok: number; declined: number; error: number } | null>(null);
+
+useEffect(() => {
+  supabase.from('rebill_attempts')
+    .select('status')
+    .gte('created_at', new Date(Date.now() - 86400000).toISOString())
+    .then(({ data }) => {
+      const out = { ok: 0, declined: 0, error: 0 };
+      for (const r of data ?? []) {
+        if (r.status === 'success') out.ok++;
+        else if (r.status === 'declined') out.declined++;
+        else out.error++;
+      }
+      setStats(out);
+    });
+}, []);
+
+// In render:
+{stats && (
+  <div className="mb-6 grid grid-cols-3 gap-3">
+    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Rebills 24h · OK</p><p className="text-xl font-bold text-green-400">{stats.ok}</p></div>
+    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Declined</p><p className="text-xl font-bold text-red-400">{stats.declined}</p></div>
+    <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Errors</p><p className="text-xl font-bold text-amber-400">{stats.error}</p></div>
+  </div>
+)}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/pages/AdminPayments.tsx
+git commit -m "feat(admin): 24h rebill stats"
+```
+
+---
+
+### Task 7.5 — CLAUDE.md updates
+
+**Files:**
+- Modify: `CLAUDE.md`
+
+- [ ] **Step 1: Update architecture section**
+
+Replace the "Flux de paiement" section with the new reality:
+- 2 MIDs (US/CA 2D + International 3D), routed by fan country
+- Creator subs: one-shot Sale at checkout, monthly/annual `/recurringtransactions` rebill cron
+- Fan subs: same pattern, variable amount per creator, grandfathered
+- Removed: `chargeProfileAddons`, `SubscriptionPlanId` usage, `QUICKPAY_FAN_SUB_PLAN_ID` env var
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add CLAUDE.md
+git commit -m "docs: update CLAUDE.md for payment pipeline refonte"
+```
+
+---
+
+## Phase 8 — Accounting Integrity & Reliability (2 days)
+
+> **Why this phase exists.** Phases 0–7 deliver the happy path. Phase 8 hardens the money flows so **every wallet credit / debit is auditable, idempotent, and gated on a real successful payment**. This is the phase that lets us confidently say: "If a charge didn't clear, the creator isn't credited and the fan doesn't get the content." It's the backbone of the creator/chatter stats reliability the user asked for.
+>
+> **Model:** introduce a single append-only ledger (`wallet_transactions`). Every mutation to `profiles.wallet_balance_cents` / `profiles.total_earned_cents` / `profiles.chatter_earnings_cents` goes through one SECURITY DEFINER RPC so the running totals and the ledger can never disagree. Every other flow (tips / links / gifts / requests / subs / payouts / refunds / chargebacks) just inserts the right ledger row — the trigger keeps the balances in sync.
+
+### Task 8.1 — Migration 170: `wallet_transactions` ledger
+
+**Files:**
+- Create: `supabase/migrations/170_wallet_ledger.sql`
+
+Append-only source of truth for every cent of creator/chatter earnings. No `UPDATE`s (ledgers never rewrite history). The 1:1 link to a `payment_events.transaction_id` + source row is what makes every credit traceable; the unique index on `(owner_id, source_type, source_id, direction, source_transaction_id)` is what makes every credit idempotent even if a ConfirmURL fires twice.
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- 170_wallet_ledger.sql
+-- Append-only ledger for every credit/debit that touches:
+--   profiles.wallet_balance_cents
+--   profiles.total_earned_cents
+--   profiles.chatter_earnings_cents
+--
+-- Invariants enforced here:
+--   - Idempotency: duplicate ConfirmURLs for the same TransactionID never double-credit.
+--   - Provenance: every balance mutation links back to a real UG transaction
+--     OR to an internal operation (payout, manual_adjustment) with audit metadata.
+--   - No UPDATEs: reversals are expressed as a new row with opposite sign + parent_id.
+
+create type wallet_owner_kind as enum ('creator', 'chatter');
+create type wallet_tx_direction as enum ('credit', 'debit');
+create type wallet_tx_source as enum (
+  'link_purchase',        -- paid link sale
+  'tip',                  -- one-shot tip
+  'gift_purchase',        -- wishlist gift
+  'custom_request',       -- creator-accepted custom request (capture)
+  'creator_subscription', -- creator Pro Sale or Recurring (referral commission only)
+  'fan_subscription',     -- fan → creator Sale or Recurring
+  'chatter_commission',   -- chatter's share of a link sale / custom request
+  'payout_hold',          -- wallet debit at payout request
+  'payout_failure',       -- reverse the hold if payout is rejected
+  'refund',               -- fan-initiated or admin refund
+  'chargeback',           -- CBK1 from UG Listener
+  'manual_adjustment'     -- admin corrections (requires admin_notes)
+);
+
+create table wallet_transactions (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null,                -- auth.users.id (creator OR chatter)
+  owner_kind wallet_owner_kind not null,
+  direction wallet_tx_direction not null,
+  amount_cents bigint not null check (amount_cents > 0),
+  currency text not null default 'USD',
+  source_type wallet_tx_source not null,
+  source_id uuid,                        -- id of the originating row (purchase/tip/gift/etc.)
+  source_transaction_id text,            -- UG TransactionID when applicable
+  source_ugp_mid text,                   -- MID for the UG transaction
+  parent_id uuid references wallet_transactions(id), -- reversals point at the original credit
+  admin_notes text,                      -- required for manual_adjustment
+  metadata jsonb,                        -- fee breakdown, fan_email, chatter_id, etc.
+  created_at timestamptz not null default now(),
+  -- Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on
+  -- link purchases (chatter_commission source) and custom request captures
+  -- (via chatter_commission source_id = custom_requests.id). They earn
+  -- NOTHING on tips, gifts, subscriptions (creator Pro or fan→creator).
+  -- The constraint here is a safety net — the checkout functions refuse to
+  -- set chat_chatter_id on those flows in the first place (Task 8.12).
+  constraint wallet_tx_chatter_source_whitelist check (
+    owner_kind <> 'chatter'
+    or source_type in ('chatter_commission', 'refund', 'chargeback', 'manual_adjustment')
+  )
+);
+
+-- Idempotency guarantee: one (credit|debit) row per (owner, source, UG TID) tuple.
+-- parent_id is NULL for first-write rows and points at the original for reversals,
+-- so refunding the same TID twice creates exactly ONE reversal row.
+create unique index wallet_tx_idempotency_idx
+  on wallet_transactions(owner_id, source_type, direction, coalesce(source_transaction_id, source_id::text))
+  where source_transaction_id is not null or source_id is not null;
+
+create index wallet_tx_owner_idx on wallet_transactions(owner_id, created_at desc);
+create index wallet_tx_source_idx on wallet_transactions(source_type, source_id);
+create index wallet_tx_tid_idx on wallet_transactions(source_transaction_id)
+  where source_transaction_id is not null;
+
+comment on table wallet_transactions is
+  'Append-only ledger of every mutation to creator/chatter balances. Every credit or debit written here; profiles.wallet_balance_cents/total_earned_cents/chatter_earnings_cents are projections that MUST equal the ledger sum.';
+
+-- Single-writer RPC: callers pass the facts, the function writes the ledger row
+-- AND updates the projection columns atomically. Idempotent on the unique index.
+create or replace function apply_wallet_transaction(
+  p_owner_id uuid,
+  p_owner_kind wallet_owner_kind,
+  p_direction wallet_tx_direction,
+  p_amount_cents bigint,
+  p_source_type wallet_tx_source,
+  p_source_id uuid,
+  p_source_transaction_id text default null,
+  p_source_ugp_mid text default null,
+  p_parent_id uuid default null,
+  p_metadata jsonb default null,
+  p_admin_notes text default null
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+  v_signed_amount bigint;
+begin
+  if p_owner_id is null or p_amount_cents is null or p_amount_cents <= 0 then
+    raise exception 'apply_wallet_transaction: bad args';
+  end if;
+  if p_source_type = 'manual_adjustment' and (p_admin_notes is null or length(p_admin_notes) < 3) then
+    raise exception 'manual_adjustment requires admin_notes';
+  end if;
+
+  -- Idempotency: if a row with the same (owner, source_type, direction, tid|source_id)
+  -- already exists, short-circuit. We return the existing id; the projection is
+  -- already in sync so the caller has nothing to do.
+  select id into v_id
+    from wallet_transactions
+   where owner_id = p_owner_id
+     and source_type = p_source_type
+     and direction = p_direction
+     and coalesce(source_transaction_id, source_id::text) = coalesce(p_source_transaction_id, p_source_id::text)
+   limit 1;
+  if v_id is not null then
+    return v_id;
+  end if;
+
+  insert into wallet_transactions (
+    owner_id, owner_kind, direction, amount_cents, source_type, source_id,
+    source_transaction_id, source_ugp_mid, parent_id, metadata, admin_notes
+  ) values (
+    p_owner_id, p_owner_kind, p_direction, p_amount_cents, p_source_type, p_source_id,
+    p_source_transaction_id, p_source_ugp_mid, p_parent_id, p_metadata, p_admin_notes
+  ) returning id into v_id;
+
+  v_signed_amount := case when p_direction = 'credit' then p_amount_cents else -p_amount_cents end;
+
+  -- Project onto the running totals on profiles.
+  if p_owner_kind = 'creator' then
+    update profiles
+       set wallet_balance_cents = coalesce(wallet_balance_cents, 0) + v_signed_amount,
+           total_earned_cents = coalesce(total_earned_cents, 0) + greatest(v_signed_amount, 0)
+     where id = p_owner_id;
+  else
+    -- chatter: a chatter's money lives on their own profile.chatter_earnings_cents
+    update profiles
+       set chatter_earnings_cents = coalesce(chatter_earnings_cents, 0) + v_signed_amount
+     where id = p_owner_id;
+  end if;
+
+  return v_id;
+end;
+$$;
+
+grant execute on function apply_wallet_transaction(uuid, wallet_owner_kind, wallet_tx_direction, bigint, wallet_tx_source, uuid, text, text, uuid, jsonb, text) to service_role;
+
+-- RLS: read-only for the row owner, writes only via the RPC (service_role).
+alter table wallet_transactions enable row level security;
+
+create policy wallet_tx_self_read
+  on wallet_transactions for select
+  using (auth.uid() = owner_id);
+
+-- Read-only view for admin dashboards (joined metadata).
+create or replace view wallet_transactions_admin
+with (security_invoker = on)
+as
+select wt.*, p.display_name, p.handle
+  from wallet_transactions wt
+  join profiles p on p.id = wt.owner_id;
+```
+
+- [ ] **Step 2: Apply + smoke test**
+
+```bash
+supabase db reset
+supabase db push --linked
+docker exec supabase_db_Exclu psql -U postgres -d postgres -c "SELECT apply_wallet_transaction('00000000-0000-0000-0000-000000000001'::uuid, 'creator', 'credit', 100, 'tip', '00000000-0000-0000-0000-000000000002'::uuid, 'txn-1');"
+docker exec supabase_db_Exclu psql -U postgres -d postgres -c "SELECT apply_wallet_transaction('00000000-0000-0000-0000-000000000001'::uuid, 'creator', 'credit', 100, 'tip', '00000000-0000-0000-0000-000000000002'::uuid, 'txn-1');"
+```
+
+Expected: both calls return the same id (second is idempotent short-circuit). One row in `wallet_transactions`. `profiles.wallet_balance_cents` credited once. (Set up a stub profile row first on a test DB.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/migrations/170_wallet_ledger.sql
+git commit -m "feat(ledger): wallet_transactions + apply_wallet_transaction RPC"
+```
+
+---
+
+### Task 8.2 — Shared helpers: `ledger.ts`
+
+**Files:**
+- Create: `supabase/functions/_shared/ledger.ts`
+
+Every edge function that used to write to `profiles.wallet_balance_cents` directly goes through these helpers. Direct writes are banned (Task 8.6 adds a lint check).
+
+- [ ] **Step 1: Write the helpers**
+
+```ts
+// supabase/functions/_shared/ledger.ts
+//
+// Single entry point for every wallet mutation. All edge functions must use
+// these helpers; direct UPDATEs against profiles.wallet_balance_cents /
+// total_earned_cents / chatter_earnings_cents are forbidden (Task 8.6 CI check).
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+
+export type LedgerSource =
+  | 'link_purchase'
+  | 'tip'
+  | 'gift_purchase'
+  | 'custom_request'
+  | 'creator_subscription'
+  | 'fan_subscription'
+  | 'chatter_commission'
+  | 'payout_hold'
+  | 'payout_failure'
+  | 'refund'
+  | 'chargeback'
+  | 'manual_adjustment';
+
+interface ApplyArgs {
+  ownerId: string;
+  ownerKind: 'creator' | 'chatter';
+  direction: 'credit' | 'debit';
+  amountCents: number;
+  sourceType: LedgerSource;
+  sourceId?: string | null;
+  sourceTransactionId?: string | null;
+  sourceUgpMid?: string | null;
+  parentId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  adminNotes?: string | null;
+}
+
+/**
+ * Apply a ledger row + projection update atomically.
+ * Idempotent on (owner, source_type, direction, tid | source_id).
+ * Returns the ledger row id (new or existing).
+ */
+const CHATTER_ALLOWED_SOURCES: LedgerSource[] = [
+  'chatter_commission', // the one and only positive-credit source for chatters
+  'refund',             // reversal — fine on any owner kind
+  'chargeback',         // reversal — fine on any owner kind
+  'manual_adjustment',  // admin override with admin_notes
+];
+
+export async function applyWalletTransaction(
+  sb: SupabaseClient,
+  args: ApplyArgs,
+): Promise<string> {
+  if (!Number.isInteger(args.amountCents) || args.amountCents <= 0) {
+    throw new Error(`applyWalletTransaction: invalid amount ${args.amountCents}`);
+  }
+  // Hard-locked attribution policy (Task 8.12): chatters earn only on
+  // link purchases + custom request captures (both source_type=chatter_commission).
+  if (args.ownerKind === 'chatter' && !CHATTER_ALLOWED_SOURCES.includes(args.sourceType)) {
+    throw new Error(
+      `applyWalletTransaction: chatter credits not allowed on source_type=${args.sourceType}`,
+    );
+  }
+  const { data, error } = await sb.rpc('apply_wallet_transaction', {
+    p_owner_id: args.ownerId,
+    p_owner_kind: args.ownerKind,
+    p_direction: args.direction,
+    p_amount_cents: args.amountCents,
+    p_source_type: args.sourceType,
+    p_source_id: args.sourceId ?? null,
+    p_source_transaction_id: args.sourceTransactionId ?? null,
+    p_source_ugp_mid: args.sourceUgpMid ?? null,
+    p_parent_id: args.parentId ?? null,
+    p_metadata: args.metadata ?? null,
+    p_admin_notes: args.adminNotes ?? null,
+  });
+  if (error) throw new Error(`apply_wallet_transaction failed: ${error.message}`);
+  return data as string;
+}
+
+/**
+ * Reverse a previously applied ledger row. Writes a new row with opposite
+ * direction + same amount, linked via parent_id. Idempotent — replaying the
+ * reversal a second time short-circuits on the unique index.
+ */
+export async function reverseWalletTransaction(
+  sb: SupabaseClient,
+  args: {
+    parentRowId: string;
+    sourceType: LedgerSource; // 'refund' or 'chargeback' or 'payout_failure'
+    sourceTransactionId?: string | null;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<string> {
+  const { data: parent, error: fetchErr } = await sb
+    .from('wallet_transactions')
+    .select('owner_id, owner_kind, direction, amount_cents, source_id, source_ugp_mid')
+    .eq('id', args.parentRowId)
+    .single();
+  if (fetchErr || !parent) throw new Error(`parent row not found: ${args.parentRowId}`);
+  if (parent.direction !== 'credit') throw new Error(`cannot reverse a non-credit row ${args.parentRowId}`);
+
+  return applyWalletTransaction(sb, {
+    ownerId: parent.owner_id,
+    ownerKind: parent.owner_kind,
+    direction: 'debit',
+    amountCents: parent.amount_cents,
+    sourceType: args.sourceType,
+    sourceId: parent.source_id,
+    sourceTransactionId: args.sourceTransactionId ?? null,
+    sourceUgpMid: parent.source_ugp_mid,
+    parentId: args.parentRowId,
+    metadata: args.metadata ?? null,
+  });
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add supabase/functions/_shared/ledger.ts
+git commit -m "feat(ledger): shared helpers for apply/reverse wallet transactions"
+```
+
+---
+
+### Task 8.3 — Migrate every credit path to the ledger
+
+**Files:**
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+- Modify: `supabase/functions/manage-request/index.ts`
+- Modify: `supabase/functions/rebill-subscriptions/index.ts`
+
+**Credit ordering rules — single writer per flow so we never double-count:**
+
+| Flow | Writer | Reason |
+| --- | --- | --- |
+| Link / tip / gift purchase, first sub Sale, first fan-sub Sale | `ugp-confirm` on `TransactionState=Sale` | ConfirmURL is the authoritative success signal |
+| Custom request capture | `manage-request` on `status='delivered'` | Capture happens server-side (no ConfirmURL flow for capture) |
+| Creator Pro referral commission (rebill cycle) | `rebill-subscriptions` cron on successful `/recurringtransactions` response | Cron has the authoritative sync ack |
+| Fan→creator sub rebill cycle | `rebill-subscriptions` cron on successful response | Same |
+| Refund / chargeback | `ugp-listener` on `TransactionState=Refund` or `CBK1` | Listener is the authoritative reversal signal |
+
+**Golden rules for this task:**
+
+1. `profiles.wallet_balance_cents` / `.total_earned_cents` / `.chatter_earnings_cents` mutations go through `applyWalletTransaction`. Nothing else.
+2. The ledger insert happens **BEFORE** any status flip (`purchases.status='succeeded'`, `subscription_period_end = ...`). If the ledger throws, nothing moves downstream.
+3. Every path is idempotent on `source_transaction_id` (the UG TID — initial or rebill) so any double callback is a safe no-op.
+
+- [ ] **Step 1: `handleLinkPurchase`**
+
+Replace the wallet-credit block (search for `credit_creator_wallet` or `wallet_balance_cents`) with:
+
+```ts
+// Find the creator (already loaded as `link`)
+const receivedCents = decimalToCents(body.Amount);
+const expectedCents = purchase.amount_cents;
+if (Math.abs(receivedCents - expectedCents) > 2) {
+  // Amount mismatch — do NOT credit. Log + mark event errored.
+  await markEventError(body.TransactionID, `amount mismatch: expected ${expectedCents}, got ${receivedCents}`);
+  console.error(`[ugp-confirm] link ${purchaseId}: amount mismatch`, { expectedCents, receivedCents });
+  return;
+}
+
+await applyWalletTransaction(supabase, {
+  ownerId: link.creator_id,
+  ownerKind: 'creator',
+  direction: 'credit',
+  amountCents: purchase.creator_net_cents,
+  sourceType: 'link_purchase',
+  sourceId: purchase.id,
+  sourceTransactionId: body.TransactionID,
+  sourceUgpMid: purchase.ugp_mid ?? null,
+  metadata: {
+    platform_fee_cents: purchase.platform_fee_cents,
+    buyer_email: customerEmail,
+    amount_paid_cents: receivedCents,
+  },
+});
+
+// Chatter commission (if attributed)
+if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
+  await applyWalletTransaction(supabase, {
+    ownerId: purchase.chat_chatter_id,
+    ownerKind: 'chatter',
+    direction: 'credit',
+    amountCents: purchase.chatter_earnings_cents,
+    sourceType: 'chatter_commission',
+    sourceId: purchase.id,
+    sourceTransactionId: body.TransactionID,
+    metadata: { creator_id: link.creator_id, purchase_link_id: link.id },
+  });
+}
+```
+
+The `purchases.status = 'succeeded'` update stays — it's the content-unlock signal. Critically it goes **AFTER** `applyWalletTransaction` succeeds. If the ledger insert throws we abort without flipping status; the event stays `processed=false` and Task 8.7 reconciliation re-attempts.
+
+- [ ] **Step 2: `handleTip`, `handleGift`, `handleRequest` (Capture only), `handleSubscription`, `handleFanSubscription`**
+
+Same pattern — add amount verification, then `applyWalletTransaction`. For the custom request flow, crediting happens in `manage-request` at capture time (not in `ugp-confirm`), so update that file too in step 3.
+
+**Subscription flows** credit only the referral commission (the $39.99 / $239.99 charge is revenue to the platform, not the creator). The existing `creditReferralCommission` helper needs to be rewritten to go through `applyWalletTransaction` with `sourceType='creator_subscription'` on the REFERRER's profile.
+
+```ts
+// New creditReferralCommission
+async function creditReferralCommission(subscriberId: string, subTxnId: string) {
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('id, referrer_id')
+    .eq('referred_id', subscriberId)
+    .neq('status', 'inactive')
+    .maybeSingle();
+  if (!referral) return;
+
+  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  await applyWalletTransaction(supabase, {
+    ownerId: referral.referrer_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: commissionCents,
+    sourceType: 'creator_subscription',
+    sourceId: referral.id,
+    sourceTransactionId: subTxnId,
+    metadata: { kind: 'referral_commission', subscriber_id: subscriberId },
+  });
+
+  await supabase.from('referrals').update({
+    status: 'converted',
+    converted_at: new Date().toISOString(),
+  }).eq('id', referral.id);
+}
+```
+
+Note: `commission_earned_cents` + `affiliate_earnings_cents` on `referrals` / `profiles` become secondary read models; the ledger is the source of truth.
+
+- [ ] **Step 3: `supabase/functions/manage-request/index.ts` — capture flow**
+
+In the "capture → credit creator" block, swap to `applyWalletTransaction` with `sourceType='custom_request'`, `sourceId=customRequestId`, `sourceTransactionId=<capture tid>`. Credit chatter if attributed.
+
+- [ ] **Step 4: `supabase/functions/rebill-subscriptions/index.ts` — rebill cycle credits**
+
+This is the authoritative writer for every monthly/annual rebill. The cron does three things in sequence on a successful `/recurringtransactions` response:
+1. Insert the `rebill_attempts` row (already in Task 4.3).
+2. `applyWalletTransaction` with the REBILL TID (`result.transactionId` — NOT the original Sale TID) as `sourceTransactionId`, so each cycle gets its own ledger row.
+3. Advance `subscription_period_end` / `next_rebill_at`.
+
+The ordering is ledger → period advance, so a ledger throw leaves the period where it was and the cron retries next run.
+
+In `rebillCreatorSubscription`:
+
+```ts
+if (result.success) {
+  // 2a) Ledger: credit the referrer's commission (creator Pro revenue is the
+  //     platform's, NOT the subscribing creator's). Idempotent on result.transactionId.
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('id, referrer_id')
+    .eq('referred_id', creator.id)
+    .neq('status', 'inactive')
+    .maybeSingle();
+
+  if (referral && result.transactionId) {
+    const commissionCents = Math.round(amount * 0.35); // 35% of the rebilled amount
+    try {
+      await applyWalletTransaction(supabase, {
+        ownerId: referral.referrer_id,
+        ownerKind: 'creator',
+        direction: 'credit',
+        amountCents: commissionCents,
+        sourceType: 'creator_subscription',
+        sourceId: referral.id,
+        sourceTransactionId: result.transactionId, // rebill TID, not original
+        sourceUgpMid: mid,
+        metadata: { kind: 'referral_commission_rebill', subscriber_id: creator.id, cycle_amount_cents: amount },
+      });
+    } catch (err) {
+      console.error(`[rebill] ledger write failed for creator ${creator.id}`, err);
+      return; // do NOT advance period_end if the ledger didn't persist
+    }
+  }
+
+  // 2b) Advance period AFTER ledger success.
+  const now = new Date();
+  const nextEnd = new Date(now);
+  if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+  else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+  await supabase.from('profiles').update({
+    subscription_amount_cents: amount,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: nextEnd.toISOString(),
+    subscription_suspended_at: null,
+    // NEVER overwrite subscription_ugp_transaction_id — only the ORIGINAL Sale TID works with /recurringtransactions.
+  }).eq('id', creator.id);
+  return;
+}
+```
+
+In `rebillFanSubscription`:
+
+```ts
+if (result.success) {
+  // 2a) Ledger: credit the creator's net for this billing cycle.
+  //     Platform fee: 15% on Free, 0% on Pro — check the creator's plan.
+  const { data: creatorProfile } = await supabase
+    .from('profiles')
+    .select('subscription_plan')
+    .eq('id', sub.creator_user_id)
+    .single();
+  const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
+  const creatorNetCents = Math.round(amount * (1 - platformRate));
+
+  if (result.transactionId) {
+    try {
+      await applyWalletTransaction(supabase, {
+        ownerId: sub.creator_user_id,
+        ownerKind: 'creator',
+        direction: 'credit',
+        amountCents: creatorNetCents,
+        sourceType: 'fan_subscription',
+        sourceId: sub.id,
+        sourceTransactionId: result.transactionId, // rebill TID, not original
+        sourceUgpMid: mid,
+        metadata: {
+          fan_id: sub.fan_id,
+          cycle_amount_cents: amount,
+          platform_rate: platformRate,
+          kind: 'rebill',
+        },
+      });
+    } catch (err) {
+      console.error(`[rebill] ledger write failed for fan sub ${sub.id}`, err);
+      return; // don't advance next_rebill_at if the ledger didn't persist
+    }
+  }
+
+  // 2b) Advance period.
+  const now = new Date();
+  const nextEnd = new Date(now);
+  nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+  await supabase.from('fan_creator_subscriptions').update({
+    period_start: now.toISOString(),
+    period_end: nextEnd.toISOString(),
+    next_rebill_at: nextEnd.toISOString(),
+    suspended_at: null,
+  }).eq('id', sub.id);
+  return;
+}
+```
+
+The query for fan subs in the cron needs `creator_user_id` and `fan_id` in the SELECT (add them — they were implicit before). Double-check `select` in the cron's query:
+
+```ts
+.select('id, fan_id, creator_user_id, ugp_transaction_id, ugp_mid, price_cents, next_rebill_at, cancel_at_period_end')
+```
+
+- [ ] **Step 5: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-confirm manage-request rebill-subscriptions --linked
+git add supabase/functions/ugp-confirm/index.ts supabase/functions/manage-request/index.ts supabase/functions/rebill-subscriptions/index.ts
+git commit -m "feat(ledger): route every credit path (checkout + capture + rebill) through the ledger"
+```
+
+---
+
+### Task 8.4 — Migrate refund / chargeback / void to ledger reversals
+
+**Files:**
+- Modify: `supabase/functions/ugp-listener/index.ts`
+
+Today `ugp-listener` directly does `UPDATE profiles SET wallet_balance_cents = wallet_balance_cents - X`. We replace that with a `reverseWalletTransaction` call. Chatter earnings reverse automatically because they're independent ledger rows for the same source_id.
+
+- [ ] **Step 1: Refund**
+
+In `handleRefund`, after marking the row refunded:
+
+```ts
+import { reverseWalletTransaction } from '../_shared/ledger.ts';
+// ...
+
+// Find every ledger credit tied to this TransactionID (creator AND chatter).
+const { data: credits } = await supabase
+  .from('wallet_transactions')
+  .select('id, owner_id, owner_kind, amount_cents, source_type')
+  .eq('source_transaction_id', txnId)
+  .eq('direction', 'credit');
+
+for (const c of credits ?? []) {
+  try {
+    await reverseWalletTransaction(supabase, {
+      parentRowId: c.id,
+      sourceType: 'refund',
+      sourceTransactionId: txnId,
+      metadata: { refund_amount: amount },
+    });
+  } catch (err) {
+    console.error(`[listener] refund reversal failed for ${c.id}`, err);
+  }
+}
+```
+
+- [ ] **Step 2: Chargeback**
+
+Same shape as refund, `sourceType: 'chargeback'`. Chargebacks MAY take the creator's balance negative — accepted, admin follow-up. The existing email notification to `atexclu@gmail.com` stays.
+
+- [ ] **Step 3: Void**
+
+Voids on custom-request Authorize events don't credit anything yet, so there's nothing to reverse. Flip the `custom_requests.status='expired'` as before; no ledger change.
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy ugp-listener --linked
+git add supabase/functions/ugp-listener/index.ts
+git commit -m "feat(ledger): refunds + chargebacks reverse via ledger"
+```
+
+---
+
+### Task 8.5 — Migrate payouts to the ledger
+
+**Files:**
+- Modify: `supabase/functions/request-withdrawal/index.ts`
+- Modify: `supabase/functions/process-payout/index.ts`
+- Modify: admin payout rejection path (find via `grep -rn "status.*rejected" supabase/functions/`)
+
+A payout has two ledger events:
+1. **On request** → `payout_hold` debit on the creator. This is the "funds reserved" moment. If the wallet can't cover it, the RPC rejects (amount_cents check keeps it positive — debits still require a `direction='debit'` + positive amount).
+2. **On admin reject** → `payout_failure` credit (same amount, opposite direction), linked via `parent_id` to the hold row.
+
+A successful payout is just a state change on `payouts` — the money already left the wallet at hold time, so we don't re-debit.
+
+- [ ] **Step 1: `request-withdrawal`**
+
+Replace the `wallet_balance_cents -= amount` block with:
+
+```ts
+import { applyWalletTransaction } from '../_shared/ledger.ts';
+// ... existing validation ...
+
+const { data: payout, error: insErr } = await supabase.from('payouts').insert({
+  creator_id: user.id,
+  amount_cents: amount,
+  status: 'requested',
+  requested_at: new Date().toISOString(),
+}).select('id').single();
+if (insErr || !payout) { /* error */ }
+
+try {
+  await applyWalletTransaction(supabase, {
+    ownerId: user.id,
+    ownerKind: 'creator',
+    direction: 'debit',
+    amountCents: amount,
+    sourceType: 'payout_hold',
+    sourceId: payout.id,
+  });
+} catch (err) {
+  // Hold failed — roll back the payout row
+  await supabase.from('payouts').delete().eq('id', payout.id);
+  throw err;
+}
+```
+
+- [ ] **Step 2: Admin reject path**
+
+```ts
+// When admin rejects a payout:
+const { data: holdRow } = await supabase
+  .from('wallet_transactions')
+  .select('id')
+  .eq('source_type', 'payout_hold')
+  .eq('source_id', payoutId)
+  .single();
+
+if (holdRow) {
+  await reverseWalletTransaction(supabase, {
+    parentRowId: holdRow.id,
+    sourceType: 'payout_failure',
+  });
+}
+await supabase.from('payouts').update({ status: 'rejected', rejection_reason: reason }).eq('id', payoutId);
+```
+
+- [ ] **Step 3: `process-payout`**
+
+No ledger change needed (hold already debited). Just update `payouts.status`, `processed_at`, and `profiles.total_withdrawn_cents`:
+
+```ts
+// total_withdrawn_cents is a separate stat, not a wallet mutation.
+await supabase.rpc('increment_total_withdrawn', { p_user_id: creator.id, p_amount_cents: payout.amount_cents });
+```
+
+Add that helper to migration 170 (or a follow-up 171):
+
+```sql
+create or replace function increment_total_withdrawn(p_user_id uuid, p_amount_cents bigint)
+returns void language sql security definer as $$
+  update profiles set total_withdrawn_cents = coalesce(total_withdrawn_cents, 0) + p_amount_cents where id = p_user_id;
+$$;
+```
+
+- [ ] **Step 4: Deploy + commit**
+
+```bash
+supabase functions deploy request-withdrawal process-payout --linked
+git add supabase/functions/request-withdrawal/index.ts supabase/functions/process-payout/index.ts supabase/migrations/171_increment_total_withdrawn.sql
+git commit -m "feat(ledger): payout hold/release go through the ledger"
+```
+
+---
+
+### Task 8.6 — CI guardrail: no direct wallet writes outside the ledger
+
+**Files:**
+- Create: `scripts/check-ledger-discipline.sh`
+- Modify: `package.json` (add `lint:ledger` script)
+
+Enforces at review time that nobody reintroduces a raw `UPDATE profiles SET wallet_balance_cents`. Exit non-zero breaks CI.
+
+- [ ] **Step 1: Write the check**
+
+```bash
+#!/usr/bin/env bash
+# scripts/check-ledger-discipline.sh — fails if any edge function writes wallet fields
+# directly. The ledger RPC is the only allowed writer.
+set -euo pipefail
+
+BAD=$(grep -rEn \
+  "wallet_balance_cents\s*=|chatter_earnings_cents\s*=|total_earned_cents\s*=|credit_creator_wallet\(|debit_creator_wallet\(" \
+  supabase/functions/ \
+  --include='*.ts' \
+  | grep -v '_shared/ledger.ts' \
+  | grep -v apply_wallet_transaction \
+  | grep -v '//\s*ledger-exempt' || true)
+
+if [ -n "$BAD" ]; then
+  echo "✗ Direct wallet writes detected — route through _shared/ledger.ts:"
+  echo "$BAD"
+  exit 1
+fi
+echo "✓ Ledger discipline OK"
+```
+
+```bash
+chmod +x scripts/check-ledger-discipline.sh
+```
+
+- [ ] **Step 2: Wire into `npm run test`**
+
+Add to `package.json`:
+
+```json
+"scripts": {
+  "lint:ledger": "bash scripts/check-ledger-discipline.sh",
+  "test": "vitest && npm run lint:ledger"
+}
+```
+
+- [ ] **Step 3: Run, commit**
+
+```bash
+npm run lint:ledger
+git add scripts/check-ledger-discipline.sh package.json
+git commit -m "feat(ci): enforce ledger discipline for wallet writes"
+```
+
+---
+
+### Task 8.7 — Reconciliation cron: event backlog + balance drift
+
+**Files:**
+- Create: `supabase/functions/reconcile-payments/index.ts`
+- Create: `supabase/functions/reconcile-payments/config.toml`
+- Modify: `vercel.json`
+- Create: `api/cron/reconcile-payments.ts`
+
+Runs hourly. Does three things:
+1. **Re-process stuck `payment_events`** — `processed=false AND created_at < now() - 5 min` with an actionable state. Rare, but happens if our server was briefly unreachable when UG POSTed.
+2. **Detect balance drift** — `profiles.wallet_balance_cents ≠ sum(credit) − sum(debit)` from the ledger. Alert + refuse to auto-correct.
+3. **Detect orphan ledger rows** — a ledger row whose `source_id` no longer exists.
+
+- [ ] **Step 1: Write the function**
+
+```ts
+// supabase/functions/reconcile-payments/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
+
+const sb = createClient(Deno.env.get('PROJECT_URL')!, Deno.env.get('SERVICE_ROLE_KEY')!);
+const secret = Deno.env.get('RECONCILE_CRON_SECRET');
+
+serve(async (req) => {
+  if (req.headers.get('Authorization')?.replace('Bearer ', '') !== secret) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const anomalies: string[] = [];
+
+  // 1. Stuck events — older than 5 minutes, still unprocessed, with an actionable state.
+  const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+  const { data: stuck } = await sb.from('payment_events')
+    .select('transaction_id, merchant_reference, transaction_state, created_at')
+    .eq('processed', false)
+    .is('processing_error', null)
+    .lt('created_at', cutoff)
+    .limit(50);
+
+  for (const e of stuck ?? []) {
+    // Re-fire the ConfirmURL handler by POSTing the raw payload back to ourselves.
+    // We have `raw_payload` for this — fetch it separately because it's jsonb.
+    const { data: full } = await sb.from('payment_events').select('raw_payload').eq('transaction_id', e.transaction_id).single();
+    if (!full?.raw_payload) continue;
+    const form = new URLSearchParams(full.raw_payload as Record<string, string>);
+    const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
+    await fetch(`${siteUrl}/api/ugp-confirm`, { method: 'POST', body: form.toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  }
+
+  // 2. Balance drift — flag creators whose running total disagrees with the ledger.
+  // (Runs against an RPC for speed; full table scans on profiles would be too slow as we grow.)
+  const { data: drifts } = await sb.rpc('find_wallet_drift', { p_tolerance_cents: 1 });
+  for (const d of drifts ?? []) {
+    anomalies.push(`Wallet drift: user ${d.user_id}, projected ${d.projection_cents}, ledger ${d.ledger_cents}`);
+  }
+
+  // 3. Admin alert
+  if (anomalies.length > 0) {
+    await sendBrevoEmail({
+      to: 'atexclu@gmail.com',
+      subject: `🚨 Wallet reconciliation — ${anomalies.length} anomalies`,
+      htmlContent: `<p>Ledger reconciliation detected ${anomalies.length} anomalies:</p><pre>${anomalies.join('\n')}</pre>`,
+    });
+  }
+
+  return new Response(JSON.stringify({ stuckRequeued: stuck?.length ?? 0, anomalies: anomalies.length }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
+```
+
+- [ ] **Step 2: `find_wallet_drift` RPC**
+
+Append to migration 171 (or a new 172):
+
+```sql
+-- 172_wallet_drift_rpc.sql
+create or replace function find_wallet_drift(p_tolerance_cents bigint default 1)
+returns table(user_id uuid, projection_cents bigint, ledger_cents bigint)
+language sql stable security definer as $$
+  select p.id,
+         coalesce(p.wallet_balance_cents, 0) as projection_cents,
+         coalesce((
+           select sum(case when direction = 'credit' then amount_cents else -amount_cents end)
+             from wallet_transactions wt
+            where wt.owner_id = p.id and wt.owner_kind = 'creator'
+         ), 0) as ledger_cents
+    from profiles p
+   where p.is_creator = true
+     and abs(coalesce(p.wallet_balance_cents, 0) - coalesce((
+           select sum(case when direction = 'credit' then amount_cents else -amount_cents end)
+             from wallet_transactions wt
+            where wt.owner_id = p.id and wt.owner_kind = 'creator'
+         ), 0)) > p_tolerance_cents;
+$$;
+```
+
+- [ ] **Step 3: Vercel cron entry**
+
+```ts
+// api/cron/reconcile-payments.ts
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+const URL = 'https://qexnwezetjlbwltyccks.supabase.co/functions/v1/reconcile-payments';
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'Unauthorized' });
+  const r = await fetch(URL, { method: 'POST', headers: { Authorization: `Bearer ${process.env.RECONCILE_CRON_SECRET}` } });
+  res.status(r.status).send(await r.text());
+}
+```
+
+```json
+// vercel.json — append cron entry
+{ "path": "/api/cron/reconcile-payments", "schedule": "0 * * * *" }
+```
+
+- [ ] **Step 4: Deploy + secrets + commit**
+
+```bash
+openssl rand -hex 32 | pbcopy
+supabase secrets set RECONCILE_CRON_SECRET=<paste> --linked
+vercel env add RECONCILE_CRON_SECRET production preview development
+supabase db push --linked
+supabase functions deploy reconcile-payments --linked
+git add supabase/migrations/172_wallet_drift_rpc.sql supabase/functions/reconcile-payments/ api/cron/reconcile-payments.ts vercel.json
+git commit -m "feat(ledger): hourly reconciliation cron + drift alerting"
+```
+
+---
+
+### Task 8.8 — Dashboards read from the ledger
+
+**Files:**
+- Modify: `src/pages/AppDashboard.tsx`
+- Modify: `src/pages/FanDashboard.tsx`
+
+Earnings cards today compute from `tipsRaw.reduce(...)` etc. Once the ledger is the source of truth, replace those sums with a single query against `wallet_transactions`:
+
+```ts
+// Lifetime earnings per source — single, fast, always consistent with wallet.
+const { data: ledger } = await supabase.from('wallet_transactions')
+  .select('source_type, direction, amount_cents')
+  .eq('owner_id', user.id)
+  .eq('owner_kind', 'creator');
+
+const byKind = { link_purchase: 0, tip: 0, gift_purchase: 0, custom_request: 0, fan_subscription: 0 };
+for (const row of ledger ?? []) {
+  const signed = row.direction === 'credit' ? row.amount_cents : -row.amount_cents;
+  if (row.source_type in byKind) byKind[row.source_type as keyof typeof byKind] += signed;
+}
+```
+
+- [ ] **Step 1: Update Overview breakdown in AppDashboard**
+
+Replace the 5-bucket computation with `byKind[...]`. Same values but guaranteed to match the wallet.
+
+- [ ] **Step 2: Update Subscriptions tab earning stats**
+
+`fanSubStats.lifetimeNetCents` becomes `byKind.fan_subscription`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/pages/AppDashboard.tsx src/pages/FanDashboard.tsx
+git commit -m "feat(dashboard): earnings breakdown reads the ledger"
+```
+
+---
+
+### Task 8.9 — Content-access gates verified (every delivery path)
+
+**Files:**
+- Modify: `src/pages/PublicLink.tsx`
+- Modify: `src/pages/CreatorPublic.tsx` (fan subscription gate)
+- Modify: `supabase/functions/send-link-content-email/index.ts` (email-based delivery)
+- Modify: `supabase/functions/generate-signed-urls/index.ts` (signed URL issuance)
+- Create: `src/lib/contentAccess.ts`
+- Create: `tests/content-access.test.ts`
+
+There are **four** content-delivery paths in the app. Each one needs the same single gate:
+
+| Path | Source of truth | Correct gate |
+| --- | --- | --- |
+| Paid-link direct access (`/l/:slug`) | `purchases.status` | `status = 'succeeded'` |
+| Paid-link email delivery | `purchases.status` | `status = 'succeeded'` |
+| Custom request delivery (`custom_requests.delivery_link_id`) | `custom_requests.status` | `status = 'delivered'` AND `captured_at IS NOT NULL` |
+| Fan subscription feed (`/:handle` + `/fan`) | `has_active_fan_subscription(fan, creator_profile)` RPC | RPC returns true |
+
+Invariant: **content unlocks iff the gate returns true, regardless of any other flag (`access_token`, row presence, signed URL possession).** Everything else — `pending`, `requires_payment_method`, `refunded`, missing — keeps the content locked.
+
+- [ ] **Step 1: Central gate helper**
+
+```ts
+// src/lib/contentAccess.ts
+export interface PurchaseGate { status: string; }
+export interface CustomRequestGate { status: string; captured_at?: string | null; }
+
+export function canAccessPurchasedLink(p: PurchaseGate | null | undefined): boolean {
+  return !!p && p.status === 'succeeded';
+}
+
+export function canAccessCustomRequestDelivery(r: CustomRequestGate | null | undefined): boolean {
+  return !!r && r.status === 'delivered' && !!r.captured_at;
+}
+```
+
+- [ ] **Step 2: Audit each delivery point**
+
+For each of the files listed above, grep the current access check:
+
+```bash
+grep -rn "access_token\|status.*succeeded\|status.*delivered\|purchase.status\|request.status\|isSubscribed" src/pages/PublicLink.tsx src/pages/CreatorPublic.tsx supabase/functions/send-link-content-email supabase/functions/generate-signed-urls
+```
+
+For every match where the access logic is inline:
+- **Paid link (PublicLink.tsx, send-link-content-email)** — replace the inline `purchase.status === 'succeeded'` check with `canAccessPurchasedLink(purchase)`.
+- **Custom request delivery** — add `canAccessCustomRequestDelivery(request)` before issuing signed URLs.
+- **Fan subscription feed (CreatorPublic.tsx feed tab)** — already goes through `has_active_fan_subscription` RPC via `useFanSubscription`; no change.
+- **`generate-signed-urls` edge function** — verify it checks the owning purchase/request status before signing. If it signs unconditionally (relying on the caller to have auth), add the gate.
+
+- [ ] **Step 3: Write the regression tests**
+
+```ts
+// tests/content-access.test.ts
+import { describe, expect, it } from 'vitest';
+import { canAccessPurchasedLink, canAccessCustomRequestDelivery } from '@/lib/contentAccess';
+
+describe('canAccessPurchasedLink', () => {
+  it('blocks pending', () => expect(canAccessPurchasedLink({ status: 'pending' })).toBe(false));
+  it('blocks refunded', () => expect(canAccessPurchasedLink({ status: 'refunded' })).toBe(false));
+  it('blocks failed', () => expect(canAccessPurchasedLink({ status: 'failed' })).toBe(false));
+  it('blocks null', () => expect(canAccessPurchasedLink(null)).toBe(false));
+  it('allows succeeded', () => expect(canAccessPurchasedLink({ status: 'succeeded' })).toBe(true));
+});
+
+describe('canAccessCustomRequestDelivery', () => {
+  it('blocks accepted but not captured', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'accepted', captured_at: null })).toBe(false));
+  it('blocks delivered without capture', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'delivered', captured_at: null })).toBe(false));
+  it('allows delivered + captured', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'delivered', captured_at: '2026-04-21T00:00:00Z' })).toBe(true));
+  it('blocks refunded', () =>
+    expect(canAccessCustomRequestDelivery({ status: 'refunded', captured_at: '2026-04-21T00:00:00Z' })).toBe(false));
+});
+```
+
+- [ ] **Step 4: Run + commit**
+
+```bash
+npm run test -- tests/content-access.test.ts
+git add src/lib/contentAccess.ts src/pages/PublicLink.tsx src/pages/CreatorPublic.tsx supabase/functions/send-link-content-email/index.ts supabase/functions/generate-signed-urls/index.ts tests/content-access.test.ts
+git commit -m "feat(access): single access gate across every content-delivery path"
+```
+
+---
+
+### Task 8.10 — End-to-end integrity tests
+
+**Files:**
+- Create: `supabase/functions/ugp-confirm/ledger.integration.test.ts`
+
+These tests drive the handler with realistic UG POST bodies and assert the ledger + projection land in the right state. They're the final safety net.
+
+- [ ] **Step 1: Write scenarios**
+
+```ts
+// supabase/functions/ugp-confirm/ledger.integration.test.ts
+import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
+// NB: requires extraction of the handler to a pure `handle(req, deps)` function
+// with an injectable Supabase client — see Task 7.3.
+
+Deno.test('link purchase Sale → creator credited exactly once', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p1', amount_cents: 1150, creator_net_cents: 850, platform_fee_cents: 300, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p1', TransactionState: 'Sale', Amount: '11.50', TransactionID: 'T1', CustomerEmail: 'fan@x.com' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T1');
+  assertEquals(ledger.length, 1);
+  assertEquals(ledger[0].amount_cents, 850);
+  assertEquals(ledger[0].direction, 'credit');
+
+  // Replay the same POST — must stay idempotent.
+  await handle(req, sb);
+  const ledgerAfter = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T1');
+  assertEquals(ledgerAfter.length, 1);
+});
+
+Deno.test('link purchase Verify callback does NOT credit', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p2', amount_cents: 1150, creator_net_cents: 850, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p2', TransactionState: 'Verify', Amount: '11.50', TransactionID: 'T2' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T2');
+  assertEquals(ledger.length, 0);
+  const purchase = await sb.from('purchases').select('status').eq('id', 'p2').single();
+  assertEquals(purchase.status, 'pending');
+});
+
+Deno.test('amount mismatch → no credit, event errored', async () => {
+  const sb = mockSupabase();
+  await sb.from('purchases').insert({ id: 'p3', amount_cents: 1150, creator_net_cents: 850, status: 'pending', link_id: 'l1' });
+  await sb.from('links').insert({ id: 'l1', creator_id: 'c1', slug: 's', title: 't' });
+
+  const req = buildConfirmRequest({ MerchantReference: 'link_p3', TransactionState: 'Sale', Amount: '500.00', TransactionID: 'T3' });
+  await handle(req, sb);
+
+  const ledger = await sb.from('wallet_transactions').select('*').eq('source_transaction_id', 'T3');
+  assertEquals(ledger.length, 0);
+});
+
+Deno.test('refund reverses creator + chatter credits', async () => {
+  // Seed a succeeded link_purchase with a chatter attributed
+  // Call handleRefund via the listener handler
+  // Assert two new rows (creator debit + chatter debit), both linked to parent ids.
+  // Assert wallet_balance_cents net == 0
+  // ... (task owner fills in)
+});
+```
+
+- [ ] **Step 2: Run**
+
+```bash
+deno test --allow-env --allow-net supabase/functions/ugp-confirm/ledger.integration.test.ts
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/ugp-confirm/ledger.integration.test.ts
+git commit -m "test(ledger): integration suite for credit/reversal/idempotency"
+```
+
+---
+
+### Task 8.12 — Enforce chatter attribution policy end-to-end
+
+**Files:**
+- Modify: `supabase/functions/create-creator-subscription/index.ts`
+- Modify: `supabase/functions/create-fan-subscription-checkout/index.ts`
+- Modify: `supabase/functions/create-tip-checkout/index.ts`
+- Modify: `supabase/functions/create-gift-checkout/index.ts`
+- Modify: `supabase/functions/create-link-checkout/index.ts`
+- Modify: `supabase/functions/create-request-checkout/index.ts`
+- Modify: `supabase/functions/ugp-confirm/index.ts`
+
+Locks the chatter revenue rule in three layers (see the "Chatter Attribution Rules" section at the top of the Risk Register):
+
+**Layer 1 — reject chatter attribution params on the wrong flows.**
+
+The 4 flows that MUST NOT credit a chatter are tips, gifts, creator Pro subs, fan→creator subs. Each checkout function must:
+- NOT read `chtref` from the request body
+- NOT write `chat_chatter_id` on any row
+- Log + drop any incoming `chtref` (defense against legacy clients still sending it)
+
+**Layer 2 — DB CHECK constraint.**
+
+Already added in Task 8.1 migration 170:
+```sql
+constraint wallet_tx_chatter_source_whitelist check (
+  owner_kind <> 'chatter' or source_type in ('chatter_commission', 'refund', 'chargeback', 'manual_adjustment')
+)
+```
+
+Any ledger insert that violates this throws `check constraint violation`. The helper propagates; the checkout bails out.
+
+**Layer 3 — audit comments.**
+
+Task 8.11's per-call-site comment block now includes `owner_kind`. A reviewer catches any non-chatter source incorrectly owning a chatter.
+
+- [ ] **Step 1: Strip chatter params from sub + tip + gift checkouts**
+
+In `create-creator-subscription/index.ts`, `create-fan-subscription-checkout/index.ts`, `create-tip-checkout/index.ts`, `create-gift-checkout/index.ts`:
+- Remove any parsing of `body.chtref` / `req.url.searchParams.get('chtref')`.
+- Add a defensive log if one is sent:
+```ts
+const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+if (rogueChtref) {
+  console.warn(`[${source}] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
+}
+```
+- Do NOT propagate `chat_chatter_id` to any row insert from these functions.
+
+- [ ] **Step 2: Verify link + request checkouts still accept chtref**
+
+`create-link-checkout/index.ts` and `create-request-checkout/index.ts` keep their existing `chtref` resolution → `chat_chatter_id` on `purchases` / `custom_requests`. No change.
+
+- [ ] **Step 3: Narrow `handleTip` / `handleGift` / `handleSubscription` / `handleFanSubscription`**
+
+In `ugp-confirm/index.ts`, confirm each of these handlers:
+- Reads `chat_chatter_id` from the DB row only for link purchases and custom request captures.
+- Never calls `applyWalletTransaction` with `ownerKind: 'chatter'`.
+
+Add a unit assert in the ledger helper as belt-and-braces:
+```ts
+// ledger.ts — inside applyWalletTransaction
+const CHATTER_ALLOWED_SOURCES: LedgerSource[] = ['chatter_commission', 'refund', 'chargeback', 'manual_adjustment'];
+if (args.ownerKind === 'chatter' && !CHATTER_ALLOWED_SOURCES.includes(args.sourceType)) {
+  throw new Error(`applyWalletTransaction: chatter credits not allowed on source_type=${args.sourceType}`);
+}
+```
+
+This fails fast in TS before even hitting the DB — easier to debug than a Postgres constraint violation.
+
+- [ ] **Step 4: Regression test**
+
+```ts
+// supabase/functions/_shared/ledger.test.ts
+import { assertRejects } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
+import { applyWalletTransaction } from './ledger.ts';
+
+Deno.test('chatter credit on fan_subscription is rejected', async () => {
+  const sb = mockSupabase();
+  await assertRejects(
+    () => applyWalletTransaction(sb, {
+      ownerId: 'u1',
+      ownerKind: 'chatter',
+      direction: 'credit',
+      amountCents: 100,
+      sourceType: 'fan_subscription',
+      sourceId: 's1',
+    }),
+    Error,
+    'chatter credits not allowed',
+  );
+});
+
+Deno.test('chatter credit on creator_subscription is rejected', async () => {
+  // ... same shape, different source_type
+});
+
+Deno.test('chatter credit on tip is rejected', async () => { /* ... */ });
+Deno.test('chatter credit on gift_purchase is rejected', async () => { /* ... */ });
+Deno.test('chatter credit on chatter_commission is accepted', async () => { /* happy path */ });
+```
+
+- [ ] **Step 5: Deploy + commit**
+
+```bash
+deno test --allow-env supabase/functions/_shared/ledger.test.ts
+supabase functions deploy create-creator-subscription create-fan-subscription-checkout create-tip-checkout create-gift-checkout ugp-confirm --linked
+git add supabase/functions/
+git commit -m "feat(attribution): lock chatter revenue to link + custom_request only"
+```
+
+---
+
+### Task 8.11 — Cross-phase audit: "is this credit gated?"
+
+Final safety sweep. Open each checkout + capture + rebill handler and answer these 5 questions in writing (as code comments):
+
+1. **Where does `applyWalletTransaction` get called?**
+2. **What status does the source row transition to?**
+3. **Is the status transition AFTER the ledger insert?** (Must be — ledger is the gate.)
+4. **If the ledger throws, does the function bail out WITHOUT flipping status?** (Must — else content unlocks without money booked.)
+5. **What's the idempotency key?** (Must be `source_transaction_id` for UG flows, `source_id` for internal.)
+
+Files to audit:
+- `supabase/functions/ugp-confirm/index.ts` (link, tip, gift, request, sub, fsub)
+- `supabase/functions/ugp-listener/index.ts` (refund, chargeback, void, capture)
+- `supabase/functions/ugp-membership-confirm/index.ts` (legacy, eventually drained)
+- `supabase/functions/manage-request/index.ts` (capture flow)
+- `supabase/functions/rebill-subscriptions/index.ts` (recurring)
+- `supabase/functions/request-withdrawal/index.ts` (payout hold)
+- `supabase/functions/process-payout/index.ts` (payout completion — no ledger mutation)
+
+Every `yes/no` must be `yes`. Any `no` is a bug to fix in that file before merging.
+
+- [ ] **Step 1: Walk the 7 files, add a comment block at the top of each credit/debit block**
+
+Example:
+```ts
+// [ledger-audit]
+//   - applyWalletTransaction: line 217, creator credit 850c
+//   - status transition: purchases.status='succeeded' at line 219 (AFTER ledger)
+//   - ledger-first ordering: YES (await applyWalletTransaction, then update)
+//   - idempotency key: body.TransactionID (UG sale TID)
+//   - failure mode: thrown error → caught at line 158, event marked errored, status stays pending
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add supabase/functions/
+git commit -m "docs(ledger): audit comments on every credit/debit call site"
+```
+
+---
+
+## Execution Order & Dependencies
+
+```
+Phase 0 (schema + helpers)        ────────────────────────► can start now
+Phase 2 (pricing refonte)         ────────────────────────► can start now (independent)
+Phase 3 (pricing page + popup)    ──(needs Phase 2 numbers)► after Phase 2
+
+Phase 4 (creator Pro refactor)    ──(needs Phase 0)────────► can start now (Derek confirmed rebill on original Sale TID)
+Phase 5 (creator Pro annual)      ──(extends Phase 4)──────► after Phase 4
+Phase 6 (fan sub refactor)        ──(needs Phase 0)────────► can start in parallel with Phase 4
+
+Phase 1 (country + routing)       ──(needs Phase 0 + MID)──► the only remaining external blocker
+                                                            Derek is provisioning the 2D US/CA MID.
+                                                            Code + tests go in now; just skip deploy
+                                                            until `QUICKPAY_*_US_2D` secrets are set.
+
+Phase 8 (accounting integrity)    ──(needs Phases 4 + 6)───► hardens the money flows.
+                                                            Tasks 8.1–8.2 (ledger table + RPC + helper)
+                                                            can ship early and alongside; 8.3–8.5
+                                                            migrate each credit path one at a time.
+
+Phase 7 (cleanup)                 ──(last)─────────────────► after Phases 4 + 6 + 8
+```
+
+Realistic timeline if one engineer full-time: **10–12 working days** (Phase 8 adds ~2 days). Many phases parallelizable with 2 engineers. The only hard external dependency is the new 2D MID credentials from Derek — everything else can ship immediately.
+
+---
+
+## Self-Review Notes
+
+### Spec coverage
+
+Every user-facing requirement maps to a task:
+- Country onboarding + pre-checkout (Phase 1)
+- 2D/3D routing by country (Phase 1)
+- Only credit on real `Sale`/`Recurring`/`Capture` states (Phase 0.3b filter + Phase 8 ledger gate)
+- Creator Free/Monthly/Annual with variable profiles charged on card (Phases 4, 5)
+- Fan subs with fan-side cancel UI (Phase 6)
+- Pricing refonte 15% / 0% + 15% fan fee (Phase 2)
+- Weekly Pro popup for Free creators (Phase 3)
+- Legacy 11027 migration (Phase 4.9)
+
+### Reliability requirements (new — Phase 8)
+
+The user's brief on this revision: "tout doit être fiable, le wallet et les stats créateur/chatter ne bougent que sur une vente réellement passée, rien ne se débloque si le paiement échoue". Mapping:
+- **Idempotent credits** → Task 8.1 (unique index) + 8.2 (RPC short-circuit) + 8.10 (replay test)
+- **No credit without a real charge** → amount verification in Task 8.3 (`Math.abs(received - expected) <= 2`) + state filter in Phase 0
+- **No content unlock without a real charge** → Task 8.9 central gate across all 4 delivery paths
+- **Failure never leaves money hanging** → Task 8.3 golden rule (ledger BEFORE status flip) + Task 8.11 audit
+- **Refunds and chargebacks reverse cleanly** → Task 8.4 with per-ledger-row reversal including chatter
+- **Drift detection** → Task 8.7 hourly reconciliation + email alert
+- **Payouts don't double-spend** → Task 8.5 hold-at-request / release-on-reject
+- **CI enforces discipline** → Task 8.6 lint script blocks direct wallet writes
+
+### Placeholder scan
+
+Three placeholders remain, all bounded work with clear intent:
+1. Full ISO-3166 country list (Task 0.5, 250 entries — task owner pastes)
+2. Deno test scaffolding in Task 8.10 (mock Supabase client — standard Deno testing boilerplate)
+3. Admin reject code path location in Task 8.5 (task owner greps)
+
+None are "TBD architectural decisions".
+
+### Type consistency
+
+- `UgMidKey = 'us_2d' | 'intl_3d'` — frontend `src/lib/countryRouting.ts` + edge `_shared/ugRouting.ts`
+- `subscription_plan_type` enum = `'free' | 'monthly' | 'annual'` — matches string literals in edge + frontend
+- `wallet_owner_kind = 'creator' | 'chatter'` — matches `ledger.ts` `ownerKind` field + the RPC signature
+- `wallet_tx_source` enum — Phase 8 Task 8.1 + Task 8.2 `LedgerSource` type literal union
+
+### Invariants cheat-sheet
+
+For anyone reviewing future payment code, the three invariants that make this system correct:
+
+1. **Ledger-first.** Every status flip to `succeeded` / `delivered` / `active` comes AFTER `applyWalletTransaction` resolves. If the ledger throws, the status stays pending and the event stays unprocessed for the reconciliation cron.
+2. **Amount-matched.** Before crediting, `Math.abs(body.Amount*100 - purchase.amount_cents) <= 2`. Mismatch = do not credit + mark event errored + alert.
+3. **Gate is `status`, not `access_token`.** Content reveals through `canAccessPurchasedLink` / `canAccessCustomRequestDelivery` / `has_active_fan_subscription`. The `access_token` is a sharing handle, not an access grant.
+
+---
+
+## Known Edge Cases & Post-Implementation Risks
+
+Senior-review pass. Every item below is acknowledged — either fixed in a specific task, or accepted as "acceptable behaviour, watch the logs".
+
+### Already handled in the plan
+
+- **Rebill idempotency on network retry** — Same-TID callback twice → ledger unique index short-circuits (Task 8.1).
+- **ConfirmURL fires for Recurring state** — Handled as idempotent no-op in Task 4.5; rebill cron is the single writer for recurring credits.
+- **Legacy 11027 rebillability** — `cancel plan → rebill the original Sale TID` sequence (Task 4.9). Derek confirmed this doesn't break the TID.
+- **Card-expired detection** — No uniform code from UG; we don't try to distinguish. Generic retry-then-suspend applies (Tasks 4.3 + 4.6).
+- **Floating-point amount drift** — `Math.round(parseFloat(body.Amount) * 100)` handles `"39.99" → 3999` cleanly; 2¢ tolerance on comparison (Task 8.3 Step 1).
+- **Transient UG outage vs permanent decline** — `classification='transient'` from `ugRebill` (5xx, network timeout, `status=pending|error|unconfirmed`) never counts against the 3-attempt cap. The cron retries next run untouched (Task 0.6 + Task 4.3).
+- **Creator disables subs or deactivates profile mid-cycle** — Rebill cron skips + auto-cancels any fan sub whose `creator_profile.is_active=false` OR `fan_subscription_enabled=false` (Task 4.3 fan loop).
+- **UG API timeout** — AbortController with 15s timeout in `ugRebill.ts`. Classified as `transient` so it doesn't eat an attempt slot.
+
+### Post-implementation risks — fixes owed
+
+These are real risks the initial plan didn't close. Each has a concrete fix that should go into Phase 8 or a follow-up.
+
+**1. Partial refunds over-debit the wallet.**
+- Scenario: fan disputes only $10 of a $39 charge. UG refunds $10. `ugp-listener` today reverses the *full* ledger credit ($33 net after 15% fee) → creator's wallet goes negative by ~$23.
+- Fix: when reversing, use the refund callback's `body.Amount` to compute the proportional reversal amount. If refund < 100% of original, split:
+  ```ts
+  const originalCents = creditRow.amount_cents;
+  const refundedCents = Math.round(parseFloat(body.Amount) * 100);
+  const refundRatio = refundedCents / originalGrossCents; // original TOTAL charge, not net
+  const reverseAmount = Math.round(originalCents * refundRatio);
+  ```
+- Add to Task 8.4 Step 1.
+
+**2. Chargeback after refund double-reverses.**
+- Scenario: we refund fully → UG later sends CBK1 for the same TID (possible if issuer contested the refund too).
+- Ledger unique index is `(owner, source_type, direction, tid)`. A refund and chargeback have different `source_type` values → both rows would insert → double reverse.
+- Fix: `ugp-listener` chargeback handler checks whether a `refund` row already exists for the same TID and short-circuits with an alert rather than reversing again.
+- Add to Task 8.4 Step 2.
+
+**3. Subscription refund doesn't revoke access.**
+- Scenario: creator refunds a fan's $5 sub payment manually from the UG portal. Our `handleRefund` reverses the wallet credit (via Task 8.4 ledger lookup) but doesn't touch `fan_creator_subscriptions.period_end` — the fan keeps access until period end.
+- Fix: extend `handleRefund` to check whether the refund is for a sub's TID (query `fan_creator_subscriptions` by `ugp_transaction_id`) and if so set `period_end = now()` + `status = 'refunded'`. Same treatment for creator Pro subs.
+- Add as a new Task 8.4 Step 4.
+
+**4. Creator upgrades Monthly → Annual can't do it in-app.**
+- Current plan: `create-creator-subscription` rejects if `subscription_plan !== 'free'`.
+- UX hole: Monthly subscriber wanting to switch to Annual must cancel + wait for period end + resubscribe. During that window they lose Pro.
+- Fix (small follow-up): allow Monthly → Annual by issuing the new Sale immediately + setting `cancel_at_period_end=true` on the old Monthly. Cron picks up the cancel naturally. Document in a new Phase 9.
+
+**5. Creator hard-deletes account with active fan subs.**
+- Cascade-delete `creator_profiles` → cascade-delete `fan_creator_subscriptions`. Cron finds nothing to rebill → fan's card not charged. Good.
+- But the fan loses their "I paid in the past" record in `/fan/subscriptions`. Regulatory concern for a 3-year transaction history retention if we operate in EU.
+- Fix: switch `fan_creator_subscriptions` to soft-delete via `deleted_at`, keep the ledger rows forever. Add a `rebill-subscriptions` cron guard: `WHERE creator_profile_id IN (active profiles)`.
+- Document as a compliance follow-up.
+
+**6. Fan sub grandfathered price drift.**
+- Creator sets price to $5, fan subscribes. Creator bumps to $10. Fan keeps paying $5 (locked on `fan_creator_subscriptions.price_cents`) — correct.
+- But if the fan cancels then resubscribes the next day, they pay $10. No notice they'd be "grandfathered out" for leaving.
+- Not a bug, just a UX note to surface in the fan's cancel confirmation dialog: "If you resubscribe later, the price may have changed."
+
+**7. Double-click on "Subscribe" before first checkout completes.**
+- Handled by `uniq_fan_sub_live_per_creator` index (migration 147). The second insert fails; we should catch it in the checkout function and return the existing pending row's QuickPay fields instead of erroring.
+- Fix: `create-fan-subscription-checkout` already has a `.maybeSingle()` check on existing — ensure it returns the existing row's fields on duplicate.
+
+**8. Rebill cron processing 10k+ subs per day.**
+- Current code is a `for` loop doing sequential Supabase writes + one `/recurringtransactions` call each. ~1s per sub → 10k subs → 2.7 hours.
+- Fluid Compute auto-scales but a single cron entry point runs serially.
+- Fix when we hit ~5k active subs: batch the loop with `Promise.all(batch.map(rebillOne))` in chunks of 10, rate-limited to ~20 req/s to respect UG API.
+- Acceptable for MVP. Document as a scale follow-up.
+
+**9. Missing `rebill_attempts` primary key for concurrency.**
+- If the cron runs twice accidentally (Vercel double-fire), both runs could process the same sub. The inserts would succeed (no unique constraint on `subject_id + attempt_number`), leading to duplicate ledger inserts — BUT the ledger itself is idempotent on source_transaction_id, so no double-credit. The `rebill_attempts` row is just a log.
+- Accepted; worth a note in the rebill cron: "this function must be run serially via Vercel Cron, not in parallel".
+
+**10. Creator's `subscription_amount_cents` displayed ≠ amount charged.**
+- Rebill day: cron computes `amount = BASE + extras * ADDON`. This is the amount charged. We update `subscription_amount_cents` AFTER success. If the cron fails, the displayed amount is stale (still shows last month's).
+- Benign, but worth keeping in mind when debugging customer complaints.
+
+**11. `IsInitialForRecurring` interaction with `SubscriptionPlanId`.**
+- QuickPay spec allows both fields on the same request. We set only `IsInitialForRecurring=true` and not `SubscriptionPlanId`. Expectation: UG treats the Sale as a standalone charge that is tagged as rebill-eligible, WITHOUT enrolling the customer in a UG-managed plan.
+- Worth confirming with Derek as a verification step during the first sandbox test. If UG accidentally enrolls in a plan, we'd get Member Postbacks we don't want.
+- Document as a **pre-launch sandbox test**: "submit 1 fan sub Sale with IsInitialForRecurring=true + no SubscriptionPlanId, verify no Member Postback fires in the next 30 days".
+
+**12. `CustomerCountry` on ConfirmURL is optional.**
+- Task 1.7 persists `profiles.billing_country` from `body.CustomerCountry` on successful checkout. But this field is OPTIONAL in the QuickPay spec — UG might not always send it.
+- Accepted: if missing, we just don't update; user will be re-prompted at next checkout.
+
+**13. Chatter wallet never goes negative on refunds.**
+- Ledger allows `apply_wallet_transaction` to produce negative `chatter_earnings_cents` if we reverse more than was credited. Could happen if there's a data inconsistency.
+- Fix: add a CHECK constraint `chatter_earnings_cents >= 0` ... but no, chargebacks legitimately push creators negative. Same should apply to chatters.
+- Keep negative allowed. Admin follows up via alert (Task 8.7).
+
+**14. `payment_events` retention.**
+- Every UG callback inserts a row. At 1000 txs/day that's 365k rows/year. Cheap to store but querying will slow.
+- Already indexed; fine for 5+ years. Plan to move to a time-partitioned table if we exceed ~50M rows.
+
+**15. Fan sub refund vs access-until-period-end cancellation.**
+- Fan cancels via our cancel button → `cancel_at_period_end=true`, keeps access until period_end.
+- Fan disputes with their bank → UG refunds → we reverse credit + set `period_end=now()` (fix #3 above). Access cut immediately.
+- Different UX: voluntary cancel = grace, dispute = immediate. Right behaviour; just worth documenting.
+
+### Chatter Attribution Rules — locked (2026-04-21)
+
+Thomas confirmed the revenue split. A chatter earns **ONLY** on two flows:
+
+1. **Link purchase** where the chatter sent the link to the fan through chat (attributed via the `?chtref=...` query param on the shared link → resolved to `chatter_id` at `create-link-checkout` time and stored on `purchases.chat_chatter_id`).
+2. **Custom request** where the chatter handled the creator's reply (the chatter opened the request modal, typed the proposed amount, and the fan paid; the `chat_chatter_id` is set on `custom_requests` at creation).
+
+A chatter earns **NOTHING** on:
+- Creator Pro subscriptions (initial Sale or any rebill cycle)
+- Fan → creator subscriptions (initial Sale or any rebill cycle)
+- Tips
+- Gift purchases (wishlist)
+
+This is enforced three ways in the code (defense in depth):
+
+- **Checkout functions:** `create-creator-subscription`, `create-fan-subscription-checkout`, `create-tip-checkout`, `create-gift-checkout` MUST ignore any `chtref` query param or `chat_chatter_id` body field. See Task 8.12.
+- **Ledger RPC:** `apply_wallet_transaction` rejects any `owner_kind='chatter'` row with `source_type IN ('creator_subscription', 'fan_subscription', 'tip', 'gift_purchase')`. See Task 8.12.
+- **Audit task:** Task 8.11 already requires every call site to document its owner_kind — a chatter credit on a sub source fails the audit.
+
+### Things we have NOT anticipated (open questions)
+
+These aren't necessarily bugs — they're scenarios where the plan is silent and a design decision still has to be made. Worth flagging now so they don't become emergencies in production.
+
+- **Subscription currency other than USD.** Plan hardcodes USD. If we ever expand to EUR/GBP pricing, every `.toFixed(2)` + hardcoded `'USD'` needs auditing.
+
+-> QUE DES PAYMENTS USD POUR LE MOMENT
+
+- **PayPal / crypto / alt rails.** Everything assumes UG Payments. A design that lets us plug in an alternative processor later requires abstracting `{create checkout, rebill, refund}` behind an interface — worth at least noting in the future-proofing.
+
+-> PAS D'AUTRE SYSTEME DE PAIEMENTS
+- **Dunning retry schedule tuning.** The plan hardcodes `RETRY_DELAY_DAYS = [0, 3, 4]` (7 days total). Industry best-practice is smart dunning (retry on different days of the week, avoid weekends for certain issuers). Revisit when we have enough data.
+- **"Trying to cancel right before rebill day" race.** Fan hits Cancel at 07:59 UTC, cron runs at 08:00 UTC. Whose state wins? Our code: `cancel_at_period_end=true` set first, cron reads it and treats as cancelled. Safe, but worth a manual test.
+- **Recovery after ledger drift alert.** Task 8.7 emails admin on drift but doesn't auto-correct. Manual reconciliation runbook: query `find_wallet_drift` → inspect the offending rows → manually insert an adjustment via `apply_wallet_transaction` with `sourceType='manual_adjustment'` and `adminNotes` explaining. Worth writing this runbook before the first drift happens.
+- **GDPR "delete my data" request on a fan with subscription history.** If a fan asks for erasure, we must anonymise their PII but keep the ledger rows (financial law). Not in this plan; handle in a separate compliance pass.
+
+-> NON
+
+---
+
+**Plan complete and saved to `docs/superpowers/plans/2026-04-20-payment-routing-subscriptions-refonte.md`. Two execution options:**
+
+**1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
+
+**2. Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints.
+
+**Which approach?**

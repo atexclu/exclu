@@ -108,15 +108,14 @@ serve(async (req) => {
     }
 
     if (action === 'delete_asset') {
-      const { asset_id, storage_path } = body
+      const { asset_id } = body
       if (!asset_id) {
         return new Response(JSON.stringify({ error: 'Missing asset_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
-      // Delete from storage first if path provided
-      if (storage_path) {
-        await supabaseAdmin.storage.from('creator-content').remove([storage_path])
-      }
-      const { error } = await supabaseAdmin.from('assets').delete().eq('id', asset_id)
+      // Soft-delete so any link_media / purchase still referencing this asset
+      // keeps working. Hard delete + storage cleanup should go through a
+      // separate purge path that first verifies no dependency exists.
+      const { error } = await supabaseAdmin.from('assets').update({ deleted_at: new Date().toISOString() }).eq('id', asset_id)
       if (error) throw error
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }

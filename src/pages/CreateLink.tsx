@@ -132,6 +132,7 @@ const CreateLink = () => {
       const assetsQuery = supabase
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(12);
       const { data, error } = activeProfile?.id
@@ -281,18 +282,8 @@ const CreateLink = () => {
         }
       }
 
-      // 3a. Publish the link now that upload succeeded (or no file was required)
-      const { error: publishError } = await supabase
-        .from('links')
-        .update({ status: 'published' })
-        .eq('id', linkId);
-
-      if (publishError) {
-        console.error(publishError);
-        throw new Error('Content was uploaded but the link could not be published.');
-      }
-
-      // 3. Attach assets from library via link_media
+      // 3. Attach library assets via link_media BEFORE publishing so the
+      // `links_require_content` DB trigger sees the content it requires.
       if (selectedAssetIds.length > 0) {
         const rows = selectedAssetIds.map((assetId, index) => ({
           link_id: linkId,
@@ -304,8 +295,20 @@ const CreateLink = () => {
 
         if (linkMediaError) {
           console.error(linkMediaError);
-          toast.error('Link was created but some library media could not be attached.');
+          await supabase.from('links').delete().eq('id', linkId);
+          throw new Error('Link was created but library media could not be attached.');
         }
+      }
+
+      // 4. Publish the link now that content is guaranteed to be attached.
+      const { error: publishError } = await supabase
+        .from('links')
+        .update({ status: 'published' })
+        .eq('id', linkId);
+
+      if (publishError) {
+        console.error(publishError);
+        throw new Error('Content was uploaded but the link could not be published.');
       }
 
       toast.success('Your premium link has been created.');

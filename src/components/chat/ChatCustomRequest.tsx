@@ -166,7 +166,7 @@ export function ChatCustomRequest({ profileId, onClose }: ChatCustomRequestProps
             />
           </div>
           <p className="text-[10px] text-white/30">
-            Minimum ${(MIN_AMOUNT_CENTS / 100).toFixed(0)} · 5% processing fee added at checkout
+            Minimum ${(MIN_AMOUNT_CENTS / 100).toFixed(0)} · 15% processing fee added at checkout
           </p>
         </div>
 

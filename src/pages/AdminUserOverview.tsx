@@ -2,7 +2,7 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2, Camera, Mail } from 'lucide-react';
+import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2, Camera, Mail, Wallet as WalletIcon, TrendingUp, ShoppingCart, Landmark, Activity, ArrowUpRight, Crown, Link2, FolderOpen, Settings as SettingsIcon, LayoutGrid, ChevronLeft, MapPin, Calendar, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
@@ -85,12 +85,57 @@ interface UserSaleOverview {
   created_at: string | null;
 }
 
+interface MetricsBucket {
+  cnt: number;
+  gross_cents: number;
+  net_cents: number;
+}
+
+interface AdminUserMetrics {
+  purchases: MetricsBucket;
+  tips: MetricsBucket;
+  gifts: MetricsBucket;
+  custom_requests: MetricsBucket;
+  fan_subscriptions: {
+    active_count: number;
+    total_count: number;
+    monthly_revenue_cents: number;
+  };
+  last_30d: {
+    sales_count: number;
+    revenue_cents: number;
+  };
+  top_links: Array<{
+    id: string;
+    title: string | null;
+    slug: string | null;
+    sales_count: number;
+    revenue_cents: number;
+  }>;
+  // Optional because it was added in migration 151 — payload from a
+  // pre-151 backend can omit it; the UI renders conditionally.
+  referrals?: {
+    lifetime_earnings_cents: number;
+    commissions_row_sum_cents: number;
+    recruited_count: number;
+    converted_count: number;
+    payout_requested_at: string | null;
+    referred_by: { id: string; handle: string | null; display_name: string | null } | null;
+  };
+  totals: {
+    count: number;
+    gross_cents: number;
+    net_cents: number;
+  };
+}
+
 interface UserOverviewPayload {
   profile: UserProfileOverview | null;
   links: UserLinkOverview[];
   assets: UserAssetOverview[];
   sales: UserSaleOverview[];
   payouts: PayoutOverview[];
+  metrics: AdminUserMetrics | null;
 }
 
 const AdminUserOverview = () => {
@@ -103,6 +148,7 @@ const AdminUserOverview = () => {
   const [assets, setAssets] = useState<UserAssetOverview[]>([]);
   const [sales, setSales] = useState<UserSaleOverview[]>([]);
   const [payouts, setPayouts] = useState<PayoutOverview[]>([]);
+  const [metrics, setMetrics] = useState<AdminUserMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<UserAssetOverview | null>(null);
@@ -119,6 +165,8 @@ const AdminUserOverview = () => {
   const [isDeletingAvatar, setIsDeletingAvatar] = useState(false);
   const [isRequestingPhotoChange, setIsRequestingPhotoChange] = useState(false);
   const [photoTargetProfileId, setPhotoTargetProfileId] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'content' | 'wallet' | 'settings'>('overview');
 
   useEffect(() => {
     if (!id) {
@@ -150,75 +198,66 @@ const AdminUserOverview = () => {
         return;
       }
 
-      let data: any = null;
-      let error: any = null;
       try {
-        const result = await supabase.functions.invoke('admin-get-user-overview', {
-          body: { user_id: id },
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'x-supabase-auth': session.access_token,
-          },
-        });
-        data = result.data;
-        error = result.error;
-      } catch (fetchErr) {
-        console.error('Fetch error:', fetchErr);
-        error = fetchErr;
-      }
-
-      if (!isMounted) return;
-
-      if (error) {
-        console.error('Error loading user overview from admin-get-user-overview', error);
-        setError('Unable to load user overview. Make sure your account has admin access.');
-        setIsLoading(false);
-        return;
-      }
-
-      const payload = data as UserOverviewPayload;
-      setProfile(payload.profile);
-      setLinks(payload.links ?? []);
-      setAssets(payload.assets ?? []);
-      setSales(payload.sales ?? []);
-      setPayouts(payload.payouts ?? []);
-
-      // Fetch agency data if user is an agency
-      if (id) {
-        const { data: agencyInfo } = await supabase
-          .from('profiles')
-          .select('agency_name, agency_logo_url, country')
-          .eq('id', id)
-          .not('agency_name', 'is', null)
-          .maybeSingle();
-        if (agencyInfo) {
-          setAgencyData(agencyInfo);
-          
-          // Fetch managed profiles for this agency
-          const { data: managed } = await supabase
+        const [overviewResult, profileExtraResult, creatorProfilesResult] = await Promise.all([
+          supabase.functions.invoke('admin-get-user-overview', {
+            body: { user_id: id },
+            headers: {
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'x-supabase-auth': session.access_token,
+            },
+          }),
+          supabase
+            .from('profiles')
+            .select('agency_name, agency_logo_url, country, avatar_url')
+            .eq('id', id)
+            .maybeSingle(),
+          supabase
             .from('creator_profiles')
             .select('id, username, display_name, is_active, avatar_url, model_categories')
-            .eq('user_id', id);
-          if (managed) {
-            setManagedProfiles(managed);
-          }
-        }
-      }
+            .eq('user_id', id),
+        ]);
 
-      // Fetch model categories for this user's creator profile
-      if (id) {
-        const { data: cpData } = await supabase
-          .from('creator_profiles')
-          .select('model_categories')
-          .eq('user_id', id)
-          .eq('is_active', true)
-          .maybeSingle();
-        if (cpData?.model_categories) {
-          setModelCategories(cpData.model_categories);
+        if (!isMounted) return;
+
+        if (overviewResult.error) {
+          console.error('Error loading user overview from admin-get-user-overview', overviewResult.error);
+          setError('Unable to load user overview. Make sure your account has admin access.');
+          setIsLoading(false);
+          return;
         }
+
+        const payload = overviewResult.data as UserOverviewPayload;
+        setProfile(payload.profile);
+        setLinks(payload.links ?? []);
+        setAssets(payload.assets ?? []);
+        setSales(payload.sales ?? []);
+        setPayouts(payload.payouts ?? []);
+        setMetrics(payload.metrics ?? null);
+
+        const extra = profileExtraResult.data;
+        if (extra?.avatar_url) setAvatarUrl(extra.avatar_url);
+
+        const cps = creatorProfilesResult.data ?? [];
+        const activeCp = cps.find((p: any) => p.is_active);
+        if (activeCp?.model_categories) setModelCategories(activeCp.model_categories);
+
+        if (extra?.agency_name) {
+          setAgencyData({
+            agency_name: extra.agency_name,
+            agency_logo_url: extra.agency_logo_url ?? null,
+            country: extra.country ?? '',
+          });
+          setManagedProfiles(cps);
+        }
+      } catch (fetchErr) {
+        console.error('Fetch error:', fetchErr);
+        if (isMounted) {
+          setError('Unable to load user overview. Please try again.');
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-      
-      setIsLoading(false);
     };
 
     loadOverview();
@@ -476,512 +515,621 @@ const AdminUserOverview = () => {
 
   return (
     <AppShell>
-      <main className="px-4 pt-6 pb-8 sm:px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin – User overview</h1>
-              <p className="text-xs sm:text-sm text-exclu-space mt-1">
-                Read-only snapshot of this creator&apos;s dashboard. No actions are performed on their account.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
+      <main className="relative px-4 pt-6 pb-12 sm:px-6 lg:px-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Top actions */}
+          <div className="flex items-center justify-between mb-5">
+            <button
+              type="button"
+              onClick={() => navigate(returnTo)}
+              className="inline-flex items-center gap-1.5 text-xs text-exclu-space/70 hover:text-exclu-cloud transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Back to users
+            </button>
+            <div className="flex items-center gap-2">
               {profile?.handle && (
                 <button
                   type="button"
                   onClick={() => window.open(`/${profile.handle}`, '_blank')}
-                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-exclu-arsenic/60 bg-exclu-ink/60 text-xs text-exclu-space hover:text-exclu-cloud hover:border-exclu-cloud/40 transition-colors"
                   title="View public profile"
                 >
-                  <ExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Public profile</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={!profile || isDeleting}
-                className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-red-500/30 bg-red-500/5 text-xs text-red-400 hover:bg-red-500/10 hover:border-red-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Delete user"
               >
-                <Trash2 className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate(returnTo)}
-                className="text-xs sm:text-sm text-exclu-space hover:text-exclu-cloud underline-offset-2 hover:underline"
-              >
-                Back to users
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Delete</span>
               </button>
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 shadow-lg shadow-black/40 overflow-hidden">
-            {isLoading ? (
-              <div className="px-4 py-6 text-sm text-exclu-space">Loading user overview…</div>
-            ) : !profile ? (
-              <div className="px-4 py-6 text-sm text-exclu-space">User profile not found.</div>
-            ) : (
-              <div className="px-4 py-4 space-y-4">
-                {error && (
-                  <div className="mb-3 text-sm text-red-400">{error}</div>
-                )}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-semibold text-exclu-cloud">Profile</h2>
-                    <p className="text-xs text-exclu-space mt-1">
-                      {profile.display_name || '—'}
-                      {profile.handle && (
-                        <span className="text-exclu-space/80"> · @{profile.handle}</span>
-                      )}
-                    </p>
-                  </div>
+          {isLoading ? (
+            <div className="space-y-5 animate-pulse">
+              <div className="h-40 rounded-3xl bg-exclu-ink/60 border border-exclu-arsenic/40" />
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="h-24 rounded-2xl bg-exclu-ink/60 border border-exclu-arsenic/40" />
+                ))}
+              </div>
+              <div className="h-10 w-72 rounded-full bg-exclu-ink/60 border border-exclu-arsenic/40" />
+              <div className="h-64 rounded-2xl bg-exclu-ink/60 border border-exclu-arsenic/40" />
+            </div>
+          ) : !profile ? (
+            <div className="rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/80 p-10 text-center">
+              <p className="text-sm text-exclu-space">User profile not found.</p>
+            </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-400">{error}</div>
+              )}
 
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-exclu-space mt-2 sm:mt-0 sm:justify-end sm:text-right">
-                    <p>
-                      Created:{' '}
-                      <span className="text-exclu-cloud/90">
-                        {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}
-                      </span>
-                    </p>
-                    <p>
-                      Country:{' '}
-                      <span className="text-exclu-cloud/90">{profile.country || '—'}</span>
-                    </p>
-                    <p>
-                      Creator:{' '}
-                      <span className="text-exclu-cloud/90">{profile.is_creator ? 'Yes' : 'No'}</span>
-                    </p>
-                  </div>
-                </div>
+              {/* ── Hero ── */}
+              <section className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/60 bg-gradient-to-br from-exclu-ink/90 via-exclu-ink/60 to-exclu-black/80 p-6 sm:p-8 mb-5">
+                <div aria-hidden className="pointer-events-none absolute -top-24 -right-12 w-[360px] h-[360px] rounded-full bg-[radial-gradient(circle,rgba(207,255,22,0.16),transparent_60%)] blur-3xl" />
+                <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.04] mix-blend-overlay bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22/></filter><rect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%220.7%22/></svg>')]" />
 
-                <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
-                  <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Directory Visibility</h2>
-                  
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-exclu-cloud">Show in landing pages</p>
-                      <p className="text-xs text-exclu-space mt-1">
-                        Controls visibility in creator directory, agency listings, and blog carousel
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {profile.is_directory_visible ? (
-                        <Eye className="w-4 h-4 text-green-400" />
+                <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
+                  <div className="relative shrink-0">
+                    <div className="absolute -inset-0.5 rounded-2xl bg-gradient-to-br from-[#CFFF16]/40 to-transparent blur-sm opacity-60" />
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-white/10 bg-exclu-arsenic/40 flex items-center justify-center">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt={profile.display_name ?? profile.handle ?? 'User'} className="w-full h-full object-cover" />
                       ) : (
-                        <EyeOff className="w-4 h-4 text-red-400" />
+                        <span className="text-3xl font-black text-white/40 tracking-tight">
+                          {(profile.display_name || profile.handle || '?')[0]?.toUpperCase()}
+                        </span>
                       )}
-                      <Switch
-                        checked={profile.is_directory_visible || false}
-                        onCheckedChange={handleDirectoryVisibilityToggle}
-                        disabled={isUpdatingVisibility}
-                        className="data-[state=checked]:bg-[#CFFF16]"
-                      />
                     </div>
                   </div>
-                  
-                  {isUpdatingVisibility && (
-                    <p className="text-xs text-exclu-space/70 mt-2">Updating visibility...</p>
-                  )}
-                </div>
 
-                {/* Photo Management */}
-                {profile.is_creator && (
-                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Camera className="w-4 h-4 text-[#CFFF16]" />
-                        <h2 className="text-sm font-semibold text-exclu-cloud">Photo Management</h2>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] font-semibold text-[#CFFF16]/80 mb-1.5">
+                      <Activity className="w-3 h-3" />
+                      Admin view
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-exclu-cloud truncate">
+                      {profile.display_name || 'Untitled user'}
+                    </h1>
+                    {profile.handle && (
+                      <p className="text-sm text-exclu-space/80 mt-0.5">@{profile.handle}</p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_creator_subscribed ? 'bg-[#CFFF16]/15 text-[#CFFF16] border-[#CFFF16]/30' : 'bg-exclu-arsenic/40 text-exclu-space/80 border-exclu-arsenic/50'}`}>
+                        {profile.is_creator_subscribed ? <><Crown className="w-3 h-3" /> Premium · 0%</> : <>Free · 15%</>}
+                      </span>
+                      <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                        profile.role === 'chatter' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' :
+                        profile.role === 'creator' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
+                        'bg-exclu-arsenic/40 text-exclu-space/70 border-exclu-arsenic/50'
+                      }`}>
+                        {profile.role ?? 'unknown'}
+                      </span>
+                      {profile.is_creator && (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-exclu-ink/80 text-exclu-cloud/80 border border-exclu-arsenic/60">
+                          <Sparkles className="w-3 h-3 text-[#CFFF16]" /> Creator
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_directory_visible ? 'bg-green-500/10 text-green-400 border-green-500/25' : 'bg-exclu-arsenic/40 text-exclu-space/60 border-exclu-arsenic/50'}`}>
+                        {profile.is_directory_visible ? <><Eye className="w-3 h-3" /> In directory</> : <><EyeOff className="w-3 h-3" /> Hidden</>}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px] text-exclu-space/70">
+                      <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined {profile.created_at ? new Date(profile.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</span>
+                      {profile.country && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {profile.country}</span>}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* ── KPI strip ── */}
+              <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                {[
+                  { icon: WalletIcon, label: 'Wallet balance', value: `$${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}`, accent: true },
+                  { icon: TrendingUp, label: 'Total earned', value: `$${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}` },
+                  { icon: ShoppingCart, label: 'Total sales', value: (metrics?.totals.count ?? 0).toLocaleString() },
+                  { icon: Activity, label: 'Last 30 days', value: metrics ? `${metrics.last_30d.sales_count} · $${(metrics.last_30d.revenue_cents / 100).toFixed(2)}` : '—' },
+                ].map(({ icon: Icon, label, value, accent }) => (
+                  <div
+                    key={label}
+                    className={`relative overflow-hidden rounded-2xl border p-4 transition-colors ${
+                      accent
+                        ? 'border-[#CFFF16]/30 bg-gradient-to-br from-[#CFFF16]/5 to-exclu-ink/60'
+                        : 'border-exclu-arsenic/50 bg-exclu-ink/70'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-semibold text-exclu-space/70">
+                      <Icon className={`w-3.5 h-3.5 ${accent ? 'text-[#CFFF16]' : 'text-exclu-space/70'}`} />
+                      {label}
+                    </div>
+                    <p className={`mt-2 text-xl sm:text-2xl font-bold tabular-nums tracking-tight ${accent ? 'text-[#CFFF16]' : 'text-exclu-cloud'}`}>
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </section>
+
+              {/* ── Tabs ── */}
+              <div className="mb-5">
+                <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80 max-w-full overflow-x-auto scrollbar-hide">
+                  {[
+                    { key: 'overview' as const, label: 'Overview', icon: LayoutGrid },
+                    { key: 'content' as const, label: 'Content', icon: FolderOpen },
+                    { key: 'wallet' as const, label: 'Wallet', icon: Landmark },
+                    { key: 'settings' as const, label: 'Settings', icon: SettingsIcon },
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveTab(tab.key)}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-medium transition-all whitespace-nowrap ${
+                          isActive ? 'bg-[#CFFF16] text-black shadow-sm' : 'hover:text-exclu-cloud'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── OVERVIEW ── */}
+              {activeTab === 'overview' && (
+                <div className="space-y-4">
+                  {metrics && profile.is_creator && (
+                    <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-[#CFFF16]" />
+                          <h2 className="text-sm font-semibold text-exclu-cloud">Revenue breakdown</h2>
+                        </div>
+                        <span className="text-[10px] text-exclu-space/60">All-time, every surface</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <div className="rounded-xl bg-exclu-arsenic/20 border border-exclu-arsenic/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wider text-exclu-space/60">Gross</p>
+                          <p className="text-xl font-bold text-exclu-cloud tabular-nums mt-0.5">${(metrics.totals.gross_cents / 100).toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl bg-[#CFFF16]/5 border border-[#CFFF16]/25 p-3">
+                          <p className="text-[10px] uppercase tracking-wider text-[#CFFF16]/70">Creator net</p>
+                          <p className="text-xl font-bold text-[#CFFF16] tabular-nums mt-0.5">${(metrics.totals.net_cents / 100).toFixed(2)}</p>
+                        </div>
+                        <div className="rounded-xl bg-exclu-arsenic/20 border border-exclu-arsenic/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wider text-exclu-space/60">Sales</p>
+                          <p className="text-xl font-bold text-exclu-cloud tabular-nums mt-0.5">{metrics.totals.count.toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+                        {[
+                          { label: 'Link purchases', data: metrics.purchases, icon: Link2 },
+                          { label: 'Tips', data: metrics.tips, icon: Sparkles },
+                          { label: 'Gifts', data: metrics.gifts, icon: Activity },
+                          { label: 'Custom requests', data: metrics.custom_requests, icon: Tag },
+                        ].map(({ label, data, icon: Icon }) => (
+                          <div key={label} className="rounded-xl bg-exclu-ink/60 border border-exclu-arsenic/40 p-2.5">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Icon className="w-3 h-3 text-exclu-space/70" />
+                              <p className="text-[10px] text-exclu-space/70">{label}</p>
+                            </div>
+                            <p className="text-[13px] font-semibold text-exclu-cloud tabular-nums">
+                              {data.cnt} · ${(data.gross_cents / 100).toFixed(2)}
+                            </p>
+                            <p className="text-[10px] text-exclu-space/50 mt-0.5">net ${(data.net_cents / 100).toFixed(2)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+                        <div className="rounded-xl bg-exclu-ink/60 border border-exclu-arsenic/40 p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase tracking-wider text-exclu-space/70">Fan subscriptions</p>
+                            <span className="text-[10px] text-[#CFFF16] font-medium">${(metrics.fan_subscriptions.monthly_revenue_cents / 100).toFixed(2)} / mo</span>
+                          </div>
+                          <p className="text-sm font-semibold text-exclu-cloud mt-1">
+                            {metrics.fan_subscriptions.active_count} active <span className="text-exclu-space/50">· {metrics.fan_subscriptions.total_count} total</span>
+                          </p>
+                        </div>
+
+                        {metrics.referrals && (
+                          <div className="rounded-xl bg-exclu-ink/60 border border-exclu-arsenic/40 p-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] uppercase tracking-wider text-exclu-space/70">Referral earnings</p>
+                              {metrics.referrals.payout_requested_at ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">Payout pending</span>
+                              ) : (
+                                <span className="text-[10px] text-[#CFFF16] font-medium">35% recurring</span>
+                              )}
+                            </div>
+                            <p className="text-sm font-semibold text-exclu-cloud mt-1 tabular-nums">
+                              ${((metrics.referrals.lifetime_earnings_cents ?? 0) / 100).toFixed(2)}
+                              <span className="text-exclu-space/50 text-[11px] font-normal ml-1">lifetime</span>
+                            </p>
+                            <p className="text-[10px] text-exclu-space/60 mt-0.5">
+                              {metrics.referrals.recruited_count ?? 0} recruited
+                              <span className="text-exclu-space/40"> · </span>
+                              {metrics.referrals.converted_count ?? 0} premium
+                              {metrics.referrals.referred_by && (
+                                <>
+                                  <span className="text-exclu-space/40"> · </span>
+                                  referred by{' '}
+                                  <a
+                                    href={metrics.referrals.referred_by.handle ? `/${metrics.referrals.referred_by.handle}` : '#'}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-exclu-cloud/80 hover:text-[#CFFF16]"
+                                  >
+                                    @{metrics.referrals.referred_by.handle || metrics.referrals.referred_by.display_name || metrics.referrals.referred_by.id.slice(0, 8)}
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {metrics.top_links.length > 0 && (
+                        <div className="rounded-xl bg-exclu-ink/60 border border-exclu-arsenic/40 p-3">
+                          <p className="text-[10px] uppercase tracking-wider text-exclu-space/70 mb-2">Top-selling links</p>
+                          <div className="space-y-1">
+                            {metrics.top_links.slice(0, 3).map((tl) => (
+                              <div key={tl.id} className="flex items-center justify-between text-[11px] gap-2">
+                                <span className="text-exclu-cloud truncate flex-1">{tl.title || tl.slug || tl.id}</span>
+                                <span className="text-exclu-space/60 shrink-0 tabular-nums">{tl.sales_count}</span>
+                                <span className="text-[#CFFF16] font-medium shrink-0 tabular-nums">${(tl.revenue_cents / 100).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {agencyData && (
+                    <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Building2 className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Agency Information</h2>
+                      </div>
+
+                      <div className="flex items-center gap-4 mb-4">
+                        {agencyData.agency_logo_url ? (
+                          <img src={agencyData.agency_logo_url} alt="" className="w-14 h-14 rounded-xl object-cover border border-exclu-arsenic/50" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-xl border border-exclu-arsenic/50 bg-exclu-arsenic/30 flex items-center justify-center">
+                            <Building2 className="w-5 h-5 text-exclu-space/60" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-base font-semibold text-exclu-cloud truncate">{agencyData.agency_name}</p>
+                          {agencyData.country && (
+                            <p className="text-[11px] text-exclu-space/70 mt-0.5 inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {agencyData.country}</p>
+                          )}
+                        </div>
                       </div>
 
                       {managedProfiles.length > 0 && (
-                        <select
-                          value={photoTargetProfileId ?? ''}
-                          onChange={(e) => setPhotoTargetProfileId(e.target.value || null)}
-                          className="h-8 rounded-lg bg-exclu-ink border border-exclu-arsenic/70 text-exclu-cloud text-xs px-3 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40 w-full sm:w-56"
-                        >
-                          <option value="">— Select a managed profile —</option>
-                          {managedProfiles.map((p) => (
-                            <option key={p.id} value={p.id}>{p.display_name || p.username} (@{p.username})</option>
-                          ))}
-                        </select>
-                      )}
-
-                      <div className="flex items-center gap-2 sm:ml-auto">
-                        <button
-                          type="button"
-                          onClick={handleRequestPhotoChange}
-                          disabled={isRequestingPhotoChange || (managedProfiles.length > 0 && !photoTargetProfileId)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-exclu-arsenic/60 text-exclu-cloud text-xs hover:border-exclu-cloud/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {isRequestingPhotoChange ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                          Request change
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteAvatar}
-                          disabled={isDeletingAvatar || (managedProfiles.length > 0 && !photoTargetProfileId)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-xs hover:border-red-400/60 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {isDeletingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          Delete photo
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Agency Information */}
-                {agencyData && (
-                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Building2 className="w-4 h-4 text-[#CFFF16]" />
-                      <h2 className="text-sm font-semibold text-exclu-cloud">Agency Information</h2>
-                    </div>
-                    
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 mb-4">
-                      {agencyData.agency_logo_url && (
-                        <div className="flex-shrink-0">
-                          <img 
-                            src={agencyData.agency_logo_url} 
-                            alt="Agency logo" 
-                            className="w-16 h-16 rounded-lg object-cover border border-exclu-arsenic/50"
-                          />
-                        </div>
-                      )}
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 flex-1">
                         <div>
-                          <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1">Agency Name</p>
-                          <p className="text-sm text-exclu-cloud">{agencyData.agency_name}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-1">Country</p>
-                          <p className="text-sm text-exclu-cloud">{agencyData.country}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Managed Profiles */}
-                    {managedProfiles.length > 0 && (
-                      <div>
-                        <p className="text-[11px] text-exclu-space uppercase tracking-wide mb-3">
-                          Managed Profiles ({managedProfiles.length})
-                        </p>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                          {managedProfiles.map((profile) => {
-                            const isSelected = profile.id === selectedManagedProfileId;
-                            return (
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] uppercase tracking-wider text-exclu-space/70">Managed profiles · {managedProfiles.length}</p>
+                            {selectedManagedProfileId && (
                               <button
-                                key={profile.id}
-                                onClick={() => setSelectedManagedProfileId(isSelected ? null : profile.id)}
                                 type="button"
-                                className={`group block relative rounded-2xl overflow-hidden border transition-all duration-300 ${
-                                  isSelected 
-                                    ? 'border-[#CFFF16] shadow-[0_0_15px_rgba(207,255,22,0.15)] scale-[1.03]' 
-                                    : 'border-exclu-arsenic/40 hover:border-white/30 hover:scale-[1.03]'
-                                }`}
-                                title={`${profile.display_name || profile.username} - ${profile.is_active ? 'Active' : 'Inactive'} (Click to filter)`}
+                                onClick={() => setSelectedManagedProfileId(null)}
+                                className="text-[10px] text-[#CFFF16] hover:underline"
                               >
-                                <div className="aspect-[3/4] relative">
-                                  {profile.avatar_url ? (
-                                    <img
-                                      src={profile.avatar_url}
-                                      alt={profile.display_name || profile.username}
-                                      className="absolute inset-0 w-full h-full object-cover"
-                                      loading="lazy"
-                                    />
-                                  ) : (
-                                    <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-exclu-arsenic/30 flex items-center justify-center">
-                                      <span className="text-2xl font-bold text-white/20">
-                                        {(profile.display_name || profile.username)?.[0]?.toUpperCase()}
-                                      </span>
-                                    </div>
-                                  )}
-                                  <div className="absolute top-1 right-1">
-                                    <div className={`w-2 h-2 rounded-full ${profile.is_active ? 'bg-green-400' : 'bg-red-400'} border border-black/50`} />
-                                  </div>
-                                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-exclu-black via-exclu-black/90 to-transparent flex flex-col items-start gap-1">
-                                    <p className="text-white font-medium text-xs truncate leading-tight w-full text-left">
-                                      {profile.display_name || profile.username}
-                                    </p>
-                                    <div className="flex items-center justify-between w-full">
-                                      <p className="text-exclu-steel text-[10px] truncate">
-                                        @{profile.username}
-                                      </p>
-                                      <a 
-                                        href={`/${profile.username}`} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="bg-black/40 hover:bg-black/80 rounded p-1 text-white border border-white/20 z-10"
-                                      >
-                                        <ExternalLink className="w-3 h-3" />
-                                      </a>
-                                    </div>
-                                  </div>
-                                </div>
+                                Clear filter
                               </button>
-                            );
-                          })}
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                            {managedProfiles.map((mp) => {
+                              const isSelected = mp.id === selectedManagedProfileId;
+                              return (
+                                <button
+                                  key={mp.id}
+                                  onClick={() => setSelectedManagedProfileId(isSelected ? null : mp.id)}
+                                  type="button"
+                                  className={`group block relative rounded-xl overflow-hidden border transition-all duration-300 ${
+                                    isSelected
+                                      ? 'border-[#CFFF16] shadow-[0_0_15px_rgba(207,255,22,0.18)] scale-[1.03]'
+                                      : 'border-exclu-arsenic/40 hover:border-white/30 hover:scale-[1.03]'
+                                  }`}
+                                  title={`${mp.display_name || mp.username} - ${mp.is_active ? 'Active' : 'Inactive'} (Click to filter)`}
+                                >
+                                  <div className="aspect-[3/4] relative">
+                                    {mp.avatar_url ? (
+                                      <img src={mp.avatar_url} alt={mp.display_name || mp.username} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                                    ) : (
+                                      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-exclu-arsenic/30 flex items-center justify-center">
+                                        <span className="text-2xl font-bold text-white/20">{(mp.display_name || mp.username)?.[0]?.toUpperCase()}</span>
+                                      </div>
+                                    )}
+                                    <div className="absolute top-1.5 right-1.5">
+                                      <div className={`w-2 h-2 rounded-full ${mp.is_active ? 'bg-green-400' : 'bg-red-400'} border border-black/50`} />
+                                    </div>
+                                    <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black via-black/80 to-transparent flex flex-col gap-0.5">
+                                      <p className="text-white font-medium text-[11px] truncate leading-tight">{mp.display_name || mp.username}</p>
+                                      <div className="flex items-center justify-between gap-1">
+                                        <p className="text-white/50 text-[9px] truncate">@{mp.username}</p>
+                                        <a
+                                          href={`/${mp.username}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="bg-black/40 hover:bg-black/80 rounded p-1 text-white border border-white/20"
+                                        >
+                                          <ExternalLink className="w-2.5 h-2.5" />
+                                        </a>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </section>
+                  )}
 
-                {/* Model Categories */}
-                {profile.is_creator && (
-                  <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4">
+                  {profile.is_creator && (
+                    <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Tag className="w-4 h-4 text-[#CFFF16]" />
+                          <h2 className="text-sm font-semibold text-exclu-cloud">Model Categories</h2>
+                          {managedProfiles.length > 0 && !selectedManagedProfileId && (
+                            <span className="text-[10px] text-exclu-space/50 ml-2">(Select a profile above to edit)</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={handleSaveCategories}
+                          disabled={isSavingCategories || (managedProfiles.length > 0 && !selectedManagedProfileId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CFFF16]/10 text-[#CFFF16] text-[11px] font-medium hover:bg-[#CFFF16]/20 transition-colors disabled:opacity-50"
+                        >
+                          {isSavingCategories ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                          Save categories
+                        </button>
+                      </div>
+                      <div className={managedProfiles.length > 0 && !selectedManagedProfileId ? "opacity-50 pointer-events-none" : ""}>
+                        <ModelCategoryDropdown value={modelCategories} onChange={setModelCategories} />
+                      </div>
+                    </section>
+                  )}
+                </div>
+              )}
+
+              {/* ── CONTENT ── */}
+              {activeTab === 'content' && (
+                <div className="space-y-4">
+                  <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-[#CFFF16]" />
-                        <h2 className="text-sm font-semibold text-exclu-cloud">Model Categories</h2>
-                        {managedProfiles.length > 0 && !selectedManagedProfileId && (
-                          <span className="text-[10px] text-exclu-space/50 ml-2">(Select a profile above to edit)</span>
-                        )}
+                        <Link2 className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Links</h2>
                       </div>
-                      <button
-                        onClick={handleSaveCategories}
-                        disabled={isSavingCategories || (managedProfiles.length > 0 && !selectedManagedProfileId)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#CFFF16]/10 text-[#CFFF16] text-[11px] font-medium hover:bg-[#CFFF16]/20 transition-colors disabled:opacity-50"
-                      >
-                        {isSavingCategories ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                        Save categories
-                      </button>
+                      <span className="text-[11px] text-exclu-space/70 tabular-nums">{displayLinks.length} links</span>
                     </div>
 
-                    <div className={managedProfiles.length > 0 && !selectedManagedProfileId ? "opacity-50 pointer-events-none" : ""}>
-                      <ModelCategoryDropdown
-                        value={modelCategories}
-                        onChange={setModelCategories}
-                      />
-                    </div>
-                </div>
-                )}
-
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-sm font-semibold text-exclu-cloud">Links</h2>
-                    <span className="text-[11px] text-exclu-space/80">{displayLinks.length} links</span>
-                  </div>
-                </div>
-
-                {displayLinks.length === 0 ? (
-                  <p className="text-sm text-exclu-space">This user has no links yet.</p>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/70 bg-exclu-ink/90">
-                    <table className="min-w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-exclu-ink border-b border-exclu-arsenic/70">
-                        <tr>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Content</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Title</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Visibility</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Price</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80">Created at</th>
-                          <th className="px-4 py-2 font-medium text-exclu-space/80"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayLinks.map((link) => {
-                          const isVideo = link.mime_type?.startsWith('video/');
-                          return (
-                            <tr
-                              key={link.id}
-                              className="border-b border-exclu-arsenic/40 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/80 cursor-pointer"
-                              onClick={() => setSelectedLink(link)}
-                            >
-                              <td className="px-4 py-2 align-middle">
-                                <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
-                                  {link.previewUrl ? (
-                                    isVideo ? (
-                                      <video
-                                        src={link.previewUrl}
-                                        className="w-full h-full object-cover"
-                                        muted
-                                        playsInline
-                                      />
-                                    ) : (
-                                      <img
-                                        src={link.previewUrl}
-                                        className="w-full h-full object-cover"
-                                        alt={link.title || 'Link content'}
-                                      />
-                                    )
-                                  ) : (
-                                    <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                                  )}
-                                  {link.media && link.media.length > 1 && (
-                                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold backdrop-blur-sm border border-white/10">
-                                      {link.media.length} files
+                    {displayLinks.length === 0 ? (
+                      <p className="text-sm text-exclu-space/60 py-6 text-center">This user has no links yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-exclu-arsenic/50 bg-exclu-void/30">
+                        <table className="min-w-full text-left text-xs sm:text-sm">
+                          <thead className="bg-exclu-ink/60 border-b border-exclu-arsenic/60">
+                            <tr>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70">Content</th>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70">Title</th>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70">Visibility</th>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70">Price</th>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70">Created</th>
+                              <th className="px-4 py-2.5 font-medium text-[10px] uppercase tracking-wider text-exclu-space/70"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayLinks.map((link) => {
+                              const isVideo = link.mime_type?.startsWith('video/');
+                              return (
+                                <tr
+                                  key={link.id}
+                                  className="border-b border-exclu-arsenic/30 last:border-b-0 transition-colors duration-150 hover:bg-exclu-ink/60 cursor-pointer"
+                                  onClick={() => setSelectedLink(link)}
+                                >
+                                  <td className="px-4 py-2 align-middle">
+                                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-exclu-arsenic/60 bg-exclu-ink/80">
+                                      {link.previewUrl ? (
+                                        isVideo ? (
+                                          <video src={link.previewUrl} className="w-full h-full object-cover" muted playsInline />
+                                        ) : (
+                                          <img src={link.previewUrl} className="w-full h-full object-cover" alt={link.title || 'Link content'} />
+                                        )
+                                      ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
+                                      )}
+                                      {link.media && link.media.length > 1 && (
+                                        <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold backdrop-blur-sm border border-white/10">
+                                          {link.media.length} files
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-cloud">
-                                {link.title || 'Untitled link'}
-                              </td>
-                              <td className="px-4 py-2 align-middle text-[11px]">
+                                  </td>
+                                  <td className="px-4 py-2 align-middle text-exclu-cloud">{link.title || 'Untitled link'}</td>
+                                  <td className="px-4 py-2 align-middle text-[11px]">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleLinkVisibility(link.id, !!link.show_on_profile);
+                                      }}
+                                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium transition-colors ${
+                                        link.status === 'published' && link.show_on_profile
+                                          ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                                          : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/20'
+                                      }`}
+                                      title={link.show_on_profile ? 'Click to hide from profile' : 'Click to make visible'}
+                                    >
+                                      {link.show_on_profile ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                      {link.show_on_profile ? 'Public' : 'Hidden'}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-2 align-middle text-[#CFFF16] text-[11px] font-medium tabular-nums">
+                                    {typeof link.price_cents === 'number' ? `$${(link.price_cents / 100).toFixed(2)}` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2 align-middle text-exclu-space/70 text-[11px] tabular-nums">
+                                    {link.created_at ? new Date(link.created_at).toLocaleDateString() : '—'}
+                                  </td>
+                                  <td className="px-4 py-2 align-middle">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (link.slug) window.open(`/l/${link.slug}`, '_blank');
+                                      }}
+                                      className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
+                                      title="Open link in new tab"
+                                    >
+                                      <ExternalLink className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Content library</h2>
+                      </div>
+                      <span className="text-[11px] text-exclu-space/70 tabular-nums">{displayAssets.length} assets</span>
+                    </div>
+
+                    {displayAssets.length === 0 ? (
+                      <p className="text-sm text-exclu-space/60 py-6 text-center">This user has not uploaded any content yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        {displayAssets.map((asset) => (
+                          <div
+                            key={asset.id}
+                            className="rounded-xl border border-exclu-arsenic/50 bg-exclu-ink/90 overflow-hidden flex flex-col text-[11px] cursor-pointer hover:border-[#CFFF16]/40 transition-colors"
+                            onClick={() => setSelectedAsset(asset)}
+                          >
+                            <div className="relative aspect-[4/3] bg-exclu-void/60 flex items-center justify-center">
+                              {asset.preview_url ? (
+                                asset.mime_type?.startsWith('video/') ? (
+                                  <video src={asset.preview_url} className="w-full h-full object-cover" muted playsInline />
+                                ) : (
+                                  <img src={asset.preview_url} alt={asset.title || 'Asset preview'} className="w-full h-full object-cover" />
+                                )
+                              ) : (
+                                <span className="text-exclu-space/70">No preview</span>
+                              )}
+                            </div>
+                            <div className="px-3 py-2 space-y-1">
+                              <p className="truncate text-exclu-cloud font-medium text-[11px]">{asset.title || 'Untitled asset'}</p>
+                              <div className="flex items-center justify-between gap-2">
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleToggleLinkVisibility(link.id, !!link.show_on_profile);
+                                    handleToggleAssetVisibility(asset.id, !!asset.is_public);
                                   }}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full font-medium transition-colors ${
-                                    link.status === 'published' && link.show_on_profile
-                                      ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
-                                      : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/20'
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    asset.is_public
+                                      ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400'
+                                      : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400'
                                   }`}
-                                  title={link.show_on_profile ? 'Click to hide from profile' : 'Click to make visible'}
+                                  title={asset.is_public ? 'Make private' : 'Make public'}
                                 >
-                                  {link.show_on_profile ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                                  {link.show_on_profile ? 'Public' : 'Hidden'}
+                                  {asset.is_public ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                                  {asset.is_public ? 'Public' : 'Private'}
                                 </button>
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
-                                {typeof link.price_cents === 'number'
-                                  ? `$${(link.price_cents / 100).toFixed(2)}`
-                                  : '—'}
-                              </td>
-                              <td className="px-4 py-2 align-middle text-exclu-space text-[11px]">
-                                {link.created_at ? new Date(link.created_at).toLocaleDateString() : '—'}
-                              </td>
-                              <td className="px-4 py-2 align-middle">
                                 <button
+                                  type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (link.slug) {
-                                      window.open(`/l/${link.slug}`, '_blank');
+                                    if (confirm('Delete this content permanently?')) {
+                                      handleDeleteAsset(asset.id, asset.storage_path);
                                     }
                                   }}
-                                  className="p-1.5 rounded-lg hover:bg-exclu-arsenic/30 transition-colors text-exclu-space hover:text-exclu-cloud"
-                                  title="Open link in new tab"
+                                  className="p-0.5 rounded text-exclu-space/50 hover:text-red-400 transition-colors"
+                                  title="Delete content"
                                 >
-                                  <ExternalLink className="w-4 h-4" />
+                                  <Trash2 className="w-3 h-3" />
                                 </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-sm font-semibold text-exclu-cloud">Content library</h2>
-                    <span className="text-[11px] text-exclu-space/80">{displayAssets.length} assets</span>
-                  </div>
-
-                  {displayAssets.length === 0 ? (
-                    <p className="text-sm text-exclu-space">This user has not uploaded any content yet.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                      {displayAssets.map((asset) => (
-                        <div
-                          key={asset.id}
-                          className="rounded-xl border border-exclu-arsenic/60 bg-exclu-ink/90 overflow-hidden flex flex-col text-[11px] cursor-pointer hover:border-exclu-cloud/80 transition-colors"
-                          onClick={() => setSelectedAsset(asset)}
-                        >
-                          <div className="relative aspect-[4/3] bg-exclu-void/60 flex items-center justify-center">
-                            {asset.preview_url ? (
-                              asset.mime_type?.startsWith('video/') ? (
-                                <video
-                                  src={asset.preview_url}
-                                  className="w-full h-full object-cover"
-                                  muted
-                                  playsInline
-                                />
-                              ) : (
-                                <img
-                                  src={asset.preview_url}
-                                  alt={asset.title || 'Asset preview'}
-                                  className="w-full h-full object-cover"
-                                />
-                              )
-                            ) : (
-                              <span className="text-exclu-space/70">No preview</span>
-                            )}
-                          </div>
-                          <div className="px-3 py-2 space-y-0.5">
-                            <p className="truncate text-exclu-cloud font-medium text-[11px]">
-                              {asset.title || 'Untitled asset'}
-                            </p>
-                            <div className="flex items-center justify-between gap-2 mt-0.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleAssetVisibility(asset.id, !!asset.is_public);
-                                }}
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                  asset.is_public
-                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-red-500/10 hover:text-red-400'
-                                    : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-green-500/10 hover:text-green-400'
-                                }`}
-                                title={asset.is_public ? 'Make private' : 'Make public'}
-                              >
-                                {asset.is_public ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
-                                {asset.is_public ? 'Public' : 'Private'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (confirm('Delete this content permanently?')) {
-                                    handleDeleteAsset(asset.id, asset.storage_path);
-                                  }
-                                }}
-                                className="p-0.5 rounded text-exclu-space/50 hover:text-red-400 transition-colors"
-                                title="Delete content"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
+              )}
 
-                {/* Wallet & Payout Info */}
-                <div className="mt-3 rounded-2xl border border-exclu-arsenic/70 bg-exclu-ink/90 p-4 space-y-3">
-                  <h2 className="text-sm font-semibold text-exclu-cloud mb-2">Wallet & Payout</h2>
-
-                  {/* Balance cards */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
-                      <p className="text-[10px] text-exclu-space/60">Balance</p>
-                      <p className="text-sm font-bold text-exclu-cloud">${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}</p>
+              {/* ── WALLET ── */}
+              {activeTab === 'wallet' && (
+                <div className="space-y-4">
+                  <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <WalletIcon className="w-4 h-4 text-[#CFFF16]" />
+                        <h2 className="text-sm font-semibold text-exclu-cloud">Wallet</h2>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_creator_subscribed ? 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/30' : 'bg-exclu-arsenic/40 text-exclu-space/70 border-exclu-arsenic/50'}`}>
+                        {profile.is_creator_subscribed ? 'Premium · 0%' : 'Free · 15%'}
+                      </span>
                     </div>
-                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
-                      <p className="text-[10px] text-exclu-space/60">Total earned</p>
-                      <p className="text-sm font-bold text-exclu-cloud">${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}</p>
-                    </div>
-                    <div className="rounded-lg bg-exclu-arsenic/30 p-2.5">
-                      <p className="text-[10px] text-exclu-space/60">Withdrawn</p>
-                      <p className="text-sm font-bold text-exclu-cloud">${((profile.total_withdrawn_cents ?? 0) / 100).toFixed(2)}</p>
-                    </div>
-                  </div>
 
-                  {/* Plan */}
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${profile.is_creator_subscribed ? 'bg-primary/20 text-primary' : 'bg-exclu-arsenic/40 text-exclu-space/70'}`}>
-                      {profile.is_creator_subscribed ? 'Premium (0% commission)' : 'Free (10% commission)'}
-                    </span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${profile.role === 'chatter' ? 'bg-indigo-500/20 text-indigo-400' : profile.role === 'creator' ? 'bg-green-500/20 text-green-400' : 'bg-exclu-arsenic/40 text-exclu-space/70'}`}>
-                      {profile.role ?? 'unknown'}
-                    </span>
-                  </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-xl bg-[#CFFF16]/5 border border-[#CFFF16]/25 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-[#CFFF16]/70">Balance</p>
+                        <p className="text-xl font-bold text-[#CFFF16] tabular-nums mt-0.5">${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}</p>
+                      </div>
+                      <div className="rounded-xl bg-exclu-arsenic/20 border border-exclu-arsenic/40 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-exclu-space/60">Total earned</p>
+                        <p className="text-xl font-bold text-exclu-cloud tabular-nums mt-0.5">${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}</p>
+                      </div>
+                      <div className="rounded-xl bg-exclu-arsenic/20 border border-exclu-arsenic/40 p-3">
+                        <p className="text-[10px] uppercase tracking-wider text-exclu-space/60">Withdrawn</p>
+                        <p className="text-xl font-bold text-exclu-cloud tabular-nums mt-0.5">${((profile.total_withdrawn_cents ?? 0) / 100).toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </section>
 
-                  {/* Bank details */}
-                  <div className="rounded-lg bg-exclu-arsenic/30 p-3">
-                    <p className="text-[10px] text-exclu-space/60 mb-1.5">Bank Account</p>
+                  <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Landmark className="w-4 h-4 text-[#CFFF16]" />
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Bank account</h2>
+                      {profile.payout_setup_complete ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/25 ml-auto">Verified</span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/25 ml-auto">Not set up</span>
+                      )}
+                    </div>
                     {profile.payout_setup_complete ? (
-                      <div className="space-y-1 text-xs">
+                      <div className="rounded-xl bg-gradient-to-br from-exclu-arsenic/30 to-exclu-ink/60 border border-exclu-arsenic/40 p-4 space-y-1.5 text-xs">
                         {(() => {
                           const type = profile.bank_account_type || 'iban';
                           const rows: { label: string; value: string; mono?: boolean }[] = [];
@@ -1006,18 +1154,23 @@ const AdminUserOverview = () => {
                     ) : (
                       <p className="text-xs text-exclu-space/50 italic">No bank account set up</p>
                     )}
-                  </div>
+                  </section>
 
-                  {/* Recent payouts */}
                   {payouts.length > 0 && (
-                    <div>
-                      <p className="text-[10px] text-exclu-space/60 mb-1.5">Recent Withdrawals</p>
-                      <div className="space-y-1">
+                    <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <ArrowUpRight className="w-4 h-4 text-[#CFFF16]" />
+                          <h2 className="text-sm font-semibold text-exclu-cloud">Recent withdrawals</h2>
+                        </div>
+                        <span className="text-[11px] text-exclu-space/70 tabular-nums">Last {Math.min(payouts.length, 5)}</span>
+                      </div>
+                      <div className="space-y-1.5">
                         {payouts.slice(0, 5).map((p) => (
-                          <div key={p.id} className="flex items-center justify-between text-xs rounded-lg bg-exclu-arsenic/20 px-2.5 py-1.5">
-                            <span className="text-exclu-cloud font-medium">${(p.amount_cents / 100).toFixed(2)}</span>
-                            <span className="text-exclu-space/60">{new Date(p.requested_at || p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                          <div key={p.id} className="flex items-center justify-between text-xs rounded-xl bg-exclu-arsenic/20 border border-exclu-arsenic/30 px-3 py-2">
+                            <span className="text-exclu-cloud font-semibold tabular-nums">${(p.amount_cents / 100).toFixed(2)}</span>
+                            <span className="text-exclu-space/70 tabular-nums">{new Date(p.requested_at || p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                               p.status === 'completed' ? 'bg-green-500/20 text-green-400' :
                               p.status === 'rejected' || p.status === 'failed' ? 'bg-red-500/20 text-red-400' :
                               'bg-yellow-500/20 text-yellow-400'
@@ -1025,12 +1178,85 @@ const AdminUserOverview = () => {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </section>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+
+              {/* ── SETTINGS ── */}
+              {activeTab === 'settings' && (
+                <div className="space-y-4">
+                  <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Eye className="w-4 h-4 text-[#CFFF16]" />
+                      <h2 className="text-sm font-semibold text-exclu-cloud">Directory visibility</h2>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-exclu-cloud">Show in landing pages</p>
+                        <p className="text-xs text-exclu-space/70 mt-1">Controls visibility in creator directory, agency listings, and blog carousel.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {profile.is_directory_visible ? <Eye className="w-4 h-4 text-green-400" /> : <EyeOff className="w-4 h-4 text-red-400" />}
+                        <Switch
+                          checked={profile.is_directory_visible || false}
+                          onCheckedChange={handleDirectoryVisibilityToggle}
+                          disabled={isUpdatingVisibility}
+                          className="data-[state=checked]:bg-[#CFFF16]"
+                        />
+                      </div>
+                    </div>
+                    {isUpdatingVisibility && <p className="text-xs text-exclu-space/70 mt-2">Updating visibility...</p>}
+                  </section>
+
+                  {profile.is_creator && (
+                    <section className="rounded-2xl border border-exclu-arsenic/60 bg-exclu-ink/80 p-4 sm:p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Camera className="w-4 h-4 text-[#CFFF16]" />
+                          <h2 className="text-sm font-semibold text-exclu-cloud">Photo management</h2>
+                        </div>
+
+                        {managedProfiles.length > 0 && (
+                          <select
+                            value={photoTargetProfileId ?? ''}
+                            onChange={(e) => setPhotoTargetProfileId(e.target.value || null)}
+                            className="h-8 rounded-lg bg-exclu-ink border border-exclu-arsenic/70 text-exclu-cloud text-xs px-3 focus:outline-none focus:ring-1 focus:ring-[#CFFF16]/40 w-full sm:w-56"
+                          >
+                            <option value="">— Select a managed profile —</option>
+                            {managedProfiles.map((mp) => (
+                              <option key={mp.id} value={mp.id}>{mp.display_name || mp.username} (@{mp.username})</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRequestPhotoChange}
+                          disabled={isRequestingPhotoChange || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-exclu-arsenic/60 bg-exclu-ink/60 text-exclu-cloud text-xs hover:border-exclu-cloud/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isRequestingPhotoChange ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                          Request change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteAvatar}
+                          disabled={isDeletingAvatar || (managedProfiles.length > 0 && !photoTargetProfileId)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/5 text-red-400 text-xs hover:border-red-400/60 hover:text-red-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {isDeletingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Delete photo
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </main>
       {selectedAsset && (
@@ -1072,7 +1298,15 @@ const AdminUserOverview = () => {
                   />
                 )
               ) : (
-                <p className="text-xs text-exclu-space/70 p-6">No preview available for this asset.</p>
+                <div className="text-xs text-exclu-space/70 p-6 space-y-2 max-w-full">
+                  <p className="text-exclu-cloud/90 font-medium">No preview available for this asset.</p>
+                  <p>The signed URL could not be generated. This usually means the file was deleted from storage, or the <code className="text-[10px] bg-exclu-arsenic/40 px-1 py-0.5 rounded">storage_path</code> in the database no longer matches an object in the <code className="text-[10px] bg-exclu-arsenic/40 px-1 py-0.5 rounded">paid-content</code> bucket.</p>
+                  {selectedAsset.storage_path && (
+                    <p className="break-all font-mono text-[10px] text-exclu-space/80 bg-exclu-arsenic/30 px-2 py-1.5 rounded">
+                      {selectedAsset.storage_path}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useInView } from 'framer-motion';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import useEmblaCarousel from 'embla-carousel-react';
 import { Upload, Link2, Share2, Unlock, Wallet } from 'lucide-react';
 
 const steps = [
@@ -36,22 +37,57 @@ const steps = [
   },
 ];
 
+const StepCard = ({ step }: { step: typeof steps[number] }) => (
+  <div className="text-center group">
+    <div className="relative mb-6 inline-flex">
+      <div className="w-20 h-20 rounded-3xl bg-exclu-arsenic/60 border border-exclu-graphite/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 group-hover:shadow-glow">
+        <step.icon className="w-8 h-8 text-primary" />
+      </div>
+      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-exclu-black">
+        {step.number}
+      </div>
+    </div>
+    <h3 className="text-lg font-bold text-exclu-cloud mb-2">{step.title}</h3>
+    <p className="text-sm text-exclu-space leading-relaxed">{step.description}</p>
+  </div>
+);
+
 const HowItWorksSection = () => {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: '-100px' });
+
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    align: 'center',
+    loop: false,
+    skipSnaps: false,
+    containScroll: 'trimSnaps',
+    dragThreshold: 6,
+    duration: 22,
+  });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    const onSelect = () => setSelectedIndex(emblaApi.selectedScrollSnap());
+    emblaApi.on('select', onSelect);
+    onSelect();
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
+  }, [emblaApi]);
 
   return (
     <section id="how-it-works" className="relative py-24 px-6 overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
-      
+
       <div className="max-w-6xl mx-auto relative z-10" ref={ref}>
         {/* Section Header */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
           transition={{ duration: 0.8 }}
-          className="text-center mb-20"
+          className="text-center mb-16 sm:mb-20"
         >
           <span className="inline-block text-primary text-sm font-semibold tracking-wider uppercase mb-4">
             How it works
@@ -65,38 +101,70 @@ const HowItWorksSection = () => {
           </p>
         </motion.div>
 
-        {/* Steps */}
-        <div className="relative">
-          {/* Connection Line */}
+        {/* Steps — desktop grid */}
+        <div className="hidden md:block relative">
           <div className="hidden lg:block absolute top-1/2 left-1/2 w-[80%] -translate-x-1/2 h-0.5 bg-gradient-to-r from-transparent via-exclu-arsenic to-transparent -translate-y-1/2" />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-8">
             {steps.map((step, index) => (
               <motion.div
                 key={step.number}
                 initial={{ opacity: 0, y: 50 }}
                 animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
                 transition={{ duration: 0.6, delay: index * 0.15 }}
-                className="relative group"
+                className="relative"
               >
-                {/* Step Card */}
-                <div className="text-center">
-                  {/* Icon Container */}
-                  <div className="relative mb-6 inline-flex">
-                    <div className="w-20 h-20 rounded-3xl bg-exclu-arsenic/60 border border-exclu-graphite/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 group-hover:shadow-glow">
-                      <step.icon className="w-8 h-8 text-primary" />
-                    </div>
-                    {/* Number Badge */}
-                    <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-exclu-black">
-                      {step.number}
+                <StepCard step={step} />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* Steps — mobile Embla carousel */}
+        <div className="md:hidden">
+          <div
+            ref={emblaRef}
+            className="overflow-hidden -mx-6 px-6 touch-pan-y select-none"
+            style={{ touchAction: 'pan-y' }}
+          >
+            <div className="flex gap-4">
+              {steps.map((step, i) => {
+                const isActive = i === selectedIndex;
+                return (
+                  <div
+                    key={step.number}
+                    className="flex-[0_0_84%] min-w-0"
+                    aria-current={isActive ? 'step' : undefined}
+                  >
+                    <div
+                      className={`relative h-full rounded-3xl border p-6 backdrop-blur-sm transition-all duration-500 ${
+                        isActive
+                          ? 'border-[#CFFF16]/40 bg-gradient-to-b from-exclu-ink/90 to-exclu-black/60 shadow-[0_20px_60px_-20px_rgba(207,255,22,0.25)] opacity-100 scale-100'
+                          : 'border-exclu-arsenic/30 bg-gradient-to-b from-exclu-ink/60 to-exclu-black/30 opacity-55 scale-[0.96]'
+                      }`}
+                    >
+                      <StepCard step={step} />
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
 
-                  {/* Content */}
-                  <h3 className="text-lg font-bold text-exclu-cloud mb-2">{step.title}</h3>
-                  <p className="text-sm text-exclu-space leading-relaxed">{step.description}</p>
-                </div>
-              </motion.div>
+          {/* Dot indicators */}
+          <div className="mt-6 flex items-center justify-center gap-2">
+            {steps.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Go to step ${i + 1}`}
+                onClick={() => emblaApi?.scrollTo(i)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  i === selectedIndex
+                    ? 'w-6 bg-[#CFFF16]'
+                    : 'w-1.5 bg-exclu-arsenic/80 hover:bg-exclu-space/80'
+                }`}
+              />
             ))}
           </div>
         </div>

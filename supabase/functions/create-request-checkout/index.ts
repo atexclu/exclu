@@ -14,15 +14,13 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 const normalizedSiteOrigin = siteUrl;
@@ -85,6 +83,10 @@ serve(async (req) => {
 
     // ── 2. Parse & validate body ──────────────────────────────────────
     const body = await req.json();
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
     const creatorId = body?.creator_id as string | undefined;
     const profileId = body?.profile_id as string | undefined;
     const description = typeof body?.description === 'string' ? body.description.trim() : '';
@@ -172,6 +174,7 @@ serve(async (req) => {
         expires_at: expiresAt,
         fan_email: fanEmail || null,
         is_new_account: isNewAccount,
+        ugp_mid: midKey,
       })
       .select('id')
       .single();
@@ -182,7 +185,7 @@ serve(async (req) => {
     }
 
     // ── 6. Build QuickPay form fields (pre-auth active server-side) ───
-    const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.05);
+    const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.15);
     const totalFanPaysCents = proposedAmountCents + fanProcessingFeeCents;
     const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
@@ -198,14 +201,14 @@ serve(async (req) => {
     if (!authenticatedUserId && !isNewAccount) successParams.set('existing_account', '1');
 
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
       AmountTotal: amountDecimal,
       CurrencyID: 'USD',
       'ItemName[0]': `Custom request for ${(creator.display_name || creatorHandle).slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': 'Custom content request on Exclu (includes 5% processing fee). Your card will only be charged if the creator accepts.',
+      'ItemDesc[0]': 'Custom content request on Exclu (includes 15% processing fee). Your card will only be charged if the creator accepts.',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

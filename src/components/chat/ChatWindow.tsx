@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart, X } from 'lucide-react';
+import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart, X, Compass } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -363,6 +363,17 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
         {/* Action buttons — for fan */}
         {senderType === 'fan' && creatorInfo && (
           <div className="flex items-center gap-2 flex-shrink-0">
+            {creatorInfo.username && (
+              <button
+                type="button"
+                onClick={() => navigate(`/${creatorInfo.username}?tab=content`)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-colors bg-primary/10 text-primary hover:bg-primary/20"
+                aria-label="View creator feed"
+              >
+                <Compass className="w-3 h-3" />
+                View feed
+              </button>
+            )}
             {creatorInfo.custom_requests_enabled && (
               <button
                 type="button"

@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift } from 'lucide-react';
+import { Eye, Loader2, Camera, FileText, Share2, Palette, Link as LinkIcon, Image as ImageIcon, Menu, ExternalLink, Gift, Info } from 'lucide-react';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDebounce } from 'use-debounce';
 import { PhotoSection } from '@/components/linkinbio/sections/PhotoSection';
 import { InfoSection } from '@/components/linkinbio/sections/InfoSection';
@@ -14,6 +15,7 @@ import { ContentSection } from '@/components/linkinbio/sections/ContentSection';
 import { PublicContentSection } from '@/components/linkinbio/sections/PublicContentSection';
 import { OptionsSection } from '@/components/linkinbio/sections/OptionsSection';
 import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection';
+import { FanSubscriptionSection } from '@/components/linkinbio/sections/FanSubscriptionSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
@@ -46,6 +48,9 @@ interface LinkInBioData {
   min_custom_request_cents: number;
   show_agency_branding: boolean;
   model_categories: string[];
+  fan_subscription_enabled: boolean;
+  fan_subscription_price_cents: number;
+  gender: 'female' | 'male' | 'other' | null;
 }
 
 interface CreatorLink {
@@ -56,6 +61,29 @@ interface CreatorLink {
   currency: string;
   slug: string;
   show_on_profile: boolean;
+}
+
+/** Small info icon next to a section title that reveals an explainer on hover. */
+function SectionTooltip({ title, body }: { title: string; body: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full text-muted-foreground/70 hover:text-foreground transition-colors focus:outline-none"
+            aria-label={title}
+          >
+            <Info className="w-3.5 h-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right" align="start" className="max-w-xs text-xs leading-relaxed">
+          <p className="font-semibold mb-1">{title}</p>
+          <p className="text-muted-foreground">{body}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 const LinkInBioEditor = () => {
@@ -93,6 +121,9 @@ const LinkInBioEditor = () => {
     min_tip_amount_cents: 500,
     min_custom_request_cents: 2000,
     show_agency_branding: true,
+    fan_subscription_enabled: true,
+    fan_subscription_price_cents: 500,
+    gender: null,
   });
 
   const [links, setLinks] = useState<CreatorLink[]>([]);
@@ -103,6 +134,16 @@ const LinkInBioEditor = () => {
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
+  const [previewTab, setPreviewTab] = useState<'links' | 'content' | 'wishlist'>('links');
+
+  // Mirror the editor tab in the mobile preview so the creator sees exactly
+  // what they're editing.
+  useEffect(() => {
+    if (activeSection === 'links') setPreviewTab('links');
+    else if (activeSection === 'content') setPreviewTab('content');
+    else if (activeSection === 'wishlist') setPreviewTab('wishlist');
+    // Other sections (photo / info / social / colors) keep whichever tab was last shown.
+  }, [activeSection]);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
@@ -153,7 +194,7 @@ const LinkInBioEditor = () => {
       if (activeProfile?.id) {
         const { data: cpData, error: cpError } = await supabase
           .from('creator_profiles')
-          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories')
+          .select('display_name, username, bio, avatar_url, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, link_order, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, model_categories, fan_subscription_enabled, fan_subscription_price_cents, gender')
           .eq('id', activeProfile.id)
           .maybeSingle();
 
@@ -221,6 +262,10 @@ const LinkInBioEditor = () => {
           min_custom_request_cents: profileData.min_custom_request_cents || 2000,
           show_agency_branding: profileData.show_agency_branding !== false,
           model_categories: profileData.model_categories || [],
+          // Fan subscription fields live on creator_profiles (not profiles fallback); default gracefully.
+          fan_subscription_enabled: profileData.fan_subscription_enabled !== false,
+          fan_subscription_price_cents: profileData.fan_subscription_price_cents ?? 500,
+          gender: (profileData.gender ?? null) as LinkInBioData['gender'],
         };
 
         setEditorData(dataToLoad);
@@ -247,6 +292,7 @@ const LinkInBioEditor = () => {
         .from('assets')
         .select('id, title, storage_path, mime_type')
         .eq('is_public', true)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       const { data: publicData, error: publicError } = activeProfile?.id
@@ -316,11 +362,24 @@ const LinkInBioEditor = () => {
         min_custom_request_cents: debouncedData.min_custom_request_cents,
       };
 
+      // Fields that only live on creator_profiles (not on profiles).
+      const creatorProfileOnlyPayload = {
+        fan_subscription_enabled: debouncedData.fan_subscription_enabled,
+        fan_subscription_price_cents: debouncedData.fan_subscription_price_cents,
+        gender: debouncedData.gender,
+      };
+
       let saveError = false;
 
       // Write to creator_profiles (source of truth for per-profile data)
       if (activeProfile?.id) {
-        const cpPayload = { ...profilePayload, handle: undefined, username: debouncedData.handle, model_categories: debouncedData.model_categories };
+        const cpPayload = {
+          ...profilePayload,
+          ...creatorProfileOnlyPayload,
+          handle: undefined,
+          username: debouncedData.handle,
+          model_categories: debouncedData.model_categories,
+        };
         const { error: cpError } = await supabase
           .from('creator_profiles')
           .update(cpPayload)
@@ -447,20 +506,45 @@ const LinkInBioEditor = () => {
 
     const assetsQuery = supabase
       .from('assets')
-      .select('id, title, storage_path, mime_type')
+      .select('id, title, storage_path, mime_type, is_feed_preview, feed_caption, feed_blur_path, created_at')
       .eq('is_public', true)
+      .is('deleted_at', null)
+      .order('is_feed_preview', { ascending: false })
       .order('created_at', { ascending: false });
     const { data: publicData, error: publicError } = activeProfile?.id
       ? await assetsQuery.eq('profile_id', activeProfile.id)
       : await assetsQuery.eq('creator_id', userId);
 
     if (!publicError && publicData) {
-      // Generate signed URLs
+      // Respect the creator's manual order (content_order) so the preview
+      // matches the public profile exactly.
+      const orderSource = activeProfile?.id
+        ? (await supabase.from('creator_profiles').select('content_order').eq('id', activeProfile.id).maybeSingle()).data
+        : (await supabase.from('profiles').select('content_order').eq('id', userId).maybeSingle()).data;
+      const order = (orderSource?.content_order ?? []) as string[];
+      const orderIndex = new Map<string, number>(order.map((id: string, i: number) => [id, i]));
+
+      const preview = publicData.find((x: any) => x.is_feed_preview === true);
+      const nonPreview = publicData
+        .filter((x: any) => x.is_feed_preview !== true)
+        .sort((a: any, b: any) => {
+          const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
+          const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
+          if (ai !== bi) return ai - bi;
+          return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+        });
+      const ordered = preview ? [preview, ...nonPreview] : nonPreview;
+
+      // Sign both the blur preview (visible to everyone, used for locked state)
+      // and the full-res preview (shown only when the asset is the free preview
+      // in the editor view — mirroring public profile behavior).
       const withUrls = await Promise.all(
-        publicData.map(async (item) => {
-          if (!item.storage_path) return { ...item, previewUrl: null };
-          const previewUrl = await getSignedUrl(item.storage_path, 60 * 60);
-          return { ...item, previewUrl: previewUrl || null };
+        ordered.map(async (item: any) => {
+          const blurUrl = item.feed_blur_path ? await getSignedUrl(item.feed_blur_path, 60 * 60) : null;
+          const previewUrl = item.is_feed_preview && item.storage_path
+            ? await getSignedUrl(item.storage_path, 60 * 60)
+            : null;
+          return { ...item, blurUrl, previewUrl };
         })
       );
       setPublicContent(withUrls);
@@ -508,7 +592,7 @@ const LinkInBioEditor = () => {
     { id: 'info' as const, label: 'Info', icon: FileText },
     { id: 'social' as const, label: 'Social', icon: Share2 },
     { id: 'links' as const, label: 'Links', icon: LinkIcon },
-    { id: 'content' as const, label: 'Content', icon: ImageIcon },
+    { id: 'content' as const, label: 'Feed', icon: ImageIcon },
     { id: 'wishlist' as const, label: 'Wishlist', icon: Gift },
     { id: 'colors' as const, label: 'Design', icon: Palette },
   ];
@@ -527,11 +611,12 @@ const LinkInBioEditor = () => {
 
   return (
     <AppShell>
-      <div className="flex-1 flex flex-col bg-background">
-        {/* ── Desktop: 3-column layout — each column scrolls independently ── */}
-        <div className="hidden md:grid md:grid-cols-[220px_1fr_380px] flex-1 md:h-[calc(100dvh-3.5rem)] lg:h-[100dvh] md:min-h-0 md:overflow-hidden">
+      <div className="flex-1 flex flex-col bg-background min-h-0">
+        {/* ── Desktop: 3-column layout — only the right panel scrolls; left +
+            center stay fixed so the mobile preview never slides away. ── */}
+        <div className="hidden md:grid md:grid-cols-[220px_1fr_380px] md:h-[calc(100dvh-3.5rem)] lg:h-[100dvh] md:overflow-hidden">
           {/* LEFT — Vertical editor menu */}
-          <aside className="border-r border-border bg-background overflow-y-auto py-5 px-3 flex flex-col">
+          <aside className="border-r border-border bg-background overflow-y-auto min-h-0 py-5 px-3 flex flex-col">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 mb-2">Editor</p>
             <nav className="space-y-0.5">
               {sections.map((section) => {
@@ -582,8 +667,8 @@ const LinkInBioEditor = () => {
             </div>
           </aside>
 
-          {/* CENTER — Mobile preview */}
-          <div className="bg-muted/30 overflow-y-auto flex items-center justify-center">
+          {/* CENTER — Mobile preview (centered vertically, doesn't scroll). */}
+          <div className="bg-muted/30 overflow-hidden min-h-0 flex items-center justify-center">
             <div className="py-6">
               <MobilePreview
                 data={editorData}
@@ -593,17 +678,25 @@ const LinkInBioEditor = () => {
                 wishlistItems={wishlistItems}
                 agencyName={agencyName}
                 agencyLogoUrl={agencyLogoUrl}
+                activeTab={previewTab}
+                onActiveTabChange={setPreviewTab}
               />
               <p className="text-center text-xs text-muted-foreground mt-3">Live Preview</p>
             </div>
           </div>
 
-          {/* RIGHT — Edit panel */}
-          <div className="border-l border-border bg-background overflow-y-auto">
+          {/* RIGHT — Edit panel (only this column scrolls). */}
+          <div className="border-l border-border bg-background overflow-y-auto min-h-0">
             <div className="p-5 sm:p-6">
               <h2 className="text-base font-semibold text-foreground mb-5 flex items-center gap-2">
                 {(() => { const Icon = sections.find((s) => s.id === activeSection)?.icon; return Icon ? <Icon className="w-4 h-4 text-muted-foreground" /> : null; })()}
                 {activeSectionLabel}
+                {activeSection === 'content' && (
+                  <SectionTooltip
+                    title="Feed is driven by your Content library"
+                    body={<>Upload files in <span className="font-semibold text-foreground">Content</span>, then mark them public here to show them in your Feed — blurred for non-subscribers, unblurred for the one "Free preview" post you choose.</>}
+                  />
+                )}
               </h2>
               <AnimatePresence mode="wait">
                 <motion.div
@@ -628,6 +721,7 @@ const LinkInBioEditor = () => {
                       bio={editorData.bio}
                       location={editorData.location}
                       modelCategories={editorData.model_categories}
+                      gender={editorData.gender}
                       onUpdate={updateEditorData}
                       onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
                     />
@@ -652,12 +746,20 @@ const LinkInBioEditor = () => {
                     />
                   )}
                   {activeSection === 'content' && (
-                    <PublicContentSection
-                      userId={userId}
-                      profileId={activeProfile?.id || null}
-                      onUpdate={fetchLinks}
-                      onContentUpdate={fetchPublicContent}
-                    />
+                    <div className="space-y-8">
+                      <FanSubscriptionSection
+                        enabled={editorData.fan_subscription_enabled}
+                        priceCents={editorData.fan_subscription_price_cents}
+                        onUpdate={updateEditorData}
+                      />
+                      <div className="border-t border-border/60" />
+                      <PublicContentSection
+                        userId={userId}
+                        profileId={activeProfile?.id || null}
+                        onUpdate={fetchLinks}
+                        onContentUpdate={fetchPublicContent}
+                      />
+                    </div>
                   )}
                   {activeSection === 'wishlist' && (
                     <WishlistSection
@@ -776,7 +878,7 @@ const LinkInBioEditor = () => {
                   <SheetTitle className="text-base">Live preview</SheetTitle>
                 </div>
                 <div className="p-4 flex items-center justify-center">
-                  <MobilePreview data={editorData} links={links} isPremium={isPremium} publicContent={publicContent} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} />
+                  <MobilePreview data={editorData} links={links} isPremium={isPremium} publicContent={publicContent} wishlistItems={wishlistItems} agencyName={agencyName} agencyLogoUrl={agencyLogoUrl} activeTab={previewTab} onActiveTabChange={setPreviewTab} />
                 </div>
               </SheetContent>
             </Sheet>
@@ -804,6 +906,7 @@ const LinkInBioEditor = () => {
                     bio={editorData.bio}
                     location={editorData.location}
                     modelCategories={editorData.model_categories}
+                    gender={editorData.gender}
                     onUpdate={updateEditorData}
                     onModelCategoriesChange={(cats) => updateEditorData({ model_categories: cats })}
                   />
@@ -825,12 +928,20 @@ const LinkInBioEditor = () => {
                   <ContentSection links={links} onUpdate={fetchLinks} />
                 )}
                 {activeSection === 'content' && (
-                  <PublicContentSection
-                    userId={userId}
-                    profileId={activeProfile?.id || null}
-                    onUpdate={fetchLinks}
-                    onContentUpdate={fetchPublicContent}
-                  />
+                  <div className="space-y-8">
+                    <FanSubscriptionSection
+                      enabled={editorData.fan_subscription_enabled}
+                      priceCents={editorData.fan_subscription_price_cents}
+                      onUpdate={updateEditorData}
+                    />
+                    <div className="border-t border-border/60" />
+                    <PublicContentSection
+                      userId={userId}
+                      profileId={activeProfile?.id || null}
+                      onUpdate={fetchLinks}
+                      onContentUpdate={fetchPublicContent}
+                    />
+                  </div>
                 )}
                 {activeSection === 'wishlist' && (
                   <WishlistSection items={wishlistItems} onUpdate={fetchWishlistItems} />

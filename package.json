@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "lint:ledger": "bash scripts/check-ledger-discipline.sh",
+    "test": "vitest run && npm run lint:ledger",
     "test:watch": "vitest",
     "typecheck:api": "tsc --noEmit -p api/tsconfig.json"
   },

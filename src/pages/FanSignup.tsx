@@ -12,6 +12,11 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 import { recordMarketingConsent } from '@/lib/recordConsent';
+import { CountrySelect } from '@/components/checkout/CountrySelect';
+import { getGeoCountry } from '@/lib/ipGeo';
+
+const isValidEmail = (email: string) =>
+  /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
 
 interface CreatorPreview {
   id: string;
@@ -25,6 +30,8 @@ const FanSignup = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [country, setCountry] = useState<string | null>(null);
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
   const [creatorPreview, setCreatorPreview] = useState<CreatorPreview | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -33,6 +40,14 @@ const FanSignup = () => {
   const actionParam = searchParams.get('action');
   const profileIdParam = searchParams.get('profile');
   const returnTo = searchParams.get('return') || (creatorHandle ? `/${creatorHandle}` : '/fan');
+
+  useEffect(() => {
+    // Only prefetch in signup mode — saves a /api/ipgeo hit on login/reset
+    if (mode !== 'signup') return;
+    let cancelled = false;
+    getGeoCountry().then((c) => { if (!cancelled && c) setDetectedCountry(c); });
+    return () => { cancelled = true; };
+  }, [mode]);
 
   useEffect(() => {
     if (!creatorHandle) return;
@@ -62,6 +77,11 @@ const FanSignup = () => {
 
     if (!email) {
       toast.error('Please enter your email');
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      toast.error('Please enter a valid email address');
       return;
     }
 
@@ -130,6 +150,15 @@ const FanSignup = () => {
             return;
           }
           throw error;
+        }
+
+        // Persist optional country on the profile. No-op if the row isn't ready yet;
+        // Task 1.7 backfills from the first successful checkout either way.
+        if (country && signUpData?.user?.id) {
+          supabase.from('profiles')
+            .update({ country })
+            .eq('id', signUpData.user.id)
+            .then(() => {}, (err) => { console.warn('[FanSignup] Could not persist country', err); });
         }
 
         // RGPD audit trail — attach IP / UA / URL / legal version to the
@@ -463,6 +492,21 @@ const FanSignup = () => {
                         ? 'Log in'
                         : 'Send reset link'}
                 </Button>
+
+                {mode === 'signup' && (
+                  <div>
+                    <label htmlFor="signup-country" className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 block mb-1.5">
+                      Country <span className="text-xs normal-case text-exclu-space/50">(optional — helps us route your payments)</span>
+                    </label>
+                    <CountrySelect
+                      id="signup-country"
+                      value={country}
+                      onChange={setCountry}
+                      autoDetectedCountry={detectedCountry}
+                      placeholder="Skip or pick your country"
+                    />
+                  </div>
+                )}
 
                 {mode === 'signup' && (
                   <label className="flex items-start gap-3 cursor-pointer group">

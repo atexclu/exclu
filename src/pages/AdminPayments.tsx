@@ -47,9 +47,25 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
+  const [rebillStats, setRebillStats] = useState<{ ok: number; declined: number; error: number } | null>(null);
 
   useEffect(() => {
     fetchPayouts();
+  }, []);
+
+  useEffect(() => {
+    supabase.from('rebill_attempts')
+      .select('status')
+      .gte('created_at', new Date(Date.now() - 86400000).toISOString())
+      .then(({ data }) => {
+        const out = { ok: 0, declined: 0, error: 0 };
+        for (const r of data ?? []) {
+          if (r.status === 'success') out.ok++;
+          else if (r.status === 'declined') out.declined++;
+          else out.error++;
+        }
+        setRebillStats(out);
+      });
   }, []);
 
   const fetchPayouts = async () => {
@@ -145,6 +161,23 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
 
   const content = (
       <div className={embedded ? '' : 'flex-1 px-4 sm:px-6 lg:px-8 py-6 max-w-6xl mx-auto w-full'}>
+        {rebillStats && (
+          <div className="mb-6 grid grid-cols-3 gap-3">
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">Rebills 24h · OK</p>
+              <p className="text-xl font-bold text-green-400">{rebillStats.ok}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">Declined</p>
+              <p className="text-xl font-bold text-red-400">{rebillStats.declined}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-3">
+              <p className="text-xs text-muted-foreground">Errors</p>
+              <p className="text-xl font-bold text-amber-400">{rebillStats.error}</p>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6 min-w-0">
           <div className="relative flex-1 min-w-0">

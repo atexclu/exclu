@@ -8,15 +8,13 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-if (!quickPayToken) throw new Error('Missing QUICKPAY_TOKEN');
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
@@ -82,6 +80,20 @@ serve(async (req) => {
     }
 
     const body = await req.json();
+
+    // Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on link
+    // purchases + custom request captures. Tips, gifts, and subs never split revenue
+    // with a chatter. If a legacy client still sends `chtref` on this flow, drop it
+    // and log for observability — we do NOT propagate it to the created row.
+    const rogueChtref = typeof body?.chtref === 'string' ? body.chtref : null;
+    if (rogueChtref) {
+      console.warn(`[create-gift-checkout] ignoring chtref=${rogueChtref} — chatters don't earn on this flow`);
+    }
+
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
     const wishlistItemId = body?.wishlist_item_id as string | undefined;
     const profileId = body?.profile_id as string | undefined;
     const message = typeof body?.message === 'string' ? body.message.slice(0, 500) : null;
@@ -121,9 +133,9 @@ serve(async (req) => {
 
     // ── Calculate commission at creation time (locked in) ───────────────
     const isSubscribed = creator.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.10;
+    const commissionRate = isSubscribed ? 0 : 0.15;
     const platformCommission = Math.round(amountCents * commissionRate);
-    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+    const fanProcessingFeeCents = Math.round(amountCents * 0.15);
     const creatorNetCents = amountCents - platformCommission;
     const totalPlatformFee = platformCommission + fanProcessingFeeCents;
 
@@ -143,6 +155,7 @@ serve(async (req) => {
         status: 'pending',
         creator_net_cents: creatorNetCents,
         platform_fee_cents: totalPlatformFee,
+        ugp_mid: midKey,
       })
       .select('id')
       .single();
@@ -161,14 +174,14 @@ serve(async (req) => {
 
     // ── Build QuickPay form fields ────────────────────────────────────
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
       AmountTotal: amountDecimal,
       CurrencyID: 'USD',
       'ItemName[0]': `Gift: ${(wishlistItem.name || 'Wishlist item').slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': `Gift for ${(creator.display_name || creatorHandle).slice(0, 200)} (includes 5% processing fee)`,
+      'ItemDesc[0]': `Gift for ${(creator.display_name || creatorHandle).slice(0, 200)} (includes 15% processing fee)`,
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

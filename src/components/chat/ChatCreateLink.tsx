@@ -78,6 +78,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
         .from('assets')
         .select('id, title, storage_path, mime_type, is_public')
         .eq('profile_id', profileId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -142,7 +143,8 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
       const slug = generateSlug(safeTitle);
       const priceCents = Math.round(priceNumber * 100);
 
-      // Create link (non-visible on public profile, attributed to chatter)
+      // 1. Create link as draft (the links_require_content DB trigger lets
+      // drafts through; we flip to 'published' after the media is attached).
       const { data: insertedLinks, error: insertError } = await supabase
         .from('links')
         .insert({
@@ -153,7 +155,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
           price_cents: priceCents,
           currency: 'USD',
           slug,
-          status: 'published',
+          status: 'draft',
           show_on_profile: false,
           created_by_chatter_id: user.id,
         })
@@ -166,7 +168,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
 
       const linkId = insertedLinks[0].id;
 
-      // Attach selected assets via link_media junction table
+      // 2. Attach selected assets via link_media junction table
       const selectedAssets = assets.filter((a) => selectedIds.has(a.id));
       const linkMediaRows = selectedAssets.map((asset, index) => ({
         link_id: linkId,
@@ -181,7 +183,20 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
 
         if (mediaError) {
           console.error('Error attaching media to link:', mediaError);
+          await supabase.from('links').delete().eq('id', linkId);
+          throw new Error('Failed to attach selected content to the link.');
         }
+      }
+
+      // 3. Publish now that the link has content attached.
+      const { error: publishError } = await supabase
+        .from('links')
+        .update({ status: 'published' })
+        .eq('id', linkId);
+
+      if (publishError) {
+        console.error('Error publishing link:', publishError);
+        throw new Error('Link created but could not be published.');
       }
 
       const createdLink: CreatedLink = {
