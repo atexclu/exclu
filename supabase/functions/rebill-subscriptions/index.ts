@@ -10,6 +10,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getMidCredentials } from '../_shared/ugRouting.ts';
 import { rebillTransaction } from '../_shared/ugRebill.ts';
+import { emailRebillFailedRetry, emailRebillSuspended, emailFanSubSuspended } from '../_shared/rebillEmails.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL')!;
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!;
@@ -138,8 +139,11 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
       show_deeplinks: false,
       show_available_now: false,
     }).eq('id', creator.id);
-    // TODO: send suspension email via Brevo helper — "Your Pro subscription
-    // couldn't be rebilled. Please update your card."
+    const { data: authUser } = await supabase.auth.admin.getUserById(creator.id);
+    const creatorEmail = authUser?.user?.email;
+    if (creatorEmail) {
+      await emailRebillSuspended(creatorEmail, '', amount).catch((e) => console.warn('[rebill] emailRebillSuspended failed', e));
+    }
     console.log(`[rebill] creator ${creator.id} suspended after ${attemptNumber} attempts`);
     return;
   }
@@ -150,6 +154,11 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
   await supabase.from('profiles').update({
     subscription_period_end: nextTry.toISOString(),
   }).eq('id', creator.id);
+  const { data: authUser } = await supabase.auth.admin.getUserById(creator.id);
+  const creatorEmail = authUser?.user?.email;
+  if (creatorEmail) {
+    await emailRebillFailedRetry(creatorEmail, '', amount, attemptNumber, nextTry).catch((e) => console.warn('[rebill] emailRebillFailedRetry failed', e));
+  }
   console.log(`[rebill] creator ${creator.id} retry scheduled for ${nextTry.toISOString()}`);
 }
 
@@ -231,7 +240,13 @@ async function rebillFanSubscription(sub: any): Promise<void> {
       status: 'past_due',
       suspended_at: new Date().toISOString(),
     }).eq('id', sub.id);
-    // TODO: email the fan to update their card.
+    const { data: fanUser } = await supabase.auth.admin.getUserById(sub.fan_id);
+    const fanEmail = fanUser?.user?.email;
+    const { data: creatorProfileRow } = await supabase.from('profiles').select('display_name, handle').eq('id', sub.creator_user_id).maybeSingle();
+    const creatorName = creatorProfileRow?.display_name || creatorProfileRow?.handle || 'your creator';
+    if (fanEmail) {
+      await emailFanSubSuspended(fanEmail, creatorName, amount).catch((e) => console.warn('[rebill] emailFanSubSuspended failed', e));
+    }
     return;
   }
 
