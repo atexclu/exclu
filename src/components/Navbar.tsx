@@ -53,7 +53,7 @@ const Navbar = ({ user: userProp, variant = 'default', centerContent, mobileTopC
   const landingLinks = [
     { href: '/#features', label: 'Features' },
     { href: '/#how-it-works', label: 'How it works' },
-    { href: '/#pricing', label: 'Pricing' },
+    { href: '/pricing', label: 'Pricing' },
     { href: '/blog', label: 'Blog' },
   ];
 

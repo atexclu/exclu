@@ -74,6 +74,7 @@ import BlogIndex from './pages/BlogIndex';
 import BlogArticle from './pages/BlogArticle';
 import BlogCategory from './pages/BlogCategory';
 import SSRBridge from './components/SSRBridge';
+import Pricing from './pages/Pricing';
 
 const queryClient = new QueryClient();
 
@@ -335,6 +336,7 @@ const App = () => {
                   }
                 />
 
+                <Route path="/pricing" element={<Pricing />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />

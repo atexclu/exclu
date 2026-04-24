@@ -91,6 +91,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/pricing",
+      "destination": "/index.html"
+    },
+    {
       "source": "/dmca",
       "destination": "/index.html"
     },
