@@ -1084,7 +1084,7 @@ const Profile = () => {
                         <p className="text-sm text-exclu-space/80 mt-1">
                           {isCreatorSubscribed
                             ? '0% commission on all your sales. You keep 100% of your revenue.'
-                            : '10% commission on sales. Upgrade to Premium to keep 100% of your revenue.'}
+                            : '15% commission on sales. Upgrade to Premium to keep 100% of your revenue.'}
                         </p>
                         {isCreatorSubscribed && (
                           <div className="mt-2 space-y-1">

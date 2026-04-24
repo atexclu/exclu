@@ -2135,7 +2135,7 @@ const CreatorPublic = () => {
                 <div>
                   <h3 className="text-lg font-bold text-white">Gift {selectedGiftItem.name}</h3>
                   <p className="text-sm font-semibold" style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    ${(selectedGiftItem.price_cents / 100).toLocaleString()} + 5% fee
+                    ${(selectedGiftItem.price_cents / 100).toLocaleString()} + 15% fee
                   </p>
                 </div>
               </div>
@@ -2193,7 +2193,7 @@ const CreatorPublic = () => {
 
             <div className="rounded-xl bg-white/5 border border-white/10 p-3">
               <p className="text-xs text-white/50 leading-relaxed">
-                The money goes directly to {displayName}'s account. A 5% processing fee is added at checkout.
+                The money goes directly to {displayName}'s account. A 15% processing fee is added at checkout.
               </p>
             </div>
 
@@ -2282,7 +2282,7 @@ const CreatorPublic = () => {
                 />
               </div>
               <p className="text-[10px] text-white/30">
-                Minimum: ${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)} · A 5% processing fee is added at checkout
+                Minimum: ${((profile?.min_custom_request_cents || 2000) / 100).toFixed(0)} · A 15% processing fee is added at checkout
               </p>
             </div>
 
@@ -2362,7 +2362,7 @@ const CreatorPublic = () => {
               ) : (
                 <>
                   <DollarSign className="w-4 h-4" />
-                  Pay & send request{requestAmount ? ` — $${(parseFloat(requestAmount) * 1.05).toFixed(2)}` : ''}
+                  Pay & send request{requestAmount ? ` — $${(parseFloat(requestAmount) * 1.15).toFixed(2)}` : ''}
                 </>
               )}
             </button>

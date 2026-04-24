@@ -121,9 +121,9 @@ serve(async (req) => {
 
     // ── Calculate commission at creation time (locked in) ───────────────
     const isSubscribed = creator.is_creator_subscribed === true;
-    const commissionRate = isSubscribed ? 0 : 0.10;
+    const commissionRate = isSubscribed ? 0 : 0.15;
     const platformCommission = Math.round(amountCents * commissionRate);
-    const fanProcessingFeeCents = Math.round(amountCents * 0.05);
+    const fanProcessingFeeCents = Math.round(amountCents * 0.15);
     const creatorNetCents = amountCents - platformCommission;
     const totalPlatformFee = platformCommission + fanProcessingFeeCents;
 
@@ -168,7 +168,7 @@ serve(async (req) => {
       'ItemName[0]': `Gift: ${(wishlistItem.name || 'Wishlist item').slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': `Gift for ${(creator.display_name || creatorHandle).slice(0, 200)} (includes 5% processing fee)`,
+      'ItemDesc[0]': `Gift for ${(creator.display_name || creatorHandle).slice(0, 200)} (includes 15% processing fee)`,
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

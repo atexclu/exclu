@@ -60,7 +60,7 @@ export default function AgencyDashboard() {
         .single();
       const premium = profileData?.is_creator_subscribed === true;
       setIsPremium(premium);
-      const rate = premium ? 0 : 0.10;
+      const rate = premium ? 0 : 0.15;
 
       // Fetch RPC stats
       const { data, error } = await supabase.rpc('get_user_profiles', {
@@ -73,10 +73,10 @@ export default function AgencyDashboard() {
         return;
       }
 
-      // Revenue from RPC is raw amount_cents — we need to strip 5% fan fee + platform commission
+      // Revenue from RPC is raw amount_cents — we need to strip 15% fan fee + platform commission
       const stats: ProfileStats[] = (data ?? []).map((row: any) => {
         const rawRevenue = Number(row.total_revenue_cents ?? 0);
-        const netRevenue = Math.round(rawRevenue / 1.05 * (1 - rate));
+        const netRevenue = Math.round(rawRevenue / 1.15 * (1 - rate));
         return {
           id: row.profile_id,
           username: row.username,
@@ -171,7 +171,7 @@ export default function AgencyDashboard() {
     if (!error) setShowCategories(false);
   };
 
-  const commissionRate = isPremium ? 0 : 0.10;
+  const commissionRate = isPremium ? 0 : 0.15;
 
   const totals = profileStats.reduce(
     (acc, p) => ({
@@ -238,7 +238,7 @@ export default function AgencyDashboard() {
       if (purchase.created_at) {
         const d = new Date(purchase.created_at);
         d.setHours(0, 0, 0, 0);
-        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
+        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.15 * (1 - commissionRate));
         events.push({ date: d, value });
       }
     });

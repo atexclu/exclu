@@ -183,7 +183,7 @@ serve(async (req) => {
 
     // ── Calculate pricing ─────────────────────────────────────────────
     const baseCents = link.price_cents;
-    const fanProcessingFeeCents = Math.round(baseCents * 0.05);
+    const fanProcessingFeeCents = Math.round(baseCents * 0.15);
     const totalFanPaysCents = baseCents + fanProcessingFeeCents;
 
     let chatterEarningsCents = 0;
@@ -198,7 +198,7 @@ serve(async (req) => {
     } else {
       // Standard split
       const isSubscribed = creatorProfile.is_creator_subscribed === true;
-      const commissionRate = isSubscribed ? 0 : 0.10;
+      const commissionRate = isSubscribed ? 0 : 0.15;
       const platformCommissionCents = Math.round(baseCents * commissionRate);
       creatorNetCents = baseCents - platformCommissionCents;
       platformFeeCents = platformCommissionCents + fanProcessingFeeCents;
@@ -242,7 +242,7 @@ serve(async (req) => {
       'ItemName[0]': `Unlock: ${(link.title || 'Exclusive content').slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': 'One-time access to exclusive content on Exclu (includes 5% processing fee)',
+      'ItemDesc[0]': 'One-time access to exclusive content on Exclu (includes 15% processing fee)',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

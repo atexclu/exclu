@@ -69,7 +69,7 @@ const AppDashboard = () => {
   const [profileViewCount, setProfileViewCount] = useState<number | null>(null);
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
-  const [commissionRate, setCommissionRate] = useState(0.10);
+  const [commissionRate, setCommissionRate] = useState(0.15);
   // Wallet / payouts state (formerly /app/earnings)
   const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState(0);
   const [walletTotalWithdrawnCents, setWalletTotalWithdrawnCents] = useState(0);
@@ -171,11 +171,11 @@ const AppDashboard = () => {
           safePurchases = purchases ?? [];
         }
         const salesCount = safePurchases.length;
-        // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
+        // Creator net: strip 15% fan fee, then deduct 15% platform commission if not premium
         const isPremium = profile?.is_creator_subscribed === true;
-        const rate = isPremium ? 0 : 0.10;
+        const rate = isPremium ? 0 : 0.15;
         const revenueSum = safePurchases.reduce(
-          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - rate)), 0
+          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.15 * (1 - rate)), 0
         );
 
         // Tips revenue — fetch full details for the Tips tab display
@@ -345,7 +345,7 @@ const AppDashboard = () => {
           setProfileHandle(activeProfile?.username || profile.handle || null);
           setProfileViewCount(activeProfile?.profile_view_count ?? profile.profile_view_count ?? 0);
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
-          setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.10);
+          setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.15);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
           if (profile.affiliate_payout_requested_at) setPayoutRequested(true);
 
@@ -518,7 +518,7 @@ const AppDashboard = () => {
       if (purchase.created_at) {
         const d = new Date(purchase.created_at);
         d.setHours(0, 0, 0, 0);
-        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.05 * (1 - commissionRate));
+        const value = metric === 'sales' ? 1 : Math.round((purchase.amount_cents ?? 0) / 1.15 * (1 - commissionRate));
         events.push({ date: d, value });
       }
     });
@@ -898,7 +898,7 @@ const AppDashboard = () => {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3">
                     {[
-                      { label: 'Links', value: purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.05) * (1 - commissionRate))), 0), icon: Zap },
+                      { label: 'Links', value: purchasesRaw.reduce((s: number, p: any) => s + (p.creator_net_cents ?? Math.round(((p.amount_cents ?? 0) / 1.15) * (1 - commissionRate))), 0), icon: Zap },
                       { label: 'Tips', value: tipsRevenueCents, icon: Heart },
                       { label: 'Requests', value: requestsRaw.reduce((s: number, r: any) => s + (r.creator_net_cents ?? Math.round((r.proposed_amount_cents ?? 0) * (1 - commissionRate))), 0), icon: FileText },
                       { label: 'Gifts', value: giftsRaw.reduce((s: number, g: any) => s + (g.creator_net_cents ?? 0), 0), icon: Gift },
@@ -1176,7 +1176,7 @@ const AppDashboard = () => {
                   {[
                     ...purchasesRaw.map((p: any) => ({
                       type: 'sale' as const,
-                      amount_cents: Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
+                      amount_cents: Math.round((p.amount_cents ?? 0) / 1.15 * (1 - commissionRate)),
                       raw_cents: p.amount_cents,
                       date: p.created_at,
                       label: linksRaw.find((l: any) => l.id === p.link_id)?.title || 'Link purchase',

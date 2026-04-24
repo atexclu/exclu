@@ -606,7 +606,7 @@ const AdminUserOverview = () => {
 
                     <div className="flex flex-wrap items-center gap-1.5 mt-3">
                       <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_creator_subscribed ? 'bg-[#CFFF16]/15 text-[#CFFF16] border-[#CFFF16]/30' : 'bg-exclu-arsenic/40 text-exclu-space/80 border-exclu-arsenic/50'}`}>
-                        {profile.is_creator_subscribed ? <><Crown className="w-3 h-3" /> Premium · 0%</> : <>Free · 10%</>}
+                        {profile.is_creator_subscribed ? <><Crown className="w-3 h-3" /> Premium · 0%</> : <>Free · 15%</>}
                       </span>
                       <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-medium border ${
                         profile.role === 'chatter' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' :
@@ -1098,7 +1098,7 @@ const AdminUserOverview = () => {
                         <h2 className="text-sm font-semibold text-exclu-cloud">Wallet</h2>
                       </div>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_creator_subscribed ? 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/30' : 'bg-exclu-arsenic/40 text-exclu-space/70 border-exclu-arsenic/50'}`}>
-                        {profile.is_creator_subscribed ? 'Premium · 0%' : 'Free · 10%'}
+                        {profile.is_creator_subscribed ? 'Premium · 0%' : 'Free · 15%'}
                       </span>
                     </div>
 

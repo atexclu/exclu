@@ -105,14 +105,14 @@ const LinkDetail = () => {
           .eq('id', user.id)
           .single();
         const isPremium = profileData?.is_creator_subscribed === true;
-        const commissionRate = isPremium ? 0 : 0.10;
+        const commissionRate = isPremium ? 0 : 0.15;
 
         const safePurchases = (purchasesData ?? []) as PurchaseRow[];
         const succeededPurchases = safePurchases.filter((p) => p.status === 'succeeded');
         const sales = succeededPurchases.length;
-        // Creator net: strip 5% fan fee, then deduct 10% platform commission if not premium
+        // Creator net: strip 15% fan fee, then deduct 15% platform commission if not premium
         const revenue = succeededPurchases.reduce(
-          (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.05 * (1 - commissionRate)),
+          (sum: number, p: PurchaseRow) => sum + Math.round((p.amount_cents ?? 0) / 1.15 * (1 - commissionRate)),
           0
         );
 
@@ -492,7 +492,7 @@ const LinkDetail = () => {
                       const creatorNetAmount = purchase.chat_chatter_id && purchase.creator_net_cents
                         ? purchase.creator_net_cents
                         : purchase.amount_cents
-                        ? Math.round(purchase.amount_cents / 1.05 * (1 - (isPremium ? 0 : 0.10)))
+                        ? Math.round(purchase.amount_cents / 1.15 * (1 - (isPremium ? 0 : 0.15)))
                         : 0;
                       
                       const amountLabel = creatorNetAmount > 0

@@ -14,8 +14,8 @@ export const PAYMENT_CONFIG = {
   CURRENCY: 'USD',
 
   // Fee structure
-  PROCESSING_FEE_RATE: 0.05,       // 5% added on top for the fan
-  COMMISSION_RATE_FREE: 0.10,      // 10% platform commission (free plan)
+  PROCESSING_FEE_RATE: 0.15,       // 15% added on top for the fan
+  COMMISSION_RATE_FREE: 0.15,      // 15% platform commission (free plan)
   COMMISSION_RATE_PREMIUM: 0,      // 0% platform commission (premium plan)
 
   // Premium subscription
@@ -46,12 +46,12 @@ export const PAYMENT_CONFIG = {
   CHATTER_SPLIT: {
     CREATOR: 0.60,   // 60% to creator
     CHATTER: 0.25,   // 25% to chatter
-    PLATFORM: 0.15,  // 15% to platform (+ 5% processing fee)
+    PLATFORM: 0.15,  // 15% to platform (+ 15% processing fee)
   },
 } as const;
 
 /**
- * Calculate the total amount the fan pays (base price + 5% processing fee).
+ * Calculate the total amount the fan pays (base price + 15% processing fee).
  * @param baseCents - Base price in cents
  * @returns Total fan pays in cents
  */
@@ -61,7 +61,7 @@ export function calculateFanTotal(baseCents: number): number {
 
 /**
  * Calculate the commission split for a transaction.
- * @param baseCents - Base price in cents (before 5% fee)
+ * @param baseCents - Base price in cents (before 15% fee)
  * @param isPremium - Whether the creator has an active premium subscription
  * @returns Object with creatorNet, platformFee, fanProcessingFee
  */

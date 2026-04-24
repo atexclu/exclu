@@ -182,7 +182,7 @@ serve(async (req) => {
     }
 
     // ── 6. Build QuickPay form fields (pre-auth active server-side) ───
-    const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.05);
+    const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.15);
     const totalFanPaysCents = proposedAmountCents + fanProcessingFeeCents;
     const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
 
@@ -205,7 +205,7 @@ serve(async (req) => {
       'ItemName[0]': `Custom request for ${(creator.display_name || creatorHandle).slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': 'Custom content request on Exclu (includes 5% processing fee). Your card will only be charged if the creator accepts.',
+      'ItemDesc[0]': 'Custom content request on Exclu (includes 15% processing fee). Your card will only be charged if the creator accepts.',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',
