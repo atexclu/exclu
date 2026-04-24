@@ -68,12 +68,18 @@ const Profile = () => {
   const [isSavingAgencyCategories, setIsSavingAgencyCategories] = useState(false);
 
 
-  // Handle hash navigation to open specific section
+  // Handle hash / query navigation to open specific section
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (hash === 'payments') {
+    const params = new URLSearchParams(window.location.search);
+    const subscribeParam = params.get('subscribe');
+
+    if (hash === 'payments' || subscribeParam === 'monthly' || subscribeParam === 'annual') {
       setActiveSection('subscription');
-      window.history.replaceState(null, '', window.location.pathname);
+      if (hash === 'payments') {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      // Keep ?subscribe=... in the URL so PlanManagement can read it and auto-start checkout
     } else if (hash === 'wallet') {
       window.location.href = '/app/dashboard';
       return;

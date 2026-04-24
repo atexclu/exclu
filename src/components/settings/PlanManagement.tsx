@@ -77,6 +77,22 @@ export function PlanManagement() {
     loadSub();
   }, []);
 
+  // Auto-start checkout when redirected from /pricing (?subscribe=monthly|annual)
+  useEffect(() => {
+    if (!sub || busy || pendingFields) return;
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get('subscribe');
+    if (target !== 'monthly' && target !== 'annual') return;
+    // Clean the param so a refresh doesn't retrigger
+    const url = new URL(window.location.href);
+    url.searchParams.delete('subscribe');
+    window.history.replaceState(null, '', url.toString());
+    // Only start checkout if user isn't already on this plan
+    if (sub.plan !== target) {
+      handleCta(target);
+    }
+  }, [sub]);
+
   const startCheckout = async (plan: 'monthly' | 'annual') => {
     setBusy(true);
     try {
