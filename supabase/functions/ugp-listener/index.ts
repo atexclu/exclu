@@ -95,6 +95,24 @@ serve(async (req) => {
     }
   }
 
+  // UG sends listener events for both Successful and Declined Sales.
+  // Crediting on a Declined Sale is a false positive (same bug as ugp-confirm).
+  // Gate Sale / Capture / Recurring on TransactionStatus='Successful'. Refund,
+  // Chargeback, CBK1, Void are status-agnostic reversals and should run as-is.
+  const txStatus = String(body.TransactionStatus ?? '');
+  const statusGatedStates = new Set(['Sale', 'Capture', 'Recurring']);
+  if (statusGatedStates.has(transactionState) && txStatus && txStatus !== 'Successful') {
+    console.log(
+      `[ugp-listener] Skipping non-successful ${transactionState}: status=${txStatus} ` +
+      `txn=${transactionId} ref=${merchantRef}`,
+    );
+    await supabase.from('payment_events').update({
+      processed: true,
+      processing_result: `Skipped: TransactionStatus=${txStatus} on ${transactionState}`,
+    }).eq('transaction_id', `listener_${transactionId}_${transactionState}`);
+    return new Response('OK', { status: 200 });
+  }
+
   try {
     switch (transactionState) {
       case 'Refund':
