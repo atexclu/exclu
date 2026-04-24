@@ -15,9 +15,15 @@ serve(async (req) => {
   const { data: { user }, error } = await sb.auth.getUser(auth.replace('Bearer ', ''));
   if (error || !user) return new Response('Unauthorized', { status: 401, headers: cors });
 
+  const body = await req.json().catch(() => ({}));
+  const reactivate = body?.reactivate === true;
+
   await sb.from('profiles').update({
-    subscription_cancel_at_period_end: true,
+    subscription_cancel_at_period_end: !reactivate,
   }).eq('id', user.id);
 
-  return new Response(JSON.stringify({ ok: true }), { headers: { ...cors, 'Content-Type': 'application/json' } });
+  return new Response(
+    JSON.stringify({ ok: true, cancel_at_period_end: !reactivate }),
+    { headers: { ...cors, 'Content-Type': 'application/json' } },
+  );
 });
