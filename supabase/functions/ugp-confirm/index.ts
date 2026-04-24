@@ -69,6 +69,53 @@ async function upsertMailingContactSafe(
   }
 }
 
+/**
+ * First-success-wins: persist the fan's billing_country from a QuickPay
+ * CustomerCountry field. Fire-and-forget — never blocks the credit path.
+ *
+ * Matches the fan by email via auth.admin.listUsers (Supabase SDK 2.43+
+ * supports a `filter` arg of the form `email.eq.<value>`). If no account
+ * exists for this email (guest checkout), silently skip — Task 1.1 will
+ * re-capture the country on their next checkout via the PreCheckoutGate.
+ *
+ * Only writes when billing_country IS NULL so we don't clobber a value the
+ * fan set explicitly during signup.
+ */
+async function persistFanBillingCountry(email: string | null, country: string | null): Promise<void> {
+  if (!email) return;
+  if (!country || country.length !== 2) return;
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedCountry = country.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalizedCountry)) return;
+
+  try {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      // @ts-expect-error — `filter` is supported since SDK 2.43 but types lag.
+      filter: `email.eq.${normalizedEmail}`,
+      perPage: 1,
+    });
+    if (error) {
+      console.warn('[ugp-confirm] listUsers failed while persisting billing_country', error.message);
+      return;
+    }
+    const userId = data?.users?.[0]?.id;
+    if (!userId) return;
+    // Defensive check: only update when the returned user email matches exactly
+    if (data?.users?.[0]?.email?.toLowerCase() !== normalizedEmail) return;
+
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({ billing_country: normalizedCountry })
+      .eq('id', userId)
+      .is('billing_country', null);
+    if (updErr) {
+      console.warn('[ugp-confirm] profiles.billing_country update failed', updErr.message);
+    }
+  } catch (e) {
+    console.warn('[ugp-confirm] persistFanBillingCountry exception', (e as Error).message);
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -273,6 +320,11 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
 
   // Phase 3: register the buyer in the mailing contacts registry
   void upsertMailingContactSafe(customerEmail, 'link_purchase', purchaseId);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? purchase.buyer_email ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Load link info for email and wallet credit
   const { data: link } = await supabase
@@ -447,6 +499,11 @@ async function handleTip(tipId: string, body: Record<string, string>) {
   }).eq('id', tipId);
 
   void upsertMailingContactSafe(customerEmail, 'tip', tipId, body.CustomerName ?? null);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? customerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Credit creator wallet
   if (creatorNet > 0) {
@@ -534,6 +591,11 @@ async function handleGift(giftId: string, body: Record<string, string>) {
   }).eq('id', giftId);
 
   void upsertMailingContactSafe(body.CustomerEmail, 'gift', giftId, body.CustomerName ?? null);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    body.CustomerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // Increment wishlist gifted_count (read-then-write, single increment)
   const { data: item } = await supabase
@@ -615,6 +677,11 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
   }).eq('id', requestId);
 
   void upsertMailingContactSafe(request.fan_email ?? body.CustomerEmail, 'custom_request', request.id, body.CustomerName ?? null);
+  // Task 1.7: persist billing_country from CustomerCountry (first-success-wins)
+  void persistFanBillingCountry(
+    request.fan_email ?? body.CustomerEmail ?? null,
+    body.CustomerCountry ?? null,
+  );
 
   // DO NOT credit wallet here — funds are only held (Authorize), not captured yet
   // The wallet will be credited when the creator captures via manage-request
