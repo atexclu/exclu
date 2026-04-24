@@ -50,7 +50,7 @@ const Pricing = () => {
             />
             <PlanCard
               name="Pro Monthly"
-              priceLabel="$39"
+              priceLabel="$39.99"
               priceSuffix="/month"
               description="Keep 100% of your sales. Up to 2 profiles included, $10/mo per extra profile."
               features={[

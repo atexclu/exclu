@@ -697,7 +697,7 @@ async function handleSubscription(userId: string, body: Record<string, string>) 
 
   await supabase.from('profiles').update(updatePayload).eq('id', userId);
 
-  // Referral commission (35% of $39 = 1365 cents)
+  // Referral commission (35% of $39.99 = 1400 cents)
   await creditReferralCommission(userId);
 
   console.log('Subscription activated:', userId, wasSubscribed ? '(renewal)' : '(first-time)');
@@ -770,7 +770,7 @@ async function creditReferralCommission(subscriberId: string) {
 
   if (!referral) return;
 
-  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  const commissionCents = Math.round(3999 * 0.35); // $14.00
 
   // Update referral record
   const { data: currentRef } = await supabase

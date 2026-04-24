@@ -34,7 +34,7 @@ creator + fan subscription flows:
 | Refund endpoint | `/merchants/[MerchantId]/refundtransactions` with `{referencetransactionid, amount}` | DirectSale v1.14 §REFUND TRANSACTIONS |
 | Key validation on ConfirmURL | Mandatory per-MID (Task 0.6b) | QuickPay v1.3 §CONFIRM PAGE `[Key]`; DirectSale v1.14 §CONFIRM PAGE `[Key]` |
 
-**Creator Pro Monthly ($39 + $10/extra profile)**: variable amount per cycle → one-shot Sale at signup with `IsInitialForRecurring=true`, merchant-managed rebill via `/recurringtransactions` (Task 4.1 + Task 4.3). UG-managed plan mode (SubscriptionPlanId) not usable because of variable amount.
+**Creator Pro Monthly ($39.99 + $10/extra profile)**: variable amount per cycle → one-shot Sale at signup with `IsInitialForRecurring=true`, merchant-managed rebill via `/recurringtransactions` (Task 4.1 + Task 4.3). UG-managed plan mode (SubscriptionPlanId) not usable because of variable amount.
 
 **Creator Pro Annual ($239.99 fixed)**: same one-shot Sale + rebill pattern, period advances by 365 days. Task 4.1 branch + Task 4.3.
 
@@ -56,7 +56,7 @@ Two rounds of questions answered. The key architectural clarification from the s
 | D2 | New 2D US/CA MID returns its own credentials | ✅ **New `QuickPayToken`, new OAuth Bearer, new SiteID** (distinct from the existing `98845`). Derek will pre-configure the ListenerURL / Membership Postback URL on that MID to point at our existing endpoints. **ConfirmURL is NOT server-configured — it is passed in the HTML form post per transaction.** | Env var set per MID as planned — `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`. Plug in once Derek delivers the Bearer — QuickPayToken + SiteID + MID already received 2026-04-20 afternoon (see §Credentials below). |
 | D3 | Card-expired `reasonCode` on rebill failures | ❌ **No uniform reason code.** Issuers return free-form messages ("insufficient funds", "expired card", etc.). We cannot reliably auto-detect "card expired" vs any other decline. | `ugRebill.ts` classification collapses to a single `declined` bucket. We retry N times on a schedule; after the final failure we suspend the subscription and email the creator/fan to update their card — same UX regardless of the underlying issuer message. |
 | D4 | TID portability across MIDs | ❌ **Not portable.** A TID can only rebill on the MID where the initial Sale was authenticated. | Plan keeps `subscription_mid` per row; rebill cron picks the right credentials per row. Unchanged. |
-| D5 | `/recurringtransactions` limits | ✅ **No UG-side limits** on amount or interval. Only the issuer's own response gates rebills. | Annual plan rebills 365 days later — no splitting needed. Our own sanity ceiling on the creator dashboard (min $5, max $100 for fan subs; fixed $39/$239.99 for Pro) is sufficient. |
+| D5 | `/recurringtransactions` limits | ✅ **No UG-side limits** on amount or interval. Only the issuer's own response gates rebills. | Annual plan rebills 365 days later — no splitting needed. Our own sanity ceiling on the creator dashboard (min $5, max $100 for fan subs; fixed $39.99/$239.99 for Pro) is sufficient. |
 
 ### Round 2 (afternoon 2026-04-20 — architectural clarifications)
 
@@ -1481,7 +1481,7 @@ export function PricingPlans() {
       />
       <PlanCard
         name="Pro Monthly"
-        priceLabel="$39"
+        priceLabel="$39.99"
         priceSuffix="/month"
         description="Keep 100% of your sales. Up to 2 profiles included, $10/mo per extra profile."
         features={[
@@ -1604,7 +1604,7 @@ export function ProUpgradePopup() {
         </div>
         <h4 className="mt-2 text-lg font-bold text-foreground">Go Pro today</h4>
         <p className="mt-1 text-sm text-muted-foreground">
-          From $39/month. Zero commission on every sale — pays for itself after $260 of monthly revenue.
+          From $39.99/month. Zero commission on every sale — pays for itself after $260 of monthly revenue.
         </p>
         <Button
           type="button"
@@ -1685,7 +1685,7 @@ const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(
 if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const BASE_MONTHLY_CENTS = 3900;   // $39
+const BASE_MONTHLY_CENTS = 3999;   // $39.99
 const ADDON_PER_PROFILE_CENTS = 1000; // $10
 const INCLUDED_PROFILES = 2;
 const ANNUAL_CENTS = 23999;        // $239.99
@@ -2672,7 +2672,7 @@ export function PlanManagement() {
     return (
       <div className="grid gap-4 md:grid-cols-2">
         <Button variant="hero" onClick={() => startCheckout('monthly')} disabled={busy}>
-          Start Monthly — $39/mo
+          Start Monthly — $39.99/mo
         </Button>
         <Button variant="outline" onClick={() => startCheckout('annual')} disabled={busy}>
           Start Annual — $239.99/yr
@@ -3828,7 +3828,7 @@ The `purchases.status = 'succeeded'` update stays — it's the content-unlock si
 
 Same pattern — add amount verification, then `applyWalletTransaction`. For the custom request flow, crediting happens in `manage-request` at capture time (not in `ugp-confirm`), so update that file too in step 3.
 
-**Subscription flows** credit only the referral commission (the $39 / $239.99 charge is revenue to the platform, not the creator). The existing `creditReferralCommission` helper needs to be rewritten to go through `applyWalletTransaction` with `sourceType='creator_subscription'` on the REFERRER's profile.
+**Subscription flows** credit only the referral commission (the $39.99 / $239.99 charge is revenue to the platform, not the creator). The existing `creditReferralCommission` helper needs to be rewritten to go through `applyWalletTransaction` with `sourceType='creator_subscription'` on the REFERRER's profile.
 
 ```ts
 // New creditReferralCommission

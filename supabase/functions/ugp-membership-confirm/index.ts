@@ -10,7 +10,7 @@
  * Handles:
  *   - Activating/deactivating premium status
  *   - First-time subscription flags (certification, deeplinks, etc.)
- *   - Referral commission (35% of $39 at each renewal)
+ *   - Referral commission (35% of $39.99 at each renewal)
  *   - Multi-profile addon charges (debit wallet for extra profiles)
  */
 
@@ -143,7 +143,7 @@ async function handleActivation(userId: string, memberId: string, action: string
 
   await supabase.from('profiles').update(updatePayload).eq('id', userId);
 
-  // ── Referral commission (35% of $39 = 1365 cents) ─────────────────
+  // ── Referral commission (35% of $39.99 = 1400 cents) ──────────────
   await creditReferralCommission(userId);
 
   // ── Multi-profile addon charge (at each renewal) ──────────────────
@@ -181,7 +181,7 @@ async function creditReferralCommission(subscriberId: string) {
 
   if (!referral) return;
 
-  const commissionCents = Math.round(3900 * 0.35); // $13.65
+  const commissionCents = Math.round(3999 * 0.35); // $14.00
 
   // Increment referral commission
   await supabase.from('referrals').update({

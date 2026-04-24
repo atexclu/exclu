@@ -1090,12 +1090,12 @@ const Profile = () => {
                           <div className="mt-2 space-y-1">
                             <p className="text-xs text-exclu-space/60">
                               ${creatorProfiles.length > 2
-                                ? `${39 + (creatorProfiles.length - 2) * 10}/month`
-                                : '39/month'} • Billed monthly
+                                ? `${39.99 + (creatorProfiles.length - 2) * 10}/month`
+                                : '39.99/month'} • Billed monthly
                             </p>
                             {creatorProfiles.length > 2 && (
                               <div className="text-[11px] text-exclu-space/50 space-y-0.5">
-                                <p>$39 base + {creatorProfiles.length - 2} additional profile{creatorProfiles.length - 2 > 1 ? 's' : ''} × $10/mo</p>
+                                <p>$39.99 base + {creatorProfiles.length - 2} additional profile{creatorProfiles.length - 2 > 1 ? 's' : ''} × $10/mo</p>
                               </div>
                             )}
                           </div>
@@ -1112,7 +1112,7 @@ const Profile = () => {
                           className="rounded-full"
                         >
                           <Zap className="w-4 h-4 mr-2" />
-                          {isUpgradeLoading ? 'Loading...' : 'Upgrade to Premium – $39/mo'}
+                          {isUpgradeLoading ? 'Loading...' : 'Upgrade to Premium – $39.99/mo'}
                         </Button>
                       )}
                       {isCreatorSubscribed && (

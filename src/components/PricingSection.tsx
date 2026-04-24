@@ -137,7 +137,7 @@ const PricingSection = () => {
             <div className="text-center mb-8 relative z-10">
               <h3 className="text-xl font-bold text-exclu-cloud mb-4">Premium</h3>
               <div className="flex items-baseline justify-center gap-1 mb-3">
-                <span className="text-5xl font-extrabold text-exclu-white">$39</span>
+                <span className="text-5xl font-extrabold text-exclu-white">$39.99</span>
                 <span className="text-lg text-exclu-graphite">/month</span>
               </div>
               <p className="text-exclu-space text-sm">Maximum earnings for serious creators</p>

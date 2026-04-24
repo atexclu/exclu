@@ -96,7 +96,7 @@ serve(async (req) => {
       'ItemName[0]': 'Exclu Premium Creator Plan',
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': '0.00',
-      'ItemDesc[0]': 'Monthly subscription — 0% commission on all sales ($39/month)',
+      'ItemDesc[0]': 'Monthly subscription — 0% commission on all sales ($39.99/month)',
       ApprovedURL: `${siteUrl}/app?subscription=success`,
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/app?subscription=failed`,

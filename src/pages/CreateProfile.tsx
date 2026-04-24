@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 
 const INCLUDED_PROFILES = 2;
 const ADDON_PRICE_CENTS = 1000;
-const BASE_PRICE_CENTS = 3900;
+const BASE_PRICE_CENTS = 3999;
 
 function calculateMonthlyTotal(profileCount: number): number {
   if (profileCount <= INCLUDED_PROFILES) return BASE_PRICE_CENTS;
@@ -227,7 +227,7 @@ export default function CreateProfile() {
               onClick={() => navigate('/app/settings#payments')}
             >
               <Zap className="w-4 h-4 mr-2" />
-              Upgrade to Premium — $39/mo
+              Upgrade to Premium — $39.99/mo
             </Button>
 
             <button

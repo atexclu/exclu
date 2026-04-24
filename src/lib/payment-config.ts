@@ -19,8 +19,8 @@ export const PAYMENT_CONFIG = {
   COMMISSION_RATE_PREMIUM: 0,      // 0% platform commission (premium plan)
 
   // Premium subscription
-  PREMIUM_PRICE_CENTS: 3900,       // $39/month
-  PREMIUM_PRICE_USD: 39,
+  PREMIUM_PRICE_CENTS: 3999,       // $39.99/month
+  PREMIUM_PRICE_USD: 39.99,
   SUBSCRIPTION_PLAN_ID: '11027',
   ADDON_PROFILE_PRICE_CENTS: 1000, // $10/month per additional profile beyond 2
   INCLUDED_PROFILES: 2,
