@@ -93,7 +93,7 @@ docs/                          # Architecture, sécurité, plans
 - **Project ref** : `qexnwezetjlbwltyccks` (West EU - Ireland)
 - **URL** : `https://qexnwezetjlbwltyccks.supabase.co`
 - **RLS activé sur toutes les tables** — toujours vérifier les policies avant d'écrire des requêtes
-- **Nouvelles migrations** : numéroter en `13x_nom.sql` en continuité (dernière appliquée : `129_payouts_multi_country_bank.sql`)
+- **Nouvelles migrations** : numéroter en continuité (dernière appliquée : `167_rebill_attempts.sql`)
 
 ### Tables principales (non exhaustif)
 - **Profils / accès** : `profiles`, `fan_favorites`, `agencies`, `agency_claim_requests`, `chatter_invitations`
@@ -109,6 +109,19 @@ docs/                          # Architecture, sécurité, plans
 - **Webhooks UG Payments** : `ugp-listener`, `ugp-confirm`, `ugp-membership-confirm`, `verify-payment` — signature et état vérifiés côté fonction
 - **Secrets** : injectés via Supabase Secrets (`supabase secrets set …`), jamais dans le code
 - **Déploiement** : manuel via `supabase functions deploy <nom>` (pas de CI/CD)
+
+### UG Payments — Per-MID credentials
+
+Routing 2D/3D par pays de facturation : `US`/`CA` → MID **US_2D** (MID 103817), tout le reste → MID **INTL_3D** (MID historique, SiteID 98845). Chaque MID a son propre jeu de credentials complet — aucun champ n'est partagé entre les deux.
+
+Secrets requis côté Supabase (`supabase secrets set --linked <NAME>=<value>`) :
+
+- **INTL_3D** : `QUICKPAY_TOKEN_INTL_3D`, `QUICKPAY_SITE_ID_INTL_3D`, `UGP_MID_INTL_3D`, `UGP_API_BEARER_TOKEN_INTL_3D`, `QUICKPAY_CONFIRM_KEY_INTL_3D`
+- **US_2D** : `QUICKPAY_TOKEN_US_2D`, `QUICKPAY_SITE_ID_US_2D`, `UGP_MID_US_2D`, `UGP_API_BEARER_TOKEN_US_2D`, `QUICKPAY_CONFIRM_KEY_US_2D`
+
+Pendant le rollout, les alias legacy `QUICKPAY_TOKEN`, `QUICKPAY_SITE_ID`, `UGP_MERCHANT_ID`, `UGP_API_BEARER_TOKEN`, `QUICKPAY_CONFIRM_KEY` restent lus par `_shared/ugRouting.ts#getMidConfirmKey` en fallback — tous pointent sur le MID INTL_3D. À retirer en Phase 7 (cleanup) une fois les deux MIDs en prod.
+
+`ConfirmURL`, `ListenerURL` et `MembershipPostbackURL` sont configurés côté UG (portail Derek) — pas de wiring applicatif. Chaque callback entrant arrive avec son `SiteID` + `Key` ; `_shared/ugRouting.ts#midFromSiteId` résout le MID, et la `Key` est validée strictement par MID dans `ugp-confirm`, `ugp-membership-confirm`, et `ugp-listener` (pas de callback accepté sans `Key` valide — cf. migration 0.6b du refonte 2026-04-20).
 
 ### Fonctions clés
 - **Checkouts UG Payments** : `create-link-checkout`, `create-tip-checkout`, `create-request-checkout`, `create-gift-checkout`, `create-creator-subscription`
