@@ -94,12 +94,14 @@ export async function reverseWalletTransaction(
     .eq('id', args.parentRowId)
     .single();
   if (fetchErr || !parent) throw new Error(`parent row not found: ${args.parentRowId}`);
-  if (parent.direction !== 'credit') throw new Error(`cannot reverse a non-credit row ${args.parentRowId}`);
+
+  // Reversals flip the direction: credit→debit (refund) or debit→credit (cancel hold).
+  const reverseDirection: 'credit' | 'debit' = parent.direction === 'credit' ? 'debit' : 'credit';
 
   return applyWalletTransaction(sb, {
     ownerId: parent.owner_id,
     ownerKind: parent.owner_kind,
-    direction: 'debit',
+    direction: reverseDirection,
     amountCents: parent.amount_cents,
     sourceType: args.sourceType,
     sourceId: parent.source_id,

@@ -12,6 +12,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
+import { applyWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -106,32 +107,15 @@ serve(async (req) => {
       return jsonError('You already have a pending withdrawal. Please wait for it to be processed.', 400, corsHeaders);
     }
 
-    // Debit wallet atomically (FOR UPDATE prevents race conditions)
-    let newBalance: number;
-    try {
-      const { data: balance, error: debitErr } = await supabase.rpc('debit_creator_wallet', {
-        p_creator_id: user.id,
-        p_amount_cents: amountCents,
-      });
-
-      if (debitErr) throw debitErr;
-      newBalance = balance as number;
-    } catch (debitErr: any) {
-      console.error('Wallet debit failed:', debitErr);
-      if (debitErr.message?.includes('insufficient')) {
-        return jsonError('Insufficient balance', 400, corsHeaders);
-      }
-      return jsonError('Failed to process withdrawal', 500, corsHeaders);
-    }
-
-    // Create payout record (snapshot bank details at time of request)
+    // Create payout record first (snapshot bank details at time of request)
+    // Then apply the ledger hold — if the hold fails we delete the payout row.
     const { data: payout, error: payoutErr } = await supabase
       .from('payouts')
       .insert({
         creator_id: user.id,
         amount_cents: amountCents,
         currency: 'USD',
-        status: 'pending',
+        status: 'requested',
         bank_account_type: profile.bank_account_type || 'iban',
         bank_iban: profile.bank_iban,
         bank_holder_name: profile.bank_holder_name,
@@ -147,17 +131,36 @@ serve(async (req) => {
 
     if (payoutErr || !payout) {
       console.error('Error creating payout record:', payoutErr);
-      // Critical: wallet was debited but payout record failed — try to re-credit
-      try {
-        await supabase.rpc('credit_creator_wallet', {
-          p_creator_id: user.id,
-          p_amount_cents: amountCents,
-        });
-        console.log('Wallet re-credited after payout record failure');
-      } catch (recreditErr) {
-        console.error('CRITICAL: Failed to re-credit wallet after payout failure:', recreditErr);
-      }
       return jsonError('Failed to create withdrawal request', 500, corsHeaders);
+    }
+
+    // Debit wallet via ledger (payout_hold reserves the funds)
+    let newBalance: number;
+    try {
+      await applyWalletTransaction(supabase, {
+        ownerId: user.id,
+        ownerKind: 'creator',
+        direction: 'debit',
+        amountCents: amountCents,
+        sourceType: 'payout_hold',
+        sourceId: payout.id,
+      });
+
+      // Read the updated balance from the profile projection
+      const { data: updated } = await supabase
+        .from('profiles')
+        .select('wallet_balance_cents')
+        .eq('id', user.id)
+        .single();
+      newBalance = (updated?.wallet_balance_cents as number) ?? 0;
+    } catch (holdErr: any) {
+      // Hold failed — roll back the payout row so we don't leak orphans.
+      await supabase.from('payouts').delete().eq('id', payout.id);
+      console.error('[request-withdrawal] ledger hold failed', holdErr);
+      if (holdErr.message?.includes('insufficient')) {
+        return jsonError('Insufficient balance', 400, corsHeaders);
+      }
+      return jsonError('Failed to process withdrawal', 500, corsHeaders);
     }
 
     // Notify admin via email
