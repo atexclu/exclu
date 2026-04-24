@@ -14,18 +14,14 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { routeMidForCountry, getMidCredentials } from '../_shared/ugRouting.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
-const quickPayToken = Deno.env.get('QUICKPAY_TOKEN');
-const siteId = Deno.env.get('QUICKPAY_SITE_ID') || '98845';
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing PROJECT_URL or SERVICE_ROLE_KEY');
-}
-if (!quickPayToken) {
-  throw new Error('Missing QUICKPAY_TOKEN');
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
@@ -101,6 +97,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
+    const country = typeof body?.country === 'string' ? body.country.toUpperCase() : null;
+    const midKey = routeMidForCountry(country);
+    const creds = getMidCredentials(midKey);
+
     const slug = body?.slug as string | undefined;
 
     const rawBuyerEmail = typeof body?.buyerEmail === 'string' ? body.buyerEmail.trim() : '';
@@ -216,6 +216,7 @@ serve(async (req) => {
         buyer_email: buyerEmail || null,
         creator_net_cents: creatorNetCents,
         platform_fee_cents: platformFeeCents,
+        ugp_mid: midKey,
         ...(conversationId ? { chat_conversation_id: conversationId } : {}),
         ...(resolvedChatterId ? {
           chat_chatter_id: resolvedChatterId,
@@ -235,8 +236,8 @@ serve(async (req) => {
 
     // ── Build QuickPay form fields ────────────────────────────────────
     const fields: Record<string, string> = {
-      QuickPayToken: quickPayToken!,
-      SiteID: siteId,
+      QuickPayToken: creds.quickPayToken,
+      SiteID: creds.siteId,
       AmountTotal: amountDecimal,
       CurrencyID: 'USD',
       'ItemName[0]': `Unlock: ${(link.title || 'Exclusive content').slice(0, 200)}`,
