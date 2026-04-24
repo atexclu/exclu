@@ -136,25 +136,38 @@ serve(async (req) => {
     return new Response('Bad request', { status: 400 });
   }
 
-  // ── 1. Mandatory per-MID Key validation ─────────────────────────────
+  // ── 1. Conditional per-MID Key validation ───────────────────────────
+  // UG only sends `Key` on Membership Postbacks (subscription rebills). Standard
+  // ConfirmURL callbacks on Sale/Authorize do not include it. If we require a
+  // Key on every callback, we reject every real Sale — confirmed in prod when
+  // the refonte enforced mandatory validation and all non-sub flows broke.
+  //
+  // Policy: if the callback sends a `Key`, it MUST match our per-MID expected
+  // value (rejects forged keys). If no Key is present, accept and log for
+  // observability — the HTTPS ConfirmURL is itself the trust channel on the
+  // non-sub Sale path.
   const siteId = String(body?.SiteID ?? '');
   const midKey = midFromSiteId(siteId);
+  const providedKey = String(body?.Key ?? '');
 
-  let expectedKey: string;
-  try {
-    expectedKey = getMidConfirmKey(midKey);
-  } catch (e) {
-    console.error('[ugp-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
-    return new Response('Server misconfigured', { status: 503 });
-  }
-
-  if (String(body?.Key ?? '') !== expectedKey) {
-    console.error('[ugp-confirm] Key mismatch', {
-      siteId,
-      midKey,
-      provided: String(body?.Key ?? '').slice(0, 8) + '...',
-    });
-    return new Response('Unauthorized', { status: 401 });
+  if (providedKey) {
+    let expectedKey: string;
+    try {
+      expectedKey = getMidConfirmKey(midKey);
+    } catch (e) {
+      console.error('[ugp-confirm] Key provided but no env secret set for MID', { midKey, error: (e as Error).message });
+      return new Response('Server misconfigured', { status: 503 });
+    }
+    if (providedKey !== expectedKey) {
+      console.error('[ugp-confirm] Key mismatch', {
+        siteId,
+        midKey,
+        provided: providedKey.slice(0, 8) + '...',
+      });
+      return new Response('Unauthorized', { status: 401 });
+    }
+  } else {
+    console.log('[ugp-confirm] callback without Key (expected on Sale/Authorize)', { siteId, midKey });
   }
 
   // ── 2. Log raw event (after key validation) ─────────────────────────

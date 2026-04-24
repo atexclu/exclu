@@ -56,25 +56,32 @@ serve(async (req) => {
 
   console.log(`Membership postback: action=${action} username=${username} memberId=${memberId} planId=${subscriptionPlanId}`);
 
-  // ── Mandatory per-MID Key validation ─────────────────────────────────
+  // ── Conditional per-MID Key validation ─────────────────────────────
+  // Membership Postbacks usually include `Key`, but UG portal Key fields can
+  // be empty and some postbacks ship without it. Policy: if provided, MUST
+  // match the per-MID expected; if absent, accept and log.
   const siteId = String(body?.SiteID ?? '');
   const midKey = midFromSiteId(siteId);
+  const providedKey = String(body?.Key ?? '');
 
-  let expectedKey: string;
-  try {
-    expectedKey = getMidConfirmKey(midKey);
-  } catch (e) {
-    console.error('[ugp-membership-confirm] Missing confirm key env var', { midKey, error: (e as Error).message });
-    return new Response('Server misconfigured', { status: 503 });
-  }
-
-  if (String(body?.Key ?? '') !== expectedKey) {
-    console.error('[ugp-membership-confirm] Key mismatch', {
-      siteId,
-      midKey,
-      provided: String(body?.Key ?? '').slice(0, 8) + '...',
-    });
-    return new Response('Unauthorized', { status: 401 });
+  if (providedKey) {
+    let expectedKey: string;
+    try {
+      expectedKey = getMidConfirmKey(midKey);
+    } catch (e) {
+      console.error('[ugp-membership-confirm] Key provided but no env secret set for MID', { midKey, error: (e as Error).message });
+      return new Response('Server misconfigured', { status: 503 });
+    }
+    if (providedKey !== expectedKey) {
+      console.error('[ugp-membership-confirm] Key mismatch', {
+        siteId,
+        midKey,
+        provided: providedKey.slice(0, 8) + '...',
+      });
+      return new Response('Unauthorized', { status: 401 });
+    }
+  } else {
+    console.log('[ugp-membership-confirm] postback without Key', { siteId, midKey, action });
   }
 
   // The Username is the Supabase user.id (set during subscription checkout)

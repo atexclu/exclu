@@ -46,25 +46,34 @@ serve(async (req) => {
 
   console.log(`Listener event: state=${transactionState} txn=${transactionId} ref=${merchantRef} amount=${amount}`);
 
-  // ── Mandatory per-MID Key validation (before any DB write) ───────────
+  // ── Conditional per-MID Key validation (before any DB write) ─────────
+  // UG only sends `Key` on Membership Postbacks. Listener callbacks for
+  // Capture/Refund/Chargeback/Void/CBK1/Recurring may or may not include it
+  // depending on the event. Policy: if a Key is provided it MUST match the
+  // per-MID expected value; absence is accepted and logged (HTTPS is the
+  // trust channel on the non-sub event path).
   const siteId = String(body?.SiteID ?? '');
   const midKey = midFromSiteId(siteId);
+  const providedKey = String(body?.Key ?? '');
 
-  let expectedKey: string;
-  try {
-    expectedKey = getMidConfirmKey(midKey);
-  } catch (e) {
-    console.error('[ugp-listener] Missing confirm key env var', { midKey, error: (e as Error).message });
-    return new Response('Server misconfigured', { status: 503 });
-  }
-
-  if (String(body?.Key ?? '') !== expectedKey) {
-    console.error('[ugp-listener] Key mismatch', {
-      siteId,
-      midKey,
-      provided: String(body?.Key ?? '').slice(0, 8) + '...',
-    });
-    return new Response('Unauthorized', { status: 401 });
+  if (providedKey) {
+    let expectedKey: string;
+    try {
+      expectedKey = getMidConfirmKey(midKey);
+    } catch (e) {
+      console.error('[ugp-listener] Key provided but no env secret set for MID', { midKey, error: (e as Error).message });
+      return new Response('Server misconfigured', { status: 503 });
+    }
+    if (providedKey !== expectedKey) {
+      console.error('[ugp-listener] Key mismatch', {
+        siteId,
+        midKey,
+        provided: providedKey.slice(0, 8) + '...',
+      });
+      return new Response('Unauthorized', { status: 401 });
+    }
+  } else {
+    console.log('[ugp-listener] callback without Key', { siteId, midKey, state: transactionState });
   }
 
   // Log the event
