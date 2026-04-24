@@ -1574,69 +1574,6 @@ const FanDashboard = () => {
                   </Button>
                 </div>
 
-                {/* Creator subscriptions */}
-                <div className="rounded-2xl border border-border/60 bg-card p-5">
-                  <h3 className="text-sm font-semibold text-foreground mb-1">Your creator subscriptions</h3>
-                  <p className="text-xs text-muted-foreground mb-3">Active recurring payments to creators.</p>
-
-                  {fanSubs.length === 0 && (
-                    <p className="text-xs text-muted-foreground py-3">You don't subscribe to any creator right now.</p>
-                  )}
-
-                  {fanSubs.map((s, idx) => (
-                    <div
-                      key={s.id}
-                      className={`flex items-center justify-between gap-3 py-3 ${idx === 0 ? '' : 'border-t border-border/60'}`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-muted flex-shrink-0">
-                          {s.creator_profile?.avatar_url ? (
-                            <img src={s.creator_profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full bg-muted" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">
-                            @{s.creator_profile?.username ?? 'creator'}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            ${(s.price_cents / 100).toFixed(2)}/mo
-                            {s.cancel_at_period_end && s.period_end && (
-                              <> · access until {new Date(s.period_end).toLocaleDateString()}</>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      {!s.cancel_at_period_end ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCancelSub(s.id)}
-                          className="text-xs font-semibold text-red-500 hover:underline"
-                        >
-                          Cancel
-                        </button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Cancelling</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* My subscriptions link */}
-                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">My subscriptions</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Manage your creator subscriptions.</p>
-                  </div>
-                  <Link
-                    to="/fan/subscriptions"
-                    className="text-xs font-semibold text-foreground hover:underline flex items-center gap-1"
-                  >
-                    View →
-                  </Link>
-                </div>
-
                 {/* Sign out */}
                 <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
                   <div>
