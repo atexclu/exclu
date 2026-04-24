@@ -1,0 +1,2 @@
+# supabase/functions/rebill-subscriptions/config.toml
+verify_jwt = false
