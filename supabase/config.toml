@@ -159,3 +159,15 @@ verify_jwt = false
 
 [functions.record-consent]
 verify_jwt = false
+
+[functions.rebill-subscriptions]
+verify_jwt = false
+
+[functions.reconcile-payments]
+verify_jwt = false
+
+[functions.create-fan-subscription-checkout]
+verify_jwt = false
+
+[functions.cancel-fan-subscription]
+verify_jwt = false
