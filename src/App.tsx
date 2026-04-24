@@ -41,6 +41,7 @@ import AdminUserOverview from "./pages/AdminUserOverview";
 import LinkInBioEditor from "./pages/LinkInBioEditor";
 import ReferralDashboard from "./pages/ReferralDashboard";
 import FanSignup from "./pages/FanSignup";
+import FanSubscriptions from "./pages/FanSubscriptions";
 import AuthCallback from "./pages/AuthCallback";
 import CreatorChat from './pages/CreatorChat';
 import FanDashboard from './pages/FanDashboard';
@@ -288,6 +289,7 @@ const App = () => {
                 />
                 <Route path="/l/:slug" element={<PublicLink />} />
                 <Route path="/fan/signup" element={<FanSignup />} />
+                <Route path="/fan/subscriptions" element={<FanSubscriptions />} />
                 <Route path="/accept-chatter-invite" element={<AcceptChatterInvite />} />
                 <Route path="/app/chatter/select" element={<ChatterClientSelector />} />
                 <Route path="/app/chatter" element={<ChatterDashboard />} />

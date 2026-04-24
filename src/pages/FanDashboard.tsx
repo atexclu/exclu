@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { supabase, supabaseAnon } from '@/lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, ArrowUpRight, Trash2, Sun, Moon, User, ExternalLink, Unlock, ArrowLeft, Gift, Search, Compass, Camera, X as IconX } from 'lucide-react';
@@ -1600,6 +1600,20 @@ const FanDashboard = () => {
                       )}
                     </div>
                   ))}
+                </div>
+
+                {/* My subscriptions link */}
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">My subscriptions</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Manage your creator subscriptions.</p>
+                  </div>
+                  <Link
+                    to="/fan/subscriptions"
+                    className="text-xs font-semibold text-foreground hover:underline flex items-center gap-1"
+                  >
+                    View →
+                  </Link>
                 </div>
 
                 {/* Sign out */}

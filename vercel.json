@@ -71,6 +71,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/fan/subscriptions",
+      "destination": "/index.html"
+    },
+    {
       "source": "/auth",
       "destination": "/index.html"
     },
