@@ -15,6 +15,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, formatUSD } from '../_shared/brevo.ts';
 import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
+import { reverseWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -193,32 +194,23 @@ async function handleRefund(txnId: string, merchantRef: string, amount: string) 
   // Update status to refunded
   await supabase.from(table).update({ status: 'refunded' }).eq('id', record.id);
 
-  // Debit the creator's wallet for the refunded amount
-  const creatorId = table === 'purchases'
-    ? await getCreatorIdForPurchase(record)
-    : record.creator_id;
+  // Reverse every ledger credit tied to this transaction (creator AND chatter alike).
+  const { data: credits } = await supabase
+    .from('wallet_transactions')
+    .select('id, owner_id, owner_kind, amount_cents, source_type')
+    .eq('source_transaction_id', txnId)
+    .eq('direction', 'credit');
 
-  if (creatorId && record.creator_net_cents > 0) {
+  for (const c of credits ?? []) {
     try {
-      await supabase.rpc('debit_creator_wallet', {
-        p_creator_id: creatorId,
-        p_amount_cents: record.creator_net_cents,
+      await reverseWalletTransaction(supabase, {
+        parentRowId: c.id,
+        sourceType: 'refund',
+        sourceTransactionId: txnId,
+        metadata: { refund_amount_decimal: amount },
       });
-      console.log('Wallet debited for refund:', creatorId, '-', record.creator_net_cents);
     } catch (err) {
-      // Wallet might go negative if already withdrawn — log but continue
-      console.error('Error debiting wallet for refund (may be negative):', err);
-      // Force-update wallet even if it goes negative
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('wallet_balance_cents')
-        .eq('id', creatorId)
-        .single();
-      if (profile) {
-        await supabase.from('profiles').update({
-          wallet_balance_cents: profile.wallet_balance_cents - record.creator_net_cents,
-        }).eq('id', creatorId);
-      }
+      console.error(`[listener] refund reversal failed for ledger row ${c.id}`, err);
     }
   }
 
@@ -252,17 +244,23 @@ async function handleChargeback(txnId: string, merchantRef: string, amount: stri
     ? await getCreatorIdForPurchase(record)
     : record.creator_id;
 
-  if (creatorId && record.creator_net_cents > 0) {
-    // Force debit (chargebacks can make wallet negative)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('wallet_balance_cents')
-      .eq('id', creatorId)
-      .single();
-    if (profile) {
-      await supabase.from('profiles').update({
-        wallet_balance_cents: profile.wallet_balance_cents - record.creator_net_cents,
-      }).eq('id', creatorId);
+  // Reverse every ledger credit tied to this transaction (chargebacks may drive balance negative — accepted).
+  const { data: credits } = await supabase
+    .from('wallet_transactions')
+    .select('id, owner_id, owner_kind, amount_cents, source_type')
+    .eq('source_transaction_id', txnId)
+    .eq('direction', 'credit');
+
+  for (const c of credits ?? []) {
+    try {
+      await reverseWalletTransaction(supabase, {
+        parentRowId: c.id,
+        sourceType: 'chargeback',
+        sourceTransactionId: txnId,
+        metadata: { chargeback_amount_decimal: amount },
+      });
+    } catch (err) {
+      console.error(`[listener] chargeback reversal failed for ledger row ${c.id}`, err);
     }
   }
 
