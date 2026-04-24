@@ -128,6 +128,7 @@ const FanDashboard = () => {
     urlTab && validTabs.includes(urlTab) ? urlTab : 'favorites'
   );
   const [favorites, setFavorites] = useState<FavoriteCreator[]>([]);
+  const [subscribedCreatorIds, setSubscribedCreatorIds] = useState<Set<string>>(new Set());
   const [tips, setTips] = useState<TipRecord[]>([]);
   const [gifts, setGifts] = useState<GiftRecord[]>([]);
   const [tipsSubTab, setTipsSubTab] = useState<'tips' | 'gifts'>('tips');
@@ -272,6 +273,16 @@ const FanDashboard = () => {
         creator: f.creator,
       })));
     }
+
+    // Fetch this fan's active creator subscriptions to badge "Subscribed" in My Creators
+    const { data: subs } = await supabase
+      .from('fan_creator_subscriptions')
+      .select('creator_user_id, status, cancel_at_period_end')
+      .eq('fan_id', uid)
+      .eq('status', 'active');
+    setSubscribedCreatorIds(
+      new Set((subs ?? []).map((s: { creator_user_id: string }) => s.creator_user_id)),
+    );
 
     // Fetch ALL active creators for discovery directory
     const { data: creatorsData } = await supabase
@@ -955,14 +966,20 @@ const FanDashboard = () => {
                   <div>
                     {/* Add more button moved to header */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {favorites.map((fav, i) => (
+                    {favorites.map((fav, i) => {
+                      const isSubscribed = subscribedCreatorIds.has(fav.creator_id);
+                      return (
                       <motion.div
                         key={fav.id}
                         initial={{ opacity: 0, scale: 0.92 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.3, delay: i * 0.05 }}
-                        className="group relative rounded-2xl overflow-hidden cursor-pointer bg-exclu-ink border border-exclu-arsenic/60 hover:border-primary/50 transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)]"
-                        onClick={() => navigate(`/${fav.creator.handle}`)}
+                        className={`group relative rounded-2xl overflow-hidden cursor-pointer bg-exclu-ink border transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] ${
+                          isSubscribed
+                            ? 'border-emerald-500/50 ring-1 ring-emerald-500/20 hover:border-emerald-400'
+                            : 'border-exclu-arsenic/60 hover:border-primary/50'
+                        }`}
+                        onClick={() => navigate(`/${fav.creator.handle}${isSubscribed ? '?tab=content' : ''}`)}
                       >
                         {/* Photo cover */}
                         <div className="relative aspect-[3/4] overflow-hidden">
@@ -985,6 +1002,14 @@ const FanDashboard = () => {
                           {/* Gradient overlay */}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
 
+                          {/* Subscribed badge */}
+                          {isSubscribed && (
+                            <div className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/90 text-emerald-950 px-2 py-0.5 text-[10px] font-bold shadow-sm">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-950" />
+                              Subscribed
+                            </div>
+                          )}
+
                           {/* Remove button */}
                           <button
                             type="button"
@@ -1000,7 +1025,10 @@ const FanDashboard = () => {
                             <p className="text-sm font-semibold text-white leading-tight truncate">
                               {fav.creator.display_name || fav.creator.handle}
                             </p>
-                            <p className="text-[11px] text-white/60 truncate">@{fav.creator.handle}</p>
+                            <p className="text-[11px] text-white/60 truncate">
+                              @{fav.creator.handle}
+                              {isSubscribed && <span className="text-emerald-300 ml-1">· tap for feed</span>}
+                            </p>
                           </div>
                         </div>
 
@@ -1030,7 +1058,8 @@ const FanDashboard = () => {
                           )}
                         </div>
                       </motion.div>
-                    ))}
+                      );
+                    })}
                     </div>
                   </div>
                 )}

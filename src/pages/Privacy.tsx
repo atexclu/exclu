@@ -32,7 +32,7 @@ const Privacy = () => {
             <li>Bio, location, social media links</li>
             <li>Country of residence (for payout purposes)</li>
             <li>Bank account details: IBAN, account holder name, BIC/SWIFT (for withdrawal processing)</li>
-            <li>Subscription status (Free or Premium)</li>
+            <li>Subscription status (Free or Premium — Monthly or Annual) and any fan-to-creator subscriptions you hold or receive, including the billing country used to route payments through the correct card network</li>
             <li>Wallet balance and transaction history</li>
             <li>Profile analytics (view counts, sales counts)</li>
             <li>Content metadata (titles, descriptions, pricing)</li>

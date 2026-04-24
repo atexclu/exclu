@@ -113,11 +113,17 @@ const CreatorPublic = () => {
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
 
-  // Initial tab honours ?tab=content (used by chat "View feed" CTA and subscription-success redirect).
-  const initialTab: 'links' | 'content' | 'wishlist' =
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'content'
-      ? 'content'
-      : 'links';
+  // Initial tab honours ?tab=content (used by chat "View feed" CTA, fan
+  // subscription-success redirect, and fan "Open feed" link from My subs).
+  // ?tab=feed is an alias for ?tab=content — the feed lives inside the
+  // Content tab on the public profile.
+  const initialTab: 'links' | 'content' | 'wishlist' = (() => {
+    if (typeof window === 'undefined') return 'links';
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'content' || t === 'feed') return 'content';
+    if (t === 'wishlist') return 'wishlist';
+    return 'links';
+  })();
   const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>(initialTab);
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);

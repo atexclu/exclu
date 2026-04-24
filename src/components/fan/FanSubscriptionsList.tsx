@@ -186,7 +186,7 @@ export function FanSubscriptionsList() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 {r.creator_handle && (
                   <Link
-                    to={`/${r.creator_handle}?tab=feed`}
+                    to={`/${r.creator_handle}?tab=content`}
                     className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                   >
                     Open feed <ExternalLink className="w-3 h-3" />
