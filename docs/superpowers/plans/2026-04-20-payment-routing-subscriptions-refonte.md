@@ -1916,10 +1916,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_DAYS = [0, 3, 4]; // total ~7 days across 3 attempts
-const BASE_MONTHLY_CENTS = 3900;
+const BASE_MONTHLY_CENTS = 3999;    // $39.99
 const ADDON_PER_PROFILE_CENTS = 1000;
 const INCLUDED_PROFILES = 2;
-const ANNUAL_CENTS = 23999;
+const ANNUAL_CENTS = 23999;         // $239.99
 
 async function computeCreatorMonthlyAmount(userId: string): Promise<number> {
   const { data: profiles } = await supabase.from('creator_profiles')
