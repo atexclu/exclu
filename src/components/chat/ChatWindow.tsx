@@ -450,23 +450,23 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               onSelect={handleAttachLink}
               onClose={() => setShowLinkPicker(false)}
               onCreateLink={
-                senderType === 'creator'
-                  ? () => navigate('/app/links/new')
-                  : senderType === 'chatter'
-                    ? () => { setShowLinkPicker(false); setShowCreateLink(true); }
-                    : undefined
+                senderType === 'creator' || senderType === 'chatter'
+                  ? () => { setShowLinkPicker(false); setShowCreateLink(true); }
+                  : undefined
               }
             />
           )}
         </AnimatePresence>
 
-        {/* Inline link creation panel (chatter only) — above composer */}
+        {/* Inline link creation panel — chatter (revenue-split tracked) and
+            creator (regular owned link). senderType controls the attribution. */}
         <AnimatePresence>
-          {showCreateLink && (
+          {showCreateLink && (senderType === 'creator' || senderType === 'chatter') && (
             <ChatCreateLink
               profileId={conversation.profile_id}
               onLinkCreated={handleChatterLinkCreated}
               onClose={() => setShowCreateLink(false)}
+              senderType={senderType}
             />
           )}
         </AnimatePresence>

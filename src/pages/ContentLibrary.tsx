@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2, Link2 as LinkIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { getSignedUrl } from '@/lib/storageUtils';
@@ -639,8 +639,19 @@ const ContentLibrary = () => {
 
                 {/* Bulk actions */}
                 {selectedAssets.size > 0 && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-exclu-cloud font-medium">{selectedAssets.size} selected</span>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const ids = Array.from(selectedAssets).join(',');
+                        navigate(`/app/create-link?prefill_asset_ids=${encodeURIComponent(ids)}`);
+                      }}
+                      className="rounded-full text-xs h-8 bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <LinkIcon className="w-3 h-3 mr-1" />
+                      Create payment link
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

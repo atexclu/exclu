@@ -101,6 +101,13 @@ const CreateLink = () => {
   useEffect(() => {
     let isMounted = true;
 
+    // Parse prefilled asset IDs from the URL — set when the user launched
+    // "Create payment link" from ContentLibrary's bulk actions bar.
+    const rawPrefill = new URLSearchParams(window.location.search).get('prefill_asset_ids') ?? '';
+    const prefillIds = rawPrefill
+      ? rawPrefill.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
     const fetchLibraryAssets = async () => {
       setIsLoadingLibrary(true);
       setLibraryError(null);
@@ -129,15 +136,35 @@ const CreateLink = () => {
       if (!isMounted) return;
       setHasExistingLinks((linksCount ?? 0) > 0);
 
+      // Fetch the top 12 most recent assets PLUS any pre-filled IDs that
+      // aren't already in the top 12 (so the prefill always survives the
+      // library pagination).
       const assetsQuery = supabase
         .from('assets')
         .select('id, title, created_at, storage_path, mime_type')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(12);
-      const { data, error } = activeProfile?.id
+      const { data: topData, error } = activeProfile?.id
         ? await assetsQuery.eq('profile_id', activeProfile.id)
         : await assetsQuery.eq('creator_id', user.id);
+
+      let data = topData ?? [];
+      if (prefillIds.length > 0) {
+        const existingIds = new Set(data.map((a: { id: string }) => a.id));
+        const missingPrefill = prefillIds.filter((id) => !existingIds.has(id));
+        if (missingPrefill.length > 0) {
+          const extraQuery = supabase
+            .from('assets')
+            .select('id, title, created_at, storage_path, mime_type')
+            .in('id', missingPrefill)
+            .is('deleted_at', null);
+          const { data: extraData } = activeProfile?.id
+            ? await extraQuery.eq('profile_id', activeProfile.id)
+            : await extraQuery.eq('creator_id', user.id);
+          if (extraData) data = [...extraData, ...data];
+        }
+      }
 
       if (!isMounted) return;
 
@@ -164,6 +191,11 @@ const CreateLink = () => {
         );
 
         setLibraryAssets(withPreviews);
+        // Auto-select any prefilled IDs that are actually in the library
+        if (prefillIds.length > 0) {
+          const validIds = new Set(withPreviews.map((a) => a.id));
+          setSelectedAssetIds(prefillIds.filter((id) => validIds.has(id)));
+        }
       }
 
       setIsLoadingLibrary(false);

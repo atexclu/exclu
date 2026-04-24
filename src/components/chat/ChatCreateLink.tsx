@@ -34,6 +34,12 @@ interface ChatCreateLinkProps {
   profileId: string;
   onLinkCreated: (link: CreatedLink) => void;
   onClose: () => void;
+  /**
+   * 'chatter' (default) tags the created link with `created_by_chatter_id`
+   * for revenue split tracking and hides it from the public profile.
+   * 'creator' creates a regular owned link with no chatter attribution.
+   */
+  senderType?: 'creator' | 'chatter';
 }
 
 function generateSlug(title: string): string {
@@ -46,7 +52,7 @@ function generateSlug(title: string): string {
   return `${base || 'drop'}-${rand}`;
 }
 
-export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreateLinkProps) {
+export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType = 'chatter' }: ChatCreateLinkProps) {
   const [assets, setAssets] = useState<ContentAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -156,8 +162,10 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose }: ChatCreate
           currency: 'USD',
           slug,
           status: 'draft',
-          show_on_profile: false,
-          created_by_chatter_id: user.id,
+          // Chatters create non-public attribution-tagged links; creators
+          // create regular profile links (visible by default).
+          show_on_profile: senderType === 'creator',
+          created_by_chatter_id: senderType === 'chatter' ? user.id : null,
         })
         .select('id, title, slug, price_cents');
 
