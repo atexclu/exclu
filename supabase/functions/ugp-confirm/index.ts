@@ -204,14 +204,18 @@ serve(async (req) => {
   // (see ugp-listener). The ConfirmURL should only ever actually mutate state for:
   //   - Sale      → direct one-time capture (link / tip / gift / initial sub)
   //   - Authorize → pre-auth hold for custom requests (captured later)
-  //   - Recurring → subscription rebill (goes through ugp-membership-confirm too)
+  //
+  // NOTE: Recurring (rebill) postbacks fire on the ListenerURL, NOT ConfirmURL.
+  // Server-initiated /recurringtransactions calls use the async listener path.
+  // A Recurring callback arriving at ConfirmURL would be a misconfiguration; it
+  // will hit the non-actionable guard below and be logged + no-op'd.
   const actionableStatesByType: Record<string, ReadonlySet<string>> = {
     link: new Set(['Sale']),
     tip: new Set(['Sale']),
     gift: new Set(['Sale']),
     req: new Set(['Authorize']),
-    sub: new Set(['Sale', 'Recurring']),
-    fsub: new Set(['Sale', 'Recurring']),
+    sub: new Set(['Sale']),   // initial Sale only; rebills go to ugp-listener
+    fsub: new Set(['Sale']),  // initial Sale only; rebills go to ugp-listener
   };
   const allowedStates = actionableStatesByType[parsed.type];
   if (allowedStates && !allowedStates.has(transactionState)) {

@@ -104,6 +104,14 @@ serve(async (req) => {
         await handleCapture(transactionId, merchantRef, amount);
         break;
 
+      case 'Recurring':
+        await handleRecurring(body);
+        break;
+
+      case 'Sale':
+        await handleListenerSale(body);
+        break;
+
       default:
         console.warn('Unknown listener TransactionState:', transactionState);
     }
@@ -310,4 +318,123 @@ async function handleCapture(txnId: string, merchantRef: string, amount: string)
   }
 
   console.log('Capture event received:', txnId);
+}
+
+// ── RECURRING (server-initiated rebill postback) ──────────────────────────
+
+async function handleRecurring(body: Record<string, string>) {
+  const trackingId = body.TrackingId || '';
+  const transactionStatus = body.TransactionStatus || '';
+  const rebillTid = body.TransactionID || '';
+  const referenceTid = body.ReferenceTransactionId || '';
+  const amountCents = Math.round(parseFloat(body.Amount || '0') * 100);
+
+  // Correlate back to our rebill_attempts row via TrackingId (we passed it as rebill_attempts.id)
+  let attempt: any = null;
+  if (trackingId) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('id', trackingId)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  // Fallback: no TrackingId echoed — find the most recent pending/success attempt for this reference_transaction_id.
+  if (!attempt && referenceTid) {
+    const { data } = await supabase.from('rebill_attempts')
+      .select('*')
+      .eq('reference_transaction_id', referenceTid)
+      .in('status', ['pending', 'success'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    attempt = data;
+  }
+
+  if (!attempt) {
+    console.error('handleRecurring: no rebill_attempts match for TrackingId=%s ref=%s', trackingId, referenceTid);
+    return;
+  }
+
+  const isSuccessful = (transactionStatus === 'Successful' || transactionStatus === 'Approved');
+  const finalStatus = isSuccessful ? 'success' : 'declined';
+
+  await supabase.from('rebill_attempts').update({
+    status: finalStatus,
+    ugp_transaction_id: rebillTid || attempt.ugp_transaction_id,
+    listener_confirmed_at: new Date().toISOString(),
+  }).eq('id', attempt.id);
+
+  if (!isSuccessful) {
+    console.log('handleRecurring: decline recorded for attempt', attempt.id);
+    return;
+  }
+
+  // Safety-net: if the sync-response path failed to advance the period, do it here.
+  if (attempt.subject_table === 'profiles') {
+    const { data: creator } = await supabase.from('profiles')
+      .select('subscription_plan, subscription_period_end')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (creator && creator.subscription_period_end && new Date(creator.subscription_period_end) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now);
+      if (creator.subscription_plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
+      else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('profiles').update({
+        subscription_amount_cents: amountCents,
+        subscription_period_start: now.toISOString(),
+        subscription_period_end: nextEnd.toISOString(),
+        subscription_suspended_at: null,
+      }).eq('id', attempt.subject_id);
+      console.log('handleRecurring: advanced subscription_period_end for', attempt.subject_id);
+    }
+  } else if (attempt.subject_table === 'fan_creator_subscriptions') {
+    const { data: sub } = await supabase.from('fan_creator_subscriptions')
+      .select('next_rebill_at')
+      .eq('id', attempt.subject_id)
+      .maybeSingle();
+    if (sub && sub.next_rebill_at && new Date(sub.next_rebill_at) <= new Date()) {
+      const now = new Date();
+      const nextEnd = new Date(now); nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+      await supabase.from('fan_creator_subscriptions').update({
+        period_start: now.toISOString(),
+        period_end: nextEnd.toISOString(),
+        next_rebill_at: nextEnd.toISOString(),
+        suspended_at: null,
+      }).eq('id', attempt.subject_id);
+    }
+  }
+
+  // NOTE: wallet credit for the creator on fan-sub rebills happens in Task 8.3
+  // Step 4 (ledger integration). This listener is reconciliation-only until then.
+}
+
+// ── SALE (safety-net — Sales normally go through ConfirmURL) ─────────────
+
+async function handleListenerSale(body: Record<string, string>) {
+  // Safety-net only — Sales normally hit ConfirmURL. If a Sale arrives here
+  // for a transaction already processed (payment_events.processed=true), no-op.
+  // Otherwise log it unprocessed so Task 8.x reconciliation cron can pick it up.
+  const transactionId = body.TransactionID || '';
+  if (!transactionId) return;
+
+  const { data: existing } = await supabase.from('payment_events')
+    .select('id, processed')
+    .eq('transaction_id', transactionId)
+    .maybeSingle();
+  if (existing?.processed) return;
+
+  // Insert with a distinct transaction_id to avoid collision with the ConfirmURL-logged row.
+  // Use upsert-ignore semantic in case this listener fires twice for the same Sale.
+  await supabase.from('payment_events').upsert({
+    transaction_id: `listener_${transactionId}_Sale`,
+    merchant_reference: body.MerchantReference || '',
+    amount_decimal: body.Amount || '0',
+    transaction_state: 'Sale',
+    customer_email: body.CustomerEmail || null,
+    raw_payload: body,
+    processed: false,
+    processing_error: 'listener-sale-without-confirm — reconcile',
+  }, { onConflict: 'transaction_id', ignoreDuplicates: true });
 }
