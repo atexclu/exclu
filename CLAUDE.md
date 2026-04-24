@@ -121,7 +121,7 @@ Secrets requis côté Supabase (`supabase secrets set --linked <NAME>=<value>`) 
 
 Pendant le rollout, les alias legacy `QUICKPAY_TOKEN`, `QUICKPAY_SITE_ID`, `UGP_MERCHANT_ID`, `UGP_API_BEARER_TOKEN`, `QUICKPAY_CONFIRM_KEY` restent lus par `_shared/ugRouting.ts#getMidConfirmKey` en fallback — tous pointent sur le MID INTL_3D. À retirer en Phase 7 (cleanup) une fois les deux MIDs en prod.
 
-`ConfirmURL`, `ListenerURL` et `MembershipPostbackURL` sont configurés côté UG (portail Derek) — pas de wiring applicatif. Chaque callback entrant arrive avec son `SiteID` + `Key` ; `_shared/ugRouting.ts#midFromSiteId` résout le MID, et la `Key` est validée strictement par MID dans `ugp-confirm`, `ugp-membership-confirm`, et `ugp-listener` (pas de callback accepté sans `Key` valide — cf. migration 0.6b du refonte 2026-04-20).
+`ConfirmURL`, `ListenerURL` et `MembershipPostbackURL` sont configurés côté UG Payment (portail merchant) — pas de wiring applicatif. Chaque callback entrant arrive avec son `SiteID` + `Key` ; `_shared/ugRouting.ts#midFromSiteId` résout le MID, et la `Key` est validée strictement par MID dans `ugp-confirm`, `ugp-membership-confirm`, et `ugp-listener` (pas de callback accepté sans `Key` valide — cf. migration 0.6b du refonte 2026-04-20).
 
 ### Fonctions clés
 - **Checkouts UG Payments** : `create-link-checkout`, `create-tip-checkout`, `create-request-checkout`, `create-gift-checkout`, `create-creator-subscription`

@@ -25,7 +25,7 @@ const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 // Plan IDs used to disambiguate creator-premium vs fan→creator subscriptions.
 // Creator plan id is the legacy one (defaults to '11027'); fan plan id is
-// provisioned with Derek and may be unset during rollout (we just skip fan handling then).
+// provisioned with UG Payment and may be unset during rollout (we just skip fan handling then).
 const creatorPlanId = Deno.env.get('QUICKPAY_SUB_PLAN_ID') || '11027';
 const fanPlanId = Deno.env.get('QUICKPAY_FAN_SUB_PLAN_ID') || '';
 

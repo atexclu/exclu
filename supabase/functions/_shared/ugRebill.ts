@@ -8,7 +8,7 @@
 //   - Amount:        decimal-as-string, e.g. "39.00"
 //   - Currency:      ISO-4217, MUST match the original Sale's currency
 //
-// Derek confirmed (2026-04-20) there's no uniform card-expired reason code —
+// UG Payment confirmed (2026-04-20) there's no uniform card-expired reason code —
 // each issuer returns its own free-form message. Classification is binary
 // (success / declined / error); the caller decides the retry policy on top.
 //
@@ -30,9 +30,9 @@ const REBILL_TIMEOUT_MS = 15_000;
 
 export async function rebillTransaction(
   creds: UgMidCredentials,
-  referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (Derek Q1)
+  referenceTransactionId: string,   // MUST be the ORIGINAL Sale TID; never a rebilled TID (UG Payment Q1)
   amountCents: number,
-  trackingId: string,               // our rebill_attempts.id — echoed back in the Listener postback per Derek Q9
+  trackingId: string,               // our rebill_attempts.id — echoed back in the Listener postback per UG Payment Q9
 ): Promise<RebillResult> {
   const url = `https://api.ugpayments.ch/merchants/${creds.merchantId}/recurringtransactions`;
   const body = {

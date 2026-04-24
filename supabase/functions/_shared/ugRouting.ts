@@ -1,7 +1,7 @@
 // supabase/functions/_shared/ugRouting.ts
 //
 // Resolves the per-MID credentials and endpoints for UG payments.
-// Per Derek (2026-04-20) each MID ships its own full credential set:
+// Per UG Payment (2026-04-20) each MID ships its own full credential set:
 //   QUICKPAY_TOKEN_INTL_3D / QUICKPAY_SITE_ID_INTL_3D / UGP_MID_INTL_3D / UGP_API_BEARER_TOKEN_INTL_3D
 //   QUICKPAY_TOKEN_US_2D   / QUICKPAY_SITE_ID_US_2D   / UGP_MID_US_2D   / UGP_API_BEARER_TOKEN_US_2D
 // During rollout, INTL_3D falls back to the legacy single-set names
@@ -9,7 +9,7 @@
 // so that existing prod secrets keep working without re-entry. Phase 7
 // removes the fallback once the new names are set everywhere.
 // ConfirmURL / ListenerURL / Member Postback URLs are pre-configured on the
-// UG side by Derek to point at our existing endpoints — no extra wiring here.
+// UG Payment side to point at our existing endpoints — no extra wiring here.
 
 const US_2D_COUNTRIES = new Set(['US', 'CA']);
 

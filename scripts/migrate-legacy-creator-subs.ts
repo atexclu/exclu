@@ -50,7 +50,7 @@ for (const s of subs ?? []) {
   }
 
   // 2) Cancel the UG-side plan enrollment. Safe before the TID is moved to
-  //    /recurringtransactions — Derek confirmed this doesn't break rebillability.
+  //    /recurringtransactions — UG Payment confirmed this doesn't break rebillability.
   const username = (s.subscription_ugp_username ?? s.id) as string;
   try {
     await cancelUgPlan(username);
