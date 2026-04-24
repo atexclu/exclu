@@ -137,16 +137,34 @@ Pendant le rollout, les alias legacy `QUICKPAY_TOKEN`, `QUICKPAY_SITE_ID`, `UGP_
 - **Auth** : `send-auth-email`
 
 ## Flux de paiement (UG Payments QuickPay)
-### Achat d'un lien (fan → créateur)
-Fan → `create-link-checkout` (génère un formulaire QuickPay) → page hébergée QuickPay → webhook `ugp-listener` → crédit du wallet créateur + `sales` row → `send-link-content-email` → redirection `/tip-success` ou page de déblocage.
 
-### Custom request (capture manuelle)
-Fan → `create-request-checkout` (autorisation, **pas** de capture immédiate) → le créateur accepte ou refuse → `manage-request` capture (accept) ou annule (decline) l'autorisation.
+### Routing par pays
+Tous les checkouts fan-side accepent un paramètre `country`. Le helper `_shared/ugRouting.ts#routeMidForCountry` dispatche vers :
+- **US_2D** (MID 103817, SiteID 98895) si country ∈ {US, CA}
+- **INTL_3D** (MID historique, SiteID 98845) sinon
 
-### Wallet & payouts
-- Tous les paiements créditent un **wallet interne** au créateur (pas de payout direct comme Stripe Connect).
-- Le créateur renseigne ses coordonnées bancaires via `save-bank-details` (IBAN multi-pays, migration 128/129).
-- `request-withdrawal` → validation admin → `process-payout` effectue le virement. Seuil minimum de retrait configuré côté application.
+Chaque MID a son propre jeu de credentials (voir §UG Payments — Per-MID credentials).
+
+### Achat one-shot (link / tip / gift)
+Fan → `create-*-checkout` (génère les fields QuickPay) → page hébergée QuickPay → `ConfirmURL` → `ugp-confirm` → `applyWalletTransaction` (créateur + chatter si attribution link) → marquage `status='succeeded'` → email delivery.
+
+### Custom request
+Fan → `create-request-checkout` (Authorize) → créateur accepte → `manage-request` capture → `applyWalletTransaction` → `status='delivered'`. Refus ou expiration → `ugp-listener` Void handler (no ledger mutation).
+
+### Creator Pro subscription (Monthly / Annual)
+Creator → `create-creator-subscription` (Sale one-shot, `IsInitialForRecurring=true`, plan monthly $39.99 ou annual $239.99) → `ugp-confirm handleSubscription` → enregistre TID + MID + période sur `profiles`. Rebills quotidiens via cron `rebill-subscriptions` (08:00 UTC) qui appelle `/recurringtransactions` sur le TID original + enregistre idempotentement dans `rebill_attempts`. Commission référent 35% via ledger.
+
+### Fan → Creator subscription
+Fan → `create-fan-subscription-checkout` (Sale one-shot, prix grandfathered depuis `creator_profiles.fan_subscription_price_cents`) → `ugp-confirm handleFanSubscription`. Rebills 30 jours via même cron, avec split plateforme 15% (Free) ou 0% (Pro) appliqué côté ledger à chaque cycle.
+
+### Wallet & ledger
+Toutes les mutations de `profiles.wallet_balance_cents / total_earned_cents / chatter_earnings_cents` passent par la RPC `apply_wallet_transaction` via `_shared/ledger.ts`. Ledger append-only (`wallet_transactions`), idempotent sur `(owner_id, source_type, direction, source_transaction_id)`. Refunds + chargebacks = ligne ledger inverse via `reverseWalletTransaction`. CI check `scripts/check-ledger-discipline.sh` bloque tout `UPDATE profiles SET wallet_balance_cents = ...` direct.
+
+### Reconciliation
+Cron horaire `reconcile-payments` (1) retraite les `payment_events` bloqués >5min, (2) détecte drift entre `profiles.wallet_balance_cents` et somme ledger via `find_wallet_drift`, (3) alerte `atexclu@gmail.com` en cas d'anomalie.
+
+### Payouts
+`request-withdrawal` → ledger `payout_hold` (débit) + `payouts.status='requested'`. Admin accepte → `process-payout` vire en IBAN + `increment_total_withdrawn` RPC. Admin refuse → `reverseWalletTransaction` (`payout_failure` → crédit récupéré).
 
 ## Serverless SSR (Vercel `api/`)
 - **`og-proxy.ts`** — intercepte `/:handle` et `/l/:slug` côté serveur pour injecter les balises OG (SEO + previews réseaux sociaux) avant de renvoyer `index.html`. Wiré via rewrites dans `vercel.json`.
@@ -158,6 +176,7 @@ Fan → `create-request-checkout` (autorisation, **pas** de capture immédiate) 
 - Ne jamais stocker de secrets (API keys, tokens, webhooks) dans le code ou dans `CLAUDE.md`
 - Toujours utiliser les variables d'environnement (`.env.local` en dev, Supabase Secrets pour les Edge Functions, Vercel env vars pour `api/`)
 - Les migrations SQL sont irréversibles en prod — bien les tester en local (`supabase db reset`) d'abord
+- Les migrations sont numérotées en continu ; voir la tail de `supabase/migrations/` pour le dernier numéro appliqué.
 - Les Edge Functions sont déployées **manuellement** (`supabase functions deploy <nom>`) — pas de CI/CD
 - La route `/:handle` est un wildcard catch-all côté client : toute nouvelle route statique doit être déclarée **avant** dans `App.tsx`
 - Les rewrites `vercel.json` doivent refléter chaque nouvelle route côté client pour supporter le deep-linking direct
