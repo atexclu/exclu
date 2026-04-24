@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Lock, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { CountrySelect } from '@/components/checkout/CountrySelect';
+import { getGeoCountry } from '@/lib/ipGeo';
 
 interface SubscriptionPopupProps {
   open: boolean;
@@ -24,28 +26,63 @@ interface SubscriptionPopupProps {
  * Flow on Subscribe:
  *  1. If no session → redirect to /fan/signup with redirect_sub=1 so the user
  *     lands back on the creator profile after signup.
- *  2. Else invoke `create-fan-subscription-checkout` which returns QuickPay
- *     form fields; we POST them via a dynamically-created form (same pattern
- *     used across link/tip/gift checkouts in the codebase).
- *  3. On `alreadySubscribed: true`, simply toast + close.
+ *  2. We require a billing country before starting checkout so we can route
+ *     the payment through the correct MID (US_2D for US/CA, INTL_3D otherwise).
+ *     Prefill order: profiles.billing_country → profiles.country → IP geo.
+ *  3. Invoke `create-fan-subscription-checkout` which returns QuickPay form
+ *     fields; we POST them via a dynamically-created form (same pattern used
+ *     across link/tip/gift checkouts in the codebase).
+ *  4. On `alreadySubscribed: true`, simply toast + close.
  */
 export function SubscriptionPopup({ open, onClose, creator, gradientStops }: SubscriptionPopupProps) {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [country, setCountry] = useState<string | null>(null);
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+  const [profileCountryLoaded, setProfileCountryLoaded] = useState(false);
+
+  // Prefill country on open: profiles table first, then IP geo as fallback.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setProfileCountryLoaded(true); return; }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('billing_country, country')
+        .eq('id', user.id)
+        .maybeSingle();
+      const profileCountry = (profile?.billing_country ?? profile?.country ?? null) as string | null;
+      if (cancelled) return;
+      if (profileCountry) setCountry(profileCountry);
+      setProfileCountryLoaded(true);
+    })();
+
+    getGeoCountry().then((c) => {
+      if (!cancelled && c) setDetectedCountry(c);
+    });
+
+    return () => { cancelled = true; };
+  }, [open]);
 
   const handleSubscribe = async () => {
+    if (!country) {
+      toast.error('Please select your billing country');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        // We preserve the creator handle so FanSignup can deep-link back and
-        // optionally auto-reopen this popup after the first session.
         navigate(`/fan/signup?creator=${encodeURIComponent(creator.handle)}&redirect_sub=1`);
         return;
       }
 
       const { data, error } = await supabase.functions.invoke('create-fan-subscription-checkout', {
-        body: { creator_profile_id: creator.profileId },
+        body: { creator_profile_id: creator.profileId, country },
       });
 
       if (error) {
@@ -65,9 +102,6 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
         return;
       }
 
-      // Build a form and POST to QuickPay. We cannot use `supabase.functions.invoke`
-      // to follow the redirect (that would require server-side fetch semantics the
-      // hosted checkout doesn't support), so we submit from the browser.
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = 'https://quickpay.ugpayments.ch/';
@@ -127,11 +161,11 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
               </div>
 
               <h2 className="text-lg font-bold mb-1">
-                Discover all {creator.displayName}'s exclusive contents
+                Discover all {creator.displayName}&apos;s exclusive contents
               </h2>
               {creator.handle && <p className="text-sm text-white/60 mb-6">@{creator.handle}</p>}
 
-              <div className="w-full rounded-2xl bg-white/5 border border-white/10 p-4 mb-6">
+              <div className="w-full rounded-2xl bg-white/5 border border-white/10 p-4 mb-4">
                 <div className="flex items-baseline justify-center gap-1 mb-1">
                   <span
                     className="text-3xl font-extrabold bg-clip-text text-transparent"
@@ -144,11 +178,28 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
                 <p className="text-[11px] text-white/50">Cancel anytime — access stays until the end of the period.</p>
               </div>
 
+              <div className="w-full text-left mb-4">
+                <label htmlFor="sub-popup-country" className="text-[10px] uppercase tracking-[0.22em] text-white/60 block mb-1.5">
+                  Billing country <span className="text-red-400">*</span>
+                </label>
+                <CountrySelect
+                  id="sub-popup-country"
+                  value={country}
+                  autoDetectedCountry={detectedCountry}
+                  onChange={setCountry}
+                  required
+                  placeholder={profileCountryLoaded ? 'Select your country' : 'Loading…'}
+                />
+                <p className="text-[10px] text-white/40 mt-1.5">
+                  We route your payment through the correct card network for your bank.
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={handleSubscribe}
-                disabled={isSubmitting}
-                className="w-full h-12 rounded-full text-sm font-bold text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                disabled={isSubmitting || !country}
+                className="w-full h-12 rounded-full text-sm font-bold text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center justify-center gap-2"
                 style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
