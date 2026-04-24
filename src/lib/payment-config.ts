@@ -18,13 +18,6 @@ export const PAYMENT_CONFIG = {
   COMMISSION_RATE_FREE: 0.15,      // 15% platform commission (free plan)
   COMMISSION_RATE_PREMIUM: 0,      // 0% platform commission (premium plan)
 
-  // Premium subscription
-  PREMIUM_PRICE_CENTS: 3999,       // $39.99/month
-  PREMIUM_PRICE_USD: 39.99,
-  SUBSCRIPTION_PLAN_ID: '11027',
-  ADDON_PROFILE_PRICE_CENTS: 1000, // $10/month per additional profile beyond 2
-  INCLUDED_PROFILES: 2,
-
   // Withdrawal limits
   MIN_WITHDRAWAL_CENTS: 5000,      // $50 minimum withdrawal
 
@@ -122,15 +115,3 @@ export function decimalToCents(decimal: string): number {
   return Math.round(parseFloat(decimal) * 100);
 }
 
-/**
- * Calculate monthly subscription price based on active profile count.
- * @param profileCount - Number of active creator profiles
- * @returns Monthly price in cents
- */
-export function calculateSubscriptionPrice(profileCount: number): number {
-  if (profileCount <= PAYMENT_CONFIG.INCLUDED_PROFILES) {
-    return PAYMENT_CONFIG.PREMIUM_PRICE_CENTS;
-  }
-  const extraProfiles = profileCount - PAYMENT_CONFIG.INCLUDED_PROFILES;
-  return PAYMENT_CONFIG.PREMIUM_PRICE_CENTS + (extraProfiles * PAYMENT_CONFIG.ADDON_PROFILE_PRICE_CENTS);
-}
