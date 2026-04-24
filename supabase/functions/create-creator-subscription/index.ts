@@ -73,12 +73,26 @@ serve(async (req) => {
       ? ANNUAL_CENTS
       : BASE_MONTHLY_CENTS + extraProfiles * ADDON_PER_PROFILE_CENTS;
 
-    // Don't allow double-subscribe
+    // Prevent duplicate identical plan; allow switching to a different plan.
+    // When switching (e.g. monthly → annual) we set cancel_at_period_end on the
+    // current sub so the rebill cron stops charging the old TID. The new Sale
+    // starts immediately on confirm; the old plan runs out at its period_end
+    // with no further billing. Disclosed in the UI switch dialog.
     const { data: profile } = await supabase.from('profiles')
       .select('subscription_plan, subscription_period_end')
       .eq('id', user.id).maybeSingle();
-    if (profile?.subscription_plan !== 'free') {
-      return new Response(JSON.stringify({ error: 'Already subscribed' }), { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } });
+    const currentPlan = (profile?.subscription_plan ?? 'free') as 'free' | 'monthly' | 'annual';
+    if (currentPlan === plan) {
+      return new Response(
+        JSON.stringify({ error: 'Already subscribed to this plan' }),
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } },
+      );
+    }
+    if (currentPlan !== 'free') {
+      await supabase.from('profiles').update({
+        subscription_cancel_at_period_end: true,
+      }).eq('id', user.id);
+      console.log(`[create-creator-subscription] plan switch ${currentPlan} → ${plan} for user=${user.id}; old sub marked cancel_at_period_end`);
     }
 
     const midKey = routeMidForCountry(country);
