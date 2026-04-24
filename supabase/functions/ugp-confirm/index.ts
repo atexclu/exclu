@@ -244,6 +244,25 @@ serve(async (req) => {
     return new Response('OK', { status: 200 });
   }
 
+  // UG sends ConfirmURL callbacks for BOTH Successful and Declined Sale attempts.
+  // Without this filter, a Declined Sale (card auth refused by issuer) would be
+  // credited to the creator's wallet. Confirmed 2026-04-24 after Biegler's card
+  // was declined at 13:07, retried and succeeded at 13:09, and both callbacks
+  // posted credits — resulting in a double-credit. Filter on TransactionStatus
+  // which reliably carries "Successful"|"Declined"|"Scrubbed" per UG spec.
+  const ugStatus = String(body.TransactionStatus ?? '');
+  if (ugStatus && ugStatus !== 'Successful') {
+    console.log(
+      `[ugp-confirm] Skipping non-successful transaction: status=${ugStatus} ` +
+      `state=${transactionState} ref=${merchantRef} txn=${transactionId}`,
+    );
+    await supabase.from('payment_events').update({
+      processed: true,
+      processing_result: `Skipped: TransactionStatus=${ugStatus}`,
+    }).eq('transaction_id', transactionId);
+    return new Response('OK', { status: 200 });
+  }
+
   try {
     switch (parsed.type) {
       case 'link':
