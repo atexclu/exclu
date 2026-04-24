@@ -1,10 +1,13 @@
 // supabase/functions/_shared/ugRouting.ts
 //
 // Resolves the per-MID credentials and endpoints for UG payments.
-// Per Derek (2026-04-20) each MID ships its own full credential set, so the
-// env vars below MUST both be present in prod:
-//   QUICKPAY_TOKEN_INTL_3D        / QUICKPAY_SITE_ID_INTL_3D        / UGP_MID_INTL_3D        / UGP_API_BEARER_TOKEN_INTL_3D
-//   QUICKPAY_TOKEN_US_2D          / QUICKPAY_SITE_ID_US_2D          / UGP_MID_US_2D          / UGP_API_BEARER_TOKEN_US_2D
+// Per Derek (2026-04-20) each MID ships its own full credential set:
+//   QUICKPAY_TOKEN_INTL_3D / QUICKPAY_SITE_ID_INTL_3D / UGP_MID_INTL_3D / UGP_API_BEARER_TOKEN_INTL_3D
+//   QUICKPAY_TOKEN_US_2D   / QUICKPAY_SITE_ID_US_2D   / UGP_MID_US_2D   / UGP_API_BEARER_TOKEN_US_2D
+// During rollout, INTL_3D falls back to the legacy single-set names
+// (QUICKPAY_TOKEN, QUICKPAY_SITE_ID, UGP_MERCHANT_ID, UGP_API_BEARER_TOKEN)
+// so that existing prod secrets keep working without re-entry. Phase 7
+// removes the fallback once the new names are set everywhere.
 // ConfirmURL / ListenerURL / Member Postback URLs are pre-configured on the
 // UG side by Derek to point at our existing endpoints — no extra wiring here.
 
@@ -27,12 +30,16 @@ export function routeMidForCountry(country: string | null | undefined): UgMidKey
 
 export function getMidCredentials(key: UgMidKey): UgMidCredentials {
   const prefix = key === 'us_2d' ? 'US_2D' : 'INTL_3D';
+  // For INTL_3D only, fall back to the legacy single-MID env names so we
+  // don't force re-entry of existing secrets. US_2D has no fallback — its
+  // credentials live only under the *_US_2D suffix.
+  const legacy = key === 'intl_3d';
   const creds = {
     key,
-    quickPayToken: Deno.env.get(`QUICKPAY_TOKEN_${prefix}`) ?? '',
-    siteId: Deno.env.get(`QUICKPAY_SITE_ID_${prefix}`) ?? '',
-    merchantId: Deno.env.get(`UGP_MID_${prefix}`) ?? '',
-    oauthBearer: Deno.env.get(`UGP_API_BEARER_TOKEN_${prefix}`) ?? '',
+    quickPayToken: Deno.env.get(`QUICKPAY_TOKEN_${prefix}`) ?? (legacy ? Deno.env.get('QUICKPAY_TOKEN') ?? '' : ''),
+    siteId: Deno.env.get(`QUICKPAY_SITE_ID_${prefix}`) ?? (legacy ? Deno.env.get('QUICKPAY_SITE_ID') ?? '' : ''),
+    merchantId: Deno.env.get(`UGP_MID_${prefix}`) ?? (legacy ? Deno.env.get('UGP_MERCHANT_ID') ?? '' : ''),
+    oauthBearer: Deno.env.get(`UGP_API_BEARER_TOKEN_${prefix}`) ?? (legacy ? Deno.env.get('UGP_API_BEARER_TOKEN') ?? '' : ''),
   };
   if (!creds.quickPayToken || !creds.siteId || !creds.merchantId) {
     throw new Error(`Missing UG credentials for MID ${key}`);
