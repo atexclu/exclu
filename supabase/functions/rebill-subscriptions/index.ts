@@ -11,6 +11,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getMidCredentials } from '../_shared/ugRouting.ts';
 import { rebillTransaction } from '../_shared/ugRebill.ts';
 import { emailRebillFailedRetry, emailRebillSuspended, emailFanSubSuspended } from '../_shared/rebillEmails.ts';
+import { applyWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL')!;
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')!;
@@ -108,8 +109,36 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
     const nextEnd = new Date(now);
     if (plan === 'annual') nextEnd.setUTCDate(nextEnd.getUTCDate() + 365);
     else nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
-    // The actual wallet credit happens in Task 8.3 Step 4 (extended ledger
-    // integration). Here we only advance the period after a successful rebill.
+
+    // Referral commission on rebill — 35% of the actual rebill amount.
+    // LEDGER FIRST — before advancing the period.
+    try {
+      const { data: referral } = await supabase
+        .from('referrals')
+        .select('id, referrer_id')
+        .eq('referred_id', creator.id)
+        .neq('status', 'inactive')
+        .maybeSingle();
+
+      if (referral) {
+        const commissionCents = Math.round(amount * 0.35);
+        await applyWalletTransaction(supabase, {
+          ownerId: referral.referrer_id,
+          ownerKind: 'creator',
+          direction: 'credit',
+          amountCents: commissionCents,
+          sourceType: 'creator_subscription',
+          sourceId: referral.id,
+          sourceTransactionId: result.transactionId ?? null,
+          metadata: { kind: 'referral_commission_rebill', subscriber_id: creator.id, rebill_amount_cents: amount },
+        });
+        console.log(`[rebill] referral commission credited: ${referral.referrer_id} +${commissionCents}`);
+      }
+    } catch (refErr) {
+      // Non-fatal: log and continue — period advance must not be blocked by referral
+      console.error('[rebill] referral commission failed (non-fatal):', (refErr as Error).message);
+    }
+
     await supabase.from('profiles').update({
       subscription_amount_cents: amount,
       subscription_period_start: now.toISOString(),
@@ -220,6 +249,34 @@ async function rebillFanSubscription(sub: any): Promise<void> {
   if (result.success) {
     const now = new Date();
     const nextEnd = new Date(now); nextEnd.setUTCDate(nextEnd.getUTCDate() + 30);
+
+    // Fetch the creator's plan to compute commission rate — LEDGER FIRST.
+    const { data: creatorProfile } = await supabase
+      .from('profiles')
+      .select('subscription_plan')
+      .eq('id', sub.creator_user_id)
+      .single();
+    const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
+    const creatorNetCents = Math.round(amount * (1 - platformRate));
+
+    await applyWalletTransaction(supabase, {
+      ownerId: sub.creator_user_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNetCents,
+      sourceType: 'fan_subscription',
+      sourceId: sub.id,
+      sourceTransactionId: result.transactionId ?? null,
+      sourceUgpMid: sub.ugp_mid ?? null,
+      metadata: {
+        fan_id: sub.fan_id,
+        cycle_amount_cents: amount,
+        platform_rate: platformRate,
+        kind: 'rebill',
+      },
+    });
+    console.log(`[rebill] fan sub ledger credited: creator=${sub.creator_user_id} +${creatorNetCents}`);
+
     await supabase.from('fan_creator_subscriptions').update({
       period_start: now.toISOString(),
       period_end: nextEnd.toISOString(),

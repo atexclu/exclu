@@ -17,6 +17,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
 import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
+import { applyWalletTransaction } from '../_shared/ledger.ts';
 
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
@@ -289,7 +290,7 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
   // Load the pre-created purchase record
   const { data: purchase, error: fetchErr } = await supabase
     .from('purchases')
-    .select('id, link_id, amount_cents, status, buyer_email, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents, chat_conversation_id')
+    .select('id, link_id, amount_cents, status, buyer_email, chat_chatter_id, chatter_earnings_cents, creator_net_cents, platform_fee_cents, chat_conversation_id, ugp_mid')
     .eq('id', purchaseId)
     .single();
 
@@ -304,14 +305,64 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     return;
   }
 
-  // Verify amount (tolerance of 2 cents for rounding)
+  // Amount verification — ledger is the point of no return, so gate on parity.
   const receivedCents = decimalToCents(body.Amount);
   const expectedCents = purchase.amount_cents;
   if (Math.abs(receivedCents - expectedCents) > 2) {
-    console.warn(`Amount mismatch for purchase ${purchaseId}: expected ${expectedCents}, received ${receivedCents}`);
+    await markEventError(body.TransactionID, `amount mismatch: expected ${expectedCents}, got ${receivedCents}`);
+    console.error(`[ugp-confirm] link ${purchaseId}: amount mismatch`, { expectedCents, receivedCents });
+    return;
   }
 
   const customerEmail = body.CustomerEmail || purchase.buyer_email || null;
+
+  // Load link info for email and wallet credit
+  const { data: link } = await supabase
+    .from('links')
+    .select('id, title, slug, creator_id')
+    .eq('id', purchase.link_id)
+    .single();
+
+  if (!link) {
+    console.error('Link not found for purchase:', purchase.link_id);
+    return;
+  }
+
+  // LEDGER FIRST — if this throws, we bail before touching purchase status.
+  const creatorNet = purchase.creator_net_cents || 0;
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: link.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'link_purchase',
+      sourceId: purchase.id,
+      sourceTransactionId: body.TransactionID,
+      sourceUgpMid: purchase.ugp_mid ?? null,
+      metadata: {
+        platform_fee_cents: purchase.platform_fee_cents,
+        buyer_email: customerEmail,
+        amount_paid_cents: receivedCents,
+      },
+    });
+    console.log('Creator wallet ledger credited:', link.creator_id, '+', creatorNet);
+  }
+
+  // Chatter commission (attribution enforced by the ledger's CHECK — links/requests only)
+  if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: purchase.chat_chatter_id,
+      ownerKind: 'chatter',
+      direction: 'credit',
+      amountCents: purchase.chatter_earnings_cents,
+      sourceType: 'chatter_commission',
+      sourceId: purchase.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: { creator_id: link.creator_id, purchase_link_id: link.id },
+    });
+    console.log('Chatter ledger credited:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
+  }
 
   // Update purchase to succeeded (keep existing access_token from creation)
   const { error: updateErr } = await supabase.from('purchases').update({
@@ -333,51 +384,6 @@ async function handleLinkPurchase(purchaseId: string, body: Record<string, strin
     body.CustomerEmail ?? purchase.buyer_email ?? null,
     body.CustomerCountry ?? null,
   );
-
-  // Load link info for email and wallet credit
-  const { data: link } = await supabase
-    .from('links')
-    .select('id, title, slug, creator_id')
-    .eq('id', purchase.link_id)
-    .single();
-
-  if (!link) {
-    console.error('Link not found for purchase:', purchase.link_id);
-    return;
-  }
-
-  // Credit creator wallet
-  const creatorNet = purchase.creator_net_cents || 0;
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: link.creator_id,
-        p_amount_cents: creatorNet,
-      });
-      console.log('Creator wallet credited:', link.creator_id, '+', creatorNet);
-    } catch (walletErr) {
-      console.error('Error crediting creator wallet:', walletErr);
-    }
-  }
-
-  // Chatter earnings (60/25/15 split) — credit wallet + counter
-  if (purchase.chat_chatter_id && purchase.chatter_earnings_cents > 0) {
-    try {
-      // Credit chatter's wallet (withdrawable balance)
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: purchase.chat_chatter_id,
-        p_amount_cents: purchase.chatter_earnings_cents,
-      });
-      // Also update the chatter-specific counter
-      await supabase.rpc('increment_chatter_earnings', {
-        p_chatter_id: purchase.chat_chatter_id,
-        p_amount_cents: purchase.chatter_earnings_cents,
-      });
-      console.log('Chatter wallet + earnings credited:', purchase.chat_chatter_id, '+', purchase.chatter_earnings_cents);
-    } catch (err) {
-      console.error('Error crediting chatter:', err);
-    }
-  }
 
   // Conversation revenue tracking
   // Track conversation revenue using base price (without fan processing fee)
@@ -496,6 +502,24 @@ async function handleTip(tipId: string, body: Record<string, string>) {
 
   const customerEmail = body.CustomerEmail || null;
 
+  // LEDGER FIRST — before any status flip; if this throws the status stays 'pending'.
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: tip.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'tip',
+      sourceId: tip.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: {
+        platform_fee_cents: totalPlatformFee,
+        amount_paid_cents: decimalToCents(body.Amount || '0'),
+      },
+    });
+    console.log('Creator wallet ledger credited (tip):', tip.creator_id, '+', creatorNet);
+  }
+
   await supabase.from('tips').update({
     status: 'succeeded',
     paid_at: new Date().toISOString(),
@@ -512,18 +536,6 @@ async function handleTip(tipId: string, body: Record<string, string>) {
     body.CustomerEmail ?? customerEmail ?? null,
     body.CustomerCountry ?? null,
   );
-
-  // Credit creator wallet
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: tip.creator_id,
-        p_amount_cents: creatorNet,
-      });
-    } catch (err) {
-      console.error('Error crediting wallet for tip:', err);
-    }
-  }
 
   // Send creator notification email
   if (creator) {
@@ -588,6 +600,24 @@ async function handleGift(giftId: string, body: Record<string, string>) {
   const creatorNet = gift.amount_cents - platformCommission;
   const totalPlatformFee = platformCommission + fanFee;
 
+  // LEDGER FIRST — before any status flip; if this throws the status stays 'pending'.
+  if (creatorNet > 0) {
+    await applyWalletTransaction(supabase, {
+      ownerId: gift.creator_id,
+      ownerKind: 'creator',
+      direction: 'credit',
+      amountCents: creatorNet,
+      sourceType: 'gift_purchase',
+      sourceId: gift.id,
+      sourceTransactionId: body.TransactionID,
+      metadata: {
+        platform_fee_cents: totalPlatformFee,
+        amount_paid_cents: decimalToCents(body.Amount || '0'),
+      },
+    });
+    console.log('Creator wallet ledger credited (gift):', gift.creator_id, '+', creatorNet);
+  }
+
   await supabase.from('gift_purchases').update({
     status: 'succeeded',
     paid_at: new Date().toISOString(),
@@ -616,18 +646,6 @@ async function handleGift(giftId: string, body: Record<string, string>) {
     await supabase.from('wishlist_items')
       .update({ gifted_count: (item.gifted_count || 0) + 1 })
       .eq('id', gift.wishlist_item_id);
-  }
-
-  // Credit creator wallet
-  if (creatorNet > 0) {
-    try {
-      await supabase.rpc('credit_creator_wallet', {
-        p_creator_id: gift.creator_id,
-        p_amount_cents: creatorNet,
-      });
-    } catch (err) {
-      console.error('Error crediting wallet for gift:', err);
-    }
   }
 
   // Send creator notification
@@ -792,7 +810,7 @@ async function handleSubscription(userId: string, body: Record<string, string>, 
     show_available_now: true,
   }).eq('id', userId);
 
-  await creditReferralCommission(userId);
+  await creditReferralCommission(userId, body.TransactionID);
 
   console.log(`Creator sub activated: ${userId} plan=${subPlan} amount=${amountCents} period_end=${periodEnd.toISOString()}`);
 }
@@ -805,7 +823,7 @@ async function handleSubscription(userId: string, body: Record<string, string>, 
 async function handleFanSubscription(subscriptionId: string, body: Record<string, string>) {
   const { data: sub, error: fetchErr } = await supabase
     .from('fan_creator_subscriptions')
-    .select('id, fan_id, creator_profile_id, status, price_cents, period_end')
+    .select('id, fan_id, creator_user_id, creator_profile_id, status, price_cents, period_end, ugp_mid')
     .eq('id', subscriptionId)
     .maybeSingle();
 
@@ -825,6 +843,38 @@ async function handleFanSubscription(subscriptionId: string, body: Record<string
   periodEnd.setUTCDate(periodEnd.getUTCDate() + 30); // 30-day cycle; rebill cron extends on each renewal
 
   const mid = midFromSiteId(body.SiteID ?? '');
+
+  // Verify amount
+  const receivedCents = decimalToCents(body.Amount || '0');
+
+  // Look up the creator's plan to know the commission rate
+  const { data: creatorProfile } = await supabase
+    .from('profiles')
+    .select('subscription_plan')
+    .eq('id', sub.creator_user_id)
+    .single();
+  const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
+  const creatorNetCents = Math.round(sub.price_cents * (1 - platformRate));
+
+  // LEDGER FIRST — before status flip; if this throws we bail.
+  await applyWalletTransaction(supabase, {
+    ownerId: sub.creator_user_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: creatorNetCents,
+    sourceType: 'fan_subscription',
+    sourceId: sub.id,
+    sourceTransactionId: body.TransactionID,
+    sourceUgpMid: mid,
+    metadata: {
+      fan_id: sub.fan_id,
+      cycle_amount_cents: sub.price_cents,
+      platform_rate: platformRate,
+      kind: 'initial',
+      amount_paid_cents: receivedCents,
+    },
+  });
+  console.log('Creator wallet ledger credited (fan_sub initial):', sub.creator_user_id, '+', creatorNetCents);
 
   const updatePayload: Record<string, unknown> = {
     status: 'active',
@@ -859,45 +909,36 @@ async function handleFanSubscription(subscriptionId: string, body: Record<string
 // SHARED HELPERS
 // ══════════════════════════════════════════════════════════════════════════
 
-async function creditReferralCommission(subscriberId: string) {
+async function creditReferralCommission(subscriberId: string, subTxnId: string) {
   const { data: referral } = await supabase
     .from('referrals')
-    .select('id, referrer_id, status')
+    .select('id, referrer_id')
     .eq('referred_id', subscriberId)
     .neq('status', 'inactive')
     .maybeSingle();
 
   if (!referral) return;
 
-  const commissionCents = Math.round(3999 * 0.35); // $14.00
+  // 35% of the $39.99 initial Pro Monthly Sale — rounds to 1400 cents ($14.00)
+  const commissionCents = Math.round(3999 * 0.35);
 
-  // Update referral record
-  const { data: currentRef } = await supabase
-    .from('referrals')
-    .select('commission_earned_cents')
-    .eq('id', referral.id)
-    .single();
+  await applyWalletTransaction(supabase, {
+    ownerId: referral.referrer_id,
+    ownerKind: 'creator',
+    direction: 'credit',
+    amountCents: commissionCents,
+    sourceType: 'creator_subscription',
+    sourceId: referral.id,
+    sourceTransactionId: subTxnId,
+    metadata: { kind: 'referral_commission_initial', subscriber_id: subscriberId },
+  });
 
   await supabase.from('referrals').update({
-    commission_earned_cents: (currentRef?.commission_earned_cents || 0) + commissionCents,
     status: 'converted',
     converted_at: new Date().toISOString(),
   }).eq('id', referral.id);
 
-  // Credit referrer's affiliate earnings
-  const { data: referrer } = await supabase
-    .from('profiles')
-    .select('affiliate_earnings_cents')
-    .eq('id', referral.referrer_id)
-    .single();
-
-  if (referrer) {
-    await supabase.from('profiles').update({
-      affiliate_earnings_cents: (referrer.affiliate_earnings_cents || 0) + commissionCents,
-    }).eq('id', referral.referrer_id);
-  }
-
-  console.log('Referral commission credited:', referral.referrer_id, '+', commissionCents, 'cents');
+  console.log('Referral commission ledger credited:', referral.referrer_id, '+', commissionCents, 'cents');
 }
 
 async function checkReferralBonus(creatorId: string) {
