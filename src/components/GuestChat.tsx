@@ -434,7 +434,7 @@ export default function GuestChat({ profileId, creatorUserId, creatorName, creat
       <button type="button" onClick={handleTipSubmit} disabled={isTipSubmitting || (!tipAmount && !tipCustom)}
         className="w-full h-10 rounded-xl bg-[#CFFF16] text-black text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#d8ff4d] disabled:opacity-40 transition-all">
         {isTipSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
-        {isTipSubmitting ? 'Processing...' : `Send Tip${tipAmount ? ` — $${((tipAmount * 1.05) / 100).toFixed(2)}` : tipCustom ? ` — $${(parseFloat(tipCustom) * 1.05).toFixed(2)}` : ''}`}
+        {isTipSubmitting ? 'Processing...' : `Send Tip${tipAmount ? ` — $${((tipAmount * 1.15) / 100).toFixed(2)}` : tipCustom ? ` — $${(parseFloat(tipCustom) * 1.15).toFixed(2)}` : ''}`}
       </button>
     </div>
   );
