@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, ArrowLeft, ExternalLink, AlertCircle, CheckCircle2, Mail } from 'lucide-react';
+import { MessageSquare, ArrowLeft, ExternalLink, AlertCircle, CheckCircle2, Lock, Mail } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Aurora from '@/components/ui/Aurora';
+import { toast } from 'sonner';
 import logo from '@/assets/logo-white.svg';
 
 interface CreatorProfile {
+  id: string;
   display_name: string | null;
   avatar_url: string | null;
   handle: string | null;
@@ -19,12 +22,15 @@ const RequestSuccess = () => {
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showContent, setShowContent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
 
   const status = searchParams.get('status'); // 'success' | 'cancelled'
   const handle = searchParams.get('creator');
   const amountCents = parseInt(searchParams.get('amount') || '0', 10);
-  const isNewAccount = searchParams.get('new_account') === '1';
-  const isExistingAccount = searchParams.get('existing_account') === '1';
+  const isGuest = searchParams.get('guest') === '1';
+  const guestEmail = searchParams.get('email') || '';
   const ugpTransactionId = searchParams.get('TransactionID');
   const merchantRef = searchParams.get('MerchantReference');
   const isSuccess = status === 'success';
@@ -48,7 +54,7 @@ const RequestSuccess = () => {
       if (handle) {
         const { data } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url, handle')
+          .select('id, display_name, avatar_url, handle')
           .eq('handle', handle)
           .maybeSingle();
         if (data) setCreator(data);
@@ -57,7 +63,70 @@ const RequestSuccess = () => {
       setTimeout(() => setShowContent(true), 100);
     };
     load();
-  }, [handle]);
+  }, [handle, ugpTransactionId, merchantRef]);
+
+  const handleSignup = async () => {
+    if (!guestEmail || !password || password.length < 6) {
+      toast.error('Please choose a password of at least 6 characters');
+      return;
+    }
+    setIsSigningUp(true);
+    try {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: guestEmail,
+        password,
+        options: {
+          data: {
+            is_creator: false,
+            favorite_creator: creator?.id ?? null,
+          },
+        },
+      });
+
+      if (signUpError) {
+        const msg = (signUpError.message || '').toLowerCase();
+        if (msg.includes('already')) {
+          toast.error('An account already exists for this email. Sign in to track your request.');
+          navigate(`/fan/signup?email=${encodeURIComponent(guestEmail)}${creator?.handle ? `&creator=${creator.handle}` : ''}`);
+          return;
+        }
+        throw signUpError;
+      }
+
+      // If session is returned (Confirm email = OFF), reattach guest data now.
+      if (signUpData?.session) {
+        try {
+          await supabase.rpc('claim_guest_custom_requests', { p_email: guestEmail });
+        } catch (rpcErr) {
+          console.warn('[RequestSuccess] claim_guest_custom_requests failed (non-fatal)', rpcErr);
+        }
+
+        // Defensive auto-favorite (the RPC also does it for any reattached
+        // request, but if the request hasn't been confirmed by ugp-confirm
+        // yet there might be no row to claim — favorite directly here too).
+        if (creator?.id) {
+          await supabase
+            .from('fan_favorites')
+            .upsert({ fan_id: signUpData.user!.id, creator_id: creator.id }, { onConflict: 'fan_id,creator_id' });
+        }
+
+        toast.success('Account created — your request is in your dashboard.');
+        setSignupComplete(true);
+        const fanPath = creator?.handle ? `/fan?creator=${creator.handle}` : '/fan';
+        navigate(fanPath, { replace: true });
+        return;
+      }
+
+      // Confirm email = ON path: ask the user to verify their inbox. The RPC
+      // will fire the next time they log in via FanSignup.
+      toast.success('Check your inbox to confirm your account.');
+      setSignupComplete(true);
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not create your account.');
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -78,7 +147,6 @@ const RequestSuccess = () => {
         />
       </div>
 
-      {/* Logo */}
       <motion.div
         className="fixed top-6 inset-x-0 z-20 flex justify-center pointer-events-none"
         initial={{ opacity: 0, y: -16 }}
@@ -94,18 +162,15 @@ const RequestSuccess = () => {
             initial={{ opacity: 0, y: 32 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 180, damping: 22, delay: 0.1 }}
-            className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 py-24 gap-8 max-w-lg mx-auto w-full"
+            className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 py-24 gap-6 max-w-lg mx-auto w-full"
           >
-            {/* Icon */}
             <motion.div
               initial={{ scale: 0, rotate: -30 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 16, delay: 0.25 }}
             >
               <div className={`w-24 h-24 rounded-full flex items-center justify-center backdrop-blur-sm ${
-                isSuccess
-                  ? 'bg-lime-400/10 border border-lime-400/30'
-                  : 'bg-red-400/10 border border-red-400/30'
+                isSuccess ? 'bg-lime-400/10 border border-lime-400/30' : 'bg-red-400/10 border border-red-400/30'
               }`}>
                 <motion.div animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}>
                   {isSuccess ? (
@@ -117,7 +182,6 @@ const RequestSuccess = () => {
               </div>
             </motion.div>
 
-            {/* Title + amount */}
             <motion.div
               className="text-center"
               initial={{ opacity: 0, y: 12 }}
@@ -142,7 +206,8 @@ const RequestSuccess = () => {
                     </motion.h1>
                   )}
                   <p className="text-sm text-white/50">
-                    on hold until {creator?.display_name || creator?.handle || 'the creator'} responds
+                    {creator?.display_name || creator?.handle || 'The creator'} has 6 days to respond.
+                    Refunded automatically if declined.
                   </p>
                 </>
               ) : (
@@ -161,43 +226,65 @@ const RequestSuccess = () => {
               )}
             </motion.div>
 
-            {/* New account notice */}
-            {isSuccess && isNewAccount && (
+            {/* Inline guest signup form — shown after a successful payment when
+                the fan is not yet authenticated. Fills the password, calls
+                claim_guest_custom_requests, auto-favorites the creator, and
+                lands the user on /fan. */}
+            {isSuccess && isGuest && !signupComplete && (
               <motion.div
-                initial={{ opacity: 0, y: 12 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 }}
-                className="w-full rounded-2xl border border-lime-400/20 bg-lime-400/5 backdrop-blur-sm px-5 py-4"
+                transition={{ delay: 0.5 }}
+                className="w-full rounded-2xl border border-lime-400/30 bg-black/40 backdrop-blur-md p-5 space-y-4"
               >
                 <div className="flex items-start gap-3">
-                  <Mail className="w-5 h-5 text-lime-400 flex-shrink-0 mt-0.5" />
+                  <Lock className="w-5 h-5 text-lime-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-semibold text-white mb-1">Account created!</p>
+                    <p className="text-sm font-semibold text-white mb-1">Track your request — create your account</p>
                     <p className="text-xs text-white/60 leading-relaxed">
-                      We sent a confirmation email to verify your account. Please check your inbox and confirm to track your request.
+                      Choose a password and we'll save this request to your dashboard, follow {creator?.display_name || 'the creator'} for you, and unlock chat to keep talking.
                     </p>
                   </div>
                 </div>
-              </motion.div>
-            )}
 
-            {/* Existing account notice */}
-            {isSuccess && isExistingAccount && (
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 }}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm px-5 py-4"
-              >
-                <div className="flex items-start gap-3">
-                  <MessageSquare className="w-5 h-5 text-white/60 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-white mb-1">Request linked to your account</p>
-                    <p className="text-xs text-white/60 leading-relaxed">
-                      Log in to your fan account to track this request and get notified when the creator responds.
-                    </p>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] uppercase tracking-widest text-white/40">Email</p>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
+                    <Input
+                      type="email"
+                      value={guestEmail}
+                      readOnly
+                      className="h-11 bg-white/5 border-white/10 text-white/70 text-sm rounded-xl pl-9 cursor-not-allowed"
+                    />
                   </div>
                 </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-[11px] uppercase tracking-widest text-white/40">Choose a password</p>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSignup(); }}
+                    placeholder="At least 6 characters"
+                    autoFocus
+                    className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleSignup}
+                  disabled={isSigningUp || password.length < 6}
+                  className="w-full rounded-2xl h-12 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)] disabled:opacity-40"
+                >
+                  {isSigningUp ? 'Creating your account…' : 'Create account & track request'}
+                </Button>
+
+                <p className="text-[10px] text-white/40 text-center leading-relaxed">
+                  Skip if you'd rather receive updates by email only — we'll deliver your content there as well.
+                </p>
               </motion.div>
             )}
 
@@ -247,45 +334,15 @@ const RequestSuccess = () => {
               </motion.div>
             )}
 
-            {/* Explanation text */}
-            {isSuccess && (
-              <motion.p
-                className="text-center text-sm text-white/50 leading-relaxed"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.65 }}
-              >
-                Your card has been authorized but <strong className="text-white/70">not charged yet</strong>.
-                {' '}The creator has 6 days to accept. If they decline or don't respond, the hold is automatically released.
-              </motion.p>
-            )}
-
-            {/* CTA buttons */}
+            {/* Bottom CTAs */}
             <motion.div
               className="w-full flex flex-col gap-3"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.75 }}
             >
-              {isSuccess && isExistingAccount && (
-                <Button
-                  type="button"
-                  className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
-                  onClick={() => navigate('/auth')}
-                >
-                  Log in to track your request
-                </Button>
-              )}
-              {isSuccess && isNewAccount && (
-                <Button
-                  type="button"
-                  className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
-                  onClick={() => navigate('/auth')}
-                >
-                  Go to login
-                </Button>
-              )}
-              {isSuccess && !isNewAccount && !isExistingAccount && (
+              {/* Authenticated fan: straight to dashboard */}
+              {isSuccess && !isGuest && (
                 <Button
                   type="button"
                   className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
@@ -295,20 +352,41 @@ const RequestSuccess = () => {
                   View my requests
                 </Button>
               )}
-              {creator?.handle && (
+
+              {/* Guest who skipped signup: keep email-only flow */}
+              {isSuccess && isGuest && !signupComplete && (
                 <Button
                   type="button"
-                  variant={isSuccess ? 'ghost' : 'default'}
-                  className={isSuccess
-                    ? 'w-full rounded-2xl h-11 text-white/40 hover:text-white/70 text-sm gap-2'
-                    : 'w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]'
-                  }
+                  variant="ghost"
+                  className="w-full rounded-2xl h-11 text-white/40 hover:text-white/70 text-sm gap-2"
+                  onClick={() => navigate(creator?.handle ? `/${creator.handle}` : '/')}
+                >
+                  Skip — I'll just wait for the email
+                </Button>
+              )}
+
+              {/* Guest who already completed signup but is on Confirm-email path */}
+              {isSuccess && isGuest && signupComplete && (
+                <Button
+                  type="button"
+                  className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
+                  onClick={() => navigate('/auth')}
+                >
+                  Go to login
+                </Button>
+              )}
+
+              {creator?.handle && !isSuccess && (
+                <Button
+                  type="button"
+                  className="w-full rounded-2xl h-13 bg-lime-400 hover:bg-lime-300 text-black font-semibold text-sm gap-2 transition-all hover:shadow-[0_0_24px_rgba(163,230,53,0.45)]"
                   onClick={() => navigate(`/${creator.handle}`)}
                 >
                   <ExternalLink className="w-4 h-4" />
-                  {isSuccess ? 'Back to profile' : 'Try again'}
+                  Try again
                 </Button>
               )}
+
               <Button
                 type="button"
                 variant="ghost"

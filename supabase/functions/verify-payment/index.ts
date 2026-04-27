@@ -228,12 +228,12 @@ async function verifyGift(recordId: string, transactionId: string, cors: Record<
   return jsonOk({ verified: true, status: 'succeeded' }, cors);
 }
 
-// ── CUSTOM REQUEST (pre-auth → pending) ──────────────────────────────────
+// ── CUSTOM REQUEST (Sale → pending) ──────────────────────────────────────
 
 async function verifyRequest(recordId: string, transactionId: string, cors: Record<string, string>) {
   const { data: request } = await supabase
     .from('custom_requests')
-    .select('id, status, creator_id, fan_id, profile_id, proposed_amount_cents, description, fan_email, is_new_account')
+    .select('id, status, creator_id, fan_id, profile_id, proposed_amount_cents, description, fan_email')
     .eq('id', recordId)
     .single();
 

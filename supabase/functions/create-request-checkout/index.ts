@@ -1,20 +1,17 @@
 /**
  * create-request-checkout — UGPayments QuickPay (Sale model).
  *
- * QuickPay (hosted checkout) processes a Sale at submission — UG's API
- * does not expose pre-auth toggles to merchants on this MID, so the fan's
- * card is charged immediately. If the creator declines or the request
- * expires, manage-request issues a full refund via the REST API.
+ * QuickPay (hosted checkout) processes a Sale at submission. If the
+ * creator declines or the request expires, manage-request issues a
+ * full refund via the REST API.
  *
- * Account creation is OPTIONAL:
- *   - With fan_password (>=6 chars): the fan signs up at checkout. fan_id
- *     is set to the new auth user.
- *   - Without password: pure guest. fan_id stays NULL on the row;
- *     fan_email is the only handle to reach them. If they later sign up
- *     with the same email, claim_guest_custom_requests reattaches the
- *     historical rows.
+ * No account creation happens here. Authenticated fans are attached
+ * via fan_id; everyone else is a pure guest (fan_id NULL, fan_email
+ * carries identity). Post-checkout, /request-success offers the guest
+ * an inline signup form which calls claim_guest_custom_requests to
+ * reattach the row + auto-favorite the creator + create the conversation.
  *
- * Request body: { creator_id, profile_id?, description, proposed_amount_cents, fan_email?, fan_password? }
+ * Request body: { creator_id, profile_id?, description, proposed_amount_cents, country, fan_email? }
  * Auth: Optional.
  */
 
@@ -98,7 +95,6 @@ serve(async (req) => {
     const description = typeof body?.description === 'string' ? body.description.trim() : '';
     const proposedAmountCents = body?.proposed_amount_cents as number | undefined;
     const fanEmail = typeof body?.fan_email === 'string' ? body.fan_email.trim().toLowerCase() : null;
-    const fanPassword = typeof body?.fan_password === 'string' ? body.fan_password : null;
 
     if (!creatorId || typeof creatorId !== 'string') return jsonError('Missing creator_id', 400, corsHeaders);
     if (!description || description.length < 10) return jsonError('Description must be at least 10 characters', 400, corsHeaders);
@@ -107,49 +103,15 @@ serve(async (req) => {
       return jsonError('Minimum amount is $20.00', 400, corsHeaders);
     }
     if (proposedAmountCents > 100000) return jsonError('Maximum amount is $1,000.00', 400, corsHeaders);
+    if (!country) return jsonError('Country is required for payment routing', 400, corsHeaders);
     if (!authenticatedUserId && !fanEmail) return jsonError('Email is required', 400, corsHeaders);
 
     // ── 3. Resolve fan identity ─────────────────────────────────────────
-    // Three paths:
-    //   (a) authenticated: fanUserId = current user
-    //   (b) email matches an existing account: fanUserId = that account
-    //   (c) email is new + password supplied: create the account now
-    //   (d) email is new + no password: pure guest, fanUserId = null
-    let fanUserId: string | null = null;
-    let isNewAccount = false;
-
-    if (authenticatedUserId) {
-      fanUserId = authenticatedUserId;
-    } else {
-      const { data: existingUserId } = await supabase.rpc('get_user_id_by_email', { input_email: fanEmail! });
-
-      if (existingUserId) {
-        fanUserId = existingUserId;
-      } else if (fanPassword && fanPassword.length >= 6) {
-        // Fan opted in: create the real account with their password.
-        const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
-          email: fanEmail!,
-          password: fanPassword,
-          email_confirm: false,
-          user_metadata: {
-            is_creator: false,
-            favorite_creator: creatorId,
-            created_via: 'custom_request',
-          },
-        });
-
-        if (createErr || !newUser?.user) {
-          console.error('Error creating fan account:', createErr);
-          return jsonError('Failed to create your account. The email may already be in use.', 400, corsHeaders);
-        }
-
-        fanUserId = newUser.user.id;
-        isNewAccount = true;
-
-        await supabase.from('profiles').upsert({ id: fanUserId, is_creator: false }, { onConflict: 'id' });
-      }
-      // else: pure guest — fanUserId stays null; fan_email carries identity.
-    }
+    // Authenticated → fan_id = current user. Otherwise pure guest:
+    // fan_id stays NULL and fan_email carries identity. Signup happens
+    // post-checkout on /request-success → claim_guest_custom_requests
+    // reattaches the row.
+    const fanUserId: string | null = authenticatedUserId;
 
     if (fanUserId && fanUserId === creatorId) {
       return jsonError('You cannot send a request to yourself', 400, corsHeaders);
@@ -188,7 +150,6 @@ serve(async (req) => {
         status: 'pending_payment',
         expires_at: expiresAt,
         fan_email: fanEmail || null,
-        is_new_account: isNewAccount,
         ugp_mid: midKey,
       })
       .select('id')
@@ -212,8 +173,12 @@ serve(async (req) => {
       creator: creatorHandle,
       amount: String(proposedAmountCents),
     });
-    if (isNewAccount) successParams.set('new_account', '1');
-    if (!authenticatedUserId && !isNewAccount) successParams.set('existing_account', '1');
+    // Guests (no auth session) get an inline signup form on /request-success;
+    // we pre-fill the email there so claim_guest_custom_requests can match it.
+    if (!authenticatedUserId) {
+      successParams.set('guest', '1');
+      if (fanEmail) successParams.set('email', fanEmail);
+    }
 
     const fields: Record<string, string> = {
       QuickPayToken: creds.quickPayToken,

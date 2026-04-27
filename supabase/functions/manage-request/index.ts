@@ -87,7 +87,7 @@ serve(async (req) => {
     // Fetch the request — creator must own it
     const { data: request, error: reqErr } = await supabase
       .from('custom_requests')
-      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id, fan_email, is_new_account')
+      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id, fan_email')
       .eq('id', requestId)
       .single();
 

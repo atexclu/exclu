@@ -717,7 +717,7 @@ async function handleGift(giftId: string, body: Record<string, string>) {
 async function handleRequest(requestId: string, body: Record<string, string>, _transactionState: string) {
   const { data: request, error: fetchErr } = await supabase
     .from('custom_requests')
-    .select('id, fan_id, creator_id, profile_id, description, proposed_amount_cents, status, fan_email, is_new_account')
+    .select('id, fan_id, creator_id, profile_id, description, proposed_amount_cents, status, fan_email')
     .eq('id', requestId)
     .single();
 
@@ -785,23 +785,8 @@ async function handleRequest(requestId: string, body: Record<string, string>, _t
     });
   }
 
-  // Send confirmation email to new fan accounts
-  if (request.is_new_account && request.fan_email) {
-    try {
-      const { data: linkData } = await supabase.auth.admin.generateLink({
-        type: 'signup',
-        email: request.fan_email,
-      });
-      const confirmUrl = linkData?.properties?.action_link || `${siteUrl}/auth?mode=confirm`;
-      await sendBrevoEmail({
-        to: request.fan_email,
-        subject: '🎉 Welcome to Exclu — confirm your account',
-        htmlContent: buildNewAccountConfirmHtml(confirmUrl),
-      });
-    } catch (err) {
-      console.error('Error sending new account confirmation (non-fatal):', err);
-    }
-  }
+  // No "welcome" email here — accounts are no longer created at checkout.
+  // Guests get an inline signup form on /request-success.
 
   console.log('Custom request confirmed (Sale, awaiting creator decision):', requestId);
 }
@@ -1218,13 +1203,3 @@ function buildRequestNotificationHtml(creatorName: string, amount: string, descr
 <div class="footer">© 2026 Exclu<br><a href="${siteUrl}">exclu</a></div></div></body></html>`;
 }
 
-function buildNewAccountConfirmHtml(confirmUrl: string): string {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617,#0b1120);border-radius:16px;border:1px solid #1e293b;overflow:hidden}.header{padding:28px;border-bottom:1px solid #1e293b}.header h1{font-size:26px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff}.button{display:inline-block;background:linear-gradient(135deg,#bef264,#a3e635,#bbf7d0);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b}.footer a{color:#a3e635;text-decoration:none}</style></head>
-<body><div class="container"><div class="header"><h1>Welcome to Exclu 🎉</h1></div>
-<div class="content"><p>Your account has been created and your custom request has been submitted!</p>
-<p>Please confirm your email to access your account and track your request:</p>
-<a href="${confirmUrl}" class="button">Confirm my email</a>
-<p style="font-size:13px;color:#94a3b8;">If you didn't create this account, you can ignore this email.</p></div>
-<div class="footer">© 2026 Exclu<br><a href="${siteUrl}">exclu</a></div></div></body></html>`;
-}

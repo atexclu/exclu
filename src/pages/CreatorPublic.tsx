@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import logo from '@/assets/logo-white.svg';
 import Aurora from '@/components/ui/Aurora';
 import GuestChat from '@/components/GuestChat';
+import { PreCheckoutGate, isPreCheckoutReady, type PreCheckoutGateState } from '@/components/checkout/PreCheckoutGate';
+import { getGeoCountry } from '@/lib/ipGeo';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
@@ -149,10 +151,8 @@ const CreatorPublic = () => {
   const [requestDescription, setRequestDescription] = useState('');
   const [requestAmount, setRequestAmount] = useState('');
   const [isRequestSubmitting, setIsRequestSubmitting] = useState(false);
-  const [requestEmail, setRequestEmail] = useState('');
-  const [requestPassword, setRequestPassword] = useState('');
-  const [requestEmailExists, setRequestEmailExists] = useState<boolean | null>(null);
-  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [requestGate, setRequestGate] = useState<PreCheckoutGateState>({ email: '', country: null, ageAccepted: false });
+  const [signedInCountry, setSignedInCountry] = useState<string | null>(null);
   const [currentFanId, setCurrentFanId] = useState<string | null>(null);
   const [isCreatorAccount, setIsCreatorAccount] = useState(false);
   const [showGuestChat, setShowGuestChat] = useState(false);
@@ -216,7 +216,9 @@ const CreatorPublic = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [links.length, activeTab]);
 
-  // Check if a fan (not a creator) is logged in
+  // Check if a fan (not a creator) is logged in. Pre-fill the checkout
+  // gate with the signed-in user's email + stored country so they don't
+  // have to re-enter them at request submission.
   useEffect(() => {
     const checkFan = async (userId: string | undefined) => {
       if (!userId) {
@@ -226,7 +228,7 @@ const CreatorPublic = () => {
       }
       const { data: prof } = await supabase
         .from('profiles')
-        .select('is_creator')
+        .select('is_creator, country, billing_country')
         .eq('id', userId)
         .maybeSingle();
 
@@ -236,6 +238,12 @@ const CreatorPublic = () => {
       } else {
         setCurrentFanId(userId);
         setIsCreatorAccount(false);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          setRequestGate((g) => ({ ...g, email: user.email ?? '' }));
+        }
+        const stored = (prof?.billing_country ?? prof?.country ?? null) as string | null;
+        if (stored) setSignedInCountry(stored);
       }
     };
 
@@ -739,24 +747,6 @@ const CreatorPublic = () => {
     navigate(`/fan?tab=messages&conversation=${conv.id}`);
   };
 
-  const checkEmailExists = async (email: string) => {
-    if (!email || !email.includes('@')) {
-      setRequestEmailExists(null);
-      return;
-    }
-    setIsCheckingEmail(true);
-    try {
-      const { data } = await supabase.functions.invoke('check-fan-email', {
-        body: { email },
-      });
-      setRequestEmailExists(data?.exists === true);
-    } catch {
-      setRequestEmailExists(null);
-    } finally {
-      setIsCheckingEmail(false);
-    }
-  };
-
   const handleTipSubmit = async () => {
     if (!profile?.id) return;
 
@@ -840,18 +830,16 @@ const CreatorPublic = () => {
       return;
     }
 
-    // Guest validation — email required, password OPTIONAL. With password
-    // we sign the fan up at checkout. Without, the request is created with
-    // fan_id NULL and the delivery email invites them to sign up later.
-    if (!currentFanId) {
-      if (!requestEmail || !requestEmail.includes('@')) {
-        toast.error('Please enter your email address');
-        return;
+    // Same gate as link checkout: email (guests only), country, 18+.
+    if (!isPreCheckoutReady(requestGate, !currentFanId)) {
+      if (!currentFanId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestGate.email)) {
+        toast.error('Please enter a valid email address');
+      } else if (!(requestGate.country ?? signedInCountry)) {
+        toast.error('Please select your country');
+      } else if (!requestGate.ageAccepted) {
+        toast.error('You must confirm that you are at least 18 years old');
       }
-      if (requestPassword && requestPassword.length > 0 && requestPassword.length < 6) {
-        toast.error('Password must be at least 6 characters if you set one');
-        return;
-      }
+      return;
     }
 
     setIsRequestSubmitting(true);
@@ -862,18 +850,17 @@ const CreatorPublic = () => {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
+      const country = requestGate.country ?? signedInCountry;
       const requestBody: Record<string, unknown> = {
         creator_id: creatorUserId || profile.id,
         profile_id: creatorProfileId || null,
         description: requestDescription,
         proposed_amount_cents: amountCents,
+        country,
       };
 
       if (!currentFanId) {
-        requestBody.fan_email = requestEmail;
-        if (requestEmailExists === false && requestPassword) {
-          requestBody.fan_password = requestPassword;
-        }
+        requestBody.fan_email = requestGate.email;
       }
 
       const { data, error } = await supabase.functions.invoke('create-request-checkout', {
@@ -885,7 +872,7 @@ const CreatorPublic = () => {
         throw new Error(data?.error || (error as any)?.message || 'Unable to start checkout');
       }
 
-      // Submit QuickPay form (pre-auth: funds held, not charged)
+      // Submit QuickPay form (Sale model: card charged on submit)
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = 'https://quickpay.ugpayments.ch/';
@@ -2266,7 +2253,7 @@ const CreatorPublic = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestEmail(''); setRequestPassword(''); setRequestEmailExists(null); }}
+          onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestGate({ email: requestGate.email, country: null, ageAccepted: false }); }}
         >
           <motion.div
             initial={{ opacity: 0, y: 40 }}
@@ -2290,7 +2277,7 @@ const CreatorPublic = () => {
               </div>
               <button
                 type="button"
-                onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestEmail(''); setRequestPassword(''); setRequestEmailExists(null); }}
+                onClick={() => { setShowRequestModal(false); setRequestDescription(''); setRequestAmount(''); setRequestGate({ email: requestGate.email, country: null, ageAccepted: false }); }}
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
               >
                 <X className="w-4 h-4 text-white" />
@@ -2331,69 +2318,20 @@ const CreatorPublic = () => {
               </p>
             </div>
 
-            {/* Email (only for guests) */}
-            {!currentFanId && (
-              <div className="space-y-1.5">
-                <p className="text-xs text-white/50">Your email</p>
-                <div className="relative">
-                  <Input
-                    type="email"
-                    value={requestEmail}
-                    onChange={(e) => {
-                      setRequestEmail(e.target.value);
-                      setRequestEmailExists(null);
-                      setRequestPassword('');
-                    }}
-                    onBlur={() => checkEmailExists(requestEmail)}
-                    placeholder="your@email.com"
-                    className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
-                  />
-                  {isCheckingEmail && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 animate-spin" />
-                  )}
-                </div>
-                {requestEmailExists === true && (
-                  <p className="text-[10px] text-lime-400/70">This email is linked to an existing account. Your request will be associated with it.</p>
-                )}
-              </div>
-            )}
+            {/* Pre-checkout gate: email (guests only) + country + 18+ */}
+            <PreCheckoutGate
+              value={requestGate}
+              onChange={setRequestGate}
+              emailLocked={!!currentFanId}
+              requireEmail={!currentFanId}
+              countryHiddenIfSignedIn
+              signedInCountry={signedInCountry}
+            />
 
-            {/* Password (only for guests with new email) */}
-            <AnimatePresence>
-              {!currentFanId && requestEmailExists === false && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                  className="overflow-hidden"
-                >
-                  <div className="space-y-1.5">
-                    <p className="text-xs text-white/50">
-                      Create account{' '}
-                      <span className="text-white/30 font-normal">(optional — set a password to chat with the creator after delivery)</span>
-                    </p>
-                    <Input
-                      type="password"
-                      value={requestPassword}
-                      onChange={(e) => setRequestPassword(e.target.value)}
-                      placeholder="Leave empty to continue as guest"
-                      className="h-11 bg-white/5 border-white/20 text-white placeholder:text-white/30 text-sm rounded-xl"
-                    />
-                    <p className="text-[10px] text-white/40">
-                      {requestPassword
-                        ? 'Your Exclu account will be created with this password — the request will appear in your dashboard.'
-                        : 'No account needed. We\'ll email you when the creator delivers your request. You can sign up later from that email — your past requests will be linked automatically.'}
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Info */}
+            {/* Info — Sale model: refund-on-decline */}
             <div className="rounded-xl bg-white/5 border border-white/10 p-3">
               <p className="text-xs text-white/60 leading-relaxed">
-                Your card is <strong className="text-white/80">charged at checkout</strong>. If the creator declines or doesn't respond within 6 days, you are <strong className="text-white/80">refunded in full automatically</strong>.
+                Your card is <strong className="text-white/80">charged at checkout</strong>. If the creator declines or doesn't respond within 6 days, you are <strong className="text-white/80">refunded in full automatically</strong>. {!currentFanId && 'After payment, you\'ll be invited to create an account to track and chat with the creator.'}
               </p>
             </div>
 
@@ -2401,7 +2339,7 @@ const CreatorPublic = () => {
             <button
               type="button"
               onClick={handleRequestSubmit}
-              disabled={isRequestSubmitting || !requestDescription || !requestAmount || (!currentFanId && (!requestEmail || !requestEmail.includes('@') || isCheckingEmail || (!!requestPassword && requestPassword.length < 6)))}
+              disabled={isRequestSubmitting || !requestDescription || !requestAmount || !isPreCheckoutReady(requestGate, !currentFanId)}
               className="w-full h-12 rounded-2xl text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2"
               style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
             >
