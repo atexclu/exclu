@@ -438,9 +438,20 @@ async function handleRecurring(body: Record<string, string>) {
 // ── SALE (safety-net — Sales normally go through ConfirmURL) ─────────────
 
 async function handleListenerSale(body: Record<string, string>) {
-  // Safety-net only — Sales normally hit ConfirmURL. If a Sale arrives here
-  // for a transaction already processed (payment_events.processed=true), no-op.
-  // Otherwise log it unprocessed so Task 8.x reconciliation cron can pick it up.
+  // Safety net for Sales that hit the ListenerURL but never the ConfirmURL.
+  //
+  // Symptom we're fixing (observed 2026-04-27): some Sale callbacks arrive
+  // ONLY on the listener (not on ConfirmURL). The previous implementation
+  // just logged the event to payment_events and did nothing else, so the
+  // ledger never received a credit row even though the fan's wallet/access
+  // got updated by other paths (verify-payment, frontend fallbacks). Result:
+  // hourly reconcile-payments emailing wallet drift.
+  //
+  // Fix: we replay ugp-confirm with the listener body. ugp-confirm has the
+  // full handleLink/handleTip/handleGift/etc. logic; replaying it on a
+  // listener-only Sale does exactly what the missing ConfirmURL would have
+  // done, and re-runs are safe because applyWalletTransaction is idempotent
+  // on (owner_id, source_type, direction, source_transaction_id).
   const transactionId = body.TransactionID || '';
   if (!transactionId) return;
 
@@ -450,16 +461,20 @@ async function handleListenerSale(body: Record<string, string>) {
     .maybeSingle();
   if (existing?.processed) return;
 
-  // Insert with a distinct transaction_id to avoid collision with the ConfirmURL-logged row.
-  // Use upsert-ignore semantic in case this listener fires twice for the same Sale.
-  await supabase.from('payment_events').upsert({
-    transaction_id: `listener_${transactionId}_Sale`,
-    merchant_reference: body.MerchantReference || '',
-    amount_decimal: body.Amount || '0',
-    transaction_state: 'Sale',
-    customer_email: body.CustomerEmail || null,
-    raw_payload: body,
-    processed: false,
-    processing_error: 'listener-sale-without-confirm — reconcile',
-  }, { onConflict: 'transaction_id', ignoreDuplicates: true });
+  const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') ?? 'https://exclu.at').replace(/\/$/, '');
+  const form = new URLSearchParams(body);
+  try {
+    const res = await fetch(`${siteUrl}/api/ugp-confirm`, {
+      method: 'POST',
+      body: form.toString(),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!res.ok) {
+      console.error(`[ugp-listener] re-fire of ugp-confirm returned ${res.status} for TID ${transactionId}`);
+    } else {
+      console.log(`[ugp-listener] re-fired ugp-confirm successfully for listener-only Sale TID ${transactionId}`);
+    }
+  } catch (err) {
+    console.error('[ugp-listener] re-fire of ugp-confirm failed', transactionId, err);
+  }
 }
