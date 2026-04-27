@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, User, Paperclip, Link2, DollarSign, MapPin, Heart, X, Compass } from 'lucide-react';
+import { Loader2, User, Link2, DollarSign, MapPin, Heart, X, Compass } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -15,7 +15,6 @@ import { supabase } from '@/lib/supabaseClient';
 import { useMessages } from '@/hooks/useMessages';
 import { MessageBubble } from './MessageBubble';
 import { RichMessageComposer } from './RichMessageComposer';
-import { ChatContentPicker, type ContentAsset } from './ChatContentPicker';
 import { ChatLinkPicker } from './ChatLinkPicker';
 import { ChatCreateLink } from './ChatCreateLink';
 import { ChatCustomRequest } from './ChatCustomRequest';
@@ -39,7 +38,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const navigate = useNavigate();
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversation.id, senderType);
   const [draft, setDraft] = useState('');
-  const [showContentPicker, setShowContentPicker] = useState(false);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [showCreateLink, setShowCreateLink] = useState(false);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
@@ -200,19 +198,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     }
   };
 
-  const handleSendAssets = async (assets: ContentAsset[]) => {
-    setShowContentPicker(false);
-    for (const asset of assets) {
-      if (asset.previewUrl) {
-        await sendMessage({
-          content: asset.previewUrl,
-          senderType,
-          contentType: 'image',
-        });
-      }
-    }
-  };
-
   const handleAttachLink = async (link: { id: string; title: string | null; price_cents: number; description: string | null }) => {
     setShowLinkPicker(false);
     // Auto-fill message input with link description if available
@@ -240,15 +225,13 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   };
 
   const openLinkPicker = () => {
-    setShowContentPicker(false);
     setShowCreateLink(false);
     setShowLinkPicker(true);
   };
 
-  const openContentPicker = () => {
+  const openCreateLink = () => {
     setShowLinkPicker(false);
-    setShowCreateLink(false);
-    setShowContentPicker(true);
+    setShowCreateLink(true);
   };
 
   return (
@@ -330,33 +313,18 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               <Link2 className="w-3 h-3" />
               Add link
             </button>
-            {senderType === 'chatter' ? (
-              <button
-                type="button"
-                onClick={() => { setShowLinkPicker(false); setShowContentPicker(false); setShowCreateLink(true); }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-                  showCreateLink
-                    ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
-                    : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
-                }`}
-              >
-                <DollarSign className="w-3 h-3" />
-                Sell content
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={openContentPicker}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-                  showContentPicker
-                    ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
-                    : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
-                }`}
-              >
-                <Paperclip className="w-3 h-3" />
-                Attach content
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={openCreateLink}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
+                showCreateLink
+                  ? 'bg-[#b8e614] text-black shadow-[0_0_30px_6px_rgba(207,255,22,0.25)] scale-[1.03]'
+                  : 'bg-[#CFFF16] text-black shadow-[0_0_20px_4px_rgba(207,255,22,0.15)] hover:shadow-[0_0_30px_6px_rgba(207,255,22,0.2)] hover:bg-[#d8ff4d] hover:scale-[1.03] active:scale-[0.98]'
+              }`}
+            >
+              <DollarSign className="w-3 h-3" />
+              Sell content
+            </button>
           </div>
         )}
 
@@ -467,17 +435,6 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
               onLinkCreated={handleChatterLinkCreated}
               onClose={() => setShowCreateLink(false)}
               senderType={senderType}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Inline content picker panel — above composer */}
-        <AnimatePresence>
-          {showContentPicker && (
-            <ChatContentPicker
-              profileId={conversation.profile_id}
-              onSendAssets={handleSendAssets}
-              onClose={() => setShowContentPicker(false)}
             />
           )}
         </AnimatePresence>

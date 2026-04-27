@@ -1,16 +1,17 @@
 /**
  * ChatCreateLink
  *
- * Inline panel for chatters to create a paid content link directly from the chat.
- * Steps: select assets from the creator's library → set title & price → create + send.
- * The created link is marked as non-visible on the public profile (created_by_chatter_id).
+ * Inline panel for creators/chatters to create a paid content link directly from the chat.
+ * Steps: select (or upload, creator-only) assets from the creator's library → set title & price → create + send.
+ * Chatters get attribution-tagged hidden links; creators get regular owned links.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, Search, Loader2, Check, DollarSign, Send, Eye, EyeOff, Type } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Loader2, Check, DollarSign, Send, Eye, EyeOff, Type, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 
 interface ContentAsset {
   id: string;
@@ -56,6 +57,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
   const [assets, setAssets] = useState<ContentAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [visFilter, setVisFilter] = useState<'all' | 'public' | 'private'>('all');
@@ -65,6 +67,9 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
 
   // Creator user_id (owner of the profile) — needed for link creation
   const [creatorUserId, setCreatorUserId] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const canUpload = senderType === 'creator';
 
   useEffect(() => {
     let mounted = true;
@@ -136,6 +141,96 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
   const selectedCount = selectedIds.size;
   const priceNumber = parseFloat(price);
   const isValid = selectedCount > 0 && title.trim().length > 0 && priceNumber > 0;
+
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!files.length || !creatorUserId || isUploading) return;
+
+    const MAX_SIZE_MB = 500;
+    const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
+
+    setIsUploading(true);
+    const newAssets: ContentAsset[] = [];
+
+    try {
+      for (const rawFile of files) {
+        const lowerName = rawFile.name.toLowerCase();
+        const isHeic = rawFile.type === 'image/heic' || rawFile.type === 'image/heif'
+          || lowerName.endsWith('.heic') || lowerName.endsWith('.heif');
+        const isImage = rawFile.type.startsWith('image/') || isHeic;
+        const isVideo = rawFile.type.startsWith('video/') || videoExtensions.some((ext) => lowerName.endsWith(ext));
+        if (!isImage && !isVideo) {
+          toast.error(`${rawFile.name}: only images and videos are supported.`);
+          continue;
+        }
+        if (rawFile.size > MAX_SIZE_MB * 1024 * 1024) {
+          toast.error(`${rawFile.name}: file is too large (max ${MAX_SIZE_MB} MB).`);
+          continue;
+        }
+
+        const file = await maybeConvertHeic(rawFile);
+        const assetId = crypto.randomUUID();
+        const ext = file.name.split('.').pop() ?? 'bin';
+        const objectName = `${creatorUserId}/assets/${assetId}/original/content.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('paid-content')
+          .upload(objectName, file, { cacheControl: '3600', upsert: true });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          toast.error(`${rawFile.name}: upload failed.`);
+          continue;
+        }
+
+        const { data: inserted, error: insertError } = await supabase
+          .from('assets')
+          .insert({
+            id: assetId,
+            creator_id: creatorUserId,
+            profile_id: profileId,
+            title: file.name,
+            storage_path: objectName,
+            mime_type: file.type || null,
+            is_public: false,
+          })
+          .select('id, title, storage_path, mime_type, is_public')
+          .single();
+
+        if (insertError || !inserted) {
+          console.error('Asset insert error:', insertError);
+          toast.error(`${rawFile.name}: could not save asset record.`);
+          continue;
+        }
+
+        const { data: signed } = await supabase.storage
+          .from('paid-content')
+          .createSignedUrl(inserted.storage_path, 600);
+
+        newAssets.push({
+          ...(inserted as ContentAsset),
+          previewUrl: signed?.signedUrl ?? null,
+          isVideo,
+        });
+      }
+
+      if (newAssets.length > 0) {
+        setAssets((prev) => [...newAssets, ...prev]);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          newAssets.forEach((a) => next.add(a.id));
+          return next;
+        });
+        toast.success(`${newAssets.length} file${newAssets.length > 1 ? 's' : ''} uploaded`);
+      }
+    } catch (err: any) {
+      console.error('ChatCreateLink upload error:', err);
+      toast.error(err?.message || 'Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleCreate = async () => {
     if (!isValid || !creatorUserId || isCreating) return;
@@ -304,7 +399,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
             </div>
           )}
 
-          {!isLoading && filtered.length === 0 && (
+          {!isLoading && filtered.length === 0 && !canUpload && (
             <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
               <DollarSign className="w-5 h-5 text-muted-foreground/30" />
               <p className="text-[11px] text-muted-foreground/60">
@@ -313,8 +408,25 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
             </div>
           )}
 
-          {!isLoading && filtered.length > 0 && (
+          {!isLoading && (filtered.length > 0 || canUpload) && (
             <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
+              {canUpload && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="relative aspect-square rounded-lg border-2 border-dashed border-white/20 hover:border-[#CFFF16]/60 transition-colors flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-[#CFFF16] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5" />
+                      <span className="text-[9px] font-medium">Upload</span>
+                    </>
+                  )}
+                </button>
+              )}
               {filtered.map((asset) => {
                 const isSelected = selectedIds.has(asset.id);
                 return (
@@ -389,6 +501,17 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
             Create & Send
           </button>
         </div>
+
+        {canUpload && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,.heic,.heif"
+            multiple
+            className="hidden"
+            onChange={handleUpload}
+          />
+        )}
       </div>
     </motion.div>
   );
