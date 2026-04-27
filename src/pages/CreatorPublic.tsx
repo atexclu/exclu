@@ -840,10 +840,9 @@ const CreatorPublic = () => {
       return;
     }
 
-    // Guest validation — email required, password OPTIONAL.
-    // Backend auto-generates a random password when omitted so the fan
-    // doesn't need to create an account upfront. They can claim it later
-    // via the delivery email.
+    // Guest validation — email required, password OPTIONAL. With password
+    // we sign the fan up at checkout. Without, the request is created with
+    // fan_id NULL and the delivery email invites them to sign up later.
     if (!currentFanId) {
       if (!requestEmail || !requestEmail.includes('@')) {
         toast.error('Please enter your email address');
@@ -2371,8 +2370,8 @@ const CreatorPublic = () => {
                 >
                   <div className="space-y-1.5">
                     <p className="text-xs text-white/50">
-                      Password{' '}
-                      <span className="text-white/30 font-normal">(optional — skip to continue as guest)</span>
+                      Create account{' '}
+                      <span className="text-white/30 font-normal">(optional — set a password to chat with the creator after delivery)</span>
                     </p>
                     <Input
                       type="password"
@@ -2383,8 +2382,8 @@ const CreatorPublic = () => {
                     />
                     <p className="text-[10px] text-white/40">
                       {requestPassword
-                        ? 'Your account will be created with this password.'
-                        : 'No account needed. We\'ll email you when the creator delivers your request, with a link to claim your account if you want to continue the conversation.'}
+                        ? 'Your Exclu account will be created with this password — the request will appear in your dashboard.'
+                        : 'No account needed. We\'ll email you when the creator delivers your request. You can sign up later from that email — your past requests will be linked automatically.'}
                     </p>
                   </div>
                 </motion.div>
@@ -2394,8 +2393,7 @@ const CreatorPublic = () => {
             {/* Info */}
             <div className="rounded-xl bg-white/5 border border-white/10 p-3">
               <p className="text-xs text-white/60 leading-relaxed">
-                Your card will be <strong className="text-white/80">authorized but not charged</strong> until the creator accepts.
-                If they decline or don't respond within 6 days, the hold is automatically released.
+                Your card is <strong className="text-white/80">charged at checkout</strong>. If the creator declines or doesn't respond within 6 days, you are <strong className="text-white/80">refunded in full automatically</strong>.
               </p>
             </div>
 

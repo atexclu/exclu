@@ -39,6 +39,7 @@ const FanSignup = () => {
   const creatorHandle = searchParams.get('creator');
   const actionParam = searchParams.get('action');
   const profileIdParam = searchParams.get('profile');
+  const prefillEmail = searchParams.get('email') || '';
   const returnTo = searchParams.get('return') || (creatorHandle ? `/${creatorHandle}` : '/fan');
 
   useEffect(() => {
@@ -180,6 +181,13 @@ const FanSignup = () => {
         // query param preserved). Otherwise (legacy Confirm email = ON
         // path, backward compat) fall back to the "check inbox" message.
         if (signUpData?.session) {
+          // Reattach historical guest custom_requests for this email so
+          // they appear in the fan's dashboard immediately. Best-effort.
+          try {
+            await supabase.rpc('claim_guest_custom_requests', { p_email: email });
+          } catch (rpcErr) {
+            console.warn('[FanSignup] claim_guest_custom_requests failed (non-fatal)', rpcErr);
+          }
           toast.success('Welcome to Exclu!');
           const fanPath = creatorHandle ? `/fan?creator=${creatorHandle}` : '/fan';
           navigate(fanPath, { replace: true });
@@ -216,6 +224,14 @@ const FanSignup = () => {
 
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          // Reattach historical guest custom_requests for this email
+          // (cheap no-op if there are none). Best-effort.
+          try {
+            await supabase.rpc('claim_guest_custom_requests', { p_email: email });
+          } catch (rpcErr) {
+            console.warn('[FanSignup] claim_guest_custom_requests failed (non-fatal)', rpcErr);
+          }
+
           // Auto-favorite creator if logging in from their profile
           if (creatorPreview?.id) {
             supabase
@@ -440,6 +456,7 @@ const FanSignup = () => {
                     type="email"
                     autoComplete="email"
                     placeholder="you@example.com"
+                    defaultValue={prefillEmail}
                     className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
                     required
                   />

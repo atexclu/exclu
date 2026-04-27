@@ -1,15 +1,21 @@
 /**
- * create-request-checkout — UGPayments QuickPay version with pre-auth.
+ * create-request-checkout — UGPayments QuickPay (Sale model).
  *
- * Same request body, same validations, same guest account creation logic.
- * Returns { fields, request_id } for QuickPay form (pre-auth configured server-side).
+ * QuickPay (hosted checkout) processes a Sale at submission — UG's API
+ * does not expose pre-auth toggles to merchants on this MID, so the fan's
+ * card is charged immediately. If the creator declines or the request
+ * expires, manage-request issues a full refund via the REST API.
  *
- * Pre-auth note: UGPayments has configured our account for pre-auth mode.
- * The ConfirmURL callback will receive TransactionState='Authorize' (not 'Sale').
- * The funds are held (not captured) until the creator accepts via manage-request.
+ * Account creation is OPTIONAL:
+ *   - With fan_password (>=6 chars): the fan signs up at checkout. fan_id
+ *     is set to the new auth user.
+ *   - Without password: pure guest. fan_id stays NULL on the row;
+ *     fan_email is the only handle to reach them. If they later sign up
+ *     with the same email, claim_guest_custom_requests reattaches the
+ *     historical rows.
  *
  * Request body: { creator_id, profile_id?, description, proposed_amount_cents, fan_email?, fan_password? }
- * Auth: Optional (guests provide email + password to create account)
+ * Auth: Optional.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -103,8 +109,13 @@ serve(async (req) => {
     if (proposedAmountCents > 100000) return jsonError('Maximum amount is $1,000.00', 400, corsHeaders);
     if (!authenticatedUserId && !fanEmail) return jsonError('Email is required', 400, corsHeaders);
 
-    // ── 3. Resolve fan identity ────────
-    let fanUserId: string;
+    // ── 3. Resolve fan identity ─────────────────────────────────────────
+    // Three paths:
+    //   (a) authenticated: fanUserId = current user
+    //   (b) email matches an existing account: fanUserId = that account
+    //   (c) email is new + password supplied: create the account now
+    //   (d) email is new + no password: pure guest, fanUserId = null
+    let fanUserId: string | null = null;
     let isNewAccount = false;
 
     if (authenticatedUserId) {
@@ -114,29 +125,16 @@ serve(async (req) => {
 
       if (existingUserId) {
         fanUserId = existingUserId;
-      } else {
-        // Password is now OPTIONAL. When absent we still need to create a
-        // Supabase Auth user (to own the custom_requests row + to receive
-        // delivery emails) but we generate a random password the fan never
-        // knows. They can later claim the account via a password reset
-        // email triggered by the delivery notification's "claim account"
-        // CTA. This matches the user experience the client agreed to:
-        // "si le fan ne veut pas créer son compte on lui envoie un mail
-        // avec la custom" — the account exists as a carrier for the
-        // delivery but is effectively a guest record until they claim it.
-        const effectivePassword =
-          fanPassword && fanPassword.length >= 6
-            ? fanPassword
-            : crypto.randomUUID() + crypto.randomUUID();
-
+      } else if (fanPassword && fanPassword.length >= 6) {
+        // Fan opted in: create the real account with their password.
         const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
           email: fanEmail!,
-          password: effectivePassword,
+          password: fanPassword,
           email_confirm: false,
           user_metadata: {
             is_creator: false,
             favorite_creator: creatorId,
-            created_via: fanPassword && fanPassword.length >= 6 ? 'custom_request' : 'custom_request_guest',
+            created_via: 'custom_request',
           },
         });
 
@@ -150,9 +148,12 @@ serve(async (req) => {
 
         await supabase.from('profiles').upsert({ id: fanUserId, is_creator: false }, { onConflict: 'id' });
       }
+      // else: pure guest — fanUserId stays null; fan_email carries identity.
     }
 
-    if (fanUserId === creatorId) return jsonError('You cannot send a request to yourself', 400, corsHeaders);
+    if (fanUserId && fanUserId === creatorId) {
+      return jsonError('You cannot send a request to yourself', 400, corsHeaders);
+    }
 
     // ── 4. Validate creator ───────────────────────────────────────────
     const { data: creator, error: creatorErr } = await supabase
@@ -198,7 +199,7 @@ serve(async (req) => {
       return jsonError('Failed to create request', 500, corsHeaders);
     }
 
-    // ── 6. Build QuickPay form fields (pre-auth active server-side) ───
+    // ── 6. Build QuickPay form fields (Sale model) ────────────────────
     const fanProcessingFeeCents = Math.round(proposedAmountCents * 0.15);
     const totalFanPaysCents = proposedAmountCents + fanProcessingFeeCents;
     const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
@@ -222,7 +223,7 @@ serve(async (req) => {
       'ItemName[0]': `Custom request for ${(creator.display_name || creatorHandle).slice(0, 200)}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': 'Custom content request on Exclu (includes 15% processing fee). Your card will only be charged if the creator accepts.',
+      'ItemDesc[0]': 'Custom content request on Exclu (includes 15% processing fee). Refunded in full if the creator declines or does not respond within 6 days.',
       AmountShipping: '0.00',
       ShippingRequired: 'false',
       MembershipRequired: 'false',

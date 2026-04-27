@@ -1,20 +1,24 @@
 /**
- * manage-request — UGPayments version.
+ * manage-request — UGPayments Sale model.
  *
- * Handles creator accept (capture) and decline (void) for custom requests.
- * Captures or voids pre-authorized payments via UGPayments REST API.
+ * QuickPay charges the fan upfront (Sale). Custom requests transition
+ * pending → delivered (creator accepts) or pending → refused/expired
+ * (creator declines or 6-day window elapses).
  *
  * Actions:
- *   'capture' — Creator accepts, content uploaded → capture pre-auth → credit wallet
- *   'cancel'  — Creator declines or request expired → void pre-auth → release hold
+ *   'accept'  — Creator delivered content → credit wallet, mark delivered
+ *               (legacy alias 'capture' still accepted)
+ *   'cancel'  — Creator declines or request expired → REST refund → no
+ *               wallet credit ever fires
  *
- * Request body: { action: 'capture'|'cancel', request_id, delivery_link_id?, creator_response?, reason? }
- * Auth: Required (creator who received the request)
+ * Request body: { action: 'accept'|'capture'|'cancel', request_id, delivery_link_id?, creator_response?, reason? }
+ * Auth: Required (creator who received the request, OR service_role for the
+ *       expiry sweep cron — gated below).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { ugpCapture, ugpVoid, UgpApiError } from '../_shared/ugp-api.ts';
+import { ugpRefund, UgpApiError } from '../_shared/ugp-api.ts';
 import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
 import { applyWalletTransaction } from '../_shared/ledger.ts';
 
@@ -70,18 +74,20 @@ serve(async (req) => {
     if (authErr || !user) return jsonError('Authentication required', 401, corsHeaders);
 
     const body = await req.json();
-    const action = body?.action as string; // 'capture' | 'cancel'
+    const rawAction = body?.action as string;
+    // Normalise legacy alias: 'capture' === 'accept' under the Sale model.
+    const action = rawAction === 'capture' ? 'accept' : rawAction;
     const requestId = body?.request_id as string;
     const deliveryLinkId = body?.delivery_link_id as string | undefined;
     const creatorResponse = typeof body?.creator_response === 'string' ? body.creator_response.trim().slice(0, 1000) : null;
 
     if (!requestId) return jsonError('Missing request_id', 400, corsHeaders);
-    if (!['capture', 'cancel'].includes(action)) return jsonError('Invalid action (capture or cancel)', 400, corsHeaders);
+    if (!['accept', 'cancel'].includes(action)) return jsonError('Invalid action (accept or cancel)', 400, corsHeaders);
 
     // Fetch the request — creator must own it
     const { data: request, error: reqErr } = await supabase
       .from('custom_requests')
-      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id')
+      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id, fan_email, is_new_account')
       .eq('id', requestId)
       .single();
 
@@ -90,8 +96,8 @@ serve(async (req) => {
     if (request.status !== 'pending') return jsonError(`Request is not pending (current: ${request.status})`, 400, corsHeaders);
     if (!request.ugp_transaction_id) return jsonError('No payment transaction found for this request', 400, corsHeaders);
 
-    // ── CAPTURE (creator accepts + delivered content) ────────────────────
-    if (action === 'capture') {
+    // ── ACCEPT (creator delivers content → credit wallet) ────────────────
+    if (action === 'accept') {
       // Verify content was uploaded — delivery_link_id must be set
       const linkId = deliveryLinkId || request.delivery_link_id;
       if (!linkId) return jsonError('You must upload content before accepting the request', 400, corsHeaders);
@@ -112,32 +118,10 @@ serve(async (req) => {
       const hasContent = !!(link?.storage_path) || (linkMedia && linkMedia.length > 0);
       if (!hasContent) return jsonError('The content link must have at least one photo or video attached', 400, corsHeaders);
 
-      // Capture the pre-authorized payment via UGPayments API
+      // Sale model: the fan was charged at checkout. We just credit the
+      // creator's wallet and mark the request delivered. No UGP API call.
       const amountCents = request.proposed_amount_cents;
       const fanProcessingFeeCents = Math.round(amountCents * 0.15);
-      const totalFanPaysCents = amountCents + fanProcessingFeeCents;
-      const captureAmountDecimal = totalFanPaysCents / 100;
-
-      // Try to capture the pre-authorized payment via UGPayments API.
-      // If the payment was already processed as a Sale (via ConfirmURL or verify-payment fallback),
-      // the capture will fail — that's OK, the money is already collected.
-      try {
-        await ugpCapture(request.ugp_transaction_id, captureAmountDecimal);
-        console.log('UGP capture success for request:', requestId);
-      } catch (captureErr) {
-        const ugpErr = captureErr as UgpApiError;
-        console.error('UGP capture error (may be already processed as Sale):', ugpErr.message);
-
-        if (ugpErr.isAlreadyProcessed) {
-          console.log('Transaction already captured/processed, continuing...');
-        } else if (ugpErr.isExpired) {
-          return jsonError('Payment authorization has expired (6-day limit). The hold has been released.', 400, corsHeaders);
-        } else {
-          // If capture fails for other reasons, the payment may have been processed as a direct Sale.
-          // Continue with the wallet credit — the fan has already been charged.
-          console.warn('Capture failed but continuing (payment may be a Sale, not Auth):', ugpErr.message);
-        }
-      }
 
       // Check if this request was handled by a chatter (via conversation assignment)
       let chatterId: string | null = null;
@@ -177,7 +161,7 @@ serve(async (req) => {
       }
 
       // LEDGER FIRST — if this throws, we bail before flipping status to 'delivered'.
-      // sourceTransactionId = original pre-auth TID (capture re-uses the same TID).
+      // sourceTransactionId = the Sale TID from QuickPay.
       await applyWalletTransaction(supabase, {
         ownerId: request.creator_id,
         ownerKind: 'creator',
@@ -187,9 +171,9 @@ serve(async (req) => {
         sourceId: request.id,
         sourceTransactionId: request.ugp_transaction_id,
         sourceUgpMid: null,
-        metadata: { fan_email: request.fan_email ?? null, kind: 'capture' },
+        metadata: { fan_email: request.fan_email ?? null, kind: 'accept' },
       });
-      console.log('Creator wallet ledger credited (request capture):', request.creator_id, '+', creatorNetCents, 'cents');
+      console.log('Creator wallet ledger credited (request accept):', request.creator_id, '+', creatorNetCents, 'cents');
 
       // Chatter split if attributed (custom_request is an allowed source for chatter)
       if (chatterId && chatterEarningsCents > 0) {
@@ -201,9 +185,9 @@ serve(async (req) => {
           sourceType: 'chatter_commission',
           sourceId: request.id,
           sourceTransactionId: request.ugp_transaction_id,
-          metadata: { creator_id: request.creator_id, kind: 'capture' },
+          metadata: { creator_id: request.creator_id, kind: 'accept' },
         });
-        console.log('Chatter ledger credited (request capture):', chatterId, '+', chatterEarningsCents, 'cents');
+        console.log('Chatter ledger credited (request accept):', chatterId, '+', chatterEarningsCents, 'cents');
       }
 
       // Update request to delivered — AFTER ledger succeeds
@@ -221,34 +205,47 @@ serve(async (req) => {
         .eq('id', requestId);
 
       if (updateErr) {
-        console.error('Error updating request after capture:', updateErr);
-        return jsonError('Payment captured but request update failed', 500, corsHeaders);
+        console.error('Error updating request after accept:', updateErr);
+        return jsonError('Wallet credited but request update failed', 500, corsHeaders);
       }
 
       // Create a purchase record for the delivery link so the fan can unlock content
-      // This makes custom request deliveries work exactly like paid link purchases
+      // (works for guests via ?ref=link_<purchase_id>).
+      let deliveryPurchaseId: string | null = null;
       try {
-        await supabase.from('purchases').insert({
+        const { data: purchaseRow, error: purchaseErr } = await supabase.from('purchases').insert({
           link_id: linkId,
           amount_cents: amountCents + fanProcessingFeeCents,
           currency: 'USD',
           status: 'succeeded',
           access_token: crypto.randomUUID(),
-          buyer_email: null, // Fan email not needed — they access via ref
+          buyer_email: request.fan_email ?? null,
           creator_net_cents: creatorNetCents,
           platform_fee_cents: totalPlatformFee,
           ugp_transaction_id: request.ugp_transaction_id,
           ugp_merchant_reference: `req_delivery_${requestId}`,
-        });
+        }).select('id').single();
+        if (purchaseErr) throw purchaseErr;
+        deliveryPurchaseId = purchaseRow?.id ?? null;
         console.log('Delivery purchase record created for request:', requestId);
       } catch (purchaseErr) {
         console.error('Error creating delivery purchase (non-fatal):', purchaseErr);
       }
 
-      // Notify fan via email
-      await notifyFanRequestUpdate(request, 'delivered', creatorResponse);
+      const { data: deliveryLink } = await supabase
+        .from('links')
+        .select('slug')
+        .eq('id', linkId)
+        .single();
 
-      // Post status update in chat
+      // Notify fan via email — guest gets ?ref= access + signup CTA;
+      // registered fan gets the in-app chat link.
+      await notifyFanRequestUpdate(request, 'delivered', creatorResponse, {
+        deliveryLinkSlug: deliveryLink?.slug ?? null,
+        deliveryPurchaseId,
+      });
+
+      // Post status update in chat (no-op for guest — no fan_id)
       await postRequestStatusInChat(request, 'delivered', user.id);
 
       return jsonOk({ success: true, status: 'delivered', creator_net_cents: creatorNetCents }, corsHeaders);
@@ -258,30 +255,22 @@ serve(async (req) => {
     if (action === 'cancel') {
       const newStatus = body?.reason === 'expired' ? 'expired' : 'refused';
 
-      // Try to void the pre-authorized payment.
-      // If the payment was already processed as a Sale, void will fail — in that case
-      // we need to issue a refund instead, or just update status (fan already charged).
+      // Sale model: refund the fan's card via the REST API. Idempotent on
+      // already-refunded transactions.
+      const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.15)) / 100;
       try {
-        await ugpVoid(request.ugp_transaction_id);
-        console.log('UGP void success for request:', requestId);
-      } catch (voidErr) {
-        const ugpErr = voidErr as UgpApiError;
-        console.error('UGP void error (may be Sale not Auth):', ugpErr.message);
-
+        await ugpRefund(request.ugp_transaction_id, refundAmount);
+        console.log('UGP refund success for request:', requestId, '$', refundAmount);
+      } catch (refundErr) {
+        const ugpErr = refundErr as UgpApiError;
         if (ugpErr.isAlreadyProcessed) {
-          console.log('Transaction already voided/captured, continuing...');
+          console.log('Transaction already refunded, continuing...');
         } else {
-          // If void fails, try refund (for Sale transactions that can't be voided)
-          try {
-            const { ugpRefund } = await import('../_shared/ugp-api.ts');
-            const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.15)) / 100;
-            await ugpRefund(request.ugp_transaction_id, refundAmount);
-            console.log('UGP refund success (Sale → refund) for request:', requestId);
-          } catch (refundErr) {
-            console.error('Refund also failed:', (refundErr as any)?.message);
-            // Continue anyway — update the status so the creator sees it as declined
-            // The fan may need manual refund from admin
-          }
+          // Hard fail — do not flip status. The creator can retry, or admin
+          // can intervene. Refunding is the load-bearing guarantee for the
+          // fan, so we surface the error rather than silently mark refused.
+          console.error('UGP refund failed:', ugpErr.message);
+          return jsonError('Refund failed; please retry. If this persists, contact support.', 502, corsHeaders);
         }
       }
 
@@ -295,14 +284,14 @@ serve(async (req) => {
         .eq('id', requestId);
 
       if (updateErr) {
-        console.error('Error updating request after cancel:', updateErr);
-        return jsonError('Payment voided but request update failed', 500, corsHeaders);
+        console.error('Error updating request after refund:', updateErr);
+        return jsonError('Payment refunded but request update failed', 500, corsHeaders);
       }
 
       // Notify fan via email
       await notifyFanRequestUpdate(request, newStatus, creatorResponse);
 
-      // Post status update in chat
+      // Post status update in chat (no-op for guest — no fan_id)
       await postRequestStatusInChat(request, newStatus, user.id);
 
       return jsonOk({ success: true, status: newStatus }, corsHeaders);
@@ -321,15 +310,47 @@ async function notifyFanRequestUpdate(
   request: Record<string, any>,
   newStatus: string,
   creatorResponse: string | null,
+  delivery?: { deliveryLinkSlug: string | null; deliveryPurchaseId: string | null },
 ) {
-  if (!request.fan_id) return;
-  try {
-    const { data: fanAuth } = await supabase.auth.admin.getUserById(request.fan_id);
-    const fanEmail = fanAuth?.user?.email;
-    if (!fanEmail) return;
+  // Guest path: fan_id IS NULL but fan_email is the source of truth.
+  let fanEmail: string | null = null;
+  let isGuest = false;
 
+  if (request.fan_id) {
+    const { data: fanAuth } = await supabase.auth.admin.getUserById(request.fan_id);
+    fanEmail = fanAuth?.user?.email ?? null;
+  } else {
+    fanEmail = request.fan_email ?? null;
+    isGuest = true;
+  }
+
+  if (!fanEmail) return;
+
+  try {
     const amount = formatUSD(request.proposed_amount_cents);
     const desc = (request.description || '').slice(0, 100);
+    const normalizedSite = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
+
+    // Look up the creator handle for the signup CTA deep-link.
+    let creatorHandle: string | null = null;
+    if (request.creator_id) {
+      const { data: creator } = await supabase
+        .from('profiles')
+        .select('handle')
+        .eq('id', request.creator_id)
+        .single();
+      creatorHandle = creator?.handle ?? null;
+    }
+
+    const accessUrl = newStatus === 'delivered' && delivery?.deliveryLinkSlug && delivery?.deliveryPurchaseId
+      ? `${normalizedSite}/l/${encodeURIComponent(delivery.deliveryLinkSlug)}?ref=link_${delivery.deliveryPurchaseId}`
+      : null;
+
+    // Guest signup CTA — preserves email + creator context so the post-signup
+    // RPC (claim_guest_custom_requests) can reattach this very request.
+    const signupParams = new URLSearchParams({ email: fanEmail });
+    if (creatorHandle) signupParams.set('creator', creatorHandle);
+    const signupUrl = isGuest ? `${normalizedSite}/fan/signup?${signupParams.toString()}` : null;
 
     if (newStatus === 'delivered') {
       await sendBrevoEmail({
@@ -340,17 +361,22 @@ async function notifyFanRequestUpdate(
           amount,
           desc,
           creatorResponse,
+          { accessUrl, signupUrl, isGuest },
         ),
       });
-    } else if (newStatus === 'refused') {
+    } else if (newStatus === 'refused' || newStatus === 'expired') {
+      const subject = newStatus === 'expired'
+        ? `Your custom request (${amount}) expired — refund issued`
+        : `Your custom request (${amount}) was declined — refund issued`;
       await sendBrevoEmail({
         to: fanEmail,
-        subject: `Your custom request (${amount}) was declined`,
+        subject,
         htmlContent: buildFanRequestEmailHtml(
-          'refused',
+          newStatus,
           amount,
           desc,
           creatorResponse,
+          { accessUrl: null, signupUrl, isGuest },
         ),
       });
     }
@@ -398,23 +424,49 @@ async function postRequestStatusInChat(
 }
 
 function buildFanRequestEmailHtml(
-  status: 'delivered' | 'refused',
+  status: 'delivered' | 'refused' | 'expired',
   amount: string,
   description: string,
   creatorResponse: string | null,
+  cta: { accessUrl: string | null; signupUrl: string | null; isGuest: boolean },
 ): string {
-  const isDelivered = status === 'delivered';
-  const heading = isDelivered
-    ? 'Your request has been delivered \u2705'
-    : 'Your request was declined \u274C';
-  const bodyText = isDelivered
+  const heading = status === 'delivered'
+    ? 'Your request has been delivered ✅'
+    : status === 'expired'
+      ? 'Your request expired ⏱️'
+      : 'Your request was declined ❌';
+  const bodyText = status === 'delivered'
     ? `Great news! The creator has accepted your custom request for <strong>${amount}</strong> and delivered your content.`
-    : `The creator has declined your custom request for <strong>${amount}</strong>. The hold on your payment has been released — you will not be charged.`;
+    : status === 'expired'
+      ? `The creator did not respond to your <strong>${amount}</strong> request within 6 days, so we have refunded your card in full. The amount should reappear on your statement within a few business days.`
+      : `The creator has declined your custom request for <strong>${amount}</strong>. We have refunded your card in full. The amount should reappear on your statement within a few business days.`;
   const responseBlock = creatorResponse
     ? `<p style="background:#020617;border:1px solid #1e293b;border-radius:10px;padding:14px 18px;color:#f1f5f9;font-style:italic;">&ldquo;${escapeHtml(creatorResponse)}&rdquo;</p>`
     : '';
-  const ctaText = isDelivered ? 'View in chat' : 'Back to Exclu';
   const normalizedSite = (siteUrl || 'https://exclu.at').replace(/\/$/, '');
+
+  let primaryHref: string;
+  let primaryLabel: string;
+  if (cta.accessUrl) {
+    primaryHref = cta.accessUrl;
+    primaryLabel = 'Unlock your content';
+  } else if (cta.isGuest) {
+    primaryHref = normalizedSite;
+    primaryLabel = 'Back to Exclu';
+  } else {
+    primaryHref = `${normalizedSite}/fan?tab=messages`;
+    primaryLabel = 'View in chat';
+  }
+
+  // Guest-only secondary CTA: invite to sign up. Post-signup, the
+  // claim_guest_custom_requests RPC reattaches all matching email rows.
+  const signupBlock = cta.isGuest && cta.signupUrl
+    ? `<div style="margin-top:8px;padding:18px;border-radius:12px;background:#0f172a;border:1px solid #1e293b">
+<p style="font-size:14px;color:#cbd5e1;margin:0 0 10px"><strong style="color:#fff">Want to keep chatting with the creator?</strong></p>
+<p style="font-size:13px;color:#94a3b8;margin:0 0 14px;line-height:1.6">Create your free Exclu account in 30 seconds. Your past requests will be linked automatically.</p>
+<a href="${cta.signupUrl}" style="display:inline-block;background:transparent;color:#a3e635!important;text-decoration:none;padding:10px 22px;border-radius:999px;font-weight:600;font-size:13px;border:1px solid #a3e635">Create my account</a>
+</div>`
+    : '';
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>body{margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e2e8f0}.container{max-width:600px;margin:0 auto;background:linear-gradient(135deg,#020617 0%,#020617 40%,#0b1120 100%);border-radius:16px;border:1px solid #1e293b;overflow:hidden}.header{padding:28px 28px 18px;border-bottom:1px solid #1e293b}.header h1{font-size:22px;color:#f9fafb;margin:0;font-weight:700}.content{padding:26px 28px 30px}.content p{font-size:15px;line-height:1.7;color:#cbd5e1;margin:0 0 16px}.content strong{color:#fff;font-weight:600}.button{display:inline-block;background:linear-gradient(135deg,#bef264 0%,#a3e635 40%,#bbf7d0 100%);color:#020617!important;text-decoration:none;padding:14px 32px;border-radius:999px;font-weight:600;font-size:15px;margin:8px 0 20px;box-shadow:0 6px 18px rgba(190,242,100,0.4)}.footer{font-size:12px;color:#64748b;text-align:center;padding:18px;border-top:1px solid #1e293b}.footer a{color:#a3e635;text-decoration:none}</style></head>
@@ -422,6 +474,8 @@ function buildFanRequestEmailHtml(
 <div class="content"><p>${bodyText}</p>
 <p style="font-size:13px;color:#94a3b8;">Request: &ldquo;${escapeHtml(description)}&rdquo;</p>
 ${responseBlock}
-<a href="${normalizedSite}/fan?tab=messages" class="button">${ctaText}</a></div>
+<a href="${primaryHref}" class="button">${primaryLabel}</a>
+${signupBlock}
+</div>
 <div class="footer">&copy; 2026 Exclu<br><a href="${normalizedSite}">exclu</a></div></div></body></html>`;
 }

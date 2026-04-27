@@ -9,7 +9,7 @@
  *   link_<uuid> → Link purchase
  *   tip_<uuid>  → Tip
  *   gift_<uuid> → Gift wishlist purchase
- *   req_<uuid>  → Custom request (pre-auth Authorize)
+ *   req_<uuid>  → Custom request (Sale; refunded on creator decline)
  *   sub_<uuid>  → Creator subscription (handled but also goes to membership postback)
  */
 
@@ -216,8 +216,11 @@ serve(async (req) => {
   //
   // `Capture`, `Refund`, `Chargeback`, `Void`, `CBK1` arrive via the Listener URL
   // (see ugp-listener). The ConfirmURL should only ever actually mutate state for:
-  //   - Sale      → direct one-time capture (link / tip / gift / initial sub)
-  //   - Authorize → pre-auth hold for custom requests (captured later)
+  //   - Sale → direct one-time capture (link / tip / gift / request / initial sub)
+  //
+  // Custom requests use Sale (QuickPay charges immediately on this MID); if
+  // the creator declines or the request expires, manage-request refunds the
+  // Sale via the REST API. There is no Authorize/Capture path on this MID.
   //
   // NOTE: Recurring (rebill) postbacks fire on the ListenerURL, NOT ConfirmURL.
   // Server-initiated /recurringtransactions calls use the async listener path.
@@ -227,7 +230,7 @@ serve(async (req) => {
     link: new Set(['Sale']),
     tip: new Set(['Sale']),
     gift: new Set(['Sale']),
-    req: new Set(['Authorize']),
+    req: new Set(['Sale']),
     sub: new Set(['Sale']),   // initial Sale only; rebills go to ugp-listener
     fsub: new Set(['Sale']),  // initial Sale only; rebills go to ugp-listener
   };
@@ -705,10 +708,13 @@ async function handleGift(giftId: string, body: Record<string, string>) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// CUSTOM REQUEST (Pre-auth: TransactionState = 'Authorize')
+// CUSTOM REQUEST (Sale: TransactionState = 'Sale')
+// QuickPay charges immediately; we hold the wallet credit until the creator
+// accepts + uploads + sends the content via manage-request. If they decline
+// or the request expires, manage-request issues a full refund.
 // ══════════════════════════════════════════════════════════════════════════
 
-async function handleRequest(requestId: string, body: Record<string, string>, transactionState: string) {
+async function handleRequest(requestId: string, body: Record<string, string>, _transactionState: string) {
   const { data: request, error: fetchErr } = await supabase
     .from('custom_requests')
     .select('id, fan_id, creator_id, profile_id, description, proposed_amount_cents, status, fan_email, is_new_account')
@@ -720,14 +726,12 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
     return;
   }
 
-  // For pre-auth (Authorize): move from pending_payment → pending
-  // For direct sale (fallback): same transition
   if (request.status !== 'pending_payment') {
     console.log('Request already processed:', requestId, 'status:', request.status);
     return;
   }
 
-  // Store the TransactionID for later capture/void
+  // Store the Sale TransactionID — manage-request uses it for refund.
   await supabase.from('custom_requests').update({
     status: 'pending',
     ugp_transaction_id: body.TransactionID,
@@ -741,8 +745,9 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
     body.CustomerCountry ?? null,
   );
 
-  // DO NOT credit wallet here — funds are only held (Authorize), not captured yet
-  // The wallet will be credited when the creator captures via manage-request
+  // DO NOT credit wallet here — fan was charged but creator has not yet
+  // delivered. manage-request credits the wallet on accept; on decline or
+  // expiry it issues a full refund and never credits.
 
   // Send creator notification email
   const { data: creator } = await supabase
@@ -798,7 +803,7 @@ async function handleRequest(requestId: string, body: Record<string, string>, tr
     }
   }
 
-  console.log('Custom request confirmed (pre-auth):', requestId);
+  console.log('Custom request confirmed (Sale, awaiting creator decision):', requestId);
 }
 
 // ══════════════════════════════════════════════════════════════════════════

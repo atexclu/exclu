@@ -1,5 +1,9 @@
 /**
- * UG Payments REST API helpers for Capture, Void, and Refund operations.
+ * UG Payments REST API helpers — Refund only.
+ *
+ * QuickPay (hosted checkout) processes every transaction as a Sale on
+ * our MID; pre-auth/Capture/Void are not available, so the only API
+ * money-movement call we need is `refundtransactions`.
  *
  * Required env vars:
  *   UGP_MERCHANT_ID    — Merchant ID for API authentication
@@ -30,18 +34,9 @@ export class UgpApiError extends Error {
     this.ugpResponse = ugpResponse;
   }
 
-  /** True if the transaction was already in the target state (idempotent) */
+  /** True if the transaction was already refunded (idempotent retry safe) */
   get isAlreadyProcessed(): boolean {
-    const msg = this.message.toLowerCase();
-    return msg.includes('already been captured') ||
-           msg.includes('already been voided') ||
-           msg.includes('already been refunded');
-  }
-
-  /** True if the authorization has expired */
-  get isExpired(): boolean {
-    return this.message.toLowerCase().includes('time period to capture') ||
-           this.message.toLowerCase().includes('expired');
+    return this.message.toLowerCase().includes('already been refunded');
   }
 }
 
@@ -95,41 +90,14 @@ async function callUgpApi(
 }
 
 /**
- * Capture a pre-authorized transaction.
- * Only authorize transactions that have not been voided can be captured.
- *
- * @param authorizeTransactionId - The TransactionID from the original Authorize
- * @param amountDecimal - Amount to capture (decimal, e.g. 20.00)
- */
-export async function ugpCapture(
-  authorizeTransactionId: string,
-  amountDecimal: number,
-): Promise<UgpApiResponse> {
-  return callUgpApi('capturetransactions', {
-    authorizeTransactionId,
-    amount: amountDecimal,
-  });
-}
-
-/**
- * Void a pre-authorized transaction (release the hold).
- * Only authorize transactions can be voided.
- *
- * @param authorizeTransactionId - The TransactionID from the original Authorize
- */
-export async function ugpVoid(
-  authorizeTransactionId: string,
-): Promise<UgpApiResponse> {
-  return callUgpApi('voidtransactions', {
-    authorizeTransactionId,
-  });
-}
-
-/**
- * Refund a completed Sale or Capture transaction.
+ * Refund a completed Sale transaction.
  * Supports partial refunds (amount < original).
  *
- * @param referenceTransactionId - The TransactionID from the Sale or Capture
+ * QuickPay always processes a Sale on this MID — there is no Authorize/
+ * Capture/Void path available, so refundtransactions is the only money-
+ * movement REST call we need. See docs/documentation api ugc payment 2.md.
+ *
+ * @param referenceTransactionId - The TransactionID from the Sale
  * @param amountDecimal - Amount to refund (decimal, e.g. 20.00)
  */
 export async function ugpRefund(
