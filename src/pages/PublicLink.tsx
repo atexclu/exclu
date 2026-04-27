@@ -33,11 +33,26 @@ async function downloadFile(url: string, filename?: string) {
   }
 }
 
-// Download multiple files as a ZIP archive
+// Download multiple files individually, one after another. Each item streams
+// straight to disk via downloadFile, so memory usage stays bounded — important
+// when a link bundles many large videos. A short gap between clicks keeps
+// browsers from coalescing/blocking the rapid-fire downloads.
+async function downloadAllIndividually(items: { url: string; filename: string }[]) {
+  for (let i = 0; i < items.length; i++) {
+    await downloadFile(items[i].url, items[i].filename);
+    if (i < items.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+  }
+}
+
+// Bundle multiple files into a ZIP. Holds every file in memory before
+// streaming the archive — only safe for small/light bundles. Caller must
+// gate on file count + total size before invoking.
 async function downloadAllAsZip(items: { url: string; filename: string }[], zipName: string) {
-  try {
-    const zip = new JSZip();
-    const fetches = items.map(async (item, idx) => {
+  const zip = new JSZip();
+  await Promise.all(
+    items.map(async (item, idx) => {
       try {
         const res = await fetch(item.url);
         const blob = await res.blob();
@@ -45,20 +60,61 @@ async function downloadAllAsZip(items: { url: string; filename: string }[], zipN
       } catch (err) {
         console.error('Failed to fetch for zip:', item.filename, err);
       }
-    });
-    await Promise.all(fetches);
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const blobUrl = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = `${zipName}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  } catch (err) {
-    console.error('ZIP download failed:', err);
+    }),
+  );
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const blobUrl = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = `${zipName}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
+// Probe Content-Length on each signed URL via HEAD so we can decide whether a
+// bundle is light enough to ZIP in browser memory. NaN for any URL that
+// doesn't expose a size — the caller treats unknowns as "too heavy" and falls
+// back to individual downloads.
+async function probeTotalSize(urls: string[]): Promise<number> {
+  const sizes = await Promise.all(
+    urls.map(async (u) => {
+      try {
+        const res = await fetch(u, { method: 'HEAD' });
+        const len = res.headers.get('content-length');
+        return len ? parseInt(len, 10) : NaN;
+      } catch {
+        return NaN;
+      }
+    }),
+  );
+  let total = 0;
+  for (const s of sizes) {
+    if (!Number.isFinite(s)) return Infinity;
+    total += s;
   }
+  return total;
+}
+
+// Heuristic for picking ZIP vs individual downloads:
+// - 1 file → direct download (handled at call site)
+// - ≤ ZIP_MAX_FILES AND total size ≤ ZIP_MAX_TOTAL_BYTES → ZIP
+// - otherwise → individual downloads (keeps memory bounded)
+const ZIP_MAX_FILES = 5;
+const ZIP_MAX_TOTAL_BYTES = 500 * 1024 * 1024; // 500 MB
+
+async function downloadBundle(items: { url: string; filename: string }[], zipName: string) {
+  if (items.length <= ZIP_MAX_FILES) {
+    const total = await probeTotalSize(items.map((i) => i.url));
+    if (total <= ZIP_MAX_TOTAL_BYTES) {
+      toast.success(`Preparing ZIP (${items.length} files)…`);
+      await downloadAllAsZip(items, zipName);
+      return;
+    }
+  }
+  toast.success(`Downloading ${items.length} files…`);
+  await downloadAllIndividually(items);
 }
 
 interface PublicLinkData {
@@ -159,10 +215,13 @@ async function verifyPurchase(
 }
 
 // Generate signed URLs via Edge Function (uses service_role_key server-side to bypass storage RLS).
+// The Edge Function is the source of truth for what's attached to the link — it joins
+// link_media → assets with service_role, which the anon client can't do (RLS hides
+// non-public assets). Building items from its response avoids losing rows when the
+// client-side join returns null.
 async function generateSignedUrls(
   linkId: string,
   sessionId: string,
-  items: ContentItem[],
 ): Promise<ContentItem[]> {
   try {
     const { data, error } = await supabase.functions.invoke('generate-signed-urls', {
@@ -171,38 +230,20 @@ async function generateSignedUrls(
 
     if (error || !data?.signedUrls) {
       console.error('[generateSignedUrls] Edge Function error:', error || 'no signedUrls');
-      return items.map((item) => ({ ...item, previewUrl: undefined }));
+      return [];
     }
 
     const signedUrls = data.signedUrls as { path: string; url: string | null; type: string }[];
 
-    // If items have storagePaths, match them to signed URLs
-    const urlMap = new Map<string, { url: string | null; type: string }>();
-    for (const entry of signedUrls) {
-      urlMap.set(entry.path, { url: entry.url, type: entry.type });
-    }
-
-    const matched = items.map((item) => {
-      if (!item.storagePath) return item;
-      const match = urlMap.get(item.storagePath);
-      return match ? { ...item, previewUrl: match.url ?? undefined, type: match.type as 'image' | 'video' } : item;
-    });
-
-    // If items were empty/placeholder but we got signed URLs, create items from them
-    const hasRealContent = matched.some((m) => m.previewUrl);
-    if (!hasRealContent && signedUrls.length > 0) {
-      return signedUrls.map((entry, idx) => ({
-        id: `signed-${idx}`,
-        type: (entry.type as 'image' | 'video') || 'image',
-        previewUrl: entry.url ?? undefined,
-        storagePath: entry.path,
-      }));
-    }
-
-    return matched;
+    return signedUrls.map((entry, idx) => ({
+      id: `signed-${idx}`,
+      type: (entry.type as 'image' | 'video') || 'image',
+      previewUrl: entry.url ?? undefined,
+      storagePath: entry.path,
+    }));
   } catch (err) {
     console.error('[generateSignedUrls] Unexpected error:', err);
-    return items.map((item) => ({ ...item, previewUrl: undefined }));
+    return [];
   }
 }
 
@@ -521,36 +562,36 @@ const PublicLink = () => {
         }
       }
 
-      // Fetch attached media from link_media (use anon to bypass RLS)
+      // Count attached media for the "N items to unlock" preview. We can't read
+      // the joined assets row here (anon RLS blocks non-public assets), so we
+      // just count link_media rows + the optional main file. The actual content
+      // (paths, mime types, signed URLs) comes from generate-signed-urls below
+      // once the purchase is verified — that runs with service_role and joins
+      // correctly.
       const { data: linkMedia } = await anonClient
         .from('link_media')
-        .select('asset_id, assets(storage_path, mime_type)')
+        .select('asset_id')
         .eq('link_id', data.id)
         .abortSignal(signal)
         .order('position', { ascending: true });
 
       const items: ContentItem[] = [];
 
-      // Add main content if exists
       if (data.storage_path) {
         const ext = data.storage_path.split('.').pop()?.toLowerCase() ?? '';
         const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
         items.push({ id: 'main', type: isVideo ? 'video' : 'image', storagePath: data.storage_path });
       }
 
-      // Add linked assets
       if (linkMedia && linkMedia.length > 0) {
         for (const lm of linkMedia) {
-          const asset = (lm as any).assets;
           items.push({
             id: lm.asset_id || `asset-${items.length}`,
-            type: (asset?.mime_type || '').startsWith('video/') ? 'video' : 'image',
-            storagePath: asset?.storage_path,
+            type: 'image',
           });
         }
       }
 
-      // If no content, show at least one placeholder card
       if (items.length === 0) {
         items.push({ id: 'placeholder', type: 'image' });
       }
@@ -560,7 +601,7 @@ const PublicLink = () => {
       // Generate signed URLs only if purchased (via Edge Function with service_role_key)
       const verificationId = autoUnlockPurchaseId || purchaseIdFromRef || legacySessionId;
       if (hasPurchased && verificationId) {
-        const unlocked = await generateSignedUrls(data.id, verificationId, items);
+        const unlocked = await generateSignedUrls(data.id, verificationId);
         setUnlockedContent(unlocked);
       }
 
@@ -1141,15 +1182,15 @@ const PublicLink = () => {
                     if (downloadable.length === 0) return;
                     if (downloadable.length === 1) {
                       downloadFile(downloadable[0].previewUrl!);
-                    } else {
-                      downloadAllAsZip(
-                        downloadable.map((item, idx) => ({
-                          url: item.previewUrl!,
-                          filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
-                        })),
-                        link.title || 'exclu-content',
-                      );
+                      return;
                     }
+                    downloadBundle(
+                      downloadable.map((item, idx) => ({
+                        url: item.previewUrl!,
+                        filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
+                      })),
+                      link.title || 'exclu-content',
+                    );
                   }}
                   className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white text-black text-xs font-semibold hover:bg-white/90 transition-all active:scale-95 shrink-0"
                 >
@@ -1244,15 +1285,15 @@ const PublicLink = () => {
                   if (downloadable.length === 0) return;
                   if (downloadable.length === 1) {
                     downloadFile(downloadable[0].previewUrl!);
-                  } else {
-                    downloadAllAsZip(
-                      downloadable.map((item, idx) => ({
-                        url: item.previewUrl!,
-                        filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
-                      })),
-                      link.title || 'exclu-content',
-                    );
+                    return;
                   }
+                  downloadBundle(
+                    downloadable.map((item, idx) => ({
+                      url: item.previewUrl!,
+                      filename: `${link.title || 'content'}-${idx + 1}.${item.previewUrl!.split('/').pop()?.split('?')[0]?.split('.').pop() || 'jpg'}`,
+                    })),
+                    link.title || 'exclu-content',
+                  );
                 }}
                 className="sm:hidden flex items-center justify-center gap-2 w-full py-3 rounded-full bg-white text-black text-sm font-semibold hover:bg-white/90 transition-all active:scale-95"
               >

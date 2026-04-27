@@ -154,39 +154,41 @@ serve(async (req: Request) => {
       }
     }
 
-    // Generate signed URLs using service role (bypasses RLS)
-    const signedUrls: { path: string; url: string | null; type: string }[] = [];
+    // Generate signed URLs using service role (bypasses RLS).
+    // Parallelized so 20+ attached files don't accumulate sequential round-trips.
+    const signedUrls = await Promise.all(
+      pathEntries.map(async (entry) => {
+        const isVideo = entry.mimeType
+          ? entry.mimeType.startsWith('video/')
+          : ['mp4', 'mov', 'webm', 'mkv'].includes(entry.path.split('.').pop()?.toLowerCase() ?? '');
 
-    for (const entry of pathEntries) {
-      const isVideo = entry.mimeType
-        ? entry.mimeType.startsWith('video/')
-        : ['mp4', 'mov', 'webm', 'mkv'].includes(entry.path.split('.').pop()?.toLowerCase() ?? '');
-
-      // Try path as-is, then fallback with/without 'paid-content/' prefix
-      let signedUrl: string | null = null;
-      const candidates = [entry.path];
-      if (entry.path.startsWith('paid-content/')) {
-        candidates.push(entry.path.slice('paid-content/'.length));
-      } else {
-        candidates.push('paid-content/' + entry.path);
-      }
-
-      for (const candidate of candidates) {
-        const { data: signed, error: signedError } = await supabase.storage
-          .from('paid-content')
-          .createSignedUrl(candidate, 15 * 60);
-
-        if (!signedError && signed?.signedUrl) {
-          signedUrl = signed.signedUrl;
-          break;
+        // Try path as-is, then fallback with/without 'paid-content/' prefix
+        const candidates = [entry.path];
+        if (entry.path.startsWith('paid-content/')) {
+          candidates.push(entry.path.slice('paid-content/'.length));
+        } else {
+          candidates.push('paid-content/' + entry.path);
         }
-      }
 
-      if (!signedUrl) {
-        console.error('Error signing (all variants failed)', entry.path);
-      }
-      signedUrls.push({ path: entry.path, url: signedUrl, type: isVideo ? 'video' : 'image' });
-    }
+        let signedUrl: string | null = null;
+        for (const candidate of candidates) {
+          const { data: signed, error: signedError } = await supabase.storage
+            .from('paid-content')
+            .createSignedUrl(candidate, 15 * 60);
+
+          if (!signedError && signed?.signedUrl) {
+            signedUrl = signed.signedUrl;
+            break;
+          }
+        }
+
+        if (!signedUrl) {
+          console.error('Error signing (all variants failed)', entry.path);
+        }
+
+        return { path: entry.path, url: signedUrl, type: isVideo ? 'video' : 'image' };
+      }),
+    );
 
     return new Response(JSON.stringify({ signedUrls }), {
       status: 200,
