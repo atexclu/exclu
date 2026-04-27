@@ -115,7 +115,12 @@ serve(async (req) => {
         creator_id: user.id,
         amount_cents: amountCents,
         currency: 'USD',
-        status: 'requested',
+        // CHECK constraint payouts_status_check (migration 112) only allows
+        // pending/approved/processing/completed/failed/rejected. Use 'pending'
+        // here — process-payout will flip it to 'completed' or 'rejected' and
+        // AdminPayments.tsx already groups 'pending'/'approved'/'processing'
+        // as "to review" in its UI.
+        status: 'pending',
         bank_account_type: profile.bank_account_type || 'iban',
         bank_iban: profile.bank_iban,
         bank_holder_name: profile.bank_holder_name,
