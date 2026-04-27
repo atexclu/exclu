@@ -20,8 +20,6 @@ if (!supabaseUrl || !supabaseServiceRoleKey) throw new Error('Missing PROJECT_UR
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-const ADMIN_EMAILS = ['atexclu@gmail.com', 'contact@exclu.at'];
-
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');
 const allowedOrigins = [
   siteUrl,
@@ -59,8 +57,14 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) return jsonError('Authentication required', 401, corsHeaders);
 
-    // Admin check
-    if (!ADMIN_EMAILS.includes(user.email ?? '')) {
+    // Admin check — use profiles.is_admin (same pattern as every other
+    // admin-* edge function) instead of a hardcoded email list.
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('id, is_admin')
+      .eq('id', user.id)
+      .single();
+    if (!adminProfile || adminProfile.is_admin !== true) {
       return jsonError('Admin access required', 403, corsHeaders);
     }
 
