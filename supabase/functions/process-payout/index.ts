@@ -31,9 +31,10 @@ const allowedOrigins = [
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') ?? '';
-  const allowed = allowedOrigins.includes(origin) ? origin : siteUrl;
+  const isAllowed = allowedOrigins.includes(origin)
+    || /^https:\/\/exclu-[a-z0-9-]+-atexclus-projects\.vercel\.app$/.test(origin);
   return {
-    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Origin': isAllowed ? origin : siteUrl,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   };
 }
@@ -94,12 +95,36 @@ serve(async (req) => {
     const creatorName = creatorProfile?.display_name || creatorProfile?.handle || creatorEmail || 'Creator';
 
     if (action === 'complete') {
-      // Increment the cumulative total-withdrawn tracker on the profile.
-      // (The wallet debit already happened at payout_hold time — no re-debit here.)
-      await supabase.rpc('increment_total_withdrawn', {
-        p_user_id: payout.creator_id,
-        p_amount_cents: payout.amount_cents,
-      });
+      // Detect legacy payouts (created before the wallet_transactions ledger
+      // existed). Migration 160 (`reconcile_wallets_ug_truth`) already
+      // counted these pending payouts into profiles.total_withdrawn_cents,
+      // so calling increment_total_withdrawn now would DOUBLE-COUNT and
+      // inflate total_withdrawn by the payout amount.
+      //
+      // We detect "legacy" via the absence of a `payout_hold` ledger row —
+      // post-refonte request-withdrawal always writes one before issuing
+      // the payout. If it's missing, the payout pre-dates the ledger.
+      const { data: holdRow } = await supabase
+        .from('wallet_transactions')
+        .select('id')
+        .eq('source_type', 'payout_hold')
+        .eq('source_id', payoutId)
+        .eq('direction', 'debit')
+        .maybeSingle();
+
+      if (holdRow) {
+        // Modern payout: bump the cumulative tracker. Wallet debit already
+        // happened at request-withdrawal time via the payout_hold row.
+        await supabase.rpc('increment_total_withdrawn', {
+          p_user_id: payout.creator_id,
+          p_amount_cents: payout.amount_cents,
+        });
+      } else {
+        console.warn(
+          `[process-payout] complete: no payout_hold ledger row for ${payoutId} ` +
+          `— skipping increment_total_withdrawn to avoid double-counting (migration 160 already reconciled).`,
+        );
+      }
 
       // Mark as completed
       const { error: updateErr } = await supabase
