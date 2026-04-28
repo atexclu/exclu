@@ -182,7 +182,8 @@ const DirectoryAgencies = () => {
         supabase
           .from('profiles')
           .select('id, agency_name, agency_logo_url, country, agency_pricing, agency_target_market, agency_services_offered, agency_platform_focus, agency_growth_strategy, model_categories')
-          .not('agency_name', 'is', null),
+          .not('agency_name', 'is', null)
+          .is('deleted_at', null),
       ]);
 
       const directoryAgencies: DirectoryAgency[] = (directoryRes.data || []).map((a: any) => ({
@@ -207,6 +208,7 @@ const DirectoryAgencies = () => {
             .select('id, is_directory_visible', { count: 'exact' })
             .eq('user_id', profile.id)
             .eq('is_active', true)
+            .is('deleted_at', null)
             .limit(1);
 
           // Skip if the primary profile is hidden

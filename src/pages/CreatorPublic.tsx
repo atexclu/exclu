@@ -134,6 +134,7 @@ const CreatorPublic = () => {
   const [isContentLoading, setIsContentLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeactivated, setIsDeactivated] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(false);
   const [creatorUserId, setCreatorUserId] = useState<string | null>(null);
   const [creatorProfileId, setCreatorProfileId] = useState<string | null>(null);
   const [agencyName, setAgencyName] = useState<string | null>(null);
@@ -311,13 +312,20 @@ const CreatorPublic = () => {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents, content_order')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, deleted_at, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents, content_order')
           .eq('username', handle)
           .maybeSingle();
 
         if (!isMounted) return;
 
         if (cpData) {
+          // Soft-deleted creator profile → show dedicated "no longer on Exclu" state.
+          if (cpData.deleted_at) {
+            setIsDeleted(true);
+            setIsLoading(false);
+            return;
+          }
+
           // Check if profile is deactivated (premium lapse)
           if (!cpData.is_active) {
             setIsDeactivated(true);
@@ -333,9 +341,18 @@ const CreatorPublic = () => {
           // Load account-level data (premium status, payout) from parent profiles row
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('is_creator_subscribed, payout_setup_complete')
+            .select('is_creator_subscribed, payout_setup_complete, deleted_at')
             .eq('id', cpData.user_id)
             .maybeSingle();
+
+          // Defensive: if the owning user has been soft-deleted but the
+          // creator_profiles row hasn't propagated the cascade yet, also
+          // render the dedicated deleted state.
+          if (parentProfile?.deleted_at) {
+            setIsDeleted(true);
+            setIsLoading(false);
+            return;
+          }
 
           if (!isMounted) return;
 
@@ -400,7 +417,7 @@ const CreatorPublic = () => {
         if (!profileData) {
           const { data: fallbackData, error: profileError } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url, bio, handle, location, is_creator, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
+            .select('id, display_name, avatar_url, bio, handle, location, is_creator, deleted_at, theme_color, aurora_gradient, social_links, is_creator_subscribed, show_join_banner, show_certification, show_deeplinks, show_available_now, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents')
             .eq('handle', handle)
             .maybeSingle();
 
@@ -410,6 +427,13 @@ const CreatorPublic = () => {
             setError('This creator profile is not available.');
             setProfile(null);
             setLinks([]);
+            setIsLoading(false);
+            return;
+          }
+
+          // Soft-deleted creator → render dedicated "no longer on Exclu" state.
+          if (fallbackData.deleted_at) {
+            setIsDeleted(true);
             setIsLoading(false);
             return;
           }
@@ -915,6 +939,29 @@ const CreatorPublic = () => {
   const showChatCta = profile?.chat_enabled === true;
   const tipPresets = [500, 1000, 2500, 5000];
   const showAgencyFooter = profile?.show_agency_branding !== false && (agencyName || agencyLogoUrl);
+
+  // ── Soft-deleted creator account ──
+  // Rendered before the generic error fallback so a deleted handle gets the
+  // dedicated message, while typos / never-existed handles keep the existing
+  // not-found behaviour.
+  if (isDeleted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-black via-exclu-ink to-black text-white flex items-center justify-center px-6 text-center">
+        <div className="max-w-md w-full">
+          <h1 className="text-2xl font-bold text-white mb-3">This creator is no longer on Exclu</h1>
+          <p className="text-sm text-white/60 leading-relaxed">
+            The account you're looking for has been deleted. If you were a subscriber, your access has ended and no further charges will be made.
+          </p>
+          <a
+            href="/directory/creators"
+            className="mt-6 inline-block text-sm text-white/70 hover:text-white underline underline-offset-4 transition-colors"
+          >
+            Discover other creators
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   // ── Deactivated profile page (premium lapse) ──
   if (isDeactivated && profile) {

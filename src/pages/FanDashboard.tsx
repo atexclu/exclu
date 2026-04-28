@@ -104,6 +104,7 @@ function RequestCreatorModal({ creatorId, onClose }: { creatorId: string; onClos
       .select('id')
       .eq('user_id', creatorId)
       .eq('is_active', true)
+      .is('deleted_at', null)
       .limit(1)
       .single()
       .then(({ data }) => {
@@ -203,6 +204,7 @@ const FanDashboard = () => {
           .select('id')
           .eq('handle', creatorFromSignup)
           .eq('is_creator', true)
+          .is('deleted_at', null)
           .maybeSingle();
 
         if (creatorProfile) {
@@ -289,6 +291,7 @@ const FanDashboard = () => {
       .from('creator_profiles')
       .select('id, user_id, username, display_name, avatar_url, model_categories')
       .eq('is_active', true)
+      .is('deleted_at', null)
       .not('avatar_url', 'is', null)
       .order('profile_view_count', { ascending: false });
     if (creatorsData) setDiscoveryCreators(creatorsData);

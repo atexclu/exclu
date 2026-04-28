@@ -56,6 +56,7 @@ const RequestSuccess = () => {
           .from('profiles')
           .select('id, display_name, avatar_url, handle')
           .eq('handle', handle)
+          .is('deleted_at', null)
           .maybeSingle();
         if (data) setCreator(data);
       }

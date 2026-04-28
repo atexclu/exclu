@@ -45,6 +45,7 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
         .select('id, user_id, username, display_name, avatar_url, profile_view_count')
         .eq('is_active', true)
         .eq('is_directory_visible', true)
+        .is('deleted_at', null)
         .not('username', 'is', null)
         .order('profile_view_count', { ascending: false })
         .limit(40);

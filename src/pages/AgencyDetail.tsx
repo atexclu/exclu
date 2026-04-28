@@ -92,7 +92,8 @@ const AgencyDetail = () => {
             .from('creator_profiles')
             .select('id, username, display_name, avatar_url, bio, niche')
             .in('id', dirAgency.creator_profile_ids)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .is('deleted_at', null);
 
           if (managedProfiles) setCreators(managedProfiles);
         }
@@ -101,7 +102,8 @@ const AgencyDetail = () => {
         const { data: profileAgencies } = await supabase
           .from('profiles')
           .select('id, agency_name, agency_logo_url, country, agency_pricing, agency_target_market, agency_services_offered, agency_platform_focus, agency_growth_strategy, model_categories')
-          .not('agency_name', 'is', null);
+          .not('agency_name', 'is', null)
+          .is('deleted_at', null);
 
         let foundProfile: typeof profileAgencies extends (infer T)[] | null ? T : never = null as any;
         if (profileAgencies) {
@@ -120,7 +122,8 @@ const AgencyDetail = () => {
             .from('creator_profiles')
             .select('id, username, display_name, avatar_url, bio, niche')
             .eq('user_id', foundProfile.id)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .is('deleted_at', null);
 
           setAgency({
             id: `profile-${foundProfile.id}`,

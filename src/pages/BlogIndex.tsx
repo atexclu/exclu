@@ -167,6 +167,7 @@ const BlogIndex = () => {
           .select('id, username, display_name, avatar_url, bio, niche, user_id, profile_view_count, is_directory_visible')
           .eq('is_active', true)
           .eq('is_directory_visible', true)
+          .is('deleted_at', null)
           .not('avatar_url', 'is', null)
           .order('profile_view_count', { ascending: false })
           .limit(50),

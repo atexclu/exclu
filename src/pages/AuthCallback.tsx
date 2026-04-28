@@ -99,6 +99,7 @@ const AuthCallback = () => {
         .select('id')
         .eq('handle', favoriteHandle)
         .eq('is_creator', true)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (creatorProfile) {

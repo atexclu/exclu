@@ -186,6 +186,7 @@ const DirectoryCreators = () => {
           .select('id, username, display_name, avatar_url, bio, country, city, niche, is_directory_visible, user_id, profile_view_count, model_categories')
           .eq('is_directory_visible', true)
           .eq('is_active', true)
+          .is('deleted_at', null)
           .not('avatar_url', 'is', null)
           .order('profile_view_count', { ascending: false }),
         supabase

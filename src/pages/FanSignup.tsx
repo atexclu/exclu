@@ -59,6 +59,7 @@ const FanSignup = () => {
         .select('id, display_name, avatar_url, handle')
         .eq('handle', creatorHandle)
         .eq('is_creator', true)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (data) {

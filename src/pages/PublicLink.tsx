@@ -379,6 +379,7 @@ const PublicLink = () => {
           .from('profiles')
           .select('id, display_name, handle, avatar_url, theme_color, aurora_gradient, bio, show_certification')
           .eq('id', data.creator_id)
+          .is('deleted_at', null)
           .abortSignal(signal)
           .maybeSingle();
         if (creatorProfile) {
