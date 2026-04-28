@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight, HelpCircle } from 'lucide-react';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -821,21 +821,34 @@ const AppDashboard = () => {
 
                 {/* Withdraw CTA — full-width mobile, right-aligned compact on desktop */}
                 <div className="flex flex-col items-stretch lg:items-end gap-1.5 w-full lg:w-auto">
-                  <button
-                    type="button"
-                    onClick={handleRequestWithdrawal}
-                    disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
-                    className="group relative w-full lg:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
-                  >
-                    {isRequestingWithdrawal ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
-                    ) : (
-                      <>
-                        <ArrowDownToLine className="w-4 h-4" />
-                        Withdraw {walletBalanceCents >= 5000 ? `$${(walletBalanceCents / 100).toFixed(2)}` : ''}
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-stretch gap-2 w-full lg:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleRequestWithdrawal}
+                      disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                      className="group relative flex-1 lg:flex-initial inline-flex items-center justify-center gap-2 rounded-2xl bg-[#CFFF16] px-6 py-3.5 text-sm font-bold text-black shadow-[0_10px_32px_-8px_rgba(207,255,22,0.5)] hover:shadow-[0_14px_40px_-8px_rgba(207,255,22,0.75)] hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:shadow-none"
+                    >
+                      {isRequestingWithdrawal ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                      ) : (
+                        <>
+                          <ArrowDownToLine className="w-4 h-4" />
+                          Withdraw {walletBalanceCents >= 5000 ? `$${(walletBalanceCents / 100).toFixed(2)}` : ''}
+                        </>
+                      )}
+                    </button>
+                    <a
+                      href="https://t.me/exclu_alternative"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Contact support"
+                      title="Contact support"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-border/60 bg-transparent px-3 py-3.5 text-xs font-medium text-foreground/60 dark:text-white/60 hover:text-foreground hover:bg-foreground/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <HelpCircle className="w-4 h-4" />
+                      <span className="hidden sm:inline">Support</span>
+                    </a>
+                  </div>
                   <p className="text-[10px] text-foreground/45 dark:text-white/45 tracking-wide text-center lg:text-right">
                     Min. <span className="text-foreground/75 dark:text-white/75 font-semibold">$50.00</span> · 3–5 business days
                   </p>

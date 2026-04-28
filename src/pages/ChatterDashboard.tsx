@@ -20,6 +20,7 @@ import {
   LogOut, UserCheck, ChevronDown, Check, BarChart3, MessageCircle,
   DollarSign, Users, Sun, Moon, ExternalLink, User, Camera, Megaphone, X,
   Lock, Mail, Settings, ChevronRight, Landmark, Wallet, Inbox, ArrowUpRight,
+  HelpCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -1573,33 +1574,46 @@ export default function ChatterDashboard() {
                         <p className="text-xs text-muted-foreground mb-3">
                           Minimum withdrawal: <span className="font-medium text-foreground">$50.00</span>. Funds typically arrive within 7 business days.
                         </p>
-                        <Button
-                          onClick={async () => {
-                            if (walletBalanceCents < 5000) { toast.error('Minimum withdrawal is $50.00'); return; }
-                            if (!payoutSetupComplete) { toast.error('Please set up your bank details first'); return; }
-                            setIsRequestingWithdrawal(true);
-                            try {
-                              const { data: { session } } = await supabase.auth.getSession();
-                              const { data, error } = await supabase.functions.invoke('request-withdrawal', {
-                                body: {},
-                                headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-                              });
-                              if (error || !(data as any)?.success) throw new Error((data as any)?.error || 'Failed');
-                              toast.success('Withdrawal requested! You will receive your funds within 7 business days.');
-                              if ((data as any)?.new_balance !== undefined) setWalletBalanceCents((data as any).new_balance);
-                              const { data: refreshed } = await supabase.from('payouts').select('id, amount_cents, status, created_at, requested_at, processed_at').eq('creator_id', currentUserId!).order('created_at', { ascending: false }).limit(20);
-                              if (refreshed) setWalletPayouts(refreshed);
-                            } catch (err: any) {
-                              toast.error(err?.message || 'Unable to request withdrawal');
-                            } finally {
-                              setIsRequestingWithdrawal(false);
-                            }
-                          }}
-                          disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
-                          className="w-full sm:w-auto rounded-xl gap-2"
-                        >
-                          {isRequestingWithdrawal ? <><Loader2 className="w-4 h-4 animate-spin" />Processing...</> : <>Request Withdrawal — ${(walletBalanceCents / 100).toFixed(2)}</>}
-                        </Button>
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                          <Button
+                            onClick={async () => {
+                              if (walletBalanceCents < 5000) { toast.error('Minimum withdrawal is $50.00'); return; }
+                              if (!payoutSetupComplete) { toast.error('Please set up your bank details first'); return; }
+                              setIsRequestingWithdrawal(true);
+                              try {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                const { data, error } = await supabase.functions.invoke('request-withdrawal', {
+                                  body: {},
+                                  headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+                                });
+                                if (error || !(data as any)?.success) throw new Error((data as any)?.error || 'Failed');
+                                toast.success('Withdrawal requested! You will receive your funds within 7 business days.');
+                                if ((data as any)?.new_balance !== undefined) setWalletBalanceCents((data as any).new_balance);
+                                const { data: refreshed } = await supabase.from('payouts').select('id, amount_cents, status, created_at, requested_at, processed_at').eq('creator_id', currentUserId!).order('created_at', { ascending: false }).limit(20);
+                                if (refreshed) setWalletPayouts(refreshed);
+                              } catch (err: any) {
+                                toast.error(err?.message || 'Unable to request withdrawal');
+                              } finally {
+                                setIsRequestingWithdrawal(false);
+                              }
+                            }}
+                            disabled={isRequestingWithdrawal || walletBalanceCents < 5000 || !payoutSetupComplete}
+                            className="w-full sm:w-auto rounded-xl gap-2"
+                          >
+                            {isRequestingWithdrawal ? <><Loader2 className="w-4 h-4 animate-spin" />Processing...</> : <>Request Withdrawal — ${(walletBalanceCents / 100).toFixed(2)}</>}
+                          </Button>
+                          <a
+                            href="https://t.me/exclu_alternative"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Contact support"
+                            title="Contact support"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/60 bg-transparent px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+                          >
+                            <HelpCircle className="w-4 h-4" />
+                            Support
+                          </a>
+                        </div>
                       </div>
 
                       {/* Withdrawal history */}
