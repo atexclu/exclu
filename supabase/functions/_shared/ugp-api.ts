@@ -40,9 +40,19 @@ export class UgpApiError extends Error {
     this.ugpResponse = ugpResponse;
   }
 
-  /** True if the transaction was already refunded (idempotent retry safe) */
+  /**
+   * True if the refund is a no-op because the money is already gone:
+   * - "already been refunded" — direct match.
+   * - "is already refunded" — alternate UG phrasing.
+   * - "CBK1 record" — chargeback already pulled funds back at the bank,
+   *   no platform-side refund possible (or needed).
+   * All three are safe to treat as soft-success and continue the flow.
+   */
   get isAlreadyProcessed(): boolean {
-    return this.message.toLowerCase().includes('already been refunded');
+    const m = this.message.toLowerCase();
+    return m.includes('already been refunded')
+      || m.includes('is already refunded')
+      || m.includes('cbk1 record');
   }
 }
 
