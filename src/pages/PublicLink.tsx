@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 import { Input } from '@/components/ui/input';
 import { PreCheckoutGate, isPreCheckoutReady, type PreCheckoutGateState } from '@/components/checkout/PreCheckoutGate';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -1220,10 +1221,10 @@ const PublicLink = () => {
                         className="relative"
                       >
                         {unlockedContent[activeMediaIndex]?.type === 'video' ? (
-                          <video
+                          <AdaptiveVideo
                             controls
-                            className="w-full block"
                             src={unlockedContent[activeMediaIndex]?.previewUrl}
+                            maxHeight="80vh"
                           />
                         ) : (
                           <img

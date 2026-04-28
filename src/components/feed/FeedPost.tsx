@@ -1,5 +1,6 @@
 import { Lock, Play, DollarSign, BadgeCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 
 /**
  * Two variants:
@@ -182,17 +183,18 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
       )}
 
       <div className="relative w-full overflow-hidden rounded-3xl border border-white/10 bg-black shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]">
+        {canPlayFull && isVideo ? (
+          <AdaptiveVideo
+            src={post.previewUrl!}
+            controls
+            playsInline
+            preload="metadata"
+            maxHeight="80vh"
+          />
+        ) : (
         <div className="relative aspect-[4/5] w-full overflow-hidden">
           {canPlayFull ? (
-            isVideo ? (
-              <video
-                src={post.previewUrl!}
-                className="h-full w-full object-cover"
-                controls
-                playsInline
-                preload="metadata"
-              />
-            ) : (
+            isVideo ? null : (
               <img
                 src={post.previewUrl!}
                 alt=""
@@ -262,15 +264,8 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
             </>
           )}
 
-          {/* Play-icon decoration for unlocked videos that haven't played yet */}
-          {canPlayFull && isVideo && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/50 backdrop-blur-sm">
-                <Play className="ml-0.5 h-5 w-5 text-white" fill="white" />
-              </div>
-            </div>
-          )}
         </div>
+        )}
       </div>
     </motion.article>
   );

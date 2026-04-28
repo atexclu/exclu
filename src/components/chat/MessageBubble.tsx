@@ -11,6 +11,7 @@ import { ExternalLink, UserCircle, Check, Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Message } from '@/types/chat';
 import StarBorder from '@/components/ui/StarBorder';
+import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 import { CustomRequestCard } from './CustomRequestCard';
 import { supabaseAnon } from '@/lib/supabaseClient';
 
@@ -88,9 +89,15 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
 
         {/* Image / video content */}
         {message.content_type === 'image' && message.content && (
-          <div className="rounded-2xl overflow-hidden max-w-[260px]">
+          <div className="overflow-hidden max-w-[260px]">
             {message.content.match(/\.(mp4|mov|webm|avi)$/i) ? (
-              <video src={message.content} controls className="w-full rounded-2xl" preload="metadata" />
+              <AdaptiveVideo
+                src={message.content}
+                controls
+                preload="metadata"
+                containerClassName="rounded-2xl"
+                maxHeight="60vh"
+              />
             ) : (
               <a href={message.content} target="_blank" rel="noopener noreferrer">
                 <img src={message.content} alt="" className="w-full rounded-2xl object-cover" loading="lazy" />

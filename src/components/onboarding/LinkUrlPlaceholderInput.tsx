@@ -26,7 +26,10 @@ const PLACEHOLDERS = [
   'Enter your MYM link',
 ];
 
-const CYCLE_MS = 1000;
+// The Icon_onboarding.gif file is 332 frames @ 40ms each = 13.28s for one
+// full loop covering 8 logos → ~1660ms per logo. Match that exactly so the
+// placeholder text stays in step with the visible logo at every cycle.
+const CYCLE_MS = 1660;
 
 interface Props {
   value: string;

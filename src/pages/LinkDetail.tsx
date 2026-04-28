@@ -1,5 +1,6 @@
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
+import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
 import { getSignedUrl } from '@/lib/storageUtils';
@@ -395,19 +396,21 @@ const LinkDetail = () => {
                 <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 px-4 pt-4 pb-2">Content</p>
                 
                 {contentPreviewUrl ? (
-                    <div className="relative h-64 sm:h-72 md:h-80">
+                    <div className="relative">
                       {link?.mime_type?.startsWith('video/') ? (
-                        <video
+                        <AdaptiveVideo
                           src={contentPreviewUrl}
-                          className="w-full h-full object-cover"
                           controls
+                          maxHeight="60vh"
                         />
                       ) : (
-                        <img
-                          src={contentPreviewUrl}
-                          className="w-full h-full object-cover"
-                          alt={link?.title || 'Content'}
-                        />
+                        <div className="relative h-64 sm:h-72 md:h-80">
+                          <img
+                            src={contentPreviewUrl}
+                            className="w-full h-full object-cover"
+                            alt={link?.title || 'Content'}
+                          />
+                        </div>
                       )}
                       <div className="absolute top-2 right-2 flex gap-2">
                         <Button

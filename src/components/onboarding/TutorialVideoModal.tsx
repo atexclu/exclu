@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 
 // Hosted on Supabase Storage public bucket so the 220 MB asset doesn't ship
 // with the build (GitHub blocks files >100 MB; Vercel deploys cap static
@@ -71,16 +72,17 @@ export function TutorialVideoModal({ open, onClose }: Props) {
         <X className="w-5 h-5" />
       </button>
       <div
-        className="relative h-[min(90vh,calc((100vw-2rem)*16/9))] aspect-[9/16] max-h-[90vh] rounded-2xl overflow-hidden shadow-2xl bg-black"
+        className="w-full max-w-2xl flex items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
-        <video
+        <AdaptiveVideo
           ref={videoRef}
           src={tutorialVideo}
           controls
           autoPlay
           playsInline
-          className="w-full h-full object-contain"
+          containerClassName="rounded-2xl shadow-2xl"
+          maxHeight="90vh"
         />
       </div>
     </div>
