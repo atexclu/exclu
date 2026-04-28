@@ -54,7 +54,7 @@ serve(async (req) => {
   let expiredRefunded = 0;
   let expiredFailed = 0;
   const { data: expired } = await sb.from('custom_requests')
-    .select('id, ugp_transaction_id, proposed_amount_cents, fan_id, fan_email, description, creator_id')
+    .select('id, ugp_transaction_id, ugp_mid, proposed_amount_cents, fan_id, fan_email, description, creator_id')
     .eq('status', 'pending')
     .lt('expires_at', new Date().toISOString())
     .limit(50);
@@ -70,7 +70,7 @@ serve(async (req) => {
 
     const refundAmount = (req.proposed_amount_cents + Math.round(req.proposed_amount_cents * 0.15)) / 100;
     try {
-      await ugpRefund(req.ugp_transaction_id, refundAmount);
+      await ugpRefund(req.ugp_transaction_id, refundAmount, req.ugp_mid as 'us_2d' | 'intl_3d' | null);
     } catch (err) {
       const ugpErr = err as UgpApiError;
       if (!ugpErr.isAlreadyProcessed) {

@@ -5,12 +5,18 @@
  * our MID; pre-auth/Capture/Void are not available, so the only API
  * money-movement call we need is `refundtransactions`.
  *
- * Required env vars:
- *   UGP_MERCHANT_ID    — Merchant ID for API authentication
- *   UGP_API_BEARER_TOKEN — OAuth Bearer token for API authentication
+ * Per-MID routing: each transaction is captured on a specific MID
+ * (us_2d for US/CA, intl_3d for the rest). Refunds MUST hit the same
+ * MID's API endpoint with that MID's credentials, otherwise the API
+ * returns "transaction not found". Callers pass the row's `ugp_mid`
+ * column; rows older than migration 164 (where the column was added)
+ * may have NULL — we default to `intl_3d` since that's the only MID
+ * that existed before per-MID routing.
  *
  * API Base: https://api.ugpayments.ch/merchants/{MerchantId}
  */
+
+import { getMidCredentials, type UgMidKey } from './ugRouting.ts';
 
 const UGP_API_BASE = 'https://api.ugpayments.ch/merchants';
 
@@ -40,22 +46,20 @@ export class UgpApiError extends Error {
   }
 }
 
-function getCredentials(): { merchantId: string; bearerToken: string } {
-  const merchantId = Deno.env.get('UGP_MERCHANT_ID');
-  const bearerToken = Deno.env.get('UGP_API_BEARER_TOKEN');
-
-  if (!merchantId || !bearerToken) {
-    throw new Error('Missing UGP_MERCHANT_ID or UGP_API_BEARER_TOKEN environment variables');
+function getCredentials(midKey: UgMidKey): { merchantId: string; bearerToken: string } {
+  const creds = getMidCredentials(midKey);
+  if (!creds.merchantId || !creds.oauthBearer) {
+    throw new Error(`Missing UG credentials for MID ${midKey} (merchantId or bearer token)`);
   }
-
-  return { merchantId, bearerToken };
+  return { merchantId: creds.merchantId, bearerToken: creds.oauthBearer };
 }
 
 async function callUgpApi(
   endpoint: string,
   body: Record<string, unknown>,
+  midKey: UgMidKey,
 ): Promise<UgpApiResponse> {
-  const { merchantId, bearerToken } = getCredentials();
+  const { merchantId, bearerToken } = getCredentials(midKey);
   const url = `${UGP_API_BASE}/${merchantId}/${endpoint}`;
 
   const res = await fetch(url, {
@@ -99,13 +103,17 @@ async function callUgpApi(
  *
  * @param referenceTransactionId - The TransactionID from the Sale
  * @param amountDecimal - Amount to refund (decimal, e.g. 20.00)
+ * @param midKey - Which MID processed the original sale; defaults to
+ *   `intl_3d` for legacy rows (pre-migration 164) where ugp_mid is NULL.
  */
 export async function ugpRefund(
   referenceTransactionId: string,
   amountDecimal: number,
+  midKey: UgMidKey | null | undefined = 'intl_3d',
 ): Promise<UgpApiResponse> {
+  const resolved: UgMidKey = midKey ?? 'intl_3d';
   return callUgpApi('refundtransactions', {
     referenceTransactionId,
     amount: amountDecimal,
-  });
+  }, resolved);
 }

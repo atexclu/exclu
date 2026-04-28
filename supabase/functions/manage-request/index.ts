@@ -87,7 +87,7 @@ serve(async (req) => {
     // Fetch the request — creator must own it
     const { data: request, error: reqErr } = await supabase
       .from('custom_requests')
-      .select('id, creator_id, fan_id, status, ugp_transaction_id, proposed_amount_cents, delivery_link_id, description, profile_id, fan_email')
+      .select('id, creator_id, fan_id, status, ugp_transaction_id, ugp_mid, proposed_amount_cents, delivery_link_id, description, profile_id, fan_email')
       .eq('id', requestId)
       .single();
 
@@ -259,8 +259,10 @@ serve(async (req) => {
       // already-refunded transactions.
       const refundAmount = (request.proposed_amount_cents + Math.round(request.proposed_amount_cents * 0.15)) / 100;
       try {
-        await ugpRefund(request.ugp_transaction_id, refundAmount);
-        console.log('UGP refund success for request:', requestId, '$', refundAmount);
+        // Pre-routing rows have ugp_mid = NULL — ugpRefund defaults to intl_3d
+        // (the only MID that existed before migration 164).
+        await ugpRefund(request.ugp_transaction_id, refundAmount, request.ugp_mid as 'us_2d' | 'intl_3d' | null);
+        console.log('UGP refund success for request:', requestId, '$', refundAmount, 'mid:', request.ugp_mid ?? 'intl_3d (legacy)');
       } catch (refundErr) {
         const ugpErr = refundErr as UgpApiError;
         if (ugpErr.isAlreadyProcessed) {
