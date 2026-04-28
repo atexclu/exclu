@@ -145,7 +145,6 @@ const FanDashboard = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [fanDisplayName, setFanDisplayName] = useState<string | null>(null);
   const [fanAvatarUrl, setFanAvatarUrl] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -515,24 +514,6 @@ const FanDashboard = () => {
     } catch (err) {
       console.error(err);
       toast.error('Unable to cancel right now');
-    }
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!userId) return;
-
-    try {
-      const { error } = await supabase.functions.invoke('delete-fan-account', {
-        body: { user_id: userId },
-      });
-
-      if (error) throw error;
-
-      await supabase.auth.signOut();
-      toast.success('Your account has been deleted');
-      navigate('/');
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to delete account');
     }
   };
 
@@ -1666,43 +1647,16 @@ const FanDashboard = () => {
                       Permanently delete your account and all associated data. This cannot be undone.
                     </p>
                   </div>
-                  {!showDeleteConfirm ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="rounded-xl border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                      Delete my account
-                    </Button>
-                  ) : (
-                    <div className="space-y-3">
-                      <p className="text-xs text-red-400 font-medium">
-                        Are you sure? This action is irreversible.
-                      </p>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="rounded-xl bg-red-600 hover:bg-red-700 text-white"
-                          onClick={handleDeleteAccount}
-                        >
-                          Yes, delete
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="rounded-xl border-border/60"
-                          onClick={() => setShowDeleteConfirm(false)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                    onClick={() => navigate('/fan/settings/delete-account')}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Delete my account
+                  </Button>
                 </div>
               </motion.div>
             )}

@@ -1425,6 +1425,21 @@ const Profile = () => {
                       </a>
                     </div>
                   </div>
+
+                  {/* Danger Zone */}
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5 sm:p-6">
+                    <h2 className="text-lg font-semibold text-red-400 mb-2">Danger Zone</h2>
+                    <p className="text-xs text-red-300/70 mb-5">
+                      Deleting your account is permanent and irreversible. You will lose access to your wallet balance and active subscriptions.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => navigate('/app/settings/delete-account')}
+                      className="rounded-full border-red-500/40 text-red-300 hover:bg-red-500/10"
+                    >
+                      Delete my account
+                    </Button>
+                  </div>
                 </motion.div>
               )}
             </div>

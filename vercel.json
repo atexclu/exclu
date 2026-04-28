@@ -79,6 +79,18 @@
       "destination": "/index.html"
     },
     {
+      "source": "/fan/settings/delete-account",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app/settings/delete-account",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app/chatter/delete-account",
+      "destination": "/index.html"
+    },
+    {
       "source": "/auth",
       "destination": "/index.html"
     },

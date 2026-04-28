@@ -75,6 +75,7 @@ import BlogArticle from './pages/BlogArticle';
 import BlogCategory from './pages/BlogCategory';
 import SSRBridge from './components/SSRBridge';
 import Pricing from './pages/Pricing';
+import DeleteAccount from './pages/DeleteAccount';
 
 const queryClient = new QueryClient();
 
@@ -238,6 +239,30 @@ const App = () => {
                     <ProtectedRoute>
                       <Profile />
                     </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/settings/delete-account"
+                  element={
+                    <ProtectedRoute>
+                      <DeleteAccount backUrl="/app/settings" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/chatter/delete-account"
+                  element={
+                    <ProtectedRoute>
+                      <DeleteAccount backUrl="/app/chatter" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/fan/settings/delete-account"
+                  element={
+                    <FanProtectedRoute>
+                      <DeleteAccount backUrl="/fan" />
+                    </FanProtectedRoute>
                   }
                 />
                 <Route

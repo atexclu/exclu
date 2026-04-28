@@ -758,6 +758,19 @@ export default function ChatterDashboard() {
               )}
             </motion.button>
 
+            {/* Account settings (delete account) */}
+            <motion.button
+              type="button"
+              onClick={() => navigate('/app/chatter/delete-account')}
+              className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full border border-border/60 bg-background hover:bg-muted transition-colors"
+              aria-label="Account settings"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            >
+              <Settings className="w-4 h-4 text-muted-foreground" />
+            </motion.button>
+
             {/* Logout button */}
             <motion.button
               type="button"
