@@ -13,6 +13,7 @@ import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ChatCustomRequest } from '@/components/chat/ChatCustomRequest';
 import type { Conversation } from '@/types/chat';
 import { useFanUnread } from '@/hooks/useFanUnread';
+import { DeletedUserBadge } from '@/components/DeletedUserBadge';
 
 interface FavoriteCreator {
   id: string;
@@ -39,6 +40,7 @@ interface TipRecord {
     display_name: string | null;
     handle: string | null;
     avatar_url: string | null;
+    deleted_at: string | null;
   };
 }
 
@@ -59,6 +61,7 @@ interface GiftRecord {
     display_name: string | null;
     handle: string | null;
     avatar_url: string | null;
+    deleted_at: string | null;
   };
 }
 
@@ -77,6 +80,7 @@ interface RequestRecord {
     display_name: string | null;
     handle: string | null;
     avatar_url: string | null;
+    deleted_at: string | null;
   };
 }
 
@@ -233,7 +237,7 @@ const FanDashboard = () => {
     setIsLoadingConversations(true);
     const { data } = await supabase
       .from('conversations')
-      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url)')
+      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url, deleted_at)')
       .eq('fan_id', uid)
       .in('status', ['unclaimed', 'active'])
       .order('last_message_at', { ascending: false, nullsFirst: false });
@@ -243,7 +247,7 @@ const FanDashboard = () => {
       const mapped: Conversation[] = data.map((c: any) => ({
         ...c,
         fan: c.creator_profile
-          ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url }
+          ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url, deleted_at: c.creator_profile.deleted_at ?? null }
           : null,
       }));
       setFanConversations(mapped);
@@ -299,7 +303,7 @@ const FanDashboard = () => {
     // Fetch tips
     const { data: tipsData } = await supabase
       .from('tips')
-      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, creator:profiles!tips_creator_id_fkey(display_name, handle, avatar_url)')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, creator:profiles!tips_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
       .eq('fan_id', uid)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -311,7 +315,7 @@ const FanDashboard = () => {
     // Fetch gifts
     const { data: giftsData } = await supabase
       .from('gift_purchases')
-      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, wishlist_item:wishlist_items!gift_purchases_wishlist_item_id_fkey(name, emoji, image_url), creator:profiles!gift_purchases_creator_id_fkey(display_name, handle, avatar_url)')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, wishlist_item:wishlist_items!gift_purchases_wishlist_item_id_fkey(name, emoji, image_url), creator:profiles!gift_purchases_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
       .eq('fan_id', uid)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -339,7 +343,7 @@ const FanDashboard = () => {
     // Fetch custom requests (exclude incomplete checkouts)
     const { data: reqData } = await supabase
       .from('custom_requests')
-      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, creator:profiles!creator_id(display_name, handle, avatar_url)')
+      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, creator:profiles!creator_id(display_name, handle, avatar_url, deleted_at)')
       .eq('fan_id', uid)
       .neq('status', 'pending_payment')
       .order('created_at', { ascending: false })
@@ -390,7 +394,7 @@ const FanDashboard = () => {
         // Fetch creator profiles
         const creatorIds = [...new Set((linksData ?? []).map((l: any) => l.creator_id))];
         const { data: creatorsData } = creatorIds.length > 0
-          ? await supabaseAnon.from('profiles').select('id, display_name, handle, avatar_url').in('id', creatorIds)
+          ? await supabaseAnon.from('profiles').select('id, display_name, handle, avatar_url, deleted_at').in('id', creatorIds)
           : { data: [] };
 
         const linksMap = new Map((linksData ?? []).map((l: any) => [l.id, l]));
@@ -554,7 +558,7 @@ const FanDashboard = () => {
     // Find or create conversation for this fan + creator
     const { data: existing } = await supabase
       .from('conversations')
-      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url)')
+      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url, deleted_at)')
       .eq('fan_id', userId)
       .in('status', ['unclaimed', 'active'])
       .limit(100);
@@ -565,7 +569,7 @@ const FanDashboard = () => {
     const mapped: Conversation[] = convs.map((c: any) => ({
       ...c,
       fan: c.creator_profile
-        ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url }
+        ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url, deleted_at: c.creator_profile.deleted_at ?? null }
         : null,
     }));
     setFanConversations(mapped);
@@ -1136,23 +1140,34 @@ const FanDashboard = () => {
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
-                                  {tip.creator.avatar_url ? (
-                                    <img src={tip.creator.avatar_url} alt="" className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
-                                      {(tip.creator.display_name || '?').charAt(0).toUpperCase()}
+                                {tip.creator?.deleted_at ? (
+                                  <DeletedUserBadge size="md" />
+                                ) : (
+                                  <>
+                                    <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                                      {tip.creator.avatar_url ? (
+                                        <img src={tip.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                          {(tip.creator.display_name || '?').charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium text-foreground">
-                                    {tip.creator.display_name || tip.creator.handle}
-                                  </p>
+                                    <div>
+                                      <p className="text-sm font-medium text-foreground">
+                                        {tip.creator.display_name || tip.creator.handle}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      </p>
+                                    </div>
+                                  </>
+                                )}
+                                {tip.creator?.deleted_at && (
                                   <p className="text-xs text-muted-foreground">
                                     {new Date(tip.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                   </p>
-                                </div>
+                                )}
                               </div>
                               <div className="text-right">
                                 <p className="text-lg font-bold text-foreground">
@@ -1206,9 +1221,15 @@ const FanDashboard = () => {
                                   <p className="text-sm font-medium text-foreground">
                                     {gift.wishlist_item?.name || 'Gift'}
                                   </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    to {gift.creator.display_name || gift.creator.handle} · {new Date(gift.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                  </p>
+                                  {gift.creator?.deleted_at ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      to <span className="italic">[Deleted user]</span> · {new Date(gift.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">
+                                      to {gift.creator.display_name || gift.creator.handle} · {new Date(gift.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="text-right">
@@ -1260,6 +1281,7 @@ const FanDashboard = () => {
                     )}
                     {!isLoadingConversations && fanConversations.map((conv) => {
                       const profile = conv.fan;
+                      const isDeleted = !!profile?.deleted_at;
                       const name = profile?.display_name || 'Creator';
                       return (
                         <button
@@ -1272,14 +1294,25 @@ const FanDashboard = () => {
                               : 'hover:bg-muted/60 border border-transparent'
                           }`}
                         >
-                          <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
-                            {profile?.avatar_url
-                              ? <img src={profile.avatar_url} alt={name} className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">{name.charAt(0)}</div>
-                            }
-                          </div>
+                          {isDeleted ? (
+                            <span
+                              aria-hidden
+                              className="w-9 h-9 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 flex-shrink-0 block"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0">
+                              {profile?.avatar_url
+                                ? <img src={profile.avatar_url} alt={name} className="w-full h-full object-cover" />
+                                : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">{name.charAt(0)}</div>
+                              }
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">{name}</p>
+                            {isDeleted ? (
+                              <p className="text-sm italic text-muted-foreground truncate">[Deleted user]</p>
+                            ) : (
+                              <p className="text-sm font-medium text-foreground truncate">{name}</p>
+                            )}
                             <p className="text-xs text-muted-foreground/60 truncate">
                               {conv.last_message_preview || 'Début de la conversation'}
                             </p>
@@ -1383,22 +1416,35 @@ const FanDashboard = () => {
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
-                                {purchase.creator?.avatar_url ? (
-                                  <img src={purchase.creator.avatar_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
-                                    {(purchase.creator?.display_name || '?').charAt(0).toUpperCase()}
-                                  </div>
-                                )}
-                              </div>
+                              {purchase.creator?.deleted_at ? (
+                                <span
+                                  aria-hidden
+                                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-zinc-700 to-zinc-900 flex-shrink-0 block"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                                  {purchase.creator?.avatar_url ? (
+                                    <img src={purchase.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                      {(purchase.creator?.display_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               <div>
                                 <p className="text-sm font-medium text-foreground">
                                   {purchase.link?.title || 'Unlocked content'}
                                 </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {purchase.creator?.display_name || purchase.creator?.handle || 'Creator'} · {new Date(purchase.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                </p>
+                                {purchase.creator?.deleted_at ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="italic">[Deleted user]</span> · {new Date(purchase.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">
+                                    {purchase.creator?.display_name || purchase.creator?.handle || 'Creator'} · {new Date(purchase.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
@@ -1447,23 +1493,40 @@ const FanDashboard = () => {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
-                              {req.creator.avatar_url ? (
-                                <img src={req.creator.avatar_url} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
-                                  {(req.creator.display_name || '?').charAt(0).toUpperCase()}
+                            {req.creator?.deleted_at ? (
+                              <>
+                                <span
+                                  aria-hidden
+                                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-zinc-700 to-zinc-900 flex-shrink-0 block"
+                                />
+                                <div>
+                                  <p className="text-sm italic text-muted-foreground">[Deleted user]</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
                                 </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground">
-                                {req.creator.display_name || req.creator.handle}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </p>
-                            </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 bg-exclu-ink flex-shrink-0">
+                                  {req.creator.avatar_url ? (
+                                    <img src={req.creator.avatar_url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-white/40 text-xs font-bold">
+                                      {(req.creator.display_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {req.creator.display_name || req.creator.handle}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(req.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </p>
+                                </div>
+                              </>
+                            )}
                           </div>
                           <div className="text-right flex-shrink-0">
                             <p className="text-sm font-bold text-foreground">

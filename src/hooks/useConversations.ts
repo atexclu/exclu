@@ -50,7 +50,7 @@ export function useConversations({
 
     let query = supabase
       .from('conversations')
-      .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url)')
+      .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, deleted_at)')
       .in('status', statusFilter)
       .order('is_pinned', { ascending: false })
       .order('last_message_at', { ascending: false, nullsFirst: false })

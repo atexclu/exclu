@@ -20,7 +20,7 @@ interface MessageBubbleProps {
   /** Right-align this message (creator/chatter = team side) */
   isTeam?: boolean;
   /** Avatar/name for team messages not sent by the current user */
-  teamSenderInfo?: { display_name: string | null; avatar_url: string | null } | null;
+  teamSenderInfo?: { display_name: string | null; avatar_url: string | null; deleted_at?: string | null } | null;
   conversationId?: string;
   viewerRole?: 'fan' | 'creator' | 'chatter';
   onDeliver?: (requestId: string) => void;
@@ -79,6 +79,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
   }
 
   const showTeamAvatar = rightAligned && !isOwn && !!teamSenderInfo;
+  const isTeamSenderDeleted = !!teamSenderInfo?.deleted_at;
   const senderInitial = (teamSenderInfo?.display_name ?? '?').charAt(0).toUpperCase();
 
   return (
@@ -132,18 +133,33 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
         {/* Footer: avatar + sender name + time — inline row below the bubble */}
         <div className={`flex items-center gap-1 mt-0.5 px-0.5 ${rightAligned ? 'flex-row-reverse' : 'flex-row'}`}>
           {showTeamAvatar && (
-            <div className="w-3 h-3 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
-              {teamSenderInfo?.avatar_url ? (
-                <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-[6px] font-bold text-muted-foreground">{senderInitial}</span>
-              )}
-            </div>
+            isTeamSenderDeleted ? (
+              <span
+                aria-hidden
+                className="w-3 h-3 rounded-full flex-shrink-0 bg-gradient-to-br from-zinc-700 to-zinc-900"
+              />
+            ) : (
+              <div className="w-3 h-3 rounded-full flex-shrink-0 overflow-hidden bg-muted border border-border flex items-center justify-center" title={teamSenderInfo?.display_name ?? undefined}>
+                {teamSenderInfo?.avatar_url ? (
+                  <img src={teamSenderInfo.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[6px] font-bold text-muted-foreground">{senderInitial}</span>
+                )}
+              </div>
+            )
           )}
-          {showTeamAvatar && teamSenderInfo?.display_name && (
-            <span className="text-[10px] font-medium text-muted-foreground/60">
-              {teamSenderInfo.display_name}
-            </span>
+          {showTeamAvatar && (
+            isTeamSenderDeleted ? (
+              <span className="text-[10px] font-medium italic text-muted-foreground/60">
+                [Deleted user]
+              </span>
+            ) : (
+              teamSenderInfo?.display_name && (
+                <span className="text-[10px] font-medium text-muted-foreground/60">
+                  {teamSenderInfo.display_name}
+                </span>
+              )
+            )
           )}
           <span className="text-[10px] text-muted-foreground/50">
             {formatTime(message.created_at)}

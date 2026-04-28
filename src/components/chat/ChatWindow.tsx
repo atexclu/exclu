@@ -26,6 +26,7 @@ import type { Conversation } from '@/types/chat';
 interface SenderProfile {
   display_name: string | null;
   avatar_url: string | null;
+  deleted_at?: string | null;
 }
 
 interface ChatWindowProps {
@@ -49,6 +50,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
   const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
+  const isDeletedFan = !!fan?.deleted_at;
   const fanName = isGuest
     ? (conversation.guest_display_name || 'Guest')
     : (fan?.display_name || 'Fan');
@@ -63,20 +65,21 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     is_premium: boolean;
     user_id: string;
     username: string | null;
+    deleted_at: string | null;
   } | null>(null);
 
   useEffect(() => {
     if (senderType !== 'fan') return;
     supabase
       .from('creator_profiles')
-      .select('location, show_available_now, tips_enabled, custom_requests_enabled, display_name, user_id, username')
+      .select('location, show_available_now, tips_enabled, custom_requests_enabled, display_name, user_id, username, deleted_at')
       .eq('id', conversation.profile_id)
       .single()
       .then(async ({ data }) => {
         if (!data) return;
         const { data: parent } = await supabase
           .from('profiles')
-          .select('is_creator_subscribed')
+          .select('is_creator_subscribed, deleted_at')
           .eq('id', data.user_id)
           .single();
         setCreatorInfo({
@@ -88,6 +91,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           is_premium: parent?.is_creator_subscribed === true,
           user_id: data.user_id,
           username: data.username,
+          deleted_at: data.deleted_at ?? parent?.deleted_at ?? null,
         });
       });
   }, [conversation.profile_id, senderType]);
@@ -136,11 +140,17 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     if (otherTeamSenderIds.length === 0) return;
     supabase
       .from('profiles')
-      .select('id, display_name, avatar_url')
+      .select('id, display_name, avatar_url, deleted_at')
       .in('id', otherTeamSenderIds)
       .then(({ data }) => {
         const map = new Map<string, SenderProfile>();
-        (data ?? []).forEach((p: any) => map.set(p.id, { display_name: p.display_name, avatar_url: p.avatar_url }));
+        (data ?? []).forEach((p: any) =>
+          map.set(p.id, {
+            display_name: p.display_name,
+            avatar_url: p.avatar_url,
+            deleted_at: p.deleted_at ?? null,
+          }),
+        );
         setSenderProfiles(map);
       });
   }, [otherTeamSenderIds.join(',')]);
@@ -234,31 +244,52 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
     setShowCreateLink(true);
   };
 
+  // Whether the counterpart in the conversation header is deleted.
+  // For fan view: `fan` is the creator profile (mapped in FanDashboard), and
+  // `creatorInfo.deleted_at` is the source of truth from creator_profiles.
+  // For creator/chatter view: `fan?.deleted_at` is the source of truth.
+  const isCounterpartDeleted =
+    senderType === 'fan' ? !!creatorInfo?.deleted_at : isDeletedFan;
+  const headerProfileLink = senderType === 'fan' && creatorInfo?.username && !isCounterpartDeleted
+    ? `/${creatorInfo.username}`
+    : null;
+
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden overflow-x-hidden">
       {/* Conversation header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border flex-shrink-0">
-        <div
-          className={`w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0 ${senderType === 'fan' && creatorInfo?.username ? 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}
-          onClick={() => { if (senderType === 'fan' && creatorInfo?.username) window.open(`/${creatorInfo.username}`, '_blank'); }}
-        >
-          {fan?.avatar_url ? (
-            <img src={fan.avatar_url} alt={fanName} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <User className="w-4 h-4 text-muted-foreground" />
-            </div>
-          )}
-        </div>
+        {isCounterpartDeleted ? (
+          <span
+            aria-hidden
+            className="w-9 h-9 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 flex-shrink-0 block"
+          />
+        ) : (
+          <div
+            className={`w-9 h-9 rounded-full overflow-hidden bg-muted border border-border flex-shrink-0 ${headerProfileLink ? 'cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}
+            onClick={() => { if (headerProfileLink) window.open(headerProfileLink, '_blank'); }}
+          >
+            {fan?.avatar_url ? (
+              <img src={fan.avatar_url} alt={fanName} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <User className="w-4 h-4 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
-            {isGuest && (
+            {isCounterpartDeleted ? (
+              <p className="text-sm italic text-muted-foreground truncate">[Deleted user]</p>
+            ) : (
+              <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
+            )}
+            {isGuest && !isCounterpartDeleted && (
               <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 flex-shrink-0">
                 Guest
               </span>
             )}
-            {senderType !== 'fan' && conversation.total_revenue_cents > 0 && (
+            {senderType !== 'fan' && !isCounterpartDeleted && conversation.total_revenue_cents > 0 && (
               <span className="text-[11px] text-green-400/70 flex-shrink-0">
                 ${(conversation.total_revenue_cents / 100).toFixed(2)}
               </span>
@@ -328,8 +359,8 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           </div>
         )}
 
-        {/* Action buttons — for fan */}
-        {senderType === 'fan' && creatorInfo && (
+        {/* Action buttons — for fan (hidden when creator account is deleted) */}
+        {senderType === 'fan' && creatorInfo && !isCounterpartDeleted && (
           <div className="flex items-center gap-2 flex-shrink-0">
             {creatorInfo.username && (
               <button
@@ -464,7 +495,7 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
           onChange={setDraft}
           onSend={handleSend}
           isSending={isSending || isUploading}
-          placeholder={`Reply to ${fanName}\u2026`}
+          placeholder={isCounterpartDeleted ? 'Reply\u2026' : `Reply to ${fanName}\u2026`}
           onMediaSelect={handleMediaSelect}
           hasPendingMedia={!!pendingMedia}
         />
