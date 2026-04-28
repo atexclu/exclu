@@ -153,6 +153,7 @@ serve(async (req) => {
       .from('profiles')
       .select('id, is_admin')
       .eq('id', user.id)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (adminProfileError) {

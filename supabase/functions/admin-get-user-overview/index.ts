@@ -259,6 +259,7 @@ serve(async (req) => {
       .from('profiles')
       .select('id, is_admin')
       .eq('id', user.id)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (adminProfileError) {
@@ -300,9 +301,10 @@ serve(async (req) => {
       supabaseAdmin
         .from('profiles')
         .select(
-          'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed',
+          'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed, deleted_at',
         )
         .eq('id', targetUserId)
+        .is('deleted_at', null)
         .maybeSingle(),
       supabaseAdmin
         .from('links')
@@ -345,6 +347,7 @@ serve(async (req) => {
         .select('is_directory_visible')
         .eq('user_id', targetUserId)
         .eq('is_active', true)
+        .is('deleted_at', null)
         .maybeSingle(),
       // All link IDs for this creator (used to scope the sales list properly).
       supabaseAdmin
@@ -360,6 +363,17 @@ serve(async (req) => {
       console.error('Error loading target profile in admin-get-user-overview', profileRes.error);
       return new Response(JSON.stringify({ error: 'Failed to load user profile' }), {
         status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Soft-delete guard: hide deleted users from the admin overview surface.
+    // The lookup query above already filters `deleted_at IS NULL`, but we
+    // also short-circuit explicitly here so callers see a clean 404 rather
+    // than a half-loaded payload built from sub-queries that don't filter.
+    if (!profileRes.data || (profileRes.data as any).deleted_at !== null) {
+      return new Response(JSON.stringify({ error: 'User not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

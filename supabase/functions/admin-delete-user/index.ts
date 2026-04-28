@@ -6,6 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-auth',
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// HARD-DELETE escape hatch (admin-only). Used for fraud, CSAM, or legal
+// compliance cases. The standard self-service path is the `delete-account`
+// edge function (soft-delete with full audit trail).
+//
+// This function:
+//   1. Purges all user data (storage, DB rows).
+//   2. Removes the account_deletion_audit row (FREES the email for re-signup).
+//   3. Deletes auth.users.
+//
+// Soft-deleted users can ALSO be hard-deleted through this path — operations
+// are idempotent (IF EXISTS / no-op behavior on already-deleted rows).
+// ─────────────────────────────────────────────────────────────────────────
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -41,10 +55,14 @@ serve(async (req) => {
       );
     }
 
+    // Admin must be active. (We do NOT filter the target user the same way —
+    // admins MUST be able to hard-delete soft-deleted users; that's a key
+    // escape-hatch use case.)
     const { data: adminProfile } = await supabase
       .from('profiles')
       .select('is_admin')
       .eq('id', adminUser.id)
+      .is('deleted_at', null)
       .single();
 
     if (!adminProfile?.is_admin) {
@@ -165,6 +183,17 @@ serve(async (req) => {
       } catch (err) {
         console.warn(`[admin-delete-user] Ignored error for table ${table.name}:`, err);
       }
+    }
+
+    // Remove account_deletion_audit row (frees the email for re-signup).
+    // This is INTENTIONAL behavior: hard-delete is the only path that frees a
+    // previously-deleted email. The check_email_not_deleted_trigger reads
+    // account_deletion_audit.email_hash, so wiping the row also lifts the
+    // re-signup ban for that email.
+    try {
+      await supabase.from('account_deletion_audit').delete().eq('user_id', user_id);
+    } catch (err) {
+      console.warn('[admin-delete-user] Failed to remove audit row:', err);
     }
 
     // --- 4. AUTH USER DELETION ---

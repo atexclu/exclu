@@ -81,6 +81,7 @@ serve(async (req) => {
       .from('profiles')
       .select('id, is_admin')
       .eq('id', user.id)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (!adminProfile || adminProfile.is_admin !== true) {
@@ -121,6 +122,7 @@ serve(async (req) => {
       const { data: batch, error: batchError } = await supabaseAdmin
         .from('profiles')
         .select('id, handle, display_name, country, is_creator, is_admin, agency_name, created_at, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, is_creator_subscribed, bank_country, role')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(pageStart, pageStart + PAGE_SIZE - 1);
 

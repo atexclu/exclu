@@ -117,6 +117,7 @@ serve(async (req) => {
       .from('profiles')
       .select('id, is_admin')
       .eq('id', user.id)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (adminProfileError) {
@@ -139,6 +140,32 @@ serve(async (req) => {
 
     if (!targetUserId) {
       return new Response(JSON.stringify({ error: 'Missing user_id in request body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Refuse impersonation of soft-deleted users. The auth.users row may still
+    // exist (we ban it but don't hard-delete during soft-delete) but a deleted
+    // account must NEVER be re-entered, even by an admin — that would defeat
+    // the RGPD soft-delete contract.
+    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin
+      .from('profiles')
+      .select('id, deleted_at')
+      .eq('id', targetUserId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (targetProfileError) {
+      console.error('Error loading target profile in admin-impersonate-user', targetProfileError);
+      return new Response(JSON.stringify({ error: 'Unable to verify target user' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!targetProfile) {
+      return new Response(JSON.stringify({ error: 'Cannot impersonate a deleted user' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
