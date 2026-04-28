@@ -52,6 +52,7 @@ export function useConversations({
       .from('conversations')
       .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, deleted_at)')
       .in('status', statusFilter)
+      .is('creator_deleted_at', null)
       .order('is_pinned', { ascending: false })
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .limit(200);

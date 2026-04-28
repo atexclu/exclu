@@ -238,6 +238,7 @@ const FanDashboard = () => {
       .from('conversations')
       .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url, deleted_at)')
       .eq('fan_id', uid)
+      .is('fan_deleted_at', null)
       .in('status', ['unclaimed', 'active'])
       .order('last_message_at', { ascending: false, nullsFirst: false });
 

@@ -11,12 +11,11 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "api/_shared/**/*.{test,spec}.ts",
-      "supabase/functions/_shared/**/*.{test,spec}.ts",
+      "supabase/functions/_shared/ugp-api.test.ts",
     ],
-    // Server-side helpers (api/_shared/, supabase/functions/_shared/) use
-    // Node globals (AbortController, fetch, Response) and stub Deno.env;
-    // run them under Node to match runtime semantics. React tests stay on
-    // jsdom.
+    // Server-side helpers (api/_shared/, ugp-api.test.ts) use Node globals
+    // (AbortController, fetch, Response) and stub Deno.env; run them under
+    // Node to match runtime semantics. React tests stay on jsdom.
     environmentMatchGlobs: [
       ["api/_shared/**", "node"],
       ["supabase/functions/_shared/**", "node"],

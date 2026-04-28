@@ -25,6 +25,7 @@ export function useFanUnread(fanId: string | null): number {
         .from('conversations')
         .select('id, last_message_at')
         .eq('fan_id', fanId)
+        .is('fan_deleted_at', null)
         .not('last_message_at', 'is', null);
 
       if (!convos || convos.length === 0) {

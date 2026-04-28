@@ -288,6 +288,7 @@ export default function ChatterDashboard() {
         .select('*', { count: 'exact', head: true })
         .in('profile_id', profileIds)
         .eq('is_read', false)
+        .is('creator_deleted_at', null)
         .in('status', ['unclaimed', 'active']);
       setChatUnreadCount(count ?? 0);
     };
@@ -359,6 +360,7 @@ export default function ChatterDashboard() {
           .from('conversations')
           .select('id, status, total_revenue_cents, created_at, assigned_chatter_id')
           .in('profile_id', profileFilter)
+          .is('creator_deleted_at', null)
           .in('status', ['unclaimed', 'active']);
 
         const { data: convs } = await convsQuery;

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, User, Link2, DollarSign, MapPin, Heart, X, Compass } from 'lucide-react';
+import { Loader2, User, Link2, DollarSign, MapPin, Heart, X, Compass, MoreVertical, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { AnimatePresence } from 'framer-motion';
@@ -22,6 +22,22 @@ import { ChatTipForm } from './ChatTipForm';
 import { ChatRequestDelivery } from './ChatRequestDelivery';
 import { FanTagsRow } from './FanTagsRow';
 import type { Conversation } from '@/types/chat';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface SenderProfile {
   display_name: string | null;
@@ -46,6 +62,31 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
   const [deliveryRequestId, setDeliveryRequestId] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ url: string; isVideo: boolean } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingConv, setIsDeletingConv] = useState(false);
+
+  const handleDeleteConversation = async () => {
+    setIsDeletingConv(true);
+    try {
+      const { error } = await supabase.rpc('delete_conversation_for_self', {
+        p_conversation_id: conversation.id,
+      });
+      if (error) throw error;
+      toast.success('Conversation removed from your inbox');
+      setShowDeleteConfirm(false);
+      // Navigate away — the hook list will refetch and exclude this conv
+      if (senderType === 'fan') {
+        navigate('/fan');
+      } else {
+        navigate('/app/chat');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to delete conversation';
+      toast.error(msg);
+    } finally {
+      setIsDeletingConv(false);
+    }
+  };
   const bottomRef = useRef<HTMLDivElement>(null);
   const [senderProfiles, setSenderProfiles] = useState<Map<string, SenderProfile>>(new Map());
   const fan = conversation.fan;
@@ -395,7 +436,51 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
             )}
           </div>
         )}
+
+        {/* Kebab menu — delete conversation (both sides) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="p-2 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+              aria-label="Conversation options"
+            >
+              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-red-400 focus:text-red-400 focus:bg-red-500/10 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete conversation
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      {/* Delete-conversation confirmation */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The conversation will be removed from your inbox. The other party will still see it on their side. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingConv}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConversation}
+              disabled={isDeletingConv}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingConv ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Messages — scrollable */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-1">

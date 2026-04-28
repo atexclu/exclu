@@ -102,7 +102,8 @@ export function BroadcastPanel({ profileId: propProfileId, profileIds: propProfi
       let query = supabase
         .from('conversations')
         .select('id', { count: 'exact', head: true })
-        .in('profile_id', resolvedProfileIds);
+        .in('profile_id', resolvedProfileIds)
+        .is('creator_deleted_at', null);
 
       if (audienceFilter === 'active') {
         query = query.eq('status', 'active');
@@ -174,7 +175,8 @@ export function BroadcastPanel({ profileId: propProfileId, profileIds: propProfi
       let convQuery = supabase
         .from('conversations')
         .select('id, fan_id')
-        .in('profile_id', resolvedProfileIds);
+        .in('profile_id', resolvedProfileIds)
+        .is('creator_deleted_at', null);
 
       if (audienceFilter === 'active') {
         convQuery = convQuery.eq('status', 'active');

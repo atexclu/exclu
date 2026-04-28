@@ -27,6 +27,7 @@ export function useChatUnread(profileId: string | null): number {
         .select('*', { count: 'exact', head: true })
         .eq('profile_id', profileId)
         .eq('is_read', false)
+        .is('creator_deleted_at', null)
         .in('status', ['unclaimed', 'active']);
 
       setUnreadCount(count ?? 0);
