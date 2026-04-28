@@ -7,7 +7,7 @@ const Terms = () => {
       <Navbar />
       <main className="max-w-4xl mx-auto px-6 pt-32 pb-16">
         <h1 className="text-3xl sm:text-4xl font-extrabold text-exclu-cloud mb-2">Terms of Service</h1>
-        <p className="text-exclu-space/60 text-sm mb-10">Last updated: April 23, 2026 — Effective immediately</p>
+        <p className="text-exclu-space/60 text-sm mb-10">Last updated: April 27, 2026 — Effective immediately</p>
 
         <div className="prose prose-invert prose-sm max-w-none space-y-8 text-exclu-space/90 [&_h2]:text-exclu-cloud [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-10 [&_h2]:mb-4 [&_h3]:text-exclu-cloud [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_strong]:text-exclu-cloud [&_a]:text-[#CFFF16] [&_a]:no-underline hover:[&_a]:underline [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:space-y-1">
 
@@ -207,7 +207,43 @@ const Terms = () => {
           <h2>22. Changes to These Terms</h2>
           <p>We may modify these Terms at any time. Material changes will be communicated via email to registered users at least fifteen (15) days before they take effect. Non-material changes become effective immediately upon posting. Your continued use of Exclu after changes take effect constitutes your acceptance of the revised Terms. If you do not agree to the revised Terms, your sole remedy is to stop using Exclu and request account deletion.</p>
 
-          <h2>23. Contact</h2>
+          <h2>23. Account Deletion</h2>
+          <p>You may delete your account at any time from your account Settings. Account deletion is <strong>immediate and irreversible</strong>.</p>
+
+          <h3>Pre-deletion requirements (Creators)</h3>
+          <ul>
+            <li>All pending custom requests must be resolved (accepted, declined, or expired).</li>
+            <li>All in-flight payouts must complete.</li>
+          </ul>
+
+          <h3>Wallet balance</h3>
+          <p>If you delete your account while your wallet contains funds, those funds are <strong>permanently forfeited</strong>. To withdraw your balance, request a payout before initiating account deletion.</p>
+
+          <h3>Active fan subscriptions (Creators)</h3>
+          <p>When you delete your account, all active fan subscriptions are canceled. Subscribers retain access until the end of their current billing period and are not charged again. They are notified by email.</p>
+
+          <h3>Active subscriptions (Fans)</h3>
+          <p>When you delete your account, all your active subscriptions to creators are canceled. You retain access until the end of each current billing period and are not charged again. No refunds are issued.</p>
+
+          <h3>Creator Pro subscription</h3>
+          <p>Pro subscriptions are canceled upon deletion with no prorated refund.</p>
+
+          <h3>Affiliate / referral commissions</h3>
+          <p>Future commissions stop accruing immediately upon account deletion. Commissions already credited to your wallet remain in the wallet (and are subject to the same forfeiture rule above if not withdrawn).</p>
+
+          <h3>Handle reservation</h3>
+          <p>Your handle (<code>@yourname</code>) is permanently reserved upon deletion and cannot be reused by you or any other user.</p>
+
+          <h3>Re-registration</h3>
+          <p>Once an account is deleted, the email address associated with it cannot be used to create a new Exclu account.</p>
+
+          <h3>Data retention</h3>
+          <p>In compliance with French accounting law (Code de commerce, Article L. 123-22), transactional data (sales, payouts, tips, custom requests, invoices) is retained for ten (10) years following account deletion. Personal data (display name, biography, avatar, photos, conversations) is hidden from all Exclu surfaces immediately upon deletion. Data is not transmitted to third parties. To exercise your right to deletion of personal data beyond legal retention requirements (RGPD Article 17), contact <a href="mailto:privacy@exclu.at">privacy@exclu.at</a>.</p>
+
+          <h3>Administrative deletion</h3>
+          <p>Exclu reserves the right to delete accounts that violate these Terms. Administrative deletion follows the same data retention rules.</p>
+
+          <h2>24. Contact</h2>
           <p>For questions or concerns regarding these Terms, please contact us at:</p>
           <p>
             <strong>FRANCEPRODUCT SAS</strong><br />
