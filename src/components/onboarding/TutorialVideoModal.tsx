@@ -9,7 +9,13 @@
 
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
-import tutorialVideo from '@/assets/onboarding/tutorial.mp4';
+
+// Hosted on Supabase Storage public bucket so the 220 MB asset doesn't ship
+// with the build (GitHub blocks files >100 MB; Vercel deploys cap static
+// asset payloads). The URL is permanent — replace via the upload script
+// scripts/upload-tutorial-to-storage.mjs if the file ever changes.
+const tutorialVideo =
+  'https://qexnwezetjlbwltyccks.supabase.co/storage/v1/object/public/public-assets/onboarding/tutorial.mp4';
 
 interface Props {
   open: boolean;
