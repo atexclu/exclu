@@ -254,7 +254,13 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
       })
     );
 
-    setContents(withPreviews as PublicContent[]);
+    // Hide orphan assets whose storage file is missing (the cleanup happens in
+    // ContentLibrary.tsx; here we just don't render them in the editor panel).
+    const visible = (withPreviews as PublicContent[]).filter(
+      (c) => !c.storage_path || c.previewUrl,
+    );
+
+    setContents(visible);
     setIsLoading(false);
 
     // Backfill blur previews for legacy public assets that pre-date the Feed
@@ -262,7 +268,7 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
     // public profile renders them as a plain ambient wash (looks "unblurred").
     // Fire-and-forget: each generation runs in the background and updates
     // local state as it completes so the panel reflects reality.
-    const missingBlur = (withPreviews as PublicContent[]).filter(
+    const missingBlur = visible.filter(
       (c) => c.is_public && !c.feed_blur_path && c.storage_path,
     );
     if (missingBlur.length > 0) {

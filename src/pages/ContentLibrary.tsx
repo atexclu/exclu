@@ -101,17 +101,33 @@ const ContentLibrary = () => {
             if (!asset.storage_path) return { ...asset, previewUrl: null };
 
             const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
-
-            if (!previewUrl) {
-              console.error('Error generating preview URL for asset', asset.id);
-              return { ...asset, previewUrl: null };
-            }
-
             return { ...asset, previewUrl };
           })
         );
 
-        setAssets(withPreviews);
+        // Self-heal orphans: an asset whose storage_path resolves to no signed
+        // URL means the underlying storage file is gone (deleted manually or by
+        // a past bug). The DB row is now useless — soft-delete it so it stops
+        // showing up here and stops generating 400s. RLS allows creators to
+        // update their own assets.
+        const orphanIds = withPreviews
+          .filter((a) => a.storage_path && !a.previewUrl)
+          .map((a) => a.id);
+        if (orphanIds.length > 0) {
+          const { error: cleanErr } = await supabase
+            .from('assets')
+            .update({ deleted_at: new Date().toISOString() })
+            .in('id', orphanIds);
+          if (cleanErr) {
+            console.warn('[ContentLibrary] Failed to soft-delete orphan assets', cleanErr);
+          } else {
+            console.warn(`[ContentLibrary] Auto-cleaned ${orphanIds.length} orphan asset row(s) whose storage files were missing.`);
+          }
+        }
+
+        // Hide assets without a usable preview from the library.
+        const displayed = withPreviews.filter((a) => !a.storage_path || a.previewUrl);
+        setAssets(displayed);
       }
 
       setIsLoading(false);
