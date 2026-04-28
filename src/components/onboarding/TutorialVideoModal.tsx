@@ -71,7 +71,7 @@ export function TutorialVideoModal({ open, onClose }: Props) {
         <X className="w-5 h-5" />
       </button>
       <div
-        className="w-full max-w-4xl aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black"
+        className="relative h-[min(90vh,calc((100vw-2rem)*16/9))] aspect-[9/16] max-h-[90vh] rounded-2xl overflow-hidden shadow-2xl bg-black"
         onClick={(e) => e.stopPropagation()}
       >
         <video
@@ -80,7 +80,7 @@ export function TutorialVideoModal({ open, onClose }: Props) {
           controls
           autoPlay
           playsInline
-          className="w-full h-full"
+          className="w-full h-full object-contain"
         />
       </div>
     </div>
