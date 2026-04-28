@@ -322,7 +322,7 @@ const LinkDetail = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="rounded-full text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10 w-full sm:w-auto"
+                  className="hidden sm:inline-flex rounded-full text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10"
                   onClick={handleDelete}
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1.5" />
@@ -566,6 +566,23 @@ const LinkDetail = () => {
               </CardContent>
             </Card>
           </motion.div>
+        )}
+
+        {link && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5 mt-6 sm:hidden">
+            <h2 className="text-lg font-semibold text-red-400 mb-2">Danger Zone</h2>
+            <p className="text-xs text-red-300/70 mb-5">
+              Deleting this link is permanent and cannot be undone. The associated content remains in your library.
+            </p>
+            <Button
+              variant="outline"
+              onClick={handleDelete}
+              className="rounded-full border-red-500/40 text-red-300 hover:bg-red-500/10 w-full"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete this link
+            </Button>
+          </div>
         )}
       </main>
     </AppShell>
