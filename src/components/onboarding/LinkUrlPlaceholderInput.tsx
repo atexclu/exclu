@@ -1,35 +1,14 @@
 /**
  * LinkUrlPlaceholderInput
  *
- * URL input with a multi-platform animated GIF on the left and a placeholder
- * that cycles through the same platforms every ~1s, in sync with the GIF.
- *
- * Sync note: the GIF cycles independently in the browser; we have no JS hook
- * to read its current frame. The interval starts at component mount, same
- * moment the GIF starts playing, so they stay roughly in sync. Drift over
- * time is acceptable given the GIF and the placeholder change at the same
- * 1s cadence (the user explicitly accepted "approximately 1s").
+ * URL input with the multi-platform animated GIF on the left and a static
+ * "Enter your link" placeholder. The cycling-platform placeholder was
+ * removed because the gif's frame timing didn't align with a JS interval
+ * cleanly; the gif still does the visual cue on its own.
  */
 
-import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import iconGif from '@/assets/onboarding/Icon_onboarding.gif';
-
-const PLACEHOLDERS = [
-  'Enter your Onlyfan link',
-  'Enter your Patreon link',
-  'Enter your Fanvue link',
-  'Enter your Exclu link',
-  'Enter your Telegram link',
-  'Enter your Fansly link',
-  'Enter your Manyvids link',
-  'Enter your MYM link',
-];
-
-// The Icon_onboarding.gif file is 332 frames @ 40ms each = 13.28s for one
-// full loop covering 8 logos → ~1660ms per logo. Match that exactly so the
-// placeholder text stays in step with the visible logo at every cycle.
-const CYCLE_MS = 1660;
 
 interface Props {
   value: string;
@@ -46,15 +25,6 @@ export function LinkUrlPlaceholderInput({
   id,
   ariaLabel,
 }: Props) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setIndex((i) => (i + 1) % PLACEHOLDERS.length);
-    }, CYCLE_MS);
-    return () => window.clearInterval(interval);
-  }, []);
-
   return (
     <div className="relative">
       <img
@@ -68,7 +38,7 @@ export function LinkUrlPlaceholderInput({
         type="url"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={PLACEHOLDERS[index]}
+        placeholder="Enter your link"
         aria-label={ariaLabel}
         className={`pl-10 ${className}`}
       />
