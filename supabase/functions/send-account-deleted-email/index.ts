@@ -98,7 +98,7 @@ serve(async (req) => {
       html = rendered.html;
       tags = ['account-deletion', 'support-alert'];
     } else {
-      const accountType = ((body as ConfirmationPayload).account_type ?? 'user').toString();
+      const accountType = ((body as ConfirmationPayload).account_type ?? 'fan').toString();
       const rendered = ACCOUNT_DELETED_CONFIRMATION({ accountType });
       subject = rendered.subject;
       html = rendered.html;

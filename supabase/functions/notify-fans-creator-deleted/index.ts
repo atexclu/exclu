@@ -19,9 +19,17 @@
  * creator_profiles owned by that user. Platform-level rate limiting +
  * idempotency guards protect against abuse / replay.
  *
+ * **Single-caller invariant**: this function MUST NOT be invoked
+ * concurrently for the same user_id. The single caller is `delete-account`
+ * which is action-idempotent. Concurrent invocations could cause duplicate
+ * fan emails despite the per-row `deletion_email_sent_at` guard (the row
+ * UPDATE filter narrows the window but does not eliminate a
+ * read-Brevo-send-then-write race between two parallel callers).
+ *
  * MVP limit: `auth.admin.listUsers({ perPage: 1000 })` is used to resolve
  * fan emails. If a single creator has more than 1000 distinct fans on the
- * platform, this lookup will be incomplete.
+ * platform, this lookup will be incomplete — we log a console.error if
+ * the page returns exactly 1000 rows so we notice in production logs.
  * TODO(scale): add pagination over auth.admin.listUsers if any creator
  * exceeds ~1000 fans. Today this is well under any real creator's reach.
  */
@@ -146,6 +154,11 @@ serve(async (req) => {
       console.error('[notify-fans-creator-deleted] auth.admin.listUsers failed', listErr);
       return jsonResponse({ error: 'Auth lookup failed' }, 500);
     }
+    if ((usersPage?.users?.length ?? 0) === 1000) {
+      console.error(
+        `[notify-fans-creator-deleted] WARNING: listUsers returned 1000 results — pagination needed for user_id=${userId}`,
+      );
+    }
     const emailByUserId = new Map<string, string>();
     for (const u of usersPage?.users ?? []) {
       if (u.id && u.email) emailByUserId.set(u.id, u.email);
@@ -208,10 +221,15 @@ serve(async (req) => {
 
             // Mark the row sent ONLY on a successful Brevo send so retries
             // can still pick up failed ones on a re-invocation.
+            // The `.is('deletion_email_sent_at', null)` guard narrows the
+            // race window if a parallel invocation already stamped the row
+            // (see single-caller invariant in top-of-file JSDoc — concurrent
+            // invocations are forbidden, but this filter is defense-in-depth).
             const { error: updErr } = await svc
               .from('fan_creator_subscriptions')
               .update({ deletion_email_sent_at: new Date().toISOString() })
-              .eq('id', sub.id);
+              .eq('id', sub.id)
+              .is('deletion_email_sent_at', null);
             if (updErr) {
               console.error(
                 '[notify-fans-creator-deleted] failed to mark sub as sent',
