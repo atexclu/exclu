@@ -120,11 +120,12 @@ const CreatorPublic = () => {
   // ?tab=feed is an alias for ?tab=content — the feed lives inside the
   // Content tab on the public profile.
   const initialTab: 'links' | 'content' | 'wishlist' = (() => {
-    if (typeof window === 'undefined') return 'links';
+    if (typeof window === 'undefined') return 'content';
     const t = new URLSearchParams(window.location.search).get('tab');
     if (t === 'content' || t === 'feed') return 'content';
     if (t === 'wishlist') return 'wishlist';
-    return 'links';
+    if (t === 'links') return 'links';
+    return 'content';
   })();
   const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>(initialTab);
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
@@ -598,6 +599,24 @@ const CreatorPublic = () => {
     });
     setFeedItems(preview ? [preview, ...nonPreview] : nonPreview);
   }, [publicContent, profile?.content_order]);
+
+  // Whether the Links tab has anything to show: either a direct link or a
+  // pinned "exclusive content" pill that lives at the top of the Links tab.
+  // Used to gate the Links tab button (hidden if both empty) and to bounce
+  // viewers off the Links tab if these become empty after navigation.
+  const hasExclusiveContent = !!(
+    profile?.exclusive_content_text ||
+    profile?.exclusive_content_link_id ||
+    profile?.exclusive_content_url ||
+    profile?.exclusive_content_image_url
+  );
+  const hasAnyLinksOrExclusive = links.length > 0 || hasExclusiveContent;
+
+  useEffect(() => {
+    if (activeTab === 'links' && !hasAnyLinksOrExclusive) {
+      setActiveTab('content');
+    }
+  }, [activeTab, hasAnyLinksOrExclusive]);
 
   // Lazy-sign full-res URLs only for the free preview (always) and when the
   // viewer is subscribed (everything else). By deferring this until the
@@ -1223,7 +1242,7 @@ const CreatorPublic = () => {
           {!showGuestChat && (links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
             <div className="relative mb-6">
               <div className="flex justify-center gap-8 relative">
-                {(links.length > 0 || publicContent.length > 0) && (
+                {hasAnyLinksOrExclusive && (
                   <button onClick={() => setActiveTab('links')} className={`relative py-3 text-sm font-medium transition-colors ${activeTab === 'links' ? 'text-white' : 'text-white/50 hover:text-white/70'}`}>
                     Links
                     {activeTab === 'links' && <motion.div layoutId="activeTabMobile" className="absolute -bottom-[1px] left-0 right-0 h-[2px] rounded-full z-10" style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }} transition={{ type: 'spring', stiffness: 300, damping: 30 }} />}
@@ -1706,7 +1725,7 @@ const CreatorPublic = () => {
                   {(links.length > 0 || publicContent.length > 0 || wishlistItems.length > 0) && (
                     <div className="relative px-6 pt-5">
                       <div className="flex gap-6 relative">
-                        {(links.length > 0 || publicContent.length > 0) && (
+                        {hasAnyLinksOrExclusive && (
                           <button onClick={() => setActiveTab('links')}
                             className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === 'links' ? 'text-white' : 'text-white/40 hover:text-white/70'}`}>
                             Links
