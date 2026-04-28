@@ -168,3 +168,6 @@ verify_jwt = false
 
 [functions.cancel-fan-subscription]
 verify_jwt = false
+
+[functions.pre-delete-check]
+verify_jwt = false
