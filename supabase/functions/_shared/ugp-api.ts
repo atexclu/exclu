@@ -16,7 +16,7 @@
  * API Base: https://api.ugpayments.ch/merchants/{MerchantId}
  */
 
-import { getMidCredentials, type UgMidKey } from './ugRouting.ts';
+import { type UgMidKey } from './ugRouting.ts';
 
 const UGP_API_BASE = 'https://api.ugpayments.ch/merchants';
 
@@ -46,12 +46,31 @@ export class UgpApiError extends Error {
   }
 }
 
+// Read ONLY the API credentials (merchantId + bearer) for a given MID.
+// We deliberately do NOT go through getMidCredentials() — that helper also
+// validates quickPayToken + siteId, which are checkout-only fields and
+// irrelevant for refunds. A partial env-var migration (where checkout creds
+// were renamed but bearer/merchant kept legacy names, or vice versa) used
+// to throw before reaching the API.
 function getCredentials(midKey: UgMidKey): { merchantId: string; bearerToken: string } {
-  const creds = getMidCredentials(midKey);
-  if (!creds.merchantId || !creds.oauthBearer) {
-    throw new Error(`Missing UG credentials for MID ${midKey} (merchantId or bearer token)`);
+  const prefix = midKey === 'us_2d' ? 'US_2D' : 'INTL_3D';
+  const legacy = midKey === 'intl_3d';
+  const merchantId =
+    Deno.env.get(`UGP_MID_${prefix}`) ??
+    (legacy ? Deno.env.get('UGP_MERCHANT_ID') ?? '' : '');
+  const bearerToken =
+    Deno.env.get(`UGP_API_BEARER_TOKEN_${prefix}`) ??
+    (legacy ? Deno.env.get('UGP_API_BEARER_TOKEN') ?? '' : '');
+
+  if (!merchantId || !bearerToken) {
+    throw new Error(
+      `Missing UG refund credentials for MID ${midKey} ` +
+      `(need UGP_MID_${prefix} + UGP_API_BEARER_TOKEN_${prefix}` +
+      (legacy ? ' or legacy UGP_MERCHANT_ID + UGP_API_BEARER_TOKEN' : '') +
+      ')',
+    );
   }
-  return { merchantId: creds.merchantId, bearerToken: creds.oauthBearer };
+  return { merchantId, bearerToken };
 }
 
 async function callUgpApi(

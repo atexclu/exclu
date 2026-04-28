@@ -271,7 +271,15 @@ serve(async (req) => {
           // Hard fail — do not flip status. The creator can retry, or admin
           // can intervene. Refunding is the load-bearing guarantee for the
           // fan, so we surface the error rather than silently mark refused.
-          console.error('UGP refund failed:', ugpErr.message);
+          console.error('UGP refund failed:', {
+            message: ugpErr.message,
+            httpStatus: ugpErr.httpStatus,
+            ugpResponse: ugpErr.ugpResponse,
+            requestId,
+            ugpTransactionId: request.ugp_transaction_id,
+            ugpMid: request.ugp_mid,
+            refundAmount,
+          });
           return jsonError('Refund failed; please retry. If this persists, contact support.', 502, corsHeaders);
         }
       }
