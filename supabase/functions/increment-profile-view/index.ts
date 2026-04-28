@@ -86,6 +86,23 @@ serve(async (req) => {
       });
     }
 
+    // Silent no-op if the creator's account has been soft-deleted. We return
+    // 200 (not 404/410) so old indexed URLs / cached HTML in the wild don't
+    // start erroring — the view simply doesn't get counted.
+    {
+      const { data: profileRow } = await supabaseAdmin
+        .from('profiles')
+        .select('id, deleted_at')
+        .eq('handle', handle)
+        .maybeSingle();
+      if (profileRow && profileRow.deleted_at) {
+        return new Response(JSON.stringify({ success: true, skipped: 'deleted_creator' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Single atomic RPC (migration 157). Replaces the previous 4-roundtrip
     // read-modify-write pattern that showed up as a CPU hotspot in the
     // 2026-04-21 incident postmortem (27k UPDATEs on profiles, 8k on

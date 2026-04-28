@@ -121,6 +121,15 @@ serve(async (req) => {
       .single();
 
     if (creatorError || !creator) return jsonError('Creator not found', 404, corsHeaders);
+
+    // Block tip if the creator's account has been soft-deleted (410 Gone).
+    {
+      const { data: isActive } = await supabase.rpc('is_user_active', {
+        check_user_id: creatorId,
+      });
+      if (!isActive) return jsonError('Creator unavailable', 410, corsHeaders);
+    }
+
     if (!creator.tips_enabled) return jsonError('This creator does not accept tips', 400, corsHeaders);
 
     const minTip = creator.min_tip_amount_cents || 500;

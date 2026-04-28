@@ -86,7 +86,7 @@ serve(async (req) => {
 
     const { data: link, error: linkError } = await supabaseAdmin
       .from('links')
-      .select('id, status, click_count')
+      .select('id, status, click_count, creator_id')
       .eq('slug', slug)
       .maybeSingle();
 
@@ -96,6 +96,21 @@ serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Silent no-op if the creator's account has been soft-deleted. We return
+    // 200 (not 404/410) so old indexed URLs / cached HTML in the wild don't
+    // start surfacing errors — the click just doesn't get counted.
+    {
+      const { data: isActive } = await supabaseAdmin.rpc('is_user_active', {
+        check_user_id: (link as any).creator_id,
+      });
+      if (!isActive) {
+        return new Response(JSON.stringify({ success: true, skipped: 'deleted_creator' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if ((link as any).status !== 'published') {

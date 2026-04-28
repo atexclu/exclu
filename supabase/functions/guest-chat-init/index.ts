@@ -35,13 +35,22 @@ serve(async (req: Request) => {
     // Verify the profile exists and has chat enabled
     const { data: profile, error: profileError } = await supabase
       .from('creator_profiles')
-      .select('id, chat_enabled, display_name, avatar_url')
+      .select('id, chat_enabled, display_name, avatar_url, deleted_at')
       .eq('id', profile_id)
       .single();
 
     if (profileError || !profile) {
       return new Response(JSON.stringify({ error: 'Profile not found' }), {
         status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Block chat init if the creator profile has been soft-deleted (410 Gone).
+    // soft-delete cascades deleted_at to creator_profiles.
+    if (profile.deleted_at) {
+      return new Response(JSON.stringify({ error: 'Creator unavailable' }), {
+        status: 410,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

@@ -127,6 +127,15 @@ serve(async (req) => {
 
     const creator = wishlistItem.profiles as any;
     if (!creator) return jsonError('Creator not found', 404, corsHeaders);
+
+    // Block gift if the creator's account has been soft-deleted (410 Gone).
+    {
+      const { data: isActive } = await supabase.rpc('is_user_active', {
+        check_user_id: wishlistItem.creator_id,
+      });
+      if (!isActive) return jsonError('Creator unavailable', 410, corsHeaders);
+    }
+
     // Payout setup NOT required to receive gifts — earnings go to wallet
 
     const amountCents = wishlistItem.price_cents;

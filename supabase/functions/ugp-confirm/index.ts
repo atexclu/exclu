@@ -19,6 +19,14 @@ import { sendBrevoEmail, escapeHtml, formatUSD } from '../_shared/brevo.ts';
 import { getMidConfirmKey, midFromSiteId } from '../_shared/ugRouting.ts';
 import { applyWalletTransaction } from '../_shared/ledger.ts';
 
+// ─────────────────────────────────────────────────────────────────────────
+// IMPORTANT — DO NOT add `is_user_active` checks or filter `deleted_at` here.
+// Webhook callbacks for transactions initiated before the creator's account
+// deletion (or refunds/chargebacks years later) must remain processable, or
+// money is lost. The wallet ledger is the source of truth and is keyed by
+// user_id regardless of deletion state.
+// ─────────────────────────────────────────────────────────────────────────
+
 const supabaseUrl = Deno.env.get('PROJECT_URL');
 const supabaseServiceRoleKey = Deno.env.get('SERVICE_ROLE_KEY');
 const siteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://exclu.at').replace(/\/$/, '');

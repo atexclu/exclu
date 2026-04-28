@@ -125,6 +125,15 @@ serve(async (req) => {
       .single();
 
     if (creatorErr || !creator) return jsonError('Creator not found', 404, corsHeaders);
+
+    // Block request if the creator's account has been soft-deleted (410 Gone).
+    {
+      const { data: isActive } = await supabase.rpc('is_user_active', {
+        check_user_id: creatorId,
+      });
+      if (!isActive) return jsonError('Creator unavailable', 410, corsHeaders);
+    }
+
     if (!creator.custom_requests_enabled) return jsonError('This creator does not accept custom requests', 400, corsHeaders);
     // Payout setup NOT required to receive requests — earnings go to wallet
 

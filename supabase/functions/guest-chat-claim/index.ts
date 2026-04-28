@@ -55,6 +55,20 @@ serve(async (req: Request) => {
       });
     }
 
+    // Refuse to claim if the claimer's own account has been soft-deleted
+    // (defensive — auth ban should already block this path, but guard anyway).
+    {
+      const { data: claimerActive } = await supabase.rpc('is_user_active', {
+        check_user_id: user_id,
+      });
+      if (!claimerActive) {
+        return new Response(JSON.stringify({ error: 'Account unavailable' }), {
+          status: 410,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Find all guest conversations for this session
     const { data: guestConvs } = await supabase
       .from('conversations')
@@ -71,6 +85,19 @@ serve(async (req: Request) => {
     let claimed = 0;
 
     for (const conv of guestConvs) {
+      // Skip conversations whose creator profile has been soft-deleted.
+      // We don't fail the whole claim — other conversations may still be valid.
+      if (conv.profile_id) {
+        const { data: cp } = await supabase
+          .from('creator_profiles')
+          .select('deleted_at')
+          .eq('id', conv.profile_id)
+          .maybeSingle();
+        if (!cp || cp.deleted_at) {
+          continue;
+        }
+      }
+
       // Check if the user already has a conversation with this profile
       const { data: existingConv } = await supabase
         .from('conversations')

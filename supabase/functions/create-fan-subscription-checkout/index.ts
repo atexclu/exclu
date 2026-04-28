@@ -86,11 +86,19 @@ serve(async (req) => {
     // ── Resolve creator profile + validate ─────────────────────────────────
     const { data: creatorProfile, error: cpErr } = await sb
       .from('creator_profiles')
-      .select('id, user_id, username, display_name, fan_subscription_enabled, fan_subscription_price_cents, is_active')
+      .select('id, user_id, username, display_name, fan_subscription_enabled, fan_subscription_price_cents, is_active, deleted_at')
       .eq('id', creatorProfileId)
       .maybeSingle();
 
     if (cpErr || !creatorProfile) return jsonError('Creator profile not found', 404, cors);
+
+    // Block subscription if the creator profile (or its parent account) has
+    // been soft-deleted. The soft-delete RPC cascades deleted_at to
+    // creator_profiles, so checking either column is sufficient.
+    if (creatorProfile.deleted_at) {
+      return jsonError('Creator unavailable', 410, cors);
+    }
+
     if (!creatorProfile.is_active) return jsonError('Creator profile not active', 400, cors);
     if (!creatorProfile.fan_subscription_enabled) {
       return jsonError('Subscriptions are disabled for this creator', 400, cors);

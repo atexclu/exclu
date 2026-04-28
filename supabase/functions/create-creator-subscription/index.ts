@@ -46,6 +46,21 @@ serve(async (req) => {
     const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+    // Defensive: refuse to start a Pro checkout if the user's own account has
+    // been soft-deleted. Soft-deleted users are auth-banned so this should be
+    // unreachable in practice, but we guard anyway (a stale JWT might slip in).
+    {
+      const { data: isActive } = await supabase.rpc('is_user_active', {
+        check_user_id: user.id,
+      });
+      if (!isActive) {
+        return new Response(JSON.stringify({ error: 'Account unavailable' }), {
+          status: 410,
+          headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const body = await req.json().catch(() => ({}));
 
     // Chatter attribution policy (locked 2026-04-21): chatters earn ONLY on link

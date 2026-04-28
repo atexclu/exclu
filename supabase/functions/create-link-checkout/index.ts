@@ -124,6 +124,17 @@ serve(async (req) => {
       return jsonError('Link not found or unavailable', 404, corsHeaders);
     }
 
+    // Block sale if the creator's account has been soft-deleted.
+    // 410 Gone tells callers (and search engines) the resource is permanently gone.
+    {
+      const { data: isActive } = await supabase.rpc('is_user_active', {
+        check_user_id: link.creator_id,
+      });
+      if (!isActive) {
+        return jsonError('Creator unavailable', 410, corsHeaders);
+      }
+    }
+
     if (link.status !== 'published') {
       return jsonError('Link is not available for purchase', 400, corsHeaders);
     }

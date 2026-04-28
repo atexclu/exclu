@@ -69,6 +69,22 @@ serve(async (req: Request) => {
       });
     }
 
+    // Block message send if the target creator profile has been soft-deleted.
+    // 410 Gone tells the client the recipient is permanently unavailable.
+    if (conv.profile_id) {
+      const { data: creatorProfile } = await supabase
+        .from('creator_profiles')
+        .select('deleted_at')
+        .eq('id', conv.profile_id)
+        .maybeSingle();
+      if (!creatorProfile || creatorProfile.deleted_at) {
+        return new Response(JSON.stringify({ error: 'Creator unavailable' }), {
+          status: 410,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Insert the message
     const { data: message, error: insertError } = await supabase
       .from('messages')
