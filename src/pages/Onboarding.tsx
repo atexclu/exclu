@@ -13,6 +13,8 @@ import { maybeConvertHeic } from '@/lib/convertHeic';
 import Cropper, { Area } from 'react-easy-crop';
 import { User } from '@supabase/supabase-js';
 import { MobilePreview } from '@/components/linkinbio/MobilePreview';
+import { TutorialVideoModal } from '@/components/onboarding/TutorialVideoModal';
+import { LinkUrlPlaceholderInput } from '@/components/onboarding/LinkUrlPlaceholderInput';
 import { useProfiles } from '@/contexts/ProfileContext';
 import Aurora from '@/components/ui/Aurora';
 import {
@@ -54,6 +56,7 @@ const Onboarding = () => {
   const navigate = useNavigate();
   const { activeProfile } = useProfiles();
   const [step, setStep] = useState<'welcome' | 'profile' | 'design' | 'link' | 'chatting' | 'instagram'>('welcome');
+  const [showTutorial, setShowTutorial] = useState(false);
   const [fomoSeconds, setFomoSeconds] = useState(600);
   const fomoStarted = useRef(false);
   const [seekingChatters, setSeekingChatters] = useState(false);
@@ -723,7 +726,11 @@ const Onboarding = () => {
               <Button variant="hero" size="lg" className="w-full rounded-full text-base" onClick={() => setStep('profile')}>
                 Get started <ChevronRight className="w-5 h-5 ml-2" />
               </Button>
-              <button type="button" className="w-full flex items-center justify-center gap-2 text-sm text-white/50 hover:text-white/70 transition-colors py-2">
+              <button
+                type="button"
+                onClick={() => setShowTutorial(true)}
+                className="w-full flex items-center justify-center gap-2 text-sm text-white/50 hover:text-white/70 transition-colors py-2"
+              >
                 <Play className="w-4 h-4" /> Watch tutorial video
               </button>
             </div>
@@ -801,7 +808,12 @@ const Onboarding = () => {
                   <label className="text-sm font-medium text-white/80">Exclusive content button <span className="text-white/30 font-normal">(optional)</span></label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Input value={exclusiveContentText} onChange={(e) => setExclusiveContentText(e.target.value)} placeholder="Button label (e.g., Exclusive content)" maxLength={60} className="h-11 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-                    <Input type="url" value={exclusiveContentUrl} onChange={(e) => setExclusiveContentUrl(e.target.value)} placeholder="Link URL (e.g., https://onlyfans.com/...)" className="h-11 bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                    <LinkUrlPlaceholderInput
+                      value={exclusiveContentUrl}
+                      onChange={setExclusiveContentUrl}
+                      ariaLabel="Link URL"
+                      className="h-11 bg-white/5 border-white/10 text-white placeholder:text-white/30"
+                    />
                   </div>
 
                   {/* Cover image upload */}
@@ -1219,7 +1231,25 @@ const Onboarding = () => {
             </div>
           </motion.div>
         )}
+
+        {/* "Watch tutorial video" CTA available on every non-welcome step.
+            Welcome already has its own copy of this button styled with the
+            checklist; here it sits at the very bottom for the rest of the
+            flow so it stays one click away. */}
+        {step !== 'welcome' && (
+          <div className="w-full max-w-md mx-auto pt-6 pb-8">
+            <button
+              type="button"
+              onClick={() => setShowTutorial(true)}
+              className="w-full flex items-center justify-center gap-2 text-sm text-white/50 hover:text-white/70 transition-colors py-2"
+            >
+              <Play className="w-4 h-4" /> Watch tutorial video
+            </button>
+          </div>
+        )}
       </main>
+
+      <TutorialVideoModal open={showTutorial} onClose={() => setShowTutorial(false)} />
     </div>
   );
 };

@@ -73,3 +73,8 @@ deno.lock
 # Misc
 *.bak
 *.orig
+
+# Onboarding tutorial video — too large for GitHub (100 MB limit).
+# Host on a CDN (Vercel Blob / Bunny / Cloudinary) before prod deploy
+# and replace the import in TutorialVideoModal with a URL string.
+src/assets/onboarding/tutorial.mp4
