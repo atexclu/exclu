@@ -171,3 +171,6 @@ verify_jwt = false
 
 [functions.pre-delete-check]
 verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
