@@ -50,6 +50,14 @@ const BATCH_DELAY_MS = 250;
 
 interface RequestBody {
   user_id?: string;
+  /**
+   * When true, bypasses the per-profile `fans_notified_at_deletion` guard
+   * so a previously-completed run can be retried. Per-row idempotency on
+   * `fan_creator_subscriptions.deletion_email_sent_at` still prevents true
+   * duplicates — only fans whose email failed last time will be re-sent.
+   * Used for ops re-runs when a Brevo failure left some rows un-notified.
+   */
+  force?: boolean;
 }
 
 interface CreatorProfileRow {
@@ -121,6 +129,7 @@ serve(async (req) => {
   if (!userId) {
     return jsonResponse({ error: 'Missing user_id' }, 400);
   }
+  const force = body?.force === true;
 
   const svc = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -145,31 +154,37 @@ serve(async (req) => {
       );
     }
 
-    // 2. Resolve fan emails once via auth admin (MVP cap: 1000 fans/creator).
-    //    See TODO at top of file.
-    const { data: usersPage, error: listErr } = await svc.auth.admin.listUsers({
-      perPage: 1000,
-    });
-    if (listErr) {
-      console.error('[notify-fans-creator-deleted] auth.admin.listUsers failed', listErr);
-      return jsonResponse({ error: 'Auth lookup failed' }, 500);
-    }
-    if ((usersPage?.users?.length ?? 0) === 1000) {
-      console.error(
-        `[notify-fans-creator-deleted] WARNING: listUsers returned 1000 results — pagination needed for user_id=${userId}`,
-      );
-    }
-    const emailByUserId = new Map<string, string>();
-    for (const u of usersPage?.users ?? []) {
-      if (u.id && u.email) emailByUserId.set(u.id, u.email);
+    // 2. Per-fan email resolution via auth.admin.getUserById (called lazily
+    //    inside the batch loop). We previously used listUsers({perPage:1000})
+    //    but that silently truncated — fans not in the first 1000 never got
+    //    notified. Per-fan getUserById is one round-trip per fan but reliable
+    //    at any scale. Memoize so the same fan_id isn't fetched twice in a
+    //    single invocation (rare, but possible with multiple creator_profiles
+    //    sharing a fan).
+    const emailByUserId = new Map<string, string | null>();
+    async function resolveFanEmail(fanId: string): Promise<string | null> {
+      if (emailByUserId.has(fanId)) return emailByUserId.get(fanId) ?? null;
+      try {
+        const { data, error } = await svc.auth.admin.getUserById(fanId);
+        if (error || !data?.user?.email) {
+          emailByUserId.set(fanId, null);
+          return null;
+        }
+        emailByUserId.set(fanId, data.user.email);
+        return data.user.email;
+      } catch (e) {
+        console.error('[notify-fans-creator-deleted] getUserById error', { fanId, e });
+        emailByUserId.set(fanId, null);
+        return null;
+      }
     }
 
     let profilesProcessed = 0;
     let emailsSent = 0;
 
     for (const cp of profileList) {
-      // Per-profile idempotency: skip if already notified.
-      if (cp.fans_notified_at_deletion) {
+      // Per-profile idempotency: skip if already notified, unless force=true.
+      if (cp.fans_notified_at_deletion && !force) {
         continue;
       }
 
@@ -198,7 +213,7 @@ serve(async (req) => {
 
         const results = await Promise.allSettled(
           batch.map(async (sub) => {
-            const email = emailByUserId.get(sub.fan_id);
+            const email = await resolveFanEmail(sub.fan_id);
             if (!email) {
               console.warn(
                 '[notify-fans-creator-deleted] no email for fan',
