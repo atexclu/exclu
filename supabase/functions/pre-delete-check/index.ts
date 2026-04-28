@@ -294,7 +294,7 @@ serve(async (req) => {
 
     return jsonResponse(result, 200);
   } catch (e) {
-    console.error('[pre-delete-check]', e);
-    return jsonResponse({ error: (e as Error).message }, 500);
+    console.error('[pre-delete-check] unexpected error', e);
+    return jsonResponse({ error: 'Internal error' }, 500);
   }
 });

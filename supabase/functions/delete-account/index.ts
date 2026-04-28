@@ -122,7 +122,7 @@ serve(async (req) => {
     // --- 3. Look up role ---
     const { data: profile, error: profileErr } = await svc
       .from('profiles')
-      .select('role')
+      .select('role, deleted_at')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -131,6 +131,7 @@ serve(async (req) => {
       return jsonResponse({ error: 'Profile lookup failed' }, 500);
     }
     if (!profile) return jsonResponse({ error: 'Profile not found' }, 404);
+    if (profile.deleted_at) return jsonResponse({ error: 'Account already deleted' }, 410);
 
     const accountType = profile.role as AccountType;
     const validRoles: AccountType[] = ['creator', 'agency', 'fan', 'chatter'];
@@ -279,6 +280,6 @@ serve(async (req) => {
     );
   } catch (e) {
     console.error('[delete-account] unexpected error', e);
-    return jsonResponse({ error: (e as Error).message ?? 'Internal error' }, 500);
+    return jsonResponse({ error: 'Internal error' }, 500);
   }
 });
