@@ -92,8 +92,11 @@ export interface RecentAttempt {
 }
 
 /**
- * Returns true if any of the recent attempts counts as a cooldown-blocking
- * outcome AND was created within `cooldownSeconds` of `nowMs`.
+ * Returns true once the device/IP has accumulated `cooldownThreshold` or
+ * more cooldown-blocking outcomes within the last `cooldownSeconds`. A
+ * single bad attempt no longer locks the user out — we let real users
+ * fix typos and retry. Brute-force loops still get caught because the
+ * counter accumulates across attempts in the window.
  *
  * Malformed timestamps are silently skipped — we prefer to let a request
  * through than to crash on bad DB data.
@@ -102,13 +105,18 @@ export function shouldBlockByCooldown(
   recentAttempts: readonly RecentAttempt[],
   nowMs: number,
   cooldownSeconds: number,
+  cooldownThreshold = 5,
 ): boolean {
   const cutoff = nowMs - cooldownSeconds * 1000;
+  let count = 0;
   for (const a of recentAttempts) {
     if (!COOLDOWN_BLOCKING_OUTCOMES.has(a.outcome)) continue;
     const t = Date.parse(a.created_at);
     if (Number.isNaN(t)) continue;
-    if (t >= cutoff) return true;
+    if (t >= cutoff) {
+      count++;
+      if (count >= cooldownThreshold) return true;
+    }
   }
   return false;
 }

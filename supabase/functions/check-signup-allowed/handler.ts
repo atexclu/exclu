@@ -35,11 +35,16 @@ export const CHECK_SIGNUP_CONFIG = {
   // users who start a fresh fingerprint each session.
   FP_LIMIT: 5,
   FP_WINDOW_SEC: 86400, // 1 day
-  // Cooldown: 60s after any blocked attempt. Originally 5 min — too
-  // aggressive in practice (one captcha miss locks legitimate retries
-  // for 5 min). 60s is enough to slow a brute-force loop without
-  // punishing real users who fix a typo and resubmit.
+  // Cooldown window: how far back we look at recent blocked outcomes.
+  // 60s + threshold=5 means a user can have up to 5 blocked attempts
+  // within a minute before the cooldown fires.
   COOLDOWN_SEC: 60,
+  // Number of blocked outcomes inside the cooldown window required to
+  // trigger the cooldown lock. Was 1 (any single block triggered it),
+  // raised to 5 so legitimate users who mistype email/password aren't
+  // locked out after the first error. Brute-force loops still trip the
+  // limit because the counter accumulates across attempts.
+  COOLDOWN_THRESHOLD: 5,
   RECENT_ATTEMPTS_LIMIT: 20,
   UNKNOWN_IP_DB: "0.0.0.0",
 } as const;
@@ -326,7 +331,7 @@ export async function handleSignupCheck(
       fingerprint: body.device_fingerprint,
       windowSeconds: CHECK_SIGNUP_CONFIG.COOLDOWN_SEC,
     });
-    if (shouldBlockByCooldown(recent, Date.now(), CHECK_SIGNUP_CONFIG.COOLDOWN_SEC)) {
+    if (shouldBlockByCooldown(recent, Date.now(), CHECK_SIGNUP_CONFIG.COOLDOWN_SEC, CHECK_SIGNUP_CONFIG.COOLDOWN_THRESHOLD)) {
       await logAttempt(svc, {
         email: body.email,
         ip,
