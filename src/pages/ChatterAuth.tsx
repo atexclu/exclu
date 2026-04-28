@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 import { recordMarketingConsent } from '@/lib/recordConsent';
+import { isDeletedAccountError, deletedAccountMessage } from '@/lib/deletedAccountErrors';
 
 const isValidEmail = (email: string) =>
   /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
@@ -117,6 +118,10 @@ const ChatterAuth = () => {
         });
 
         if (error) {
+          if (isDeletedAccountError(error)) {
+            toast.error(deletedAccountMessage());
+            return;
+          }
           const message = (error.message || '').toLowerCase();
           if (message.includes('already registered') || message.includes('user already registered')) {
             toast.info('An account already exists with this email. Please log in.');

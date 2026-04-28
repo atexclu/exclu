@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
 import { preflightSignup, humanizeReason } from '@/lib/deviceFingerprint';
 import { recordMarketingConsent } from '@/lib/recordConsent';
+import { isDeletedAccountError, deletedAccountMessage } from '@/lib/deletedAccountErrors';
 import { CountrySelect } from '@/components/checkout/CountrySelect';
 import { getGeoCountry } from '@/lib/ipGeo';
 
@@ -138,6 +139,10 @@ const FanSignup = () => {
         });
 
         if (error) {
+          if (isDeletedAccountError(error)) {
+            toast.error(deletedAccountMessage());
+            return;
+          }
           const message = (error.message || '').toLowerCase();
           if (message.includes('already registered') || message.includes('user already registered')) {
             try {
