@@ -49,9 +49,16 @@ interface ChatWindowProps {
   conversation: Conversation;
   currentUserId: string;
   senderType: 'creator' | 'chatter' | 'fan';
+  /**
+   * Called after the user successfully deletes this conversation from their
+   * own inbox. The parent should clear the selected conversation, refetch
+   * the list (or rely on realtime), and on mobile switch back to the list
+   * view. ChatWindow does not navigate on its own.
+   */
+  onDeleted?: () => void;
 }
 
-export function ChatWindow({ conversation, currentUserId, senderType }: ChatWindowProps) {
+export function ChatWindow({ conversation, currentUserId, senderType, onDeleted }: ChatWindowProps) {
   const navigate = useNavigate();
   const { messages, isLoading, isSending, sendMessage } = useMessages(conversation.id, senderType);
   const [draft, setDraft] = useState('');
@@ -74,12 +81,9 @@ export function ChatWindow({ conversation, currentUserId, senderType }: ChatWind
       if (error) throw error;
       toast.success('Conversation removed from your inbox');
       setShowDeleteConfirm(false);
-      // Navigate away — the hook list will refetch and exclude this conv
-      if (senderType === 'fan') {
-        navigate('/fan');
-      } else {
-        navigate('/app/chat');
-      }
+      // Hand control back to the parent so it can clear the selection,
+      // refetch the list, and on mobile switch back to the list view.
+      onDeleted?.();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to delete conversation';
       toast.error(msg);

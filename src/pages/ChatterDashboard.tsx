@@ -30,6 +30,16 @@ import { ConversationListItem } from '@/components/chat/ConversationListItem';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoWhite from '@/assets/logo-white.svg';
 import logoBlack from '@/assets/logo-black.svg';
@@ -103,6 +113,8 @@ export default function ChatterDashboard() {
   const clientProfiles = activeClient?.profiles ?? profiles;
 
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [pendingChatterDeleteId, setPendingChatterDeleteId] = useState<string | null>(null);
+  const [isDeletingChatterConv, setIsDeletingChatterConv] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [showMobileList, setShowMobileList] = useState(true);
@@ -129,6 +141,32 @@ export default function ChatterDashboard() {
     profileIds: activeProfileId === null ? allProfileIds : undefined,
     statusFilter: statusesToFetch,
   });
+
+  const handleChatterConvDeleted = () => {
+    setSelectedConversation(null);
+    setShowMobileList(true);
+    refetch();
+  };
+
+  const confirmChatterConvDelete = async () => {
+    if (!pendingChatterDeleteId) return;
+    setIsDeletingChatterConv(true);
+    try {
+      const { error } = await supabase.rpc('delete_conversation_for_self', {
+        p_conversation_id: pendingChatterDeleteId,
+      });
+      if (error) throw error;
+      toast.success('Conversation removed from your inbox');
+      if (selectedConversation?.id === pendingChatterDeleteId) setSelectedConversation(null);
+      setPendingChatterDeleteId(null);
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to delete conversation';
+      toast.error(msg);
+    } finally {
+      setIsDeletingChatterConv(false);
+    }
+  };
 
   const activeProfile = activeProfileId ? profiles.find((p) => p.id === activeProfileId) ?? null : null;
 
@@ -1213,6 +1251,7 @@ export default function ChatterDashboard() {
                         handleSelectConversation(conv);
                       }
                     }}
+                    onDelete={() => setPendingChatterDeleteId(conv.id)}
                   />
                   {isUnclaimed && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -1269,6 +1308,7 @@ export default function ChatterDashboard() {
                   conversation={selectedConversation}
                   currentUserId={currentUserId}
                   senderType="chatter"
+                  onDeleted={handleChatterConvDeleted}
                 />
               </motion.div>
             ) : (
@@ -1782,6 +1822,27 @@ export default function ChatterDashboard() {
           onClick={() => setShowProfilePicker(false)}
         />
       )}
+
+      <AlertDialog open={!!pendingChatterDeleteId} onOpenChange={(open) => { if (!open) setPendingChatterDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The conversation will be removed from the creator-side inbox (yours and the creator's). The fan will still see it on their side. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingChatterConv}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmChatterConvDelete}
+              disabled={isDeletingChatterConv}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingChatterConv ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

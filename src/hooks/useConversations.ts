@@ -154,8 +154,13 @@ export function useConversations({
       if (payload.eventType === 'INSERT') {
         fetchConversations();
       } else if (payload.eventType === 'UPDATE') {
-        const updated = payload.new as Conversation;
+        const updated = payload.new as Conversation & { creator_deleted_at?: string | null };
         setConversations((prev) => {
+          // If the creator-side soft-deleted this conv, drop it locally so it
+          // disappears from the list without waiting for a refetch.
+          if (updated.creator_deleted_at) {
+            return prev.filter((c) => c.id !== updated.id);
+          }
           if (!statusFilter.includes(updated.status)) {
             return prev.filter((c) => c.id !== updated.id);
           }

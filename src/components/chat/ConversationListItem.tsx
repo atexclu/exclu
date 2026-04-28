@@ -3,15 +3,19 @@
  *
  * Un élément de la liste des conversations dans le panneau gauche du chat.
  * Affiche l'avatar du fan, son nom, le dernier message, et les indicateurs de statut.
+ * Une croix discrète apparait au hover en haut à droite pour supprimer la
+ * conversation de son propre côté (l'autre partie reste vue).
  */
 
-import { Pin, DollarSign } from 'lucide-react';
+import { Pin, DollarSign, X } from 'lucide-react';
 import type { Conversation } from '@/types/chat';
 
 interface ConversationListItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onClick: () => void;
+  /** Called when the user clicks the hover-X. Parent confirms + RPCs. */
+  onDelete?: () => void;
 }
 
 function formatRelativeTime(iso: string | null): string {
@@ -31,6 +35,7 @@ export function ConversationListItem({
   conversation,
   isSelected,
   onClick,
+  onDelete,
 }: ConversationListItemProps) {
   const fan = conversation.fan;
   const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
@@ -43,10 +48,17 @@ export function ConversationListItem({
   const isUnclaimed = conversation.status === 'unclaimed';
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
         isSelected
           ? 'bg-primary/10 border border-primary/20'
           : 'hover:bg-muted/60 border border-transparent'
@@ -122,6 +134,21 @@ export function ConversationListItem({
           )}
         </div>
       </div>
-    </button>
+
+      {/* Hover-X delete button — top-right, discrete */}
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute top-1.5 right-1.5 p-1 rounded-full bg-background/60 hover:bg-red-500/20 text-muted-foreground/60 hover:text-red-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          aria-label="Delete conversation"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
   );
 }

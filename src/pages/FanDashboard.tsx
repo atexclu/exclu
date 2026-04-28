@@ -6,6 +6,16 @@ import { Heart, MessageSquare, MessagesSquare, DollarSign, Settings, LogOut, Arr
 import { FanSubscriptionsList } from '@/components/fan/FanSubscriptionsList';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -152,6 +162,33 @@ const FanDashboard = () => {
 
   // Messages tab
   const [fanConversations, setFanConversations] = useState<Conversation[]>([]);
+  const [pendingConvDeleteId, setPendingConvDeleteId] = useState<string | null>(null);
+  const [isDeletingFanConv, setIsDeletingFanConv] = useState(false);
+
+  const handleFanConvDeleted = (convId: string) => {
+    setFanConversations((prev) => prev.filter((c) => c.id !== convId));
+    setSelectedFanConversation((prev) => (prev?.id === convId ? null : prev));
+    setShowMobileConvList(true);
+  };
+
+  const confirmFanConvDelete = async () => {
+    if (!pendingConvDeleteId) return;
+    setIsDeletingFanConv(true);
+    try {
+      const { error } = await supabase.rpc('delete_conversation_for_self', {
+        p_conversation_id: pendingConvDeleteId,
+      });
+      if (error) throw error;
+      toast.success('Conversation removed from your inbox');
+      handleFanConvDeleted(pendingConvDeleteId);
+      setPendingConvDeleteId(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to delete conversation';
+      toast.error(msg);
+    } finally {
+      setIsDeletingFanConv(false);
+    }
+  };
   const [selectedFanConversation, setSelectedFanConversation] = useState<Conversation | null>(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [showMobileConvList, setShowMobileConvList] = useState(true);
@@ -1266,11 +1303,19 @@ const FanDashboard = () => {
                       const isDeleted = !!profile?.deleted_at;
                       const name = profile?.display_name || 'Creator';
                       return (
-                        <button
+                        <div
                           key={conv.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => { setSelectedFanConversation(conv); setShowMobileConvList(false); }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedFanConversation(conv);
+                              setShowMobileConvList(false);
+                            }
+                          }}
+                          className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                             selectedFanConversation?.id === conv.id
                               ? 'bg-primary/10 border border-primary/20'
                               : 'hover:bg-muted/60 border border-transparent'
@@ -1299,7 +1344,15 @@ const FanDashboard = () => {
                               {conv.last_message_preview || 'Début de la conversation'}
                             </p>
                           </div>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setPendingConvDeleteId(conv.id); }}
+                            className="absolute top-1.5 right-1.5 p-1 rounded-full bg-background/60 hover:bg-red-500/20 text-muted-foreground/60 hover:text-red-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                            aria-label="Delete conversation"
+                          >
+                            <IconX className="w-3 h-3" />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1321,6 +1374,7 @@ const FanDashboard = () => {
                         conversation={selectedFanConversation}
                         currentUserId={userId}
                         senderType="fan"
+                        onDeleted={() => handleFanConvDeleted(selectedFanConversation.id)}
                       />
                     </>
                   ) : (
@@ -1675,6 +1729,27 @@ const FanDashboard = () => {
           </AnimatePresence>
         </main>
       </div>
+
+      <AlertDialog open={!!pendingConvDeleteId} onOpenChange={(open) => { if (!open) setPendingConvDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The conversation will be removed from your inbox. The creator will still see it on their side. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingFanConv}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmFanConvDelete}
+              disabled={isDeletingFanConv}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingFanConv ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

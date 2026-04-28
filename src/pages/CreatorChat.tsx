@@ -25,6 +25,17 @@ import { ChatSettingsPanel } from '@/components/chat/ChatSettingsPanel';
 import { BroadcastPanel } from '@/pages/MassMessage';
 import { supabase } from '@/lib/supabaseClient';
 import type { Conversation } from '@/types/chat';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type StatusFilter = 'active' | 'unclaimed' | 'archived' | 'all';
 
@@ -42,10 +53,42 @@ export default function CreatorChat() {
     return ['unclaimed', 'active'];
   }, []);
 
-  const { conversations, isLoading } = useConversations({
+  const { conversations, isLoading, refetch } = useConversations({
     profileId: activeProfile?.id ?? null,
     statusFilter: statusesToFetch,
   });
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [isProcessingListDelete, setIsProcessingListDelete] = useState(false);
+
+  const handleConversationDeleted = () => {
+    setSelectedConversation(null);
+    setShowMobileList(true);
+    refetch();
+  };
+
+  const handleListDeleteRequest = (convId: string) => {
+    setPendingDeleteId(convId);
+  };
+
+  const confirmListDelete = async () => {
+    if (!pendingDeleteId) return;
+    setIsProcessingListDelete(true);
+    try {
+      const { error } = await supabase.rpc('delete_conversation_for_self', {
+        p_conversation_id: pendingDeleteId,
+      });
+      if (error) throw error;
+      toast.success('Conversation removed from your inbox');
+      if (selectedConversation?.id === pendingDeleteId) setSelectedConversation(null);
+      setPendingDeleteId(null);
+      refetch();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to delete conversation';
+      toast.error(msg);
+    } finally {
+      setIsProcessingListDelete(false);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -214,6 +257,7 @@ export default function CreatorChat() {
                         conversation={conv}
                         isSelected={selectedConversation?.id === conv.id}
                         onClick={() => handleSelectConversation(conv)}
+                        onDelete={() => handleListDeleteRequest(conv.id)}
                       />
                     ))}
                   </div>
@@ -253,6 +297,7 @@ export default function CreatorChat() {
                     conversation={selectedConversation}
                     currentUserId={currentUserId}
                     senderType="creator"
+                    onDeleted={handleConversationDeleted}
                   />
                 </motion.div>
               ) : (
@@ -311,6 +356,27 @@ export default function CreatorChat() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The conversation will be removed from your inbox. The fan will still see it on their side. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isProcessingListDelete}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmListDelete}
+              disabled={isProcessingListDelete}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isProcessingListDelete ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   );
 }
