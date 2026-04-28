@@ -445,9 +445,10 @@ const Auth = () => {
                         autoComplete="new-password"
                         placeholder="Enter your new password"
                         className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                        minLength={6}
+                        minLength={10}
                         required
                       />
+                      <p className="text-[10px] text-exclu-space/60">At least 10 characters</p>
                     </div>
                     <div className="space-y-1.5">
                       <label htmlFor="confirmPassword" className="text-[11px] text-exclu-space/80 flex items-center gap-1.5">
@@ -461,7 +462,7 @@ const Auth = () => {
                         autoComplete="new-password"
                         placeholder="Confirm your new password"
                         className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm"
-                        minLength={6}
+                        minLength={10}
                         required
                       />
                     </div>
@@ -528,7 +529,7 @@ const Auth = () => {
                         autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                         placeholder={mode === 'signup' ? 'Create a strong password' : 'Your password'}
                         className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pr-10"
-                        minLength={6}
+                        minLength={mode === 'signup' ? 10 : 6}
                         required
                       />
                       <button
@@ -540,6 +541,9 @@ const Auth = () => {
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                  )}
+                  {mode === 'signup' && (
+                    <p className="text-[10px] text-exclu-space/60">At least 10 characters</p>
                   )}
                 </div>
 

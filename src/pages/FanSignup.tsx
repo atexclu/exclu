@@ -485,7 +485,7 @@ const FanSignup = () => {
                         autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                         placeholder={mode === 'signup' ? 'Create a password' : 'Your password'}
                         className="h-11 bg-black border-white text-white placeholder:text-gray-500 focus-visible:ring-primary/60 focus-visible:ring-offset-0 text-sm pr-10"
-                        minLength={6}
+                        minLength={mode === 'signup' ? 10 : 6}
                         required
                       />
                       <button
@@ -497,6 +497,9 @@ const FanSignup = () => {
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                    {mode === 'signup' && (
+                      <p className="text-[10px] text-exclu-space/60">At least 10 characters</p>
+                    )}
                   </div>
                 )}
 
