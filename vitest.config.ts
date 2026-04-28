@@ -11,12 +11,16 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "api/_shared/**/*.{test,spec}.ts",
+      "supabase/functions/_shared/**/*.{test,spec}.ts",
     ],
-    // Server-side helpers live under api/_shared/. They use Node globals
-    // (AbortController, fetch, Response) which work in jsdom today but
-    // should be tested under the Node runtime to avoid masking edge-case
-    // divergence. Everything else stays on jsdom for React component tests.
-    environmentMatchGlobs: [["api/_shared/**", "node"]],
+    // Server-side helpers (api/_shared/, supabase/functions/_shared/) use
+    // Node globals (AbortController, fetch, Response) and stub Deno.env;
+    // run them under Node to match runtime semantics. React tests stay on
+    // jsdom.
+    environmentMatchGlobs: [
+      ["api/_shared/**", "node"],
+      ["supabase/functions/_shared/**", "node"],
+    ],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
