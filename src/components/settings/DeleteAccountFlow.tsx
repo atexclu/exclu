@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
+import { ProDiscountOfferDialog } from '@/components/settings/ProDiscountOfferDialog';
 
 type AccountType = 'creator' | 'fan' | 'chatter' | 'agency';
 
@@ -30,6 +31,11 @@ interface Warning {
   metadata?: Record<string, unknown>;
 }
 
+interface RetentionOffer {
+  eligible: boolean;
+  monthly_amount_cents: number;
+}
+
 interface PreDeleteResult {
   account_type: AccountType;
   email: string;
@@ -37,6 +43,7 @@ interface PreDeleteResult {
   can_delete: boolean;
   blocks: Block[];
   warnings: Warning[];
+  retention_offer?: RetentionOffer;
 }
 
 interface DeleteAccountFlowProps {
@@ -51,6 +58,7 @@ export function DeleteAccountFlow({ backUrl }: DeleteAccountFlowProps) {
   const [acks, setAcks] = useState<Record<string, boolean>>({});
   const [confirmation, setConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showRetentionOffer, setShowRetentionOffer] = useState(false);
 
   const loadCheck = async () => {
     setIsLoading(true);
@@ -109,6 +117,19 @@ export function DeleteAccountFlow({ backUrl }: DeleteAccountFlowProps) {
 
   const canDelete =
     !!check && check.can_delete && allWarningsAcked && confirmationMatches && !isDeleting;
+
+  /** Click handler on the "Permanently delete" button. If the user is a
+   *  monthly Pro creator who never claimed the retention discount, intercept
+   *  with the offer dialog before submitting. The dialog's onDeclined runs
+   *  the actual deletion. */
+  const handleDeleteClick = () => {
+    if (!canDelete) return;
+    if (check?.retention_offer?.eligible) {
+      setShowRetentionOffer(true);
+      return;
+    }
+    void handleDelete();
+  };
 
   const handleDelete = async () => {
     if (!canDelete) return;
@@ -346,7 +367,7 @@ export function DeleteAccountFlow({ backUrl }: DeleteAccountFlowProps) {
                   </Button>
                   <Button
                     type="button"
-                    onClick={handleDelete}
+                    onClick={handleDeleteClick}
                     disabled={!canDelete}
                     className="rounded-full bg-red-600 text-white hover:bg-red-700 disabled:bg-red-600/30 disabled:text-red-100/60"
                   >
@@ -365,6 +386,26 @@ export function DeleteAccountFlow({ backUrl }: DeleteAccountFlowProps) {
           </div>
         )}
       </div>
+
+      {check?.retention_offer?.eligible && (
+        <ProDiscountOfferDialog
+          open={showRetentionOffer}
+          onOpenChange={setShowRetentionOffer}
+          context="delete_attempt"
+          monthlyAmountCents={check.retention_offer.monthly_amount_cents}
+          onAccepted={() => {
+            // Discount granted — abort deletion entirely. The RPC has already
+            // cleared subscription_cancel_at_period_end and stamped the
+            // discount flags. Send the user back to where they came from.
+            toast.success('Account kept active. Discount applies at next monthly rebill.');
+            navigate(backUrl);
+          }}
+          onDeclined={() => {
+            // User declined the retention offer — proceed with deletion.
+            void handleDelete();
+          }}
+        />
+      )}
     </div>
   );
 }

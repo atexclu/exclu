@@ -180,3 +180,6 @@ verify_jwt = false
 
 [functions.notify-fans-creator-deleted]
 verify_jwt = false
+
+[functions.claim-creator-pro-discount]
+verify_jwt = false

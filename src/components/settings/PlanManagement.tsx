@@ -18,6 +18,7 @@ import { PlanCard } from '@/components/pricing/PlanCard';
 import { CountrySelect } from '@/components/checkout/CountrySelect';
 import { getGeoCountry } from '@/lib/ipGeo';
 import { cn } from '@/lib/utils';
+import { ProDiscountOfferDialog } from '@/components/settings/ProDiscountOfferDialog';
 
 type PlanKey = 'free' | 'monthly' | 'annual';
 
@@ -26,6 +27,8 @@ interface SubState {
   amount_cents: number | null;
   period_end: string | null;
   cancel_at_period_end: boolean;
+  discount_used_at: string | null;
+  suspended_at: string | null;
 }
 
 interface RebillRow {
@@ -72,12 +75,13 @@ export function PlanManagement() {
   const [country, setCountry] = useState<string | null>(null);
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
   const [history, setHistory] = useState<RebillRow[]>([]);
+  const [showRetentionOffer, setShowRetentionOffer] = useState(false);
 
   const loadSub = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase.from('profiles')
-      .select('subscription_plan, subscription_amount_cents, subscription_period_end, subscription_cancel_at_period_end, country, billing_country')
+      .select('subscription_plan, subscription_amount_cents, subscription_period_end, subscription_cancel_at_period_end, subscription_suspended_at, creator_pro_discount_used_at, country, billing_country')
       .eq('id', user.id).maybeSingle();
     if (data) {
       setSub({
@@ -85,6 +89,8 @@ export function PlanManagement() {
         amount_cents: data.subscription_amount_cents,
         period_end: data.subscription_period_end,
         cancel_at_period_end: !!data.subscription_cancel_at_period_end,
+        discount_used_at: data.creator_pro_discount_used_at ?? null,
+        suspended_at: data.subscription_suspended_at ?? null,
       });
       // Prefill country from stored profile fields if we have one
       const profileCountry = (data.billing_country ?? data.country ?? null) as string | null;
@@ -198,9 +204,21 @@ export function PlanManagement() {
     return `${amt} · Renews ${renewalLabel}`;
   })();
 
+  const isEligibleForRetentionDiscount = (): boolean =>
+    !!sub &&
+    sub.plan === 'monthly' &&
+    !sub.cancel_at_period_end &&
+    !sub.suspended_at &&
+    !sub.discount_used_at;
+
   const handleCta = (target: PlanKey) => {
     if (target === sub.plan) return;
     if (target === 'free') {
+      // Last-chance retention offer for monthly subs without prior discount.
+      if (isEligibleForRetentionDiscount()) {
+        setShowRetentionOffer(true);
+        return;
+      }
       setConfirm({ kind: 'cancel' });
       return;
     }
@@ -502,6 +520,25 @@ export function PlanManagement() {
           )}
         </AlertDialogContent>
       </AlertDialog>
+
+      {sub && (
+        <ProDiscountOfferDialog
+          open={showRetentionOffer}
+          onOpenChange={setShowRetentionOffer}
+          context="cancel_attempt"
+          monthlyAmountCents={sub.amount_cents ?? 3999}
+          onAccepted={() => {
+            // Discount granted; the RPC also cleared cancel_at_period_end.
+            // Reload subscription state to reflect both.
+            loadSub();
+          }}
+          onDeclined={() => {
+            // User declined the retention offer — proceed to the original
+            // cancel confirm flow.
+            setConfirm({ kind: 'cancel' });
+          }}
+        />
+      )}
     </div>
   );
 }

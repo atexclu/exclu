@@ -43,9 +43,20 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
   }
 
   const plan = creator.subscription_plan as 'monthly' | 'annual';
-  const amount = plan === 'annual'
+  const baseAmount = plan === 'annual'
     ? ANNUAL_CENTS
     : await computeCreatorMonthlyAmount(creator.id);
+
+  // One-time 50% retention discount (monthly only). Applies on the next
+  // monthly cycle after the creator claims it, then never again.
+  const discountApplicable =
+    plan === 'monthly' &&
+    !!creator.creator_pro_discount_used_at &&
+    !creator.creator_pro_discount_applied_at;
+  const amount = discountApplicable ? Math.floor(baseAmount / 2) : baseAmount;
+  if (discountApplicable) {
+    console.log(`[rebill] creator ${creator.id}: applying one-time 50% retention discount (${baseAmount} → ${amount})`);
+  }
 
   const creds = getMidCredentials(mid);
 
@@ -139,13 +150,31 @@ async function rebillCreatorSubscription(creator: any): Promise<void> {
       console.error('[rebill] referral commission failed (non-fatal):', (refErr as Error).message);
     }
 
-    await supabase.from('profiles').update({
+    const profileUpdate: Record<string, unknown> = {
       subscription_amount_cents: amount,
       subscription_period_start: now.toISOString(),
       subscription_period_end: nextEnd.toISOString(),
       subscription_suspended_at: null,
       // NEVER overwrite subscription_ugp_transaction_id — only the ORIGINAL Sale TID is rebillable.
-    }).eq('id', creator.id);
+    };
+    if (discountApplicable) {
+      profileUpdate.creator_pro_discount_applied_at = now.toISOString();
+    }
+    await supabase.from('profiles').update(profileUpdate).eq('id', creator.id);
+
+    if (discountApplicable) {
+      // Mirror the applied_at on the grant row so the audit trail is complete.
+      try {
+        await supabase
+          .from('creator_pro_discount_grants')
+          .update({ applied_at: now.toISOString() })
+          .eq('user_id', creator.id)
+          .is('applied_at', null);
+      } catch (gErr) {
+        console.warn('[rebill] failed to mark discount grant applied (non-fatal)', gErr);
+      }
+    }
+
     console.log(`[rebill] creator ${creator.id} accepted, next: ${nextEnd.toISOString()}`);
     return;
   }
@@ -325,7 +354,7 @@ serve(async (req) => {
 
   // ── Creator subs ─────────────────────────────────────────────────
   const { data: creators } = await supabase.from('profiles')
-    .select('id, subscription_plan, subscription_ugp_transaction_id, subscription_mid, subscription_period_end, subscription_cancel_at_period_end, subscription_suspended_at')
+    .select('id, subscription_plan, subscription_ugp_transaction_id, subscription_mid, subscription_period_end, subscription_cancel_at_period_end, subscription_suspended_at, creator_pro_discount_used_at, creator_pro_discount_applied_at')
     .in('subscription_plan', ['monthly', 'annual'])
     .lte('subscription_period_end', now)
     .is('subscription_suspended_at', null);

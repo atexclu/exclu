@@ -48,6 +48,14 @@ type Warning = {
 
 type AccountType = 'creator' | 'fan' | 'chatter' | 'agency';
 
+type RetentionOffer = {
+  /** True if the user is a monthly Pro creator who hasn't claimed the
+   *  one-time 50% discount and isn't suspended. The frontend uses this to
+   *  decide whether to show the offer dialog before submitting deletion. */
+  eligible: boolean;
+  monthly_amount_cents: number;
+};
+
 type CheckResult = {
   account_type: AccountType;
   email: string;
@@ -55,6 +63,7 @@ type CheckResult = {
   can_delete: boolean;
   blocks: Block[];
   warnings: Warning[];
+  retention_offer: RetentionOffer;
 };
 
 function formatDollars(cents: number): string {
@@ -106,7 +115,7 @@ serve(async (req) => {
     // --- Profile + role + Pro plan (Pro lives on `profiles`, NOT creator_profiles) ---
     const { data: profile, error: profileErr } = await svc
       .from('profiles')
-      .select('role, wallet_balance_cents, deleted_at, subscription_plan')
+      .select('role, wallet_balance_cents, deleted_at, subscription_plan, subscription_amount_cents, subscription_suspended_at, creator_pro_discount_used_at')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -283,6 +292,15 @@ serve(async (req) => {
       message: 'Transactional data (sales, payouts, tips) is retained for 10 years per French accounting law. Personal data (display name, bio, avatar, conversations) is hidden everywhere on Exclu immediately upon deletion.',
     });
 
+    // Retention offer eligibility — only monthly Pro creators without prior
+    // discount and not suspended. Frontend uses this to show the discount
+    // dialog before actually submitting the deletion.
+    const retentionEligible =
+      (accountType === 'creator' || accountType === 'agency') &&
+      profile.subscription_plan === 'monthly' &&
+      !profile.subscription_suspended_at &&
+      !profile.creator_pro_discount_used_at;
+
     const result: CheckResult = {
       account_type: accountType,
       email: user.email,
@@ -290,6 +308,10 @@ serve(async (req) => {
       can_delete: blocks.length === 0,
       blocks,
       warnings,
+      retention_offer: {
+        eligible: retentionEligible,
+        monthly_amount_cents: profile.subscription_amount_cents ?? 3999,
+      },
     };
 
     return jsonResponse(result, 200);
