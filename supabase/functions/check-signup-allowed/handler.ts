@@ -23,6 +23,9 @@ import {
 } from "./signup_checks.ts";
 
 export const CHECK_SIGNUP_CONFIG = {
+  // 5 signups per IP per hour. The rate_limit_check RPC blocks the request
+  // when count >= limit, so a value of 5 allows exactly 5 successful
+  // attempts before the 6th is rejected.
   IP_LIMIT: 5,
   IP_WINDOW_SEC: 3600, // 1 hour
   // 5/day per device fingerprint. Covers the normal 3 account types
@@ -32,7 +35,11 @@ export const CHECK_SIGNUP_CONFIG = {
   // users who start a fresh fingerprint each session.
   FP_LIMIT: 5,
   FP_WINDOW_SEC: 86400, // 1 day
-  COOLDOWN_SEC: 300, // 5 min
+  // Cooldown: 60s after any blocked attempt. Originally 5 min — too
+  // aggressive in practice (one captcha miss locks legitimate retries
+  // for 5 min). 60s is enough to slow a brute-force loop without
+  // punishing real users who fix a typo and resubmit.
+  COOLDOWN_SEC: 60,
   RECENT_ATTEMPTS_LIMIT: 20,
   UNKNOWN_IP_DB: "0.0.0.0",
 } as const;
