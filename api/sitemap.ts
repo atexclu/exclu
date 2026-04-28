@@ -25,7 +25,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       supabaseFetch('blog_categories?select=slug,updated_at&order=sort_order') as Promise<any[]>,
       supabaseFetch('directory_agencies?is_visible=eq.true&select=slug,updated_at&order=sort_order') as Promise<any[]>,
       supabaseFetch('tool_comparisons?is_visible=eq.true&select=slug,updated_at&order=sort_order') as Promise<any[]>,
-      supabaseFetch('creator_profiles?is_directory_visible=eq.true&select=username,updated_at&order=profile_view_count.desc&limit=500') as Promise<any[]>,
+      supabaseFetch('creator_profiles?is_directory_visible=eq.true&deleted_at=is.null&select=username,updated_at&order=profile_view_count.desc&limit=500') as Promise<any[]>,
     ]);
 
     const urls: { loc: string; lastmod?: string; changefreq: string; priority: string }[] = [];
