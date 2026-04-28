@@ -174,3 +174,9 @@ verify_jwt = false
 
 [functions.delete-account]
 verify_jwt = false
+
+[functions.send-account-deleted-email]
+verify_jwt = false
+
+[functions.notify-fans-creator-deleted]
+verify_jwt = false
