@@ -191,14 +191,15 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       // We fetch the actual link ids (not just a count) so we can scope the
       // sales count to this profile's links — matches per-profile semantics
       // even though `purchases` itself has no profile_id column.
-      // Soft-deleted rows (deleted_at IS NOT NULL) are excluded — they're
-      // hidden from the public profile and shouldn't reward the creator.
+      // NOTE: `links` has no `deleted_at` column (unlike `assets`), so we
+      // can't filter soft-deleted rows here. Status filtering happens below.
       const linksPromise = supabase
         .from('links')
         .select('id, status')
-        .eq('profile_id', profileId)
-        .is('deleted_at', null);
+        .eq('profile_id', profileId);
 
+      // Soft-deleted assets (deleted_at IS NOT NULL) are excluded — they're
+      // hidden from the public profile and shouldn't count toward the feed step.
       const assetsPromise = supabase
         .from('assets')
         .select('id', { count: 'exact', head: true })
