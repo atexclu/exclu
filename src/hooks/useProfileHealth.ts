@@ -63,7 +63,7 @@ export interface ProfileHealthState {
 const STEP_DEFS: Array<Pick<ProfileHealthStep, 'id' | 'label' | 'description' | 'targetTab' | 'targetUrl'>> = [
   { id: 'username', label: 'Username added', description: 'Pick the handle fans see in your URL.', targetTab: 'info' },
   { id: 'avatar', label: 'Add a profile picture', description: 'Upload a photo so fans recognise you.', targetTab: 'photo' },
-  { id: 'bio', label: 'Write your bio', description: 'A short intro (10+ characters).', targetTab: 'info' },
+  { id: 'bio', label: 'Write your bio', description: 'A short intro about you.', targetTab: 'info' },
   { id: 'website', label: 'Add your website link', description: 'Set the redirect URL on your Exclusive Content button.', targetTab: 'social' },
   { id: 'socials', label: 'Add socials to your profile', description: 'At least one social platform linked.', targetTab: 'social' },
   { id: 'subscription', label: 'Set your subscription price', description: 'Enable monthly fan subscriptions.', targetTab: 'content' },
@@ -104,7 +104,7 @@ function computeSteps(snap: RawSnapshot): ProfileHealthStep[] {
   const flags: Record<ProfileHealthStepId, boolean> = {
     username: isFilled(snap.username),
     avatar: Boolean(snap.avatar_url),
-    bio: isFilled(snap.bio) && (snap.bio?.trim().length ?? 0) >= 10,
+    bio: isFilled(snap.bio),
     // Step "website link" maps to the creator's Exclusive Content URL —
     // the only generic external URL surfaced on the profile editor.
     website: isFilled(snap.exclusive_content_url),
