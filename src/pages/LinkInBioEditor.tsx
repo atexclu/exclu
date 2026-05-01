@@ -19,6 +19,7 @@ import { FanSubscriptionSection } from '@/components/linkinbio/sections/FanSubsc
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { useSearchParams } from 'react-router-dom';
+import { dispatchProfileHealthPatch } from '@/hooks/useProfileHealth';
 import AppShell from '@/components/AppShell';
 
 /** Section keys exposed via the `?focus=<tab>` deep-link from Profile Health. */
@@ -169,6 +170,33 @@ const LinkInBioEditor = () => {
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
   const [debouncedData] = useDebounce(editorData, 1500);
+
+  // Push optimistic patches to the Profile Health hook on every keystroke so
+  // the sidebar bar reacts instantly. The eventual server save (debounced
+  // 1.5s, then realtime echo) confirms the value silently. We only patch
+  // fields the hook tracks — counters (links/assets/subs/sales) stay
+  // server-only.
+  useEffect(() => {
+    if (isLoading) return;
+    dispatchProfileHealthPatch({
+      username: editorData.handle || null,
+      avatar_url: editorData.avatar_url,
+      bio: editorData.bio,
+      social_links: editorData.social_links,
+      exclusive_content_url: editorData.exclusive_content_url,
+      fan_subscription_enabled: editorData.fan_subscription_enabled,
+      fan_subscription_price_cents: editorData.fan_subscription_price_cents,
+    });
+  }, [
+    isLoading,
+    editorData.handle,
+    editorData.avatar_url,
+    editorData.bio,
+    editorData.social_links,
+    editorData.exclusive_content_url,
+    editorData.fan_subscription_enabled,
+    editorData.fan_subscription_price_cents,
+  ]);
 
   useEffect(() => {
     const fetchProfile = async () => {

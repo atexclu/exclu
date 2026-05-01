@@ -6,10 +6,23 @@ import type { CreatorProfile } from '@/contexts/ProfileContext';
  * Profile Health — onboarding completion tracker (gamification inspired by Fanspicy).
  *
  * Each step maps to a concrete data point already collected by the platform.
- * The hook computes their done/pending status, listens for live mutations
- * (Postgres CDC over Supabase Realtime), and emits `justCompletedStepId`
- * exactly once per (profileId, stepId) — used by the UI to auto-open the
- * dialog when the creator crosses a milestone.
+ * The hook computes their done/pending status from a server snapshot, listens
+ * for live mutations (Postgres CDC over Supabase Realtime), and emits
+ * `justCompletedStepId` exactly once per (profileId, stepId) — used by the UI
+ * to auto-open the dialog when the creator crosses a milestone.
+ *
+ * Optimistic UX
+ *   The card sits in the AppShell sidebar but the editing surface lives in
+ *   the Link-in-Bio editor. Without help, the bar would only update once the
+ *   editor's debounced auto-save lands AND realtime echoes back (~2s after the
+ *   last keystroke). To make the bar feel live, the editor calls
+ *   `dispatchProfileHealthPatch()` on every state change — the hook merges
+ *   the patch into its local snapshot instantly. The eventual server fetch
+ *   confirms (or corrects) the same value silently.
+ *
+ *   Crossing detection ONLY runs against server-confirmed snapshots — the
+ *   `lastServerStepsRef` ignores optimistic intermediate states so the auto-
+ *   popup doesn't fire on transient keystrokes (e.g. "h" → backspace → "").
  */
 
 export type ProfileHealthStepId =
@@ -77,6 +90,9 @@ const TOTAL_STEPS = STEP_DEFS.length;
 const REFETCH_DEBOUNCE_MS = 300;
 const SEEN_STORAGE_KEY = (profileId: string) => `profileHealth.seenSteps:${profileId}`;
 
+/** Custom DOM event used by the editor to push optimistic step changes. */
+const PATCH_EVENT = 'exclu:profile-health:patch';
+
 interface RawSnapshot {
   username: string | null;
   avatar_url: string | null;
@@ -90,6 +106,30 @@ interface RawSnapshot {
   subscribersCount: number;
   profileViewCount: number;
   salesCount: number;
+}
+
+/** Subset of fields the editor can patch optimistically. Counters (links,
+    assets, subs, sales) come exclusively from server fetches — the editor
+    doesn't own those. */
+export type ProfileHealthPatch = Partial<{
+  username: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  social_links: Record<string, string> | null;
+  exclusive_content_url: string | null;
+  fan_subscription_enabled: boolean | null;
+  fan_subscription_price_cents: number | null;
+}>;
+
+/**
+ * Push an optimistic patch into the active Profile Health hook.
+ * Safe to call from anywhere; ignored when no hook instance is mounted.
+ * Use from edit surfaces (LinkInBioEditor) on every state change so the
+ * sidebar bar reacts instantly without waiting for the DB roundtrip.
+ */
+export function dispatchProfileHealthPatch(patch: ProfileHealthPatch): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<ProfileHealthPatch>(PATCH_EVENT, { detail: patch }));
 }
 
 /** Trim + non-empty guard. Treats whitespace-only strings as empty. */
@@ -117,6 +157,8 @@ function computeSteps(snap: RawSnapshot): ProfileHealthStep[] {
   return STEP_DEFS.map((def) => ({ ...def, done: flags[def.id] }));
 }
 
+const PENDING_STEPS: ProfileHealthStep[] = STEP_DEFS.map((def) => ({ ...def, done: false }));
+
 function readSeenSet(profileId: string): Set<ProfileHealthStepId> {
   try {
     const raw = localStorage.getItem(SEEN_STORAGE_KEY(profileId));
@@ -138,27 +180,23 @@ function writeSeenSet(profileId: string, ids: Set<ProfileHealthStepId>) {
 
 export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileHealthState {
   const [userId, setUserId] = useState<string | null>(null);
-  const [steps, setSteps] = useState<ProfileHealthStep[]>(() =>
-    STEP_DEFS.map((def) => ({ ...def, done: false }))
-  );
-  const [subscribersCount, setSubscribersCount] = useState(0);
-  const [profileViewCount, setProfileViewCount] = useState(0);
-  const [salesCount, setSalesCount] = useState(0);
+  // Single source of truth for the visible state. Server fetches replace it
+  // entirely; optimistic patches merge field-by-field.
+  const [snap, setSnap] = useState<RawSnapshot | null>(null);
   const [justCompletedStepId, setJustCompletedStepId] = useState<ProfileHealthStepId | null>(null);
   const [isReady, setIsReady] = useState(false);
 
-  // Refs so the realtime channel callback always sees the latest values
-  // without re-subscribing on every step change.
-  const stepsRef = useRef<ProfileHealthStep[]>(steps);
-  stepsRef.current = steps;
+  // Refs for callbacks that run outside React's render flow.
   const debounceRef = useRef<number | null>(null);
   const profileIdRef = useRef<string | null>(activeProfile?.id ?? null);
   profileIdRef.current = activeProfile?.id ?? null;
-  // Tracks whether the next refetch is the first one for this profile.
-  // The first refetch is treated as a baseline — already-done steps are
-  // recorded as "seen" so the popup never auto-opens for steps the user
-  // completed in a past session. Only fresh transitions in this session
-  // (pending → done) trigger the auto-popup.
+  // Last server-confirmed steps — used for crossing detection so optimistic
+  // patches between two fetches don't trigger phantom popups (e.g. user
+  // types "h" then backspace before the save commits).
+  const lastServerStepsRef = useRef<ProfileHealthStep[]>(PENDING_STEPS);
+  // First refetch per profile is treated as a baseline — already-done steps
+  // are absorbed silently (recorded as "seen") so the popup never auto-opens
+  // for a milestone the creator passed in a past session.
   const isFirstLoadRef = useRef(true);
 
   // Resolve the current auth user once. RLS already scopes everything to
@@ -174,8 +212,8 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
   }, []);
 
   const fetchSnapshot = useCallback(
-    async (profileId: string, uid: string): Promise<RawSnapshot | null> => {
-      // Run the three queries in parallel — none depend on each other.
+    async (profileId: string, _uid: string): Promise<RawSnapshot | null> => {
+      // Run the parallel queries — none depend on each other.
       const profilePromise = supabase
         .from('creator_profiles')
         .select(
@@ -184,15 +222,9 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         .eq('id', profileId)
         .maybeSingle();
 
-      // Multi-profile filter pattern (mirrors PublicContentSection): prefer
-      // profile_id, fall back to creator_id for legacy rows where profile_id
-      // hasn't been backfilled. We over-count rather than under-count if both
-      // exist; in practice migration 068 backfilled everything.
       // We fetch the actual link ids (not just a count) so we can scope the
-      // sales count to this profile's links — matches per-profile semantics
-      // even though `purchases` itself has no profile_id column.
-      // NOTE: `links` has no `deleted_at` column (unlike `assets`), so we
-      // can't filter soft-deleted rows here. Status filtering happens below.
+      // sales count to this profile's links — `purchases` has no profile_id
+      // column. `links` has no `deleted_at` either, so we filter status only.
       const linksPromise = supabase
         .from('links')
         .select('id, status')
@@ -223,17 +255,16 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       ]);
 
       if (profileRes.error) {
-        // Don't tear down the UI on transient errors — caller falls back to previous state.
         console.warn('[useProfileHealth] profile fetch failed', profileRes.error);
         return null;
       }
 
-      // Sales = succeeded purchases on this profile's links. Skipped when
-      // the profile has no links yet (fresh creator) — saves an `IN ()` query.
       const linkRows = linksRes.data ?? [];
       const linkIds = linkRows.map((row) => row.id as string);
       const publishedLinksCount = linkRows.filter((row) => row.status === 'published').length;
 
+      // Sales = succeeded purchases on this profile's links. Skipped when
+      // the profile has no links yet — saves an `IN ()` query.
       let salesCount = 0;
       if (linkIds.length > 0) {
         const { count, error } = await supabase
@@ -270,41 +301,35 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     const profileId = profileIdRef.current;
     if (!profileId || !userId) return;
 
-    fetchSnapshot(profileId, userId).then((snap) => {
-      if (!snap) return;
+    fetchSnapshot(profileId, userId).then((newSnap) => {
+      if (!newSnap) return;
       // Guard against stale completion (profile was switched mid-flight).
       if (profileIdRef.current !== profileId) return;
 
-      const next = computeSteps(snap);
-      const prev = stepsRef.current;
+      const newSteps = computeSteps(newSnap);
       const seen = readSeenSet(profileId);
 
-      // First load for this profile in this hook lifecycle: treat the
-      // server snapshot as the baseline. Every step that's already done
-      // is silently recorded as "seen" — no popup. Only fresh transitions
-      // observed AFTER this baseline can trigger the auto-popup.
-      // This is what prevents the popup from re-opening every time the
-      // user navigates between admin tabs / reloads the page.
       if (isFirstLoadRef.current) {
-        for (const step of next) {
+        // Baseline: every already-done step is absorbed as "seen" so it
+        // doesn't trigger a popup. Only post-baseline transitions count.
+        for (const step of newSteps) {
           if (step.done) seen.add(step.id);
           else seen.delete(step.id);
         }
         writeSeenSet(profileId, seen);
         isFirstLoadRef.current = false;
-        setSteps(next);
-        setSubscribersCount(snap.subscribersCount);
-        setProfileViewCount(snap.profileViewCount);
-        setSalesCount(snap.salesCount);
+        lastServerStepsRef.current = newSteps;
+        setSnap(newSnap);
         setIsReady(true);
         return;
       }
 
-      // Subsequent refetches: detect a fresh crossing (pending → done)
-      // not yet acknowledged. At most one popup per refetch — if multiple
-      // steps cross simultaneously (rare), the last one wins.
+      // Crossing detection compares THIS server snapshot against the LAST
+      // server snapshot, not the optimistic in-between state. That way the
+      // popup only fires on genuine commits, not on intermediate keystrokes.
+      const prev = lastServerStepsRef.current;
       let crossedId: ProfileHealthStepId | null = null;
-      for (const step of next) {
+      for (const step of newSteps) {
         if (!step.done) continue;
         const wasDone = prev.find((p) => p.id === step.id)?.done ?? false;
         if (!wasDone && !seen.has(step.id)) {
@@ -312,16 +337,15 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         }
       }
 
-      // Steps that regress (done → not done) are forgotten so the user
-      // gets a fresh celebration when they re-complete the missing field.
-      for (const step of next) {
+      // Steps that regress (done → not done) are forgotten so the user gets
+      // a fresh celebration when they re-complete the missing field.
+      for (const step of newSteps) {
         if (!step.done) seen.delete(step.id);
       }
       writeSeenSet(profileId, seen);
 
-      setSteps(next);
-      setSubscribersCount(snap.subscribersCount);
-      setProfileViewCount(snap.profileViewCount);
+      lastServerStepsRef.current = newSteps;
+      setSnap(newSnap);
       setIsReady(true);
       if (crossedId) setJustCompletedStepId(crossedId);
     });
@@ -338,6 +362,24 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     }, REFETCH_DEBOUNCE_MS);
   }, [refetch]);
 
+  // Optimistic patch listener. Any source can dispatch via
+  // `dispatchProfileHealthPatch()` and the visible bar reacts instantly.
+  // We never compute crossings here — only the next server fetch will.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ProfileHealthPatch>).detail;
+      if (!detail) return;
+      setSnap((prev) => {
+        // Without a baseline snapshot the patch has nothing to merge into;
+        // the next refetch will populate everything from the server.
+        if (!prev) return prev;
+        return { ...prev, ...detail };
+      });
+    };
+    window.addEventListener(PATCH_EVENT, handler);
+    return () => window.removeEventListener(PATCH_EVENT, handler);
+  }, []);
+
   // Initial fetch + Realtime subscription. Re-subscribe whenever the active
   // profile or auth user changes.
   useEffect(() => {
@@ -348,10 +390,10 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     }
 
     // Reset state for the new profile and immediately fetch a fresh snapshot.
-    // The baseline flag is reset so the new profile's already-done steps
-    // are absorbed silently rather than triggering a popup parade.
     setIsReady(false);
     setJustCompletedStepId(null);
+    setSnap(null);
+    lastServerStepsRef.current = PENDING_STEPS;
     isFirstLoadRef.current = true;
     refetch();
 
@@ -392,6 +434,11 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     });
   }, []);
 
+  // All visible state derives from the single `snap` source.
+  const steps = useMemo<ProfileHealthStep[]>(
+    () => (snap ? computeSteps(snap) : PENDING_STEPS),
+    [snap]
+  );
   const completedCount = useMemo(() => steps.filter((s) => s.done).length, [steps]);
   const percent = useMemo(() => Math.round((completedCount / TOTAL_STEPS) * 100), [completedCount]);
 
@@ -400,9 +447,9 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     completedCount,
     totalCount: TOTAL_STEPS,
     percent,
-    subscribersCount,
-    profileViewCount,
-    salesCount,
+    subscribersCount: snap?.subscribersCount ?? 0,
+    profileViewCount: snap?.profileViewCount ?? 0,
+    salesCount: snap?.salesCount ?? 0,
     justCompletedStepId,
     acknowledgeJustCompleted,
     refetch,
