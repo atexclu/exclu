@@ -1,0 +1,2 @@
+# supabase/functions/admin-simulate-payment/config.toml
+verify_jwt = false

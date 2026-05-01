@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight, HelpCircle } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight, HelpCircle, Info, CalendarClock, Download } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProfiles } from '@/contexts/ProfileContext';
@@ -24,6 +25,14 @@ const AppDashboard = () => {
   const [totalRevenueCents, setTotalRevenueCents] = useState(0);
   const [tipsRevenueCents, setTipsRevenueCents] = useState(0);
   const [walletBalanceCents, setWalletBalanceCents] = useState(0);
+  // Pending balance: credits not yet matured (rolling 7-day hold, or 21-day
+  // initial hold for fresh accounts). Maintained by apply_wallet_transaction
+  // and the daily mature-pending-balance cron — never written from the front.
+  const [pendingBalanceCents, setPendingBalanceCents] = useState(0);
+  // Globally-set "Next platform payout date" displayed to every creator.
+  const [nextPayoutDate, setNextPayoutDate] = useState<string | null>(null);
+  // Track which payout's proof we're currently signing a download URL for.
+  const [proofLoadingId, setProofLoadingId] = useState<string | null>(null);
   const [linksRaw, setLinksRaw] = useState<any[]>([]);
   const [purchasesRaw, setPurchasesRaw] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<any[]>([]);
@@ -142,142 +151,161 @@ const AppDashboard = () => {
 
       try {
         if (isMounted) setUserId(user.id);
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country')
-          .eq('id', user.id)
-          .single();
 
-        if (profileError) {
-          console.error('Error loading creator profile', profileError);
-        }
-
-        // Links metrics — filter by profile_id when active profile available, else by creator_id
+        // ───── Phase A: fan-out every query that depends only on user.id /
+        // activeProfile.id. ~10 round-trips collapse into 1 — saving roughly
+        // a full second of perceived load time on cold starts. Anything that
+        // depends on data from this batch (purchases, fan profile lookups)
+        // runs in Phase B below.
         const linksQuery = supabase
           .from('links')
           .select('id, click_count, status, created_at');
+        const linksPromise = activeProfile?.id
+          ? linksQuery.eq('profile_id', activeProfile.id)
+          : linksQuery.eq('creator_id', user.id);
 
-        const { data: links, error: linksError } = activeProfile?.id
-          ? await linksQuery.eq('profile_id', activeProfile.id)
-          : await linksQuery.eq('creator_id', user.id);
-
-        if (linksError) throw linksError;
-
-        const safeLinks = links ?? [];
-        const linksCount = safeLinks.length;
-        const publishedCount = safeLinks.filter((link: any) => link.status === 'published').length;
-
-        // Purchases metrics – filter by this creator's link IDs for proper data isolation
-        const creatorLinkIds = safeLinks.map((l: any) => l.id);
-        let safePurchases: any[] = [];
-        if (creatorLinkIds.length > 0) {
-          const { data: purchases, error: purchasesError } = await supabase
-            .from('purchases')
-            .select('id, link_id, amount_cents, created_at')
-            .in('link_id', creatorLinkIds)
-            .eq('status', 'succeeded');
-
-          if (purchasesError) throw purchasesError;
-          safePurchases = purchases ?? [];
-        }
-        const salesCount = safePurchases.length;
-        // Creator net: strip 15% fan fee, then deduct 15% platform commission if not premium
-        const isPremium = profile?.is_creator_subscribed === true;
-        const rate = isPremium ? 0 : 0.15;
-        const revenueSum = safePurchases.reduce(
-          (sum, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.15 * (1 - rate)), 0
-        );
-
-        // Tips revenue — fetch full details for the Tips tab display
-        const tipsQuery = supabase
+        const tipsBaseQuery = supabase
           .from('tips')
           .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_name, fan_id, created_at')
           .eq('status', 'succeeded')
           .order('created_at', { ascending: false });
-        const { data: tipsData } = activeProfile?.id
-          ? await tipsQuery.eq('creator_id', user.id).or(`profile_id.eq.${activeProfile.id},profile_id.is.null`)
-          : await tipsQuery.eq('creator_id', user.id);
+        const tipsPromise = activeProfile?.id
+          ? tipsBaseQuery.eq('creator_id', user.id).or(`profile_id.eq.${activeProfile.id},profile_id.is.null`)
+          : tipsBaseQuery.eq('creator_id', user.id);
 
-        // Resolve fan profiles separately (tips.fan_id FK → auth.users, not profiles)
-        const rawTips = tipsData ?? [];
-        const fanIds = [...new Set(rawTips.filter((t: any) => t.fan_id).map((t: any) => t.fan_id))];
-        let fanProfiles = new Map<string, { display_name: string | null; avatar_url: string | null }>();
-        if (fanIds.length > 0) {
-          const { data: profiles } = await supabase
+        const [
+          { data: profile, error: profileError },
+          { data: links, error: linksError },
+          { data: tipsData },
+          { data: analyticsData },
+          { data: payoutsData, error: payoutsError },
+          { data: deliveredRequests },
+          { data: giftsData },
+          { data: fanSubRows },
+          { data: ledgerRows },
+          { data: nextPayoutSetting },
+        ] = await Promise.all([
+          supabase
             .from('profiles')
-            .select('id, display_name, avatar_url')
-            .in('id', fanIds);
-          (profiles ?? []).forEach((p: any) => fanProfiles.set(p.id, { display_name: p.display_name, avatar_url: p.avatar_url }));
-        }
+            .select('display_name, handle, is_creator_subscribed, profile_view_count, referral_code, affiliate_earnings_cents, affiliate_payout_requested_at, payout_setup_complete, wallet_balance_cents, pending_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country')
+            .eq('id', user.id)
+            .single(),
+          linksPromise,
+          tipsPromise,
+          supabase
+            .from('profile_analytics')
+            .select('date, profile_views')
+            .eq('profile_id', user.id)
+            .order('date', { ascending: true }),
+          supabase
+            .from('payouts')
+            .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason, proof_path, admin_message')
+            .eq('creator_id', user.id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('custom_requests')
+            .select('id, proposed_amount_cents, creator_net_cents, created_at, description, fan_id')
+            .eq('creator_id', user.id)
+            .eq('status', 'delivered'),
+          supabase
+            .from('gift_purchases')
+            .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_id, created_at')
+            .eq('creator_id', user.id)
+            .eq('status', 'succeeded')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('fan_creator_subscriptions')
+            .select('id, fan_id, status, price_cents, creator_net_cents, period_start, period_end, cancel_at_period_end, started_at, cancelled_at')
+            .eq('creator_user_id', user.id)
+            .order('started_at', { ascending: false, nullsFirst: false }),
+          supabase
+            .from('wallet_transactions')
+            .select('source_type, direction, amount_cents')
+            .eq('owner_id', user.id)
+            .eq('owner_kind', 'creator'),
+          supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'next_payout_date')
+            .maybeSingle(),
+        ]);
+
+        if (profileError) console.error('Error loading creator profile', profileError);
+        if (linksError) throw linksError;
+        if (payoutsError) throw payoutsError;
+
+        const safeLinks = links ?? [];
+        const linksCount = safeLinks.length;
+        const publishedCount = safeLinks.filter((link: any) => link.status === 'published').length;
+        const isPremium = profile?.is_creator_subscribed === true;
+        const rate = isPremium ? 0 : 0.15;
+
+        const rawTips = tipsData ?? [];
+        const safeRequests = deliveredRequests ?? [];
+        const safeGifts = giftsData ?? [];
+        const safeFanSubs = fanSubRows ?? [];
+
+        // ───── Phase B: dependent fan-out. Purchases need links.id; fan
+        // metadata for tips/subs needs the fan_ids returned in Phase A.
+        const creatorLinkIds = safeLinks.map((l: any) => l.id);
+        const fanIdsForTips = [...new Set(rawTips.filter((t: any) => t.fan_id).map((t: any) => t.fan_id))];
+        const fanIdsForSubs = [...new Set(safeFanSubs.filter((s: any) => s.fan_id).map((s: any) => s.fan_id))];
+        const allFanIds = [...new Set([...fanIdsForTips, ...fanIdsForSubs])];
+
+        const purchasesPromise = creatorLinkIds.length > 0
+          ? supabase
+              .from('purchases')
+              .select('id, link_id, amount_cents, created_at')
+              .in('link_id', creatorLinkIds)
+              .eq('status', 'succeeded')
+          : Promise.resolve({ data: [] as any[], error: null });
+
+        const fanProfilesPromise = allFanIds.length > 0
+          ? supabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .in('id', allFanIds)
+          : Promise.resolve({ data: [] as any[], error: null });
+
+        const [
+          { data: purchases, error: purchasesError },
+          { data: fanProfilesData },
+        ] = await Promise.all([purchasesPromise, fanProfilesPromise]);
+        if (purchasesError) throw purchasesError;
+
+        const safePurchases = purchases ?? [];
+        const salesCount = safePurchases.length;
+        const revenueSum = safePurchases.reduce(
+          (sum: number, p: any) => sum + Math.round((p.amount_cents ?? 0) / 1.15 * (1 - rate)), 0
+        );
+
+        // Build a single fan-meta map shared by tips and fan_creator_subscriptions.
+        const fanMeta = new Map<string, { id: string; display_name: string | null; avatar_url: string | null }>();
+        (fanProfilesData ?? []).forEach((p: any) =>
+          fanMeta.set(p.id, { id: p.id, display_name: p.display_name, avatar_url: p.avatar_url }),
+        );
+
         const safeTips = rawTips.map((t: any) => ({
           ...t,
-          fan: t.fan_id ? fanProfiles.get(t.fan_id) ?? null : null,
+          fan: t.fan_id ? fanMeta.get(t.fan_id) ?? null : null,
         }));
         const tipsSum = safeTips.reduce((sum: number, t: any) => {
           if (typeof t.creator_net_cents === 'number' && t.creator_net_cents > 0) return sum + t.creator_net_cents;
           return sum + Math.round((t.amount_cents ?? 0) * (1 - rate));
         }, 0);
         if (isMounted) setTipsRaw(safeTips);
-
-        // Profile views history from profile_analytics
-        const analyticsQuery = supabase
-          .from('profile_analytics')
-          .select('date, profile_views')
-          .order('date', { ascending: true });
-        const { data: analyticsData } = await analyticsQuery.eq('profile_id', user.id);
         if (isMounted) setProfileViewsRaw(
           (analyticsData ?? []).map((r: any) => ({ date: r.date, views: r.profile_views ?? 0 }))
         );
-
-        // Payouts for earnings view
-        const { data: payoutsData, error: payoutsError } = await supabase
-          .from('payouts')
-          .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
-          .eq('creator_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (payoutsError) throw payoutsError;
-
-        // Custom requests delivered — count as sales + revenue
-        const { data: deliveredRequests } = await supabase
-          .from('custom_requests')
-          .select('id, proposed_amount_cents, creator_net_cents, created_at, description, fan_id')
-          .eq('creator_id', user.id)
-          .eq('status', 'delivered');
-        const safeRequests = deliveredRequests ?? [];
-
-        // Gift purchases
-        const { data: giftsData } = await supabase
-          .from('gift_purchases')
-          .select('id, amount_cents, creator_net_cents, currency, status, message, is_anonymous, fan_id, created_at')
-          .eq('creator_id', user.id)
-          .eq('status', 'succeeded')
-          .order('created_at', { ascending: false });
-        const safeGifts = giftsData ?? [];
         const requestsRevenue = safeRequests.reduce((sum: number, r: any) => {
           if (typeof r.creator_net_cents === 'number' && r.creator_net_cents > 0) return sum + r.creator_net_cents;
           return sum + Math.round((r.proposed_amount_cents ?? 0) * (1 - rate));
         }, 0);
 
-        // Fan → creator subscriptions (active + history, for the Subscriptions tab and Overview breakdown)
-        const { data: fanSubRows } = await supabase
-          .from('fan_creator_subscriptions')
-          .select('id, fan_id, status, price_cents, creator_net_cents, period_start, period_end, cancel_at_period_end, started_at, cancelled_at')
-          .eq('creator_user_id', user.id)
-          .order('started_at', { ascending: false, nullsFirst: false });
-        const safeFanSubs = fanSubRows ?? [];
-
-        // Resolve fan meta (profiles.id = auth.users.id)
-        const fanSubIds = [...new Set(safeFanSubs.filter((s: any) => s.fan_id).map((s: any) => s.fan_id))];
-        const fanSubProfiles = new Map<string, { id: string; display_name: string | null; avatar_url: string | null }>();
-        if (fanSubIds.length) {
-          const { data: fans } = await supabase
-            .from('profiles')
-            .select('id, display_name, avatar_url')
-            .in('id', fanSubIds);
-          (fans ?? []).forEach((p: any) => fanSubProfiles.set(p.id, { id: p.id, display_name: p.display_name, avatar_url: p.avatar_url }));
-        }
-        const fanSubscribersEnriched = safeFanSubs.map((s: any) => ({ ...s, fan: s.fan_id ? fanSubProfiles.get(s.fan_id) ?? null : null }));
+        const fanSubscribersEnriched = safeFanSubs.map((s: any) => ({
+          ...s,
+          fan: s.fan_id ? fanMeta.get(s.fan_id) ?? null : null,
+        }));
 
         const now = Date.now();
         const windowStart = now - 30 * 24 * 60 * 60 * 1000;
@@ -300,14 +328,8 @@ const AppDashboard = () => {
           setFanSubStats(subsStats);
         }
 
-        // Ledger query — wallet_transactions grouped by source_type
-        // Post-deploy rows carry precise creator_net_cents already; legacy rows fall back below.
-        const { data: ledgerRows } = await supabase
-          .from('wallet_transactions')
-          .select('source_type, direction, amount_cents')
-          .eq('owner_id', user.id)
-          .eq('owner_kind', 'creator');
-
+        // Ledger projection — already fetched in Phase A above (ledgerRows).
+        // Group by source_type to drive the Earnings breakdown widget.
         const newByKind: Record<string, number> = {
           link_purchase: 0,
           tip: 0,
@@ -352,6 +374,15 @@ const AppDashboard = () => {
         );
         setTipsRevenueCents(tipsSum);
         setWalletBalanceCents(walletBalance);
+        setPendingBalanceCents(
+          typeof profile?.pending_balance_cents === 'number' && profile.pending_balance_cents > 0
+            ? profile.pending_balance_cents
+            : 0,
+        );
+
+        // Next platform payout date — already loaded in Phase A.
+        const nextDate = (nextPayoutSetting?.value as { date?: string | null } | null)?.date ?? null;
+        if (isMounted) setNextPayoutDate(nextDate);
         setLinksRaw(safeLinks);
         setPurchasesRaw(safePurchases);
         setPayouts(safePayouts);
@@ -393,19 +424,23 @@ const AppDashboard = () => {
           }
           setReferralCode(code);
 
-          // Load referrals (as referrer — people I recruited)
-          const { data: referralsData } = await supabase
-            .from('referrals')
-            .select('id, referred_id, status, commission_earned_cents, created_at')
-            .eq('referrer_id', user.id)
-            .order('created_at', { ascending: false });
-
-          // Check if this creator was themselves referred → $100 bonus eligibility
-          const { data: myReferralRow } = await supabase
-            .from('referrals')
-            .select('created_at, bonus_paid_to_referred')
-            .eq('referred_id', user.id)
-            .maybeSingle();
+          // Both referral lookups only depend on user.id — fan them out in
+          // parallel instead of paying two sequential round-trips.
+          const [
+            { data: referralsData },
+            { data: myReferralRow },
+          ] = await Promise.all([
+            supabase
+              .from('referrals')
+              .select('id, referred_id, status, commission_earned_cents, created_at')
+              .eq('referrer_id', user.id)
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('referrals')
+              .select('created_at, bonus_paid_to_referred')
+              .eq('referred_id', user.id)
+              .maybeSingle(),
+          ]);
 
           if (myReferralRow && isMounted) {
             const signupDate = new Date(myReferralRow.created_at);
@@ -500,7 +535,7 @@ const AppDashboard = () => {
       }
       const { data: refreshedPayouts } = await supabase
         .from('payouts')
-        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason')
+        .select('id, amount_cents, status, created_at, paid_at, requested_at, processed_at, admin_notes, rejection_reason, proof_path, admin_message')
         .eq('creator_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -516,6 +551,37 @@ const AppDashboard = () => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+
+  // Sign a 5-min download URL for a payout proof and open it in a new tab.
+  // The bucket is private — this is the only way the creator can read the file.
+  const handleDownloadProof = async (payoutId: string) => {
+    setProofLoadingId(payoutId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('get-payout-proof-url', {
+        body: { payout_id: payoutId },
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
+      if (error || !(data as any)?.ok) {
+        throw new Error((data as any)?.error || 'Failed to load proof');
+      }
+      window.open((data as any).url, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      toast.error(err?.message || 'Unable to load proof');
+    } finally {
+      setProofLoadingId(null);
+    }
+  };
+
+  // Format the next payout date as a friendly "May 5, 2026" string. Returns
+  // null when the admin hasn't set one yet (banner is hidden in that case).
+  const formattedNextPayoutDate = nextPayoutDate
+    ? new Date(nextPayoutDate + 'T00:00:00').toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
 
   const publicProfileUrl = profileHandle ? `${window.location.origin}/${profileHandle}` : null;
 
@@ -768,6 +834,49 @@ const AppDashboard = () => {
                       : `$${(walletBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                   <span className="text-[11px] font-bold text-foreground/40 dark:text-white/40 mb-2 sm:mb-3 tracking-[0.2em]">USD</span>
+                </div>
+
+                {/* Pending balance row — secondary metric paired with the
+                    Available hero. The tooltip explains the rolling-7d / 21d
+                    initial hold rules without cluttering the visual. */}
+                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.18em] font-semibold text-foreground/50 dark:text-white/50">
+                      Pending
+                    </span>
+                    <span className="font-bold text-foreground/85 dark:text-white/85 tabular-nums">
+                      {isLoading
+                        ? '—'
+                        : `$${(pendingBalanceCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="How pending balance works"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full text-foreground/40 dark:text-white/40 hover:text-foreground dark:hover:text-white transition-colors"
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                        Your earnings are processed on a 7-day rolling basis. A tip,
+                        purchase or new subscription on day&nbsp;1 becomes withdrawable
+                        on day&nbsp;8 — and so on. New creators have a 21-day initial
+                        holding period from account creation.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  {formattedNextPayoutDate && (
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[11px] text-foreground/70 dark:text-white/70">
+                      <CalendarClock className="w-3 h-3 text-[#CFFF16]" />
+                      Next platform payout:&nbsp;
+                      <span className="font-semibold text-foreground dark:text-white">
+                        {formattedNextPayoutDate}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-8 h-px bg-gradient-to-r from-transparent via-foreground/10 dark:via-white/12 to-transparent" />
@@ -1727,11 +1836,12 @@ const AppDashboard = () => {
 
         {activeTab === 'payouts' && (
           <section ref={payoutsSectionRef} className="mt-2 space-y-4 scroll-mt-24">
-            {/* Quick withdrawal stat row */}
+            {/* Quick withdrawal stat row — Available + Pending mirror the
+                wallet hero; Withdrawn + In progress give the historical view. */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: 'Available', value: walletBalanceCents, accent: 'text-[#4a6304] dark:text-[#CFFF16]' },
-                { label: 'Total earned', value: walletTotalEarnedCents, accent: 'text-foreground dark:text-white' },
+                { label: 'Pending', value: pendingBalanceCents, accent: 'text-foreground/80 dark:text-white/80', tooltip: true },
                 { label: 'Withdrawn', value: walletTotalWithdrawnCents, accent: 'text-foreground dark:text-white' },
                 {
                   label: 'In progress',
@@ -1742,7 +1852,23 @@ const AppDashboard = () => {
                 },
               ].map((stat) => (
                 <div key={stat.label} className="rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#0a0a10] p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-foreground/50 dark:text-white/50 font-semibold">{stat.label}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[10px] uppercase tracking-wider text-foreground/50 dark:text-white/50 font-semibold">{stat.label}</p>
+                    {stat.tooltip && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" aria-label="How pending balance works" className="text-foreground/40 dark:text-white/40 hover:text-foreground dark:hover:text-white transition-colors">
+                            <Info className="w-3 h-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                          Earnings move from Pending to Available 7 days after they're
+                          received. New creators have a 21-day initial holding period
+                          from account creation.
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                   <p className={`text-xl sm:text-2xl font-bold mt-1 tabular-nums ${stat.accent}`}>
                     ${(stat.value / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -1881,28 +2007,68 @@ const AppDashboard = () => {
                         ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30'
                         : 'bg-foreground/5 dark:bg-white/5 text-foreground/70 dark:text-white/70 border border-foreground/10 dark:border-white/10';
                     const Icon = isPaid ? CircleCheck : isFailed ? CircleX : Clock;
+                    // Prefer the admin-entered wire date over processed_at
+                    // when both are present (admin may confirm on a different
+                    // day than the actual transfer).
+                    const paidLabel = payout.paid_at
+                      ? new Date(payout.paid_at + 'T00:00:00').toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : payout.processed_at
+                        ? new Date(payout.processed_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })
+                        : null;
+
                     return (
-                      <div key={payout.id} className="px-5 py-3.5 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${dotClass}`}>
-                            <Icon className="w-4 h-4" />
+                      <div key={payout.id} className="px-5 py-3.5 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${dotClass}`}>
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-foreground dark:text-white tabular-nums">
+                                ${(payout.amount_cents / 100).toFixed(2)}
+                              </p>
+                              <p className="text-[11px] text-foreground/55 dark:text-white/55">
+                                Requested {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {paidLabel && isPaid && ` · paid ${paidLabel}`}
+                              </p>
+                              {payout.rejection_reason && (
+                                <p className="text-[11px] text-red-500/80 dark:text-red-300/80 mt-1">Reason: {payout.rejection_reason}</p>
+                              )}
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-foreground dark:text-white tabular-nums">
-                              ${(payout.amount_cents / 100).toFixed(2)}
-                            </p>
-                            <p className="text-[11px] text-foreground/55 dark:text-white/55">
-                              Requested {new Date(payout.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {payout.paid_at && ` · paid ${new Date(payout.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                            </p>
-                            {payout.rejection_reason && (
-                              <p className="text-[11px] text-red-500/80 dark:text-red-300/80 mt-1">Reason: {payout.rejection_reason}</p>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {payout.proof_path && (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadProof(payout.id)}
+                                disabled={proofLoadingId === payout.id}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] font-medium text-foreground/70 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:border-foreground/20 dark:hover:border-white/20 transition-colors disabled:opacity-50"
+                                title="Download proof of payment"
+                              >
+                                {proofLoadingId === payout.id
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <Download className="w-3 h-3" />}
+                                Proof
+                              </button>
                             )}
+                            <span className={`text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${dotClass}`}>
+                              {payout.status}
+                            </span>
                           </div>
                         </div>
-                        <span className={`text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${dotClass}`}>
-                          {payout.status}
-                        </span>
+                        {payout.admin_message && (
+                          <p className="text-[11px] leading-relaxed text-foreground/65 dark:text-white/65 bg-foreground/[0.03] dark:bg-white/[0.04] border-l-2 border-[#CFFF16]/40 pl-3 py-1.5 ml-12">
+                            {payout.admin_message}
+                          </p>
+                        )}
                       </div>
                     );
                   })}

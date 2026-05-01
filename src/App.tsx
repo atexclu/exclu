@@ -115,7 +115,7 @@ const App = () => {
       <ThemeProvider>
         <AgeVerificationGate>
           <ProfileProvider>
-            <TooltipProvider>
+            <TooltipProvider delayDuration={120} skipDelayDuration={120}>
             <Toaster />
             <Sonner />
             <BrowserRouter>

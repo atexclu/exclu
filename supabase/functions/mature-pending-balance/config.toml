@@ -1,0 +1,2 @@
+# supabase/functions/mature-pending-balance/config.toml
+verify_jwt = false

@@ -1,0 +1,2 @@
+# supabase/functions/sign-payout-proof-upload/config.toml
+verify_jwt = false

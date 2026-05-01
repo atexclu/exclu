@@ -1,0 +1,2 @@
+# supabase/functions/get-payout-proof-url/config.toml
+verify_jwt = false

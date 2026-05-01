@@ -8,7 +8,7 @@
 set -euo pipefail
 
 BAD=$(grep -rEn \
-  "wallet_balance_cents\s*=|chatter_earnings_cents\s*=|total_earned_cents\s*=|credit_creator_wallet\(|debit_creator_wallet\(" \
+  "wallet_balance_cents\s*=|pending_balance_cents\s*=|chatter_earnings_cents\s*=|total_earned_cents\s*=|credit_creator_wallet\(|debit_creator_wallet\(" \
   supabase/functions/ \
   --include='*.ts' \
   | grep -v '_shared/ledger.ts' \

@@ -73,8 +73,18 @@ serve(async (req) => {
     const action = body?.action as string; // 'complete' | 'reject'
     const adminNotes = typeof body?.admin_notes === 'string' ? body.admin_notes.trim().slice(0, 500) : null;
 
+    // Optional confirmation metadata (used only on `complete`):
+    //   paid_at        — ISO date (YYYY-MM-DD) for when the wire actually left
+    //   proof_path     — Storage path inside the `payout-proofs` bucket
+    //   admin_message  — free-text message from admin to creator
+    const paidAtRaw = typeof body?.paid_at === 'string' ? body.paid_at.trim() : null;
+    const paidAt = paidAtRaw && /^\d{4}-\d{2}-\d{2}$/.test(paidAtRaw) ? paidAtRaw : null;
+    const proofPath = typeof body?.proof_path === 'string' && body.proof_path.trim() ? body.proof_path.trim() : null;
+    const adminMessage = typeof body?.admin_message === 'string' ? body.admin_message.trim().slice(0, 1000) : null;
+
     if (!payoutId) return jsonError('Missing payout_id', 400, corsHeaders);
     if (!['complete', 'reject'].includes(action)) return jsonError('Invalid action (complete or reject)', 400, corsHeaders);
+    if (paidAtRaw && !paidAt) return jsonError('Invalid paid_at (expected YYYY-MM-DD)', 400, corsHeaders);
 
     // Fetch the payout
     const { data: payout, error: payoutErr } = await supabase
@@ -130,13 +140,17 @@ serve(async (req) => {
         );
       }
 
-      // Mark as completed
+      // Mark as completed (paid_at / proof_path / admin_message are persisted
+      // verbatim from the admin form — all optional).
       const { error: updateErr } = await supabase
         .from('payouts')
         .update({
           status: 'completed',
           processed_at: new Date().toISOString(),
           admin_notes: adminNotes,
+          paid_at: paidAt,
+          proof_path: proofPath,
+          admin_message: adminMessage,
         })
         .eq('id', payoutId);
 
@@ -145,18 +159,34 @@ serve(async (req) => {
         return jsonError('Failed to update payout', 500, corsHeaders);
       }
 
-      // Email creator
+      // Email creator with optional paid date + admin message + proof CTA.
       if (creatorEmail) {
         const maskedIban = payout.bank_iban
           ? `${payout.bank_iban.slice(0, 4)} ${'••••'.repeat(3)} ${payout.bank_iban.slice(-4)}`
           : '••••';
+        const formattedPaidAt = paidAt
+          ? new Date(paidAt + 'T00:00:00Z').toLocaleDateString('en-US', {
+              year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+            })
+          : null;
+        const earningsUrl = `${siteUrl}/app/dashboard?tab=payouts`;
+        const messageBlock = adminMessage
+          ? `<p style="color:#cbd5e1;background:#0f172a;border-left:3px solid #a3e635;padding:12px 14px;border-radius:6px;margin-top:16px;">${adminMessage.replace(/</g, '&lt;')}</p>`
+          : '';
+        const proofBlock = proofPath
+          ? `<p style="margin-top:18px;"><a href="${earningsUrl}" style="display:inline-block;background:#a3e635;color:#020617;padding:10px 18px;border-radius:8px;font-weight:700;text-decoration:none;">Download proof of payment</a></p>`
+          : '';
+
         await sendBrevoEmail({
           to: creatorEmail,
           subject: `Your withdrawal of ${formatUSD(payout.amount_cents)} has been processed`,
           htmlContent: `<div style="font-family:system-ui;padding:20px;background:#020617;color:#f9fafb;border-radius:12px;">
             <h2>Withdrawal completed ✅</h2>
             <p style="color:#cbd5e1;">Your withdrawal of <strong style="color:#a3e635;">${formatUSD(payout.amount_cents)}</strong> has been transferred to your bank account (${maskedIban}).</p>
+            ${formattedPaidAt ? `<p style="color:#cbd5e1;">Wire date: <strong>${formattedPaidAt}</strong>.</p>` : ''}
             <p style="color:#cbd5e1;">Please allow up to <strong>7 business days</strong> for the funds to appear on your account.</p>
+            ${messageBlock}
+            ${proofBlock}
             <p style="color:#64748b;font-size:13px;margin-top:20px;">If you have questions, contact us at contact@exclu.at.</p>
           </div>`,
         });

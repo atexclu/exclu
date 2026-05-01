@@ -1,0 +1,2 @@
+# supabase/functions/update-platform-setting/config.toml
+verify_jwt = false
