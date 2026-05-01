@@ -7,7 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { ProfileSwitcherDropdown, ProfileSwitcherOverlay } from '@/components/ProfileSwitcher';
+import { ProfileHealthCard, ProfileHealthCardSkeleton } from '@/components/ProfileHealthCard';
+import { ProfileHealthDialog } from '@/components/ProfileHealthDialog';
+import { useProfileHealth, type ProfileHealthStepId } from '@/hooks/useProfileHealth';
 import { ProUpgradePopup } from './ProUpgradePopup';
+
+const PROFILE_HEALTH_AUTO_OPEN_DELAY_MS = 450;
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
 
@@ -63,6 +68,49 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
 
   const chatUnreadCount = useChatUnread(activeProfile?.id ?? null);
   const isChatPage = location.pathname === '/app/chat';
+
+  // ── Profile Health: hook + dialog live at the AppShell root ─────────
+  // The dialog must be rendered OUTSIDE the mobile drawer's <motion.aside>.
+  // Otherwise closing the drawer (which we do when the card is tapped on
+  // mobile, to avoid a z-index stacking conflict) would unmount the dialog
+  // mid-open. With state lifted up here, the drawer can come and go without
+  // touching the popup.
+  const profileHealth = useProfileHealth(activeProfile);
+  const [profileHealthOpen, setProfileHealthOpen] = useState(false);
+  const [profileHealthHighlight, setProfileHealthHighlight] = useState<ProfileHealthStepId | null>(null);
+
+  // Auto-popup on a fresh step crossing. The hook only reports `justCompletedStepId`
+  // for transitions that happened in this session and weren't acknowledged before,
+  // so reloading the page won't re-trigger.
+  useEffect(() => {
+    const stepId = profileHealth.justCompletedStepId;
+    if (!stepId) return;
+    const timer = window.setTimeout(() => {
+      setProfileHealthHighlight(stepId);
+      setProfileHealthOpen(true);
+      profileHealth.acknowledgeJustCompleted();
+    }, PROFILE_HEALTH_AUTO_OPEN_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [profileHealth.justCompletedStepId, profileHealth]);
+
+  // Clear the highlight a moment after the dialog closes so a manual reopen
+  // doesn't re-pulse a previously celebrated step.
+  useEffect(() => {
+    if (profileHealthOpen) return;
+    if (!profileHealthHighlight) return;
+    const timer = window.setTimeout(() => setProfileHealthHighlight(null), 800);
+    return () => window.clearTimeout(timer);
+  }, [profileHealthOpen, profileHealthHighlight]);
+
+  const isProfileHealthComplete =
+    profileHealth.isReady && profileHealth.completedCount === profileHealth.totalCount;
+
+  /** Tap handler shared by both card instances. The mobile path also closes
+      the drawer; on desktop `closeDrawer=false` keeps the sidebar in place. */
+  const openProfileHealth = (closeDrawer = false) => {
+    if (closeDrawer) setMobileDrawerOpen(false);
+    setProfileHealthOpen(true);
+  };
 
   useEffect(() => {
     const fetchAdminStatus = async () => {
@@ -215,6 +263,22 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
           </Link>
         </div>
 
+        <div className="px-3 pt-3">
+          {activeProfile && profileHealth.isReady ? (
+            <ProfileHealthCard
+              activeProfile={activeProfile}
+              percent={profileHealth.percent}
+              subscribersCount={profileHealth.subscribersCount}
+              profileViewCount={profileHealth.profileViewCount}
+              salesCount={profileHealth.salesCount}
+              isComplete={isProfileHealthComplete}
+              onOpen={() => openProfileHealth(false)}
+            />
+          ) : (
+            <ProfileHealthCardSkeleton />
+          )}
+        </div>
+
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           {renderNavSections()}
         </nav>
@@ -256,6 +320,25 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
                 >
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+
+              <div className="px-3 pt-3">
+                {/* The mobile instance closes the drawer when tapped — the
+                    dialog itself lives at AppShell root so it survives the
+                    drawer unmount. Without that lift-up the popup would
+                    appear and immediately disappear with the drawer. */}
+                {activeProfile && profileHealth.isReady ? (
+                  <ProfileHealthCard
+                    activeProfile={activeProfile}
+                    percent={profileHealth.percent}
+                    subscribersCount={profileHealth.subscribersCount}
+                    profileViewCount={profileHealth.profileViewCount}
+                    isComplete={isProfileHealthComplete}
+                    onOpen={() => openProfileHealth(true)}
+                  />
+                ) : (
+                  <ProfileHealthCardSkeleton />
+                )}
               </div>
 
               <nav className="flex-1 overflow-y-auto py-4 px-3">
@@ -346,6 +429,18 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
       </AnimatePresence>
 
       {location.pathname.startsWith('/app') && <ProUpgradePopup />}
+
+      {/* Profile Health dialog — rendered at AppShell root so it survives
+          the mobile drawer unmounting (which happens when the card is tapped). */}
+      <ProfileHealthDialog
+        open={profileHealthOpen}
+        onOpenChange={setProfileHealthOpen}
+        steps={profileHealth.steps}
+        percent={profileHealth.percent}
+        completedCount={profileHealth.completedCount}
+        totalCount={profileHealth.totalCount}
+        highlightStepId={profileHealthHighlight}
+      />
     </div>
   );
 };

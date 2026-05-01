@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { getSignedUrl } from '@/lib/storageUtils';
+import { getSignedUrls } from '@/lib/storageUtils';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -18,7 +18,14 @@ import { WishlistSection } from '@/components/linkinbio/sections/WishlistSection
 import { FanSubscriptionSection } from '@/components/linkinbio/sections/FanSubscriptionSection';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useProfiles } from '@/contexts/ProfileContext';
+import { useSearchParams } from 'react-router-dom';
 import AppShell from '@/components/AppShell';
+
+/** Section keys exposed via the `?focus=<tab>` deep-link from Profile Health. */
+const FOCUSABLE_SECTIONS = ['photo', 'info', 'social', 'links', 'content', 'wishlist', 'colors'] as const;
+type FocusableSection = (typeof FOCUSABLE_SECTIONS)[number];
+const isFocusableSection = (value: string | null): value is FocusableSection =>
+  value !== null && (FOCUSABLE_SECTIONS as readonly string[]).includes(value);
 
 interface LinkInBioData {
   display_name: string;
@@ -133,8 +140,22 @@ const LinkInBioEditor = () => {
   const [agencyName, setAgencyName] = useState<string | null>(null);
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [activeSection, setActiveSection] = useState<'photo' | 'info' | 'social' | 'links' | 'content' | 'wishlist' | 'colors'>('photo');
+  const [activeSection, setActiveSection] = useState<FocusableSection>('photo');
   const [previewTab, setPreviewTab] = useState<'links' | 'content' | 'wishlist'>('links');
+
+  // Deep-link support — reading `?focus=<section>` lets the Profile Health
+  // dialog land the user directly on the right tab. The query param is
+  // consumed (cleared) after read so manual tab switches afterwards aren't
+  // overridden, and so a back-nav doesn't loop.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const focus = searchParams.get('focus');
+    if (!isFocusableSection(focus)) return;
+    setActiveSection(focus);
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Mirror the editor tab in the mobile preview so the creator sees exactly
   // what they're editing.
@@ -300,13 +321,12 @@ const LinkInBioEditor = () => {
         : await publicAssetsQuery.eq('creator_id', user.id);
 
       if (!publicError && publicData) {
-        const withUrls = await Promise.all(
-          publicData.map(async (item) => {
-            if (!item.storage_path) return { ...item, previewUrl: null };
-            const previewUrl = await getSignedUrl(item.storage_path, 60 * 60);
-            return { ...item, previewUrl: previewUrl || null };
-          })
-        );
+        const paths = publicData.map((i) => i.storage_path).filter(Boolean) as string[];
+        const signed = await getSignedUrls(paths, 60 * 60);
+        const withUrls = publicData.map((item) => ({
+          ...item,
+          previewUrl: item.storage_path ? signed[item.storage_path] ?? null : null,
+        }));
         setPublicContent(withUrls);
       }
 
@@ -535,18 +555,21 @@ const LinkInBioEditor = () => {
         });
       const ordered = preview ? [preview, ...nonPreview] : nonPreview;
 
-      // Sign both the blur preview (visible to everyone, used for locked state)
-      // and the full-res preview (shown only when the asset is the free preview
-      // in the editor view — mirroring public profile behavior).
-      const withUrls = await Promise.all(
-        ordered.map(async (item: any) => {
-          const blurUrl = item.feed_blur_path ? await getSignedUrl(item.feed_blur_path, 60 * 60) : null;
-          const previewUrl = item.is_feed_preview && item.storage_path
-            ? await getSignedUrl(item.storage_path, 60 * 60)
-            : null;
-          return { ...item, blurUrl, previewUrl };
-        })
-      );
+      // Sign blur previews and free-preview full-res in two batched round-trips
+      // (instead of N + M sequential signs).
+      const blurPaths = ordered.map((i: any) => i.feed_blur_path).filter(Boolean) as string[];
+      const freePreviewPaths = ordered
+        .filter((i: any) => i.is_feed_preview && i.storage_path)
+        .map((i: any) => i.storage_path) as string[];
+      const [blurSigned, freeSigned] = await Promise.all([
+        getSignedUrls(blurPaths, 60 * 60),
+        getSignedUrls(freePreviewPaths, 60 * 60),
+      ]);
+      const withUrls = ordered.map((item: any) => ({
+        ...item,
+        blurUrl: item.feed_blur_path ? blurSigned[item.feed_blur_path] ?? null : null,
+        previewUrl: item.is_feed_preview && item.storage_path ? freeSigned[item.storage_path] ?? null : null,
+      }));
       setPublicContent(withUrls);
     }
   };

@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { DollarSign, Users, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+const PRICE_MIN = 5;
+const PRICE_MAX = 100;
 
 interface FanSubscriptionSectionProps {
   enabled: boolean;
@@ -21,13 +25,32 @@ interface FanSubscriptionSectionProps {
  * monetisation setting.
  */
 export function FanSubscriptionSection({ enabled, priceCents, onUpdate }: FanSubscriptionSectionProps) {
-  const priceDollars = (priceCents / 100).toFixed(2);
+  // Local string state for the price input. Clamping on every keystroke is
+  // hostile (typing "1" would snap to "5" before you can finish "10"), so we
+  // let the user type freely and only validate / clamp on blur. We also keep
+  // the field as `.toFixed(2)` ONLY when displaying a server-confirmed value
+  // — while the user is editing, we mirror their raw input.
+  const [priceDraft, setPriceDraft] = useState<string>(() => (priceCents / 100).toFixed(2));
 
-  const handlePriceChange = (value: string) => {
-    const parsed = parseFloat(value);
-    if (Number.isNaN(parsed)) return;
-    const clamped = Math.max(5, Math.min(100, parsed));
-    onUpdate({ fan_subscription_price_cents: Math.round(clamped * 100) });
+  // When the parent commits a new price (e.g. server reload, profile switch),
+  // sync the draft back to the canonical value.
+  useEffect(() => {
+    setPriceDraft((priceCents / 100).toFixed(2));
+  }, [priceCents]);
+
+  const commitPrice = () => {
+    const parsed = parseFloat(priceDraft);
+    if (Number.isNaN(parsed)) {
+      // Invalid input → revert to the last good server value.
+      setPriceDraft((priceCents / 100).toFixed(2));
+      return;
+    }
+    const clamped = Math.max(PRICE_MIN, Math.min(PRICE_MAX, parsed));
+    const clampedCents = Math.round(clamped * 100);
+    setPriceDraft(clamped.toFixed(2));
+    if (clampedCents !== priceCents) {
+      onUpdate({ fan_subscription_price_cents: clampedCents });
+    }
   };
 
   return (
@@ -69,15 +92,23 @@ export function FanSubscriptionSection({ enabled, priceCents, onUpdate }: FanSub
             <DollarSign className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
               type="number"
-              min={5}
-              max={100}
+              min={PRICE_MIN}
+              max={PRICE_MAX}
               step={0.5}
-              value={priceDollars}
-              onChange={(e) => handlePriceChange(e.target.value)}
+              inputMode="decimal"
+              value={priceDraft}
+              onChange={(e) => setPriceDraft(e.target.value)}
+              onBlur={commitPrice}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
               className="pl-9"
             />
           </div>
-          <p className="text-[10px] text-muted-foreground">Minimum $5, maximum $100.</p>
+          <p className="text-[10px] text-muted-foreground">Minimum ${PRICE_MIN}, maximum ${PRICE_MAX}.</p>
         </div>
       )}
     </div>
