@@ -15,6 +15,8 @@ interface ProfileHealthDialogProps {
   totalCount: number;
   /** When set, the dialog scrolls that step into view and pulses it. */
   highlightStepId: ProfileHealthStepId | null;
+  /** Toggle a manual step's checked state. Manual steps don't navigate. */
+  onToggleManualStep: (stepId: ProfileHealthStepId) => void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function ProfileHealthDialog({
   completedCount,
   totalCount,
   highlightStepId,
+  onToggleManualStep,
 }: ProfileHealthDialogProps) {
   const navigate = useNavigate();
   const stepRefs = useRef<Map<ProfileHealthStepId, HTMLButtonElement | null>>(new Map());
@@ -54,7 +57,13 @@ export function ProfileHealthDialog({
   // creator to the editor tab so they can review or edit their answer.
   // Steps with an absolute `targetUrl` (e.g. /app/links) bypass the focus
   // deep-link so they can send the user outside the Link-in-Bio editor.
-  const goToStep = (step: ProfileHealthStep) => {
+  // Manual steps don't navigate — clicking them just toggles their checked
+  // state via the parent-supplied callback.
+  const handleStepClick = (step: ProfileHealthStep) => {
+    if (step.manual) {
+      onToggleManualStep(step.id);
+      return;
+    }
     onOpenChange(false);
     navigate(step.targetUrl ?? `/app/profile?focus=${step.targetTab}`);
   };
@@ -115,7 +124,7 @@ export function ProfileHealthDialog({
                   step={step}
                   index={index}
                   isHighlighted={highlightStepId === step.id}
-                  onClick={() => goToStep(step)}
+                  onClick={() => handleStepClick(step)}
                 />
               </li>
             ))}
@@ -149,12 +158,13 @@ interface StepRowProps {
 
 /**
  * Single row. Always rendered as a `<button>` so done steps remain navigable
- * (the creator can re-open a finished section to review or edit). Done rows
- * keep their celebratory styling but the chevron stays so hover affordance
- * is consistent across the list.
+ * (the creator can re-open a finished section to review or edit). Manual
+ * steps render with a checkbox icon instead of a chevron — clicking them
+ * just toggles the checked state, no navigation.
  */
 const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
   ({ step, index, isHighlighted, onClick }, ref) => {
+    const isManual = Boolean(step.manual);
     return (
       <motion.button
         ref={ref}
@@ -163,6 +173,8 @@ const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
         onClick={onClick}
         whileHover={{ scale: 1.005 }}
         whileTap={{ scale: 0.995 }}
+        role={isManual ? 'checkbox' : undefined}
+        aria-checked={isManual ? step.done : undefined}
         className={cn(
           'group relative flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-all',
           step.done
@@ -170,7 +182,11 @@ const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
             : 'border-border/60 bg-muted/30 hover:border-border hover:bg-muted/60'
         )}
       >
-        <StepIcon done={step.done} highlight={isHighlighted} index={index} />
+        {isManual ? (
+          <ManualCheckbox done={step.done} highlight={isHighlighted} />
+        ) : (
+          <StepIcon done={step.done} highlight={isHighlighted} index={index} />
+        )}
         <div className="min-w-0 flex-1">
           <p
             className={cn(
@@ -182,19 +198,62 @@ const StepRow = forwardRef<HTMLButtonElement, StepRowProps>(
           </p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{step.description}</p>
         </div>
-        <ChevronRight
-          className={cn(
-            'h-4 w-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5',
-            step.done
-              ? 'text-primary/60 group-hover:text-primary'
-              : 'text-muted-foreground group-hover:text-foreground'
-          )}
-        />
+        {!isManual && (
+          <ChevronRight
+            className={cn(
+              'h-4 w-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5',
+              step.done
+                ? 'text-primary/60 group-hover:text-primary'
+                : 'text-muted-foreground group-hover:text-foreground'
+            )}
+          />
+        )}
       </motion.button>
     );
   }
 );
 StepRow.displayName = 'StepRow';
+
+interface ManualCheckboxProps {
+  done: boolean;
+  highlight: boolean;
+}
+
+/**
+ * Square checkbox icon for manual steps — visually distinct from the round
+ * numbered/check badge used for auto-detected steps. The user clicks the
+ * whole row to toggle it, the checkbox is purely decorative.
+ */
+function ManualCheckbox({ done, highlight }: ManualCheckboxProps) {
+  return (
+    <div
+      className={cn(
+        'relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md border-2 transition-all',
+        done
+          ? 'border-primary bg-primary/15 text-primary'
+          : 'border-border bg-muted/40 text-transparent group-hover:border-foreground/40'
+      )}
+    >
+      <motion.span
+        initial={false}
+        animate={{ scale: done ? 1 : 0, opacity: done ? 1 : 0 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 20 }}
+      >
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </motion.span>
+
+      {highlight && done && (
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 rounded-md ring-2 ring-primary"
+          initial={{ opacity: 0.6, scale: 1 }}
+          animate={{ opacity: 0, scale: 1.5 }}
+          transition={{ duration: 1.1, ease: 'easeOut' }}
+        />
+      )}
+    </div>
+  );
+}
 
 interface StepIconProps {
   done: boolean;

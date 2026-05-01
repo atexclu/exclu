@@ -440,6 +440,7 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
         completedCount={profileHealth.completedCount}
         totalCount={profileHealth.totalCount}
         highlightStepId={profileHealthHighlight}
+        onToggleManualStep={profileHealth.toggleManualStep}
       />
     </div>
   );

@@ -26,6 +26,7 @@ import type { CreatorProfile } from '@/contexts/ProfileContext';
  */
 
 export type ProfileHealthStepId =
+  | 'add_to_bio'
   | 'username'
   | 'avatar'
   | 'bio'
@@ -52,6 +53,12 @@ export interface ProfileHealthStep {
    * "Create your first paid link" → standalone Links page).
    */
   targetUrl?: string;
+  /**
+   * Manual steps cannot be detected from DB state — the creator marks them
+   * done themselves via a checkbox in the dialog. Stored in localStorage,
+   * scoped per-profile.
+   */
+  manual?: boolean;
   done: boolean;
 }
 
@@ -72,9 +79,16 @@ export interface ProfileHealthState {
   acknowledgeJustCompleted: () => void;
   refetch: () => void;
   isReady: boolean;
+  /** Flip a manual step's checked state (persisted in localStorage). */
+  toggleManualStep: (stepId: ProfileHealthStepId) => void;
 }
 
-const STEP_DEFS: Array<Pick<ProfileHealthStep, 'id' | 'label' | 'description' | 'targetTab' | 'targetUrl'>> = [
+const STEP_DEFS: Array<Pick<ProfileHealthStep, 'id' | 'label' | 'description' | 'targetTab' | 'targetUrl' | 'manual'>> = [
+  // Manual reminder — there's no way to detect from DB whether the creator
+  // pasted their Exclu link into Instagram / TikTok / etc. So we just keep a
+  // checkbox the creator can tick themselves; it's persisted in localStorage
+  // per profile and contributes to the percent like any other step.
+  { id: 'add_to_bio', label: 'Add your Exclu to your bio', description: 'Paste your Exclu link in your social bios.', targetTab: 'social', manual: true },
   { id: 'username', label: 'Username added', description: 'Pick the handle fans see in your URL.', targetTab: 'info' },
   { id: 'avatar', label: 'Add a profile picture', description: 'Upload a photo so fans recognise you.', targetTab: 'photo' },
   { id: 'bio', label: 'Write your bio', description: 'A short intro about you.', targetTab: 'info' },
@@ -95,6 +109,7 @@ const STEP_DEFS: Array<Pick<ProfileHealthStep, 'id' | 'label' | 'description' | 
 const TOTAL_STEPS = STEP_DEFS.length;
 const REFETCH_DEBOUNCE_MS = 300;
 const SEEN_STORAGE_KEY = (profileId: string) => `profileHealth.seenSteps:${profileId}`;
+const MANUAL_STORAGE_KEY = (profileId: string) => `profileHealth.manualSteps:${profileId}`;
 
 /** Custom DOM event used by the editor to push optimistic step changes. */
 const PATCH_EVENT = 'exclu:profile-health:patch';
@@ -143,13 +158,18 @@ export function dispatchProfileHealthPatch(patch: ProfileHealthPatch): void {
 /** Trim + non-empty guard. Treats whitespace-only strings as empty. */
 const isFilled = (value: string | null | undefined): boolean => Boolean(value && value.trim().length > 0);
 
-function computeSteps(snap: RawSnapshot): ProfileHealthStep[] {
+function computeSteps(
+  snap: RawSnapshot,
+  manualDone: Set<ProfileHealthStepId>
+): ProfileHealthStep[] {
   const social = snap.social_links ?? {};
   // "Socials" = at least one social platform with a non-empty URL. Any
   // platform counts (Instagram, X, TikTok, OnlyFans, Linktree, …).
   const anySocialFilled = Object.values(social).some((value) => isFilled(value));
 
   const flags: Record<ProfileHealthStepId, boolean> = {
+    // Manual step — done iff the creator ticked the checkbox in the dialog.
+    add_to_bio: manualDone.has('add_to_bio'),
     username: isFilled(snap.username),
     avatar: Boolean(snap.avatar_url),
     bio: isFilled(snap.bio),
@@ -190,11 +210,33 @@ function writeSeenSet(profileId: string, ids: Set<ProfileHealthStepId>) {
   }
 }
 
+function readManualSet(profileId: string): Set<ProfileHealthStepId> {
+  try {
+    const raw = localStorage.getItem(MANUAL_STORAGE_KEY(profileId));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as ProfileHealthStepId[];
+    return new Set(parsed);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeManualSet(profileId: string, ids: Set<ProfileHealthStepId>) {
+  try {
+    localStorage.setItem(MANUAL_STORAGE_KEY(profileId), JSON.stringify([...ids]));
+  } catch {
+    /* quota or private mode — silent fallback */
+  }
+}
+
 export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileHealthState {
   const [userId, setUserId] = useState<string | null>(null);
   // Single source of truth for the visible state. Server fetches replace it
   // entirely; optimistic patches merge field-by-field.
   const [snap, setSnap] = useState<RawSnapshot | null>(null);
+  // Manual-step state lives entirely client-side (localStorage) — no DB
+  // column. Stored in a Set keyed by stepId, scoped per profile.
+  const [manualDone, setManualDone] = useState<Set<ProfileHealthStepId>>(new Set());
   const [justCompletedStepId, setJustCompletedStepId] = useState<ProfileHealthStepId | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -328,7 +370,12 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       // Guard against stale completion (profile was switched mid-flight).
       if (profileIdRef.current !== profileId) return;
 
-      const newSteps = computeSteps(newSnap);
+      // Re-read the manual set from localStorage at refetch time — handles
+      // the case where the user toggled it in another tab. The hook's own
+      // `manualDone` state is the visible state but localStorage is the
+      // truth across tabs.
+      const manualSnap = readManualSet(profileId);
+      const newSteps = computeSteps(newSnap, manualSnap);
       const seen = readSeenSet(profileId);
 
       if (isFirstLoadRef.current) {
@@ -415,6 +462,9 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     setIsReady(false);
     setJustCompletedStepId(null);
     setSnap(null);
+    // Re-hydrate the manual step set for this profile from localStorage —
+    // each profile keeps its own checked state.
+    setManualDone(readManualSet(profileId));
     lastServerStepsRef.current = PENDING_STEPS;
     isFirstLoadRef.current = true;
     refetch();
@@ -451,6 +501,34 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     };
   }, [activeProfile?.id, userId, refetch, scheduleRefetch]);
 
+  /**
+   * Flip a manual step's checked state. Persists to localStorage and updates
+   * visible state. When the step transitions pending → done it's marked as
+   * "seen" immediately so the auto-popup doesn't fire on something the user
+   * just clicked themselves.
+   */
+  const toggleManualStep = useCallback((stepId: ProfileHealthStepId) => {
+    const profileId = profileIdRef.current;
+    if (!profileId) return;
+
+    setManualDone((prev) => {
+      const next = new Set(prev);
+      const wasDone = next.has(stepId);
+      if (wasDone) next.delete(stepId);
+      else next.add(stepId);
+      writeManualSet(profileId, next);
+
+      // If the user just ticked the box, record the step as seen so the
+      // popup doesn't re-trigger on an existing manual confirmation.
+      if (!wasDone) {
+        const seen = readSeenSet(profileId);
+        seen.add(stepId);
+        writeSeenSet(profileId, seen);
+      }
+      return next;
+    });
+  }, []);
+
   const acknowledgeJustCompleted = useCallback(() => {
     setJustCompletedStepId((current) => {
       const profileId = profileIdRef.current;
@@ -463,10 +541,11 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     });
   }, []);
 
-  // All visible state derives from the single `snap` source.
+  // All visible state derives from the single `snap` source + the manual
+  // step set. Both update independently; either change re-derives steps.
   const steps = useMemo<ProfileHealthStep[]>(
-    () => (snap ? computeSteps(snap) : PENDING_STEPS),
-    [snap]
+    () => (snap ? computeSteps(snap, manualDone) : PENDING_STEPS),
+    [snap, manualDone]
   );
   const completedCount = useMemo(() => steps.filter((s) => s.done).length, [steps]);
   const percent = useMemo(() => Math.round((completedCount / TOTAL_STEPS) * 100), [completedCount]);
@@ -483,5 +562,6 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     acknowledgeJustCompleted,
     refetch,
     isReady,
+    toggleManualStep,
   };
 }
