@@ -33,7 +33,8 @@ export type ProfileHealthStepId =
   | 'socials'
   | 'subscription'
   | 'first_link'
-  | 'feed_30';
+  | 'feed_30'
+  | 'refer_friend';
 
 /** The Link-in-Bio editor section keys (`activeSection` in LinkInBioEditor). */
 export type ProfileEditorTab = 'photo' | 'info' | 'social' | 'links' | 'content';
@@ -84,6 +85,11 @@ const STEP_DEFS: Array<Pick<ProfileHealthStep, 'id' | 'label' | 'description' | 
   // Link-in-Bio editor — send the creator straight there.
   { id: 'first_link', label: 'Create your first paid link', description: 'Sell your first piece of content.', targetTab: 'links', targetUrl: '/app/links' },
   { id: 'feed_30', label: 'Add 30 posts to your feed', description: 'Build a feed fans want to subscribe to.', targetTab: 'content' },
+  // Refer a friend lives entirely outside the profile editor — the referral
+  // link is shared from /app/referral and the row is inserted by the
+  // `link-referral` edge function when someone signs up via that code.
+  // `targetTab` is unused because `targetUrl` always wins.
+  { id: 'refer_friend', label: 'Refer a friend', description: 'Share your referral link and get a creator to sign up.', targetTab: 'social', targetUrl: '/app/referral' },
 ];
 
 const TOTAL_STEPS = STEP_DEFS.length;
@@ -106,6 +112,8 @@ interface RawSnapshot {
   subscribersCount: number;
   profileViewCount: number;
   salesCount: number;
+  /** Total referrals where the active user is the referrer (any status). */
+  referralCount: number;
 }
 
 /** Subset of fields the editor can patch optimistically. Counters (links,
@@ -152,6 +160,10 @@ function computeSteps(snap: RawSnapshot): ProfileHealthStep[] {
     subscription: Boolean(snap.fan_subscription_enabled) && (snap.fan_subscription_price_cents ?? 0) > 0,
     first_link: snap.publishedLinksCount >= 1,
     feed_30: snap.publicAssetsCount >= 30,
+    // Any referral row counts — even pending. The user-positive milestone is
+    // "got someone to sign up", not "got someone to convert" (which can take
+    // weeks and is outside the user's direct control).
+    refer_friend: snap.referralCount >= 1,
   };
 
   return STEP_DEFS.map((def) => ({ ...def, done: flags[def.id] }));
@@ -212,7 +224,7 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
   }, []);
 
   const fetchSnapshot = useCallback(
-    async (profileId: string, _uid: string): Promise<RawSnapshot | null> => {
+    async (profileId: string, uid: string): Promise<RawSnapshot | null> => {
       // Run the parallel queries — none depend on each other.
       const profilePromise = supabase
         .from('creator_profiles')
@@ -247,11 +259,20 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         .eq('creator_profile_id', profileId)
         .eq('status', 'active');
 
-      const [profileRes, linksRes, assetsRes, subscribersRes] = await Promise.all([
+      // Referrals the active USER has triggered. Scoped by user (referral
+      // codes are user-level, not per creator-profile), so the count is
+      // shared across all profiles owned by the same auth user.
+      const referralsPromise = supabase
+        .from('referrals')
+        .select('id', { count: 'exact', head: true })
+        .eq('referrer_id', uid);
+
+      const [profileRes, linksRes, assetsRes, subscribersRes, referralsRes] = await Promise.all([
         profilePromise,
         linksPromise,
         assetsPromise,
         subscribersPromise,
+        referralsPromise,
       ]);
 
       if (profileRes.error) {
@@ -292,6 +313,7 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         subscribersCount: subscribersRes.count ?? 0,
         profileViewCount: profileRes.data?.profile_view_count ?? 0,
         salesCount,
+        referralCount: referralsRes.count ?? 0,
       };
     },
     []
@@ -412,6 +434,13 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'assets', filter: `profile_id=eq.${profileId}` },
+        scheduleRefetch
+      )
+      .on(
+        'postgres_changes',
+        // Referrals are scoped by auth user (referrer_id), not profile_id —
+        // the same referral count surfaces on every profile owned by the user.
+        { event: 'INSERT', schema: 'public', table: 'referrals', filter: `referrer_id=eq.${userId}` },
         scheduleRefetch
       )
       .subscribe();
