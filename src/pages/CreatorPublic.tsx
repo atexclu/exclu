@@ -527,6 +527,16 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
             min_custom_request_cents: cpData.min_custom_request_cents,
             show_agency_branding: showBranding,
             chat_enabled: cpData.chat_enabled,
+            fan_subscription_enabled: cpData.fan_subscription_enabled,
+            fan_subscription_price_cents: cpData.fan_subscription_price_cents,
+            // CRITICAL: copy these from cpData. The build effect reads
+            // content_order to position assets/posts; link_order positions
+            // paid links. Without this, both fall back to created_at desc
+            // and creator-saved orders are silently ignored on every fresh
+            // fetch (the DB write succeeds, but the read here drops the
+            // value, so /:handle and /app/home both look unsorted).
+            content_order: cpData.content_order ?? null,
+            link_order: cpData.link_order ?? null,
           };
 
           // Show profile immediately (progressive loading)
