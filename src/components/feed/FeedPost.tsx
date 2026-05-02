@@ -288,12 +288,12 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
                   src={post.blurUrl}
                   alt=""
                   aria-hidden
-                  className="absolute inset-0 h-full w-full object-cover scale-[1.08]"
+                  className="absolute inset-0 h-full w-full object-cover scale-[1.18]"
                   draggable={false}
                   style={{
                     pointerEvents: 'none',
                     userSelect: 'none',
-                    filter: 'blur(10px) saturate(1.1)',
+                    filter: 'blur(20px) saturate(1.15)',
                   }}
                 />
               )}

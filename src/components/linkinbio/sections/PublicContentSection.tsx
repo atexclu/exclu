@@ -249,23 +249,42 @@ export function PublicContentSection({ userId, profileId, onUpdate, onContentUpd
 
   /**
    * Persist the new order to `content_order` so the public profile picks it up.
-   * We store ALL visible asset IDs (not only public), so toggling an asset from
-   * private → public doesn't surprise the creator by placing it at an arbitrary
-   * position.
+   *
+   * Critical: this section only renders assets, but content_order is the
+   * canonical feed order which can ALSO carry link IDs (zero-price posts
+   * created from /app/home composer). Naively writing only the asset IDs
+   * would clobber the post positions. We do a read-modify-write that
+   * preserves non-asset IDs from the existing array.
    */
-  const persistOrder = async (orderedIds: string[]) => {
-    if (profileId) {
-      const { error } = await supabase
-        .from('creator_profiles')
-        .update({ content_order: orderedIds })
-        .eq('id', profileId);
-      if (error) throw error;
-    } else if (userId) {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ content_order: orderedIds })
-        .eq('id', userId);
-      if (error) throw error;
+  const persistOrder = async (assetIdsInNewOrder: string[]) => {
+    const targetTable = profileId ? 'creator_profiles' : 'profiles';
+    const targetId = profileId ?? userId;
+    if (!targetId) return;
+
+    const { data: existing, error: readErr } = await supabase
+      .from(targetTable)
+      .select('content_order')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (readErr) throw readErr;
+
+    const existingArr = ((existing as any)?.content_order ?? []) as string[];
+    const assetIdSet = new Set(assetIdsInNewOrder);
+
+    // Preserve link IDs (anything in existing that isn't one of our assets).
+    // We append them after the new asset order so /app/home arrows can still
+    // bring them back into position later.
+    const otherIds = existingArr.filter((id) => !assetIdSet.has(id));
+    const merged = [...assetIdsInNewOrder, ...otherIds];
+
+    const { error: writeErr, data: updated } = await supabase
+      .from(targetTable)
+      .update({ content_order: merged })
+      .eq('id', targetId)
+      .select('id');
+    if (writeErr) throw writeErr;
+    if (!updated || updated.length === 0) {
+      throw new Error('Order update affected 0 rows (RLS or row missing)');
     }
   };
 

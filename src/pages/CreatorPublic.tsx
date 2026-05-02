@@ -187,13 +187,18 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
     const newOrder = reordered.map((i) => i.id);
     const targetTable = creatorProfileId ? 'creator_profiles' : 'profiles';
     const targetId = creatorProfileId ?? creatorUserId;
-    if (!targetId) return;
-    const { error } = await supabase
+    if (!targetId) {
+      setFeedItems(previous);
+      return;
+    }
+    const { error, data: updated } = await supabase
       .from(targetTable)
       .update({ content_order: newOrder })
-      .eq('id', targetId);
-    if (error) {
-      console.error('[CreatorPublic] reorder failed', error);
+      .eq('id', targetId)
+      .select('id');
+    if (error || !updated || updated.length === 0) {
+      console.error('[CreatorPublic] reorder failed', error, 'updatedRows=', updated?.length);
+      toast.error("Couldn't save the new feed order");
       setFeedItems(previous);
       return;
     }
