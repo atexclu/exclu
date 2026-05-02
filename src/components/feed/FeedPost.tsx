@@ -1,4 +1,5 @@
-import { Lock, Play, DollarSign, BadgeCheck } from 'lucide-react';
+import { useRef } from 'react';
+import { Lock, Play, DollarSign, BadgeCheck, Pencil } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 
@@ -84,6 +85,63 @@ function AuthorHeader({ author, gradientStops }: { author: FeedAuthor; gradientS
         </div>
         {author.handle && <p className="text-[11px] text-white/45 truncate">@{author.handle}</p>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline caption editor used in /app/home embed mode. The caption renders as
+ * plain text with a pencil button next to it; clicking the pencil (or the
+ * caption when empty) focuses a contenteditable span. Blur or Enter commits;
+ * Esc cancels. Limited to 500 chars at commit time.
+ */
+function EditableCaption({ caption, onCommit }: { caption: string | null; onCommit: (next: string | null) => void }) {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  const focusEditor = () => {
+    const node = ref.current;
+    if (!node) return;
+    node.focus();
+    // Place caret at the end so the creator can append immediately.
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+
+  return (
+    <div className="group flex items-start gap-1.5 px-1 pb-2.5">
+      <span
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onBlur={(e) => {
+          const next = (e.currentTarget.textContent ?? '').trim().slice(0, 500);
+          onCommit(next || null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.currentTarget.blur();
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+        className="flex-1 min-w-0 text-[15px] leading-snug text-white whitespace-pre-wrap outline-none focus:bg-white/5 rounded-md cursor-text empty:before:content-['Add_a_caption…'] empty:before:text-white/35"
+      >
+        {caption ?? ''}
+      </span>
+      <button
+        type="button"
+        onClick={focusEditor}
+        aria-label="Edit caption"
+        className="flex-shrink-0 mt-0.5 p-1 rounded-full text-white/45 hover:text-white hover:bg-white/10 transition-colors opacity-60 group-hover:opacity-100"
+      >
+        <Pencil className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
@@ -181,30 +239,8 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
     >
       {author && <AuthorHeader author={author} gradientStops={gradientStops} />}
 
-      {/* Caption above the card — reads like a social post.
-          In embed mode (creator's own /app/home), the caption is inline-editable:
-          contenteditable span, blur commits, Esc cancels. Empty → placeholder pill. */}
       {onEditCaption ? (
-        <p
-          contentEditable
-          suppressContentEditableWarning
-          onBlur={(e) => {
-            const next = (e.currentTarget.textContent ?? '').trim().slice(0, 500);
-            onEditCaption(next || null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.currentTarget.blur();
-            }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              e.currentTarget.blur();
-            }
-          }}
-          className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap outline-none focus:bg-white/5 rounded-md cursor-text empty:before:content-['Add_a_caption…'] empty:before:text-white/35"
-        >
-          {post.caption ?? ''}
-        </p>
+        <EditableCaption caption={post.caption ?? null} onCommit={onEditCaption} />
       ) : (
         post.caption && (
           <p className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap">

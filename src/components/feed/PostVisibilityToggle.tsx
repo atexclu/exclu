@@ -11,7 +11,7 @@
  * Only mounted when the parent passes `embed === true`. Fans never see it.
  */
 import { useState } from 'react';
-import { Globe, Lock, Loader2 } from 'lucide-react';
+import { Globe, Lock, Loader2, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/lib/supabaseClient';
@@ -30,6 +30,11 @@ interface PostVisibilityToggleProps {
    * the platform primary so the component never crashes on an undefined index.
    */
   gradientStops?: readonly [string, string] | string[] | null;
+  /** Reorder hooks. Disabled (greyed out) when at the top / bottom of the feed. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
 const FALLBACK_GRADIENT: [string, string] = ['#CFFF16', '#CFFF16'];
@@ -40,6 +45,10 @@ export function PostVisibilityToggle({
   isPublic,
   onChange,
   gradientStops,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: PostVisibilityToggleProps) {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -81,8 +90,30 @@ export function PostVisibilityToggle({
       // detail / sub popup) doesn't fire when the creator interacts with the
       // toggle. Backdrop blur ensures legibility over media of any colour.
       onClick={(e) => e.stopPropagation()}
-      className="absolute top-3 right-3 z-30 inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 shadow-lg pointer-events-auto"
+      className="absolute top-3 right-3 z-30 inline-flex items-center gap-1.5 px-2 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 shadow-lg pointer-events-auto"
     >
+      {(onMoveUp || onMoveDown) && (
+        <div className="flex items-center gap-0.5 pr-1.5 mr-0.5 border-r border-white/15">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            aria-label="Move post up"
+            className="p-1 rounded-full text-white/85 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            aria-label="Move post down"
+            className="p-1 rounded-full text-white/85 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-white">
         {isSaving ? (
           <Loader2 className="w-3 h-3 animate-spin" />
@@ -99,9 +130,6 @@ export function PostVisibilityToggle({
         disabled={isSaving}
         aria-label={isPublic ? 'Make post subscribers-only' : 'Make post public'}
         className="data-[state=unchecked]:bg-white/25"
-        // Inline style on the Root applies via `data-[state=checked]:` would
-        // need a CSS var; simpler to override with style and let the unchecked
-        // class win via specificity when state flips.
         style={isPublic ? themedChecked : undefined}
       />
     </div>

@@ -159,6 +159,38 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
     }
   };
 
+  // Reorder a post in the embed feed. Swaps the post with its neighbour and
+  // persists the new order on creator_profiles.content_order (or
+  // profiles.content_order in legacy single-profile mode). Optimistic with
+  // rollback on error.
+  const moveFeedItem = async (postId: string, kind: 'asset' | 'link', direction: 'up' | 'down') => {
+    const idx = feedItems.findIndex((i) => i.id === postId && i.kind === kind);
+    if (idx < 0) return;
+    const next = direction === 'up' ? idx - 1 : idx + 1;
+    if (next < 0 || next >= feedItems.length) return;
+
+    const reordered = [...feedItems];
+    [reordered[idx], reordered[next]] = [reordered[next], reordered[idx]];
+    const previous = feedItems;
+    setFeedItems(reordered);
+
+    const newOrder = reordered.map((i) => i.id);
+    const targetTable = creatorProfileId ? 'creator_profiles' : 'profiles';
+    const targetId = creatorProfileId ?? creatorUserId;
+    if (!targetId) return;
+    const { error } = await supabase
+      .from(targetTable)
+      .update({ content_order: newOrder })
+      .eq('id', targetId);
+    if (error) {
+      console.error('[CreatorPublic] reorder failed', error);
+      setFeedItems(previous);
+      return;
+    }
+    // Sync the local profile snapshot so the rebuild effect doesn't snap back.
+    setProfile((p) => (p ? { ...p, content_order: newOrder } : p));
+  };
+
   // Caption edit from the embedded feed (creator's own /app/home). Optimistic
   // local update, persists to assets.feed_caption. Rolls back on error.
   const setAssetCaption = async (assetId: string, caption: string | null) => {
@@ -1456,7 +1488,7 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                   {embed && (
                     <CreatePostTrigger onClick={() => setShowCreatePost(true)} />
                   )}
-                  {feedItems.map((item) => (
+                  {feedItems.map((item, idx) => (
                     // Wrapper is `relative` so the embed-mode visibility chip
                     // can absolute-position itself top-right of the post.
                     <div key={`${item.kind}-${item.id}`} className="relative">
@@ -1467,6 +1499,10 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                           isPublic={item.isPublic}
                           onChange={(next) => setItemVisibility(item.id, item.kind, next)}
                           gradientStops={gradientStops as [string, string]}
+                          onMoveUp={() => moveFeedItem(item.id, item.kind, 'up')}
+                          onMoveDown={() => moveFeedItem(item.id, item.kind, 'down')}
+                          canMoveUp={idx > 0}
+                          canMoveDown={idx < feedItems.length - 1}
                         />
                       )}
                       <FeedPost
@@ -1990,6 +2026,11 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                                   kind={item.kind}
                                   isPublic={item.isPublic}
                                   onChange={(next) => setItemVisibility(item.id, item.kind, next)}
+                                  gradientStops={gradientStops as [string, string]}
+                                  onMoveUp={() => moveFeedItem(item.id, item.kind, 'up')}
+                                  onMoveDown={() => moveFeedItem(item.id, item.kind, 'down')}
+                                  canMoveUp={index > 0}
+                                  canMoveDown={index < feedItems.length - 1}
                                 />
                               )}
                               <FeedPost

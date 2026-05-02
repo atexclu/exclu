@@ -341,6 +341,34 @@ const ContentLibrary = () => {
     }
   };
 
+  // When an asset enters the feed, prepend its id to creator_profiles.content_order
+  // (or profiles.content_order in legacy single-profile mode) so it shows up at
+  // the very top of /app/home and the public profile feed. Filters out the id
+  // first to avoid duplicates if it was already in the array.
+  const promoteToTopOfOrder = async (assetIds: string[], userId: string, profileId: string | null) => {
+    if (assetIds.length === 0) return;
+    const targetTable = profileId ? 'creator_profiles' : 'profiles';
+    const targetId = profileId ?? userId;
+    const { data, error: readErr } = await supabase
+      .from(targetTable)
+      .select('content_order')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (readErr) {
+      console.warn('[ContentLibrary] Could not read content_order', readErr);
+      return;
+    }
+    const existing = ((data as any)?.content_order ?? []) as string[];
+    const next = [...assetIds, ...existing.filter((id) => !assetIds.includes(id))];
+    const { error: writeErr } = await supabase
+      .from(targetTable)
+      .update({ content_order: next })
+      .eq('id', targetId);
+    if (writeErr) {
+      console.warn('[ContentLibrary] Could not persist new content_order', writeErr);
+    }
+  };
+
   const handleToggleInFeed = async (assetId: string, currentInFeed: boolean) => {
     const newInFeed = !currentInFeed;
 
@@ -367,6 +395,10 @@ const ContentLibrary = () => {
     }
 
     if (newInFeed) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        promoteToTopOfOrder([assetId], user.id, activeProfile?.id || null);
+      }
       const target = assets.find((a) => a.id === assetId);
       if (target && !target.feed_blur_path) {
         ensureBlurForAsset(target).then((blurPath) => {
@@ -425,6 +457,10 @@ const ContentLibrary = () => {
     toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} ${makeInFeed ? 'added to' : 'removed from'} your feed.`);
 
     if (makeInFeed) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        promoteToTopOfOrder(assetIds, user.id, activeProfile?.id || null);
+      }
       assets
         .filter((a) => assetIds.includes(a.id) && !a.feed_blur_path)
         .forEach((asset) => {
