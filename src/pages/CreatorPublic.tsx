@@ -174,6 +174,15 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
     const previous = feedItems;
     setFeedItems(reordered);
 
+    // After React commits the new order, scroll the post into view so the
+    // creator follows it visually as it moves up or down the feed.
+    requestAnimationFrame(() => {
+      const target = document.querySelector(
+        `[data-feed-item-id="${kind}-${postId}"]`,
+      ) as HTMLElement | null;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
     const newOrder = reordered.map((i) => i.id);
     const targetTable = creatorProfileId ? 'creator_profiles' : 'profiles';
     const targetId = creatorProfileId ?? creatorUserId;
@@ -1491,7 +1500,7 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                   {feedItems.map((item, idx) => (
                     // Wrapper is `relative` so the embed-mode visibility chip
                     // can absolute-position itself top-right of the post.
-                    <div key={`${item.kind}-${item.id}`} className="relative">
+                    <div key={`${item.kind}-${item.id}`} data-feed-item-id={`${item.kind}-${item.id}`} className="relative">
                       {embed && (
                         <PostVisibilityToggle
                           postId={item.id}
@@ -2018,6 +2027,7 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                           {feedItems.map((item, index) => (
                             <div
                               key={`${item.kind}-${item.id}`}
+                              data-feed-item-id={`${item.kind}-${item.id}`}
                               className={`relative ${index > 0 ? 'mt-5 pt-5 border-t border-white/10' : ''}`}
                             >
                               {embed && (
