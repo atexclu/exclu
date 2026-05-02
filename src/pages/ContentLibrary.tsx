@@ -345,8 +345,13 @@ const ContentLibrary = () => {
   // (or profiles.content_order in legacy single-profile mode) so it shows up at
   // the very top of /app/home and the public profile feed. Filters out the id
   // first to avoid duplicates if it was already in the array.
-  const promoteToTopOfOrder = async (assetIds: string[], userId: string, profileId: string | null) => {
-    if (assetIds.length === 0) return;
+  // Prepend the given asset ids to the creator's content_order so they show
+  // up at the top of /app/home and the public profile feed. Filters duplicates
+  // so re-toggling doesn't pollute the array. Returns true on success, false
+  // on failure — caller surfaces the toast so the creator knows whether the
+  // promotion stuck.
+  const promoteToTopOfOrder = async (assetIds: string[], userId: string, profileId: string | null): Promise<boolean> => {
+    if (assetIds.length === 0) return true;
     const targetTable = profileId ? 'creator_profiles' : 'profiles';
     const targetId = profileId ?? userId;
     const { data, error: readErr } = await supabase
@@ -356,7 +361,7 @@ const ContentLibrary = () => {
       .maybeSingle();
     if (readErr) {
       console.warn('[ContentLibrary] Could not read content_order', readErr);
-      return;
+      return false;
     }
     const existing = ((data as any)?.content_order ?? []) as string[];
     const next = [...assetIds, ...existing.filter((id) => !assetIds.includes(id))];
@@ -366,7 +371,9 @@ const ContentLibrary = () => {
       .eq('id', targetId);
     if (writeErr) {
       console.warn('[ContentLibrary] Could not persist new content_order', writeErr);
+      return false;
     }
+    return true;
   };
 
   const handleToggleInFeed = async (assetId: string, currentInFeed: boolean) => {
@@ -397,7 +404,15 @@ const ContentLibrary = () => {
     if (newInFeed) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        promoteToTopOfOrder([assetId], user.id, activeProfile?.id || null);
+        // Await so the write is durable before we hint at the result. If the
+        // creator navigates to /app/home immediately after the toast, the
+        // fresh fetch there will already see the updated content_order.
+        const ok = await promoteToTopOfOrder([assetId], user.id, activeProfile?.id || null);
+        if (ok) {
+          toast.success('Added to feed — top position');
+        } else {
+          toast.error("Added, but couldn't pin to top — drag in Profile → Feed if needed");
+        }
       }
       const target = assets.find((a) => a.id === assetId);
       if (target && !target.feed_blur_path) {
@@ -454,12 +469,16 @@ const ContentLibrary = () => {
       ),
     );
     setSelectedAssets(new Set());
-    toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} ${makeInFeed ? 'added to' : 'removed from'} your feed.`);
 
     if (makeInFeed) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        promoteToTopOfOrder(assetIds, user.id, activeProfile?.id || null);
+        const ok = await promoteToTopOfOrder(assetIds, user.id, activeProfile?.id || null);
+        if (ok) {
+          toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} added to your feed — top position`);
+        } else {
+          toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} added to your feed`);
+        }
       }
       assets
         .filter((a) => assetIds.includes(a.id) && !a.feed_blur_path)
@@ -472,6 +491,8 @@ const ContentLibrary = () => {
             }
           });
         });
+    } else {
+      toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} removed from your feed.`);
     }
   };
 
