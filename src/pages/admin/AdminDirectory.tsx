@@ -27,6 +27,7 @@ import {
   Filter,
   ArrowUpDown,
   Tags as TagsIcon,
+  MapPin,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -378,6 +379,7 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [countryFilter, setCountryFilter] = useState<string>('');
   const [sortKey, setSortKey] = useState<SortKey>('curated');
   const [editingCategoriesFor, setEditingCategoriesFor] = useState<DirectoryRow | null>(null);
 
@@ -491,9 +493,24 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     }
   };
 
-  /* ─── Filter + sort ─── */
-  const filteredRows = useMemo(() => {
-    const filtered = rows.filter((r) => {
+  /* ─── Filter + sort ───
+   * Filters & sort apply ONLY to the fallback bucket (Tri automatique). The
+   * pinned bucket always shows ALL pinned creators regardless of filters,
+   * since hiding a pinned creator behind a filter would silently break
+   * Louna's published curation.
+   */
+  const usingCurated = sortKey === 'curated';
+
+  const pinnedRows = useMemo(
+    () => rows.filter((r) => r.is_featured || r.position != null),
+    [rows],
+  );
+
+  const fallbackRows = useMemo(() => {
+    const base = usingCurated
+      ? rows.filter((r) => !r.is_featured && r.position == null)
+      : rows;
+    const filtered = base.filter((r) => {
       if (search) {
         const q = search.toLowerCase();
         const ok =
@@ -504,28 +521,22 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
       }
       if (statusFilter === 'premium' && !r.is_premium) return false;
       if (statusFilter === 'free' && r.is_premium) return false;
+      if (countryFilter && r.country !== countryFilter) return false;
       return true;
     });
     return sortBy(filtered, sortKey);
-  }, [rows, search, statusFilter, sortKey]);
+  }, [rows, usingCurated, search, statusFilter, countryFilter, sortKey]);
 
-  // When sortKey is "curated" we render two buckets: pinned (featured OR
-  // positioned) + automatic. Otherwise a single grid sorted by the picked metric.
-  const usingCurated = sortKey === 'curated';
-  const pinnedRows = useMemo(
-    () =>
-      usingCurated
-        ? filteredRows.filter((r) => r.is_featured || r.position != null)
-        : [],
-    [usingCurated, filteredRows],
-  );
-  const fallbackRows = useMemo(
-    () =>
-      usingCurated
-        ? filteredRows.filter((r) => !r.is_featured && r.position == null)
-        : filteredRows,
-    [usingCurated, filteredRows],
-  );
+  // Unique country list, derived from the loaded rows.
+  const countryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (r.country) set.add(r.country);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const totalFiltered = fallbackRows.length;
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -596,9 +607,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   };
 
   /* ─── Render ─── */
-  const totalAll = rows.length;
-  const totalFiltered = filteredRows.length;
-
   const content = (
     <div className={embedded ? '' : 'min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8'}>
       <div className={embedded ? '' : 'max-w-[1400px] mx-auto'}>
@@ -643,6 +651,18 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             ]}
           />
 
+          <FilterPill<string>
+            icon={<MapPin className="w-3 h-3" />}
+            label="Pays"
+            value={countryFilter}
+            onChange={setCountryFilter}
+            width="w-56"
+            options={[
+              { value: '', label: 'Tous les pays' },
+              ...countryOptions.map((c) => ({ value: c, label: c })),
+            ]}
+          />
+
           <FilterPill<SortKey>
             icon={<ArrowUpDown className="w-3 h-3" />}
             label="Trier"
@@ -652,11 +672,12 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             options={SORT_OPTIONS}
           />
 
-          {(statusFilter !== 'all' || sortKey !== 'curated' || search) && (
+          {(statusFilter !== 'all' || countryFilter !== '' || sortKey !== 'curated' || search) && (
             <button
               type="button"
               onClick={() => {
                 setStatusFilter('all');
+                setCountryFilter('');
                 setSortKey('curated');
                 setSearch('');
               }}
@@ -665,18 +686,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
               <X className="w-3 h-3" /> Reset
             </button>
           )}
-
-          <div className="ml-auto inline-flex items-center gap-2 text-[11px] text-muted-foreground tabular-nums">
-            <span className="font-mono">
-              {totalFiltered}
-            </span>
-            <span>/</span>
-            <span className="font-mono opacity-60">{totalAll}</span>
-            <span>
-              créateur{totalFiltered > 1 ? 's' : ''}
-              {categoryFilter ? ` · ${getModelCategoryLabel(categoryFilter)}` : ''}
-            </span>
-          </div>
         </div>
 
         {loading ? (
@@ -691,7 +700,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
               <SectionHeader
                 title="Mis en avant"
                 count={pinnedRows.length}
-                hint="Drag & drop pour réordonner — sauvegarde auto"
                 accent
               />
               {pinnedRows.length === 0 ? (
@@ -719,7 +727,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
               <SectionHeader
                 title="Tri automatique"
                 count={fallbackRows.length}
-                hint="Pro → liens payants → vues"
               />
               {fallbackRows.length === 0 ? (
                 <EmptyState text="Vide." />
@@ -736,7 +743,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             <SectionHeader
               title={SORT_OPTIONS.find((s) => s.value === sortKey)?.label ?? ''}
               count={fallbackRows.length}
-              hint="Tri appliqué sur toute la base — actions rapides via les épingles ⇒ les remontent dans le tri curé"
             />
             {fallbackRows.length === 0 ? (
               <EmptyState text="Aucun résultat avec ces filtres." />
