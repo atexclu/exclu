@@ -851,7 +851,7 @@ const ContentLibrary = () => {
                         {/* Bottom text overlay */}
                         <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-2.5 flex flex-col">
                           <p className="text-[11px] sm:text-xs font-medium text-white truncate">
-                            {asset.title || 'Untitled asset'}
+                            {asset.feed_caption || asset.title || 'Untitled'}
                           </p>
                           <p className="text-[10px] text-white/70">
                             {new Date(asset.created_at).toLocaleDateString()}
@@ -869,39 +869,25 @@ const ContentLibrary = () => {
 
       {/* Preview Modal */}
       {previewAsset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div
             className="absolute inset-0 bg-black/90 backdrop-blur-sm"
             onClick={() => setPreviewAsset(null)}
           />
-          <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+          {/* Column: caption input (top) → media (constrained so the bottom never
+              touches the viewport edge). max-h on the column itself keeps the
+              whole stack inside the screen on mobile and desktop. */}
+          <div className="relative w-full max-w-[680px] flex flex-col items-stretch gap-4 max-h-[calc(100vh-3rem)]">
             <button
               onClick={() => setPreviewAsset(null)}
-              className="absolute -top-12 right-0 p-2 rounded-full bg-exclu-ink/80 hover:bg-exclu-arsenic/50 transition-colors z-10"
+              className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 p-2 rounded-full bg-exclu-ink/90 hover:bg-exclu-arsenic/50 transition-colors z-10 border border-white/15"
+              aria-label="Close preview"
             >
-              <X className="w-6 h-6 text-exclu-cloud" />
+              <X className="w-5 h-5 text-exclu-cloud" />
             </button>
-            {previewAsset.previewUrl ? (
-              previewAsset.mime_type?.startsWith('video/') ? (
-                <video
-                  src={previewAsset.previewUrl}
-                  className="max-w-full max-h-[85vh] rounded-lg"
-                  controls
-                  autoPlay
-                />
-              ) : (
-                <img
-                  src={previewAsset.previewUrl}
-                  className="max-w-full max-h-[85vh] rounded-lg object-contain"
-                  alt={previewAsset.title || 'Preview'}
-                />
-              )
-            ) : (
-              <div className="w-64 h-64 bg-exclu-ink rounded-lg flex items-center justify-center">
-                <p className="text-exclu-space">No preview available</p>
-              </div>
-            )}
-            <div className="mt-4 w-full max-w-md">
+
+            {/* Caption editor — above the photo */}
+            <div className="w-full">
               <label className="block text-[10px] uppercase tracking-wider font-semibold text-white/55 mb-1.5">
                 Caption (shown above the post in feed)
               </label>
@@ -910,10 +896,12 @@ const ContentLibrary = () => {
                 defaultValue={previewAsset.feed_caption ?? previewAsset.title ?? ''}
                 onBlur={async (e) => {
                   const next = e.target.value.trim().slice(0, 500) || null;
-                  if ((previewAsset.feed_caption ?? null) === next) return;
+                  if ((previewAsset.feed_caption ?? null) === next && (previewAsset.title ?? null) === next) return;
+                  // Title and feed_caption are the same concept since the
+                  // refonte. Write both so the library card label updates too.
                   const { error } = await supabase
                     .from('assets')
-                    .update({ feed_caption: next })
+                    .update({ feed_caption: next, title: next })
                     .eq('id', previewAsset.id);
                   if (error) {
                     console.error('Failed to save caption', error);
@@ -921,9 +909,9 @@ const ContentLibrary = () => {
                     return;
                   }
                   setAssets((prev) =>
-                    prev.map((a) => (a.id === previewAsset.id ? { ...a, feed_caption: next } : a)),
+                    prev.map((a) => (a.id === previewAsset.id ? { ...a, feed_caption: next, title: next } : a)),
                   );
-                  setPreviewAsset((prev) => (prev ? { ...prev, feed_caption: next } : prev));
+                  setPreviewAsset((prev) => (prev ? { ...prev, feed_caption: next, title: next } : prev));
                   toast.success('Caption saved');
                 }}
                 rows={2}
@@ -931,6 +919,31 @@ const ContentLibrary = () => {
                 placeholder="What appears above this post in your feed…"
                 className="w-full resize-none rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
+            </div>
+
+            {/* Media — flex-1 lets it shrink to fill the remaining height; the
+                inner img/video carries object-contain so it never overflows. */}
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              {previewAsset.previewUrl ? (
+                previewAsset.mime_type?.startsWith('video/') ? (
+                  <video
+                    src={previewAsset.previewUrl}
+                    className="max-w-full max-h-full rounded-lg"
+                    controls
+                    autoPlay
+                  />
+                ) : (
+                  <img
+                    src={previewAsset.previewUrl}
+                    className="max-w-full max-h-full rounded-lg object-contain"
+                    alt={previewAsset.feed_caption || previewAsset.title || 'Preview'}
+                  />
+                )
+              ) : (
+                <div className="w-64 h-64 bg-exclu-ink rounded-lg flex items-center justify-center">
+                  <p className="text-exclu-space">No preview available</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
