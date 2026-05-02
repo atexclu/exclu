@@ -61,6 +61,7 @@ interface CreatorProfileData {
   fan_subscription_enabled?: boolean | null;
   fan_subscription_price_cents?: number | null;
   content_order?: string[] | null;
+  link_order?: { social_order?: string[]; content_order?: string[] } | null;
 }
 
 type FeedItem =
@@ -427,7 +428,7 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
 
         const { data: cpData } = await supabase
           .from('creator_profiles')
-          .select('id, user_id, username, display_name, avatar_url, bio, is_active, deleted_at, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents, content_order')
+          .select('id, user_id, username, display_name, avatar_url, bio, is_active, deleted_at, theme_color, aurora_gradient, social_links, show_join_banner, show_certification, show_deeplinks, show_available_now, location, exclusive_content_text, exclusive_content_link_id, exclusive_content_url, exclusive_content_image_url, tips_enabled, custom_requests_enabled, min_tip_amount_cents, min_custom_request_cents, chat_enabled, fan_subscription_enabled, fan_subscription_price_cents, content_order, link_order')
           .eq('username', handle)
           .maybeSingle();
 
@@ -599,7 +600,18 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
             console.error('Error loading creator links', linksError);
             setLinks([]);
           } else {
-            setLinks((linksData ?? []) as CreatorLinkCard[]);
+            // Honour the creator's manual order for paid links
+            // (creator_profiles.link_order.content_order). Anything not in
+            // the array sorts last by created_at desc, matching the editor.
+            const linkOrderIds: string[] = ((profileData as any)?.link_order?.content_order ?? []) as string[];
+            const linkOrderIndex = new Map<string, number>(linkOrderIds.map((id, i) => [id, i]));
+            const sortedLinks = [...((linksData ?? []) as CreatorLinkCard[])].sort((a, b) => {
+              const ai = linkOrderIndex.has(a.id) ? (linkOrderIndex.get(a.id) as number) : Infinity;
+              const bi = linkOrderIndex.has(b.id) ? (linkOrderIndex.get(b.id) as number) : Infinity;
+              if (ai !== bi) return ai - bi;
+              return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+            });
+            setLinks(sortedLinks);
           }
         }
 

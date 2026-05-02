@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Lock, Eye, EyeOff, GripVertical, CheckSquare, Square } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -34,6 +34,16 @@ interface CreatorLink {
 interface ContentSectionProps {
   links: CreatorLink[];
   onUpdate: () => void;
+  /** Auth user id — used for the legacy single-profile persistence path. */
+  userId?: string | null;
+  /** Active creator profile id — preferred persistence target when set. */
+  profileId?: string | null;
+  /**
+   * Persisted display order for paid links (creator_profiles.link_order →
+   * content_order array). When null/undefined, links sort by created_at desc.
+   * Updated locally on drag, written through to the right table on commit.
+   */
+  contentOrder?: string[] | null;
 }
 
 interface SortableItemProps {
@@ -125,10 +135,33 @@ function SortableItem({ link, onToggle, isSelected, onSelect }: SortableItemProp
   );
 }
 
-export function ContentSection({ links, onUpdate }: ContentSectionProps) {
+export function ContentSection({ links, onUpdate, userId, profileId, contentOrder }: ContentSectionProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const linkIds = links.map((l) => l.id);
+
+  // Sort the incoming links by the persisted content_order, falling back to
+  // created_at desc for any link that hasn't been positioned yet.
+  const sortLinks = (rows: CreatorLink[], order: string[]): CreatorLink[] => {
+    const orderIndex = new Map<string, number>(order.map((id, i) => [id, i]));
+    return [...rows].sort((a, b) => {
+      const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
+      const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
+      if (ai !== bi) return ai - bi;
+      // links don't carry created_at in this slice; preserve incoming order as
+      // tiebreaker (parent fetches by created_at desc already).
+      return links.indexOf(a) - links.indexOf(b);
+    });
+  };
+
+  // Local copy so a drag produces an immediate visual change without waiting
+  // for the parent to refetch. Resync whenever the parent or order changes.
+  const [orderedLinks, setOrderedLinks] = useState<CreatorLink[]>(() => sortLinks(links, contentOrder ?? []));
+  useEffect(() => {
+    setOrderedLinks(sortLinks(links, contentOrder ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [links, contentOrder]);
+
+  const linkIds = useMemo(() => orderedLinks.map((l) => l.id), [orderedLinks]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -137,16 +170,56 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
     })
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
+  /**
+   * Persist the new content_order to whichever profile row is the source of
+   * truth. We have to read-modify-write the JSONB so we don't clobber
+   * social_order. Falls back to profiles when the active creator_profile is
+   * unknown (legacy single-profile creators).
+   */
+  const persistOrder = async (orderedIds: string[]): Promise<boolean> => {
+    const targetTable = profileId ? 'creator_profiles' : 'profiles';
+    const targetId = profileId ?? userId ?? null;
+    if (!targetId) return false;
+    const { data, error: readErr } = await supabase
+      .from(targetTable)
+      .select('link_order')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (readErr) {
+      console.error('[ContentSection] could not read link_order', readErr);
+      return false;
+    }
+    const existing = ((data as any)?.link_order ?? {}) as { social_order?: string[]; content_order?: string[] };
+    const next = { ...existing, content_order: orderedIds };
+    const { error: writeErr } = await supabase
+      .from(targetTable)
+      .update({ link_order: next })
+      .eq('id', targetId);
+    if (writeErr) {
+      console.error('[ContentSection] could not persist link_order', writeErr);
+      return false;
+    }
+    return true;
+  };
 
-    if (over && active.id !== over.id) {
-      const oldIndex = linkIds.indexOf(active.id as string);
-      const newIndex = linkIds.indexOf(over.id as string);
-      
-      // Reorder is handled visually
-      // In a real implementation, you would save the order to link_order in profiles
-      arrayMove(linkIds, oldIndex, newIndex);
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = linkIds.indexOf(active.id as string);
+    const newIndex = linkIds.indexOf(over.id as string);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const previous = orderedLinks;
+    const reordered = arrayMove(orderedLinks, oldIndex, newIndex);
+    setOrderedLinks(reordered);
+
+    const ok = await persistOrder(reordered.map((l) => l.id));
+    if (!ok) {
+      toast.error("Couldn't save the new order");
+      setOrderedLinks(previous);
+    } else {
+      toast.success('Order saved');
+      onUpdate();
     }
   };
 
@@ -176,10 +249,10 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
   };
 
   const handleSelectAll = () => {
-    if (selectedIds.length === links.length) {
+    if (selectedIds.length === orderedLinks.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(links.map(l => l.id));
+      setSelectedIds(orderedLinks.map(l => l.id));
     }
   };
 
@@ -205,8 +278,8 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
     setIsUpdating(false);
   };
 
-  const visibleCount = links.filter((l) => l.show_on_profile).length;
-  const hiddenCount = links.length - visibleCount;
+  const visibleCount = orderedLinks.filter((l) => l.show_on_profile).length;
+  const hiddenCount = orderedLinks.length - visibleCount;
 
   return (
     <div className="space-y-4">
@@ -229,7 +302,7 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
       </div>
 
       {/* Links List */}
-      {links.length > 0 ? (
+      {orderedLinks.length > 0 ? (
         <div className="space-y-3">
           {/* Batch actions + select-all (merged into a single compact bar) */}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -237,7 +310,7 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
               onClick={handleSelectAll}
               className="text-xs text-foreground/60 dark:text-white/60 hover:text-foreground dark:hover:text-white transition-colors font-medium"
             >
-              {selectedIds.length === links.length ? 'Deselect all' : 'Select all'}
+              {selectedIds.length === orderedLinks.length ? 'Deselect all' : 'Select all'}
             </button>
             {selectedIds.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#CFFF16]/10 border border-[#CFFF16]/30">
@@ -278,7 +351,7 @@ export function ContentSection({ links, onUpdate }: ContentSectionProps) {
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-3">
-                {links.map((link) => (
+                {orderedLinks.map((link) => (
                   <SortableItem
                     key={link.id}
                     link={link}

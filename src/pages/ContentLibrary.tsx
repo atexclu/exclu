@@ -843,25 +843,44 @@ const ContentLibrary = () => {
                       className="w-full text-left cursor-pointer"
                     >
                       <div className="relative w-full aspect-square">
-                        {asset.previewUrl ? (
-                          asset.mime_type?.startsWith('video/') ? (
-                            <video
-                              src={asset.previewUrl}
-                              className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              muted
-                              loop
-                              playsInline
-                            />
-                          ) : (
+                        {(() => {
+                          const isHeic =
+                            asset.mime_type?.startsWith('image/heic') ||
+                            asset.mime_type?.startsWith('image/heif') ||
+                            /\.(heic|heif)$/i.test(asset.storage_path ?? '');
+                          if (!asset.previewUrl) {
+                            return <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />;
+                          }
+                          if (asset.mime_type?.startsWith('video/')) {
+                            return (
+                              <video
+                                src={asset.previewUrl}
+                                className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                muted
+                                loop
+                                playsInline
+                              />
+                            );
+                          }
+                          if (isHeic) {
+                            // Browsers other than Safari can't render HEIC.
+                            // Show a clear placeholder so the creator still sees
+                            // the asset is there and can tell which one it is.
+                            return (
+                              <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-amber-500/15 via-exclu-ink to-amber-500/5 text-white/85">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/40 border border-white/15">HEIC</span>
+                                <span className="text-[10px] text-white/55 px-2 text-center">Preview unavailable — re-upload as JPG</span>
+                              </div>
+                            );
+                          }
+                          return (
                             <img
                               src={asset.previewUrl}
                               className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              alt={asset.title || 'Library asset'}
+                              alt={asset.feed_caption || asset.title || 'Library asset'}
                             />
-                          )
-                        ) : (
-                          <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-exclu-phantom/30 via-exclu-ink to-exclu-phantom/20" />
-                        )}
+                          );
+                        })()}
 
                         {/* Permanent bottom gradient for text readability */}
                         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />

@@ -797,6 +797,9 @@ const LinkInBioEditor = () => {
                     <ContentSection
                       links={links}
                       onUpdate={fetchLinks}
+                      userId={userId}
+                      profileId={activeProfile?.id || null}
+                      contentOrder={editorData.link_order?.content_order ?? []}
                     />
                   )}
                   {activeSection === 'content' && (
@@ -979,7 +982,13 @@ const LinkInBioEditor = () => {
                   />
                 )}
                 {activeSection === 'links' && (
-                  <ContentSection links={links} onUpdate={fetchLinks} />
+                  <ContentSection
+                    links={links}
+                    onUpdate={fetchLinks}
+                    userId={userId}
+                    profileId={activeProfile?.id || null}
+                    contentOrder={editorData.link_order?.content_order ?? []}
+                  />
                 )}
                 {activeSection === 'content' && (
                   <div className="space-y-8">
