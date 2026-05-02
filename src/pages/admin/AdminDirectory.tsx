@@ -34,6 +34,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MODEL_CATEGORY_GROUPS, getModelCategoryLabel } from '@/lib/categories';
+import { getCountryLabel } from '@/lib/countries';
 import AdminCreatorCard, { type AdminCardRow } from '@/components/directory/AdminCreatorCard';
 import AppShell from '@/components/AppShell';
 
@@ -395,18 +396,21 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
 
     // PostgREST is hard-capped at 1000 rows on this project regardless of the
     // client Range header, so we paginate client-side until the page comes
-    // back short. With ~4200 rows in the view this is 5 round-trips.
+    // back short. With ~4000 rows in the view this is 4 round-trips.
+    //
+    // We DO NOT filter by model_categories at the SQL layer, even on a
+    // category tab — a creator pinned in a category but not tagged with it
+    // (admin override) must still surface, otherwise the curation row is
+    // saved but invisible. Filtering happens client-side once we've merged
+    // the per-category curation rows in.
     const PAGE = 1000;
-    const pageQuery = (from: number, to: number) => {
-      let q = supabase
+    const pageQuery = (from: number, to: number) =>
+      supabase
         .from('v_directory_creators_admin')
         .select('*')
         .is('category', null)
         .order('creator_profile_id', { ascending: true })
         .range(from, to);
-      if (categoryFilter !== null) q = q.contains('model_categories', [categoryFilter]);
-      return q;
-    };
 
     const all: any[] = [];
     let from = 0;
@@ -438,24 +442,31 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
       const curationMap = new Map<string, any>(
         (curationData || []).map((c: any) => [c.creator_id, c]),
       );
-      const merged: DirectoryRow[] = all.map((cp: any) => {
-        const dc = curationMap.get(cp.creator_profile_id);
-        const isFeatured = !!dc?.is_featured;
-        const position = dc?.position ?? null;
-        let displayRank = 5;
-        if (isFeatured) displayRank = 1;
-        else if (position != null) displayRank = 2;
-        else if (cp.is_premium) displayRank = 3;
-        else if ((cp.paid_links_count ?? 0) > 0) displayRank = 4;
-        return {
-          ...cp,
-          category: categoryFilter,
-          is_featured: isFeatured,
-          position,
-          is_hidden_for_category: !!dc?.is_hidden,
-          display_rank: displayRank,
-        } as DirectoryRow;
-      });
+      const merged: DirectoryRow[] = all
+        .map((cp: any) => {
+          const dc = curationMap.get(cp.creator_profile_id);
+          const taggedWithCat = (cp.model_categories || []).includes(categoryFilter);
+          const hasCuration = !!dc;
+          // Drop creators that are neither tagged with the category nor
+          // explicitly curated into it.
+          if (!taggedWithCat && !hasCuration) return null;
+          const isFeatured = !!dc?.is_featured;
+          const position = dc?.position ?? null;
+          let displayRank = 5;
+          if (isFeatured) displayRank = 1;
+          else if (position != null) displayRank = 2;
+          else if (cp.is_premium) displayRank = 3;
+          else if ((cp.paid_links_count ?? 0) > 0) displayRank = 4;
+          return {
+            ...cp,
+            category: categoryFilter,
+            is_featured: isFeatured,
+            position,
+            is_hidden_for_category: !!dc?.is_hidden,
+            display_rank: displayRank,
+          } as DirectoryRow;
+        })
+        .filter((r): r is DirectoryRow => r !== null);
       setRows(sortByCurated(merged));
     }
     setLoading(false);
@@ -527,13 +538,16 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     return sortBy(filtered, sortKey);
   }, [rows, usingCurated, search, statusFilter, countryFilter, sortKey]);
 
-  // Unique country list, derived from the loaded rows.
+  // Unique country list, sorted by display label so the dropdown reads
+  // alphabetically by full country name rather than by ISO code.
   const countryOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
       if (r.country) set.add(r.country);
     }
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) =>
+      getCountryLabel(a).localeCompare(getCountryLabel(b)),
+    );
   }, [rows]);
 
   const totalFiltered = fallbackRows.length;
@@ -656,10 +670,10 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             label="Pays"
             value={countryFilter}
             onChange={setCountryFilter}
-            width="w-56"
+            width="w-64"
             options={[
               { value: '', label: 'Tous les pays' },
-              ...countryOptions.map((c) => ({ value: c, label: c })),
+              ...countryOptions.map((c) => ({ value: c, label: getCountryLabel(c) })),
             ]}
           />
 
@@ -681,9 +695,10 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
                 setSortKey('curated');
                 setSearch('');
               }}
-              className="inline-flex items-center gap-1 h-9 px-3 rounded-full text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition"
+              title="Réinitialiser les filtres"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-full text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5 transition"
             >
-              <X className="w-3 h-3" /> Reset
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
