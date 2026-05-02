@@ -395,8 +395,10 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                     <div className="pt-1">
                       {publicContent.map((content: any, idx: number) => {
                         const isVideo = content.mime_type?.startsWith('video/');
-                        const isPreview = content.is_feed_preview === true;
-                        const showUnblurred = isPreview;
+                        // The editor's mobile pane mirrors the non-subscriber
+                        // view: public posts render unblurred, subs-only posts
+                        // render the blurred preview.
+                        const showUnblurred = content.is_public === true;
                         const src = showUnblurred
                           ? (content.previewUrl || content.blurUrl)
                           : (content.blurUrl || content.previewUrl);

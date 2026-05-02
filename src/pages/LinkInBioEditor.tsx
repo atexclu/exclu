@@ -561,10 +561,9 @@ const LinkInBioEditor = () => {
 
     const assetsQuery = supabase
       .from('assets')
-      .select('id, title, storage_path, mime_type, is_feed_preview, feed_caption, feed_blur_path, created_at')
-      .eq('is_public', true)
+      .select('id, title, storage_path, mime_type, in_feed, is_public, feed_caption, feed_blur_path, created_at')
+      .eq('in_feed', true)
       .is('deleted_at', null)
-      .order('is_feed_preview', { ascending: false })
       .order('created_at', { ascending: false });
     const { data: publicData, error: publicError } = activeProfile?.id
       ? await assetsQuery.eq('profile_id', activeProfile.id)
@@ -579,31 +578,28 @@ const LinkInBioEditor = () => {
       const order = (orderSource?.content_order ?? []) as string[];
       const orderIndex = new Map<string, number>(order.map((id: string, i: number) => [id, i]));
 
-      const preview = publicData.find((x: any) => x.is_feed_preview === true);
-      const nonPreview = publicData
-        .filter((x: any) => x.is_feed_preview !== true)
-        .sort((a: any, b: any) => {
-          const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
-          const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
-          if (ai !== bi) return ai - bi;
-          return (b.created_at ?? '').localeCompare(a.created_at ?? '');
-        });
-      const ordered = preview ? [preview, ...nonPreview] : nonPreview;
+      const ordered = [...publicData].sort((a: any, b: any) => {
+        const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
+        const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
+        if (ai !== bi) return ai - bi;
+        return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+      });
 
-      // Sign blur previews and free-preview full-res in two batched round-trips
-      // (instead of N + M sequential signs).
+      // Sign blur previews and full-res for public posts in two batched
+      // round-trips. Subs-only posts only need the blur in this preview
+      // pane (the editor mirrors what fans without a sub would see).
       const blurPaths = ordered.map((i: any) => i.feed_blur_path).filter(Boolean) as string[];
-      const freePreviewPaths = ordered
-        .filter((i: any) => i.is_feed_preview && i.storage_path)
+      const publicFullPaths = ordered
+        .filter((i: any) => i.is_public && i.storage_path)
         .map((i: any) => i.storage_path) as string[];
-      const [blurSigned, freeSigned] = await Promise.all([
+      const [blurSigned, fullSigned] = await Promise.all([
         getSignedUrls(blurPaths, 60 * 60),
-        getSignedUrls(freePreviewPaths, 60 * 60),
+        getSignedUrls(publicFullPaths, 60 * 60),
       ]);
       const withUrls = ordered.map((item: any) => ({
         ...item,
         blurUrl: item.feed_blur_path ? blurSigned[item.feed_blur_path] ?? null : null,
-        previewUrl: item.is_feed_preview && item.storage_path ? freeSigned[item.storage_path] ?? null : null,
+        previewUrl: item.is_public && item.storage_path ? fullSigned[item.storage_path] ?? null : null,
       }));
       setPublicContent(withUrls);
     }
