@@ -442,6 +442,13 @@ const LinkInBioEditor = () => {
           .update({ show_agency_branding: debouncedData.show_agency_branding })
           .eq('id', activeProfile.id)
           .then(({ error }) => { if (error) console.warn('show_agency_branding column not available yet'); });
+      } else {
+        // creator_profiles-only fields (fan_subscription_*, gender) cannot be
+        // persisted without an active creator_profile row. Surfacing the
+        // failure prevents silent loss of fan-sub price changes — a previous
+        // bug where the new price never reached the checkout EF.
+        console.warn('[LinkInBioEditor] No active creator profile — fan-subscription fields cannot be saved.');
+        saveError = true;
       }
 
       // Only sync to profiles table for the primary profile (backward compat)
