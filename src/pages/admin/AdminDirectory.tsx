@@ -26,6 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { MODEL_CATEGORY_GROUPS, getModelCategoryLabel } from '@/lib/categories';
 import CreatorCard, { type DirectoryCreator } from '@/components/directory/CreatorCard';
 import { Link } from 'react-router-dom';
+import AppShell from '@/components/AppShell';
 
 const GLOBAL_TAB = '__global__';
 
@@ -326,7 +327,7 @@ function CategoriesDialog({
 }
 
 /* ─── Main page ─── */
-export default function AdminDirectory() {
+export default function AdminDirectory({ embedded = false }: { embedded?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState<string>(GLOBAL_TAB);
   const [rows, setRows] = useState<DirectoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -557,16 +558,18 @@ export default function AdminDirectory() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
-      <div className="max-w-[1400px] mx-auto">
-        <header className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold">Directory — curation</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Mettez en avant, masquez ou réordonnez les créatrices par catégorie. La table vide
-            laisse l'algo automatique tourner — comportement actuel préservé.
-          </p>
-        </header>
+  const content = (
+    <div className={embedded ? '' : 'min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8'}>
+      <div className={embedded ? '' : 'max-w-[1400px] mx-auto'}>
+        {!embedded && (
+          <header className="mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold">Directory — curation</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Mettez en avant, masquez ou réordonnez les créatrices par catégorie. La table vide
+              laisse l'algo automatique tourner — comportement actuel préservé.
+            </p>
+          </header>
+        )}
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 pb-3 border-b border-border overflow-x-auto">
@@ -737,4 +740,7 @@ export default function AdminDirectory() {
       />
     </div>
   );
+
+  if (embedded) return content;
+  return <AppShell>{content}</AppShell>;
 }

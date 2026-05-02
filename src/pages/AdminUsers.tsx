@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import AdminPayments from './AdminPayments';
+import AdminDirectory from './admin/AdminDirectory';
 
 interface AdminUserSummary {
   id: string;
@@ -48,7 +49,7 @@ const EXPORT_COLUMNS: { key: string; label: string; defaultOn: boolean }[] = [
 
 type RoleFilter = 'all' | 'creator' | 'fan' | 'agency';
 type ArticleStatus = 'draft' | 'published' | 'scheduled' | 'archived';
-type AdminTab = 'users' | 'blog' | 'agencies' | 'payments';
+type AdminTab = 'users' | 'blog' | 'agencies' | 'directory' | 'payments';
 
 interface DirectoryAgency {
   id: string;
@@ -654,13 +655,14 @@ const AdminUsers = () => {
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Admin</h1>
             </div>
             <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none">
-              {(['users', 'blog', 'agencies', 'payments', 'mailing'] as const).map((tab) => {
+              {(['users', 'blog', 'agencies', 'directory', 'payments', 'mailing'] as const).map((tab) => {
                 const isMailing = tab === 'mailing';
                 const isActive = !isMailing && activeTab === tab;
                 const labelMap = {
                   users: 'Users',
                   blog: 'Blog',
                   agencies: 'Agencies',
+                  directory: 'Directory',
                   payments: 'Payments',
                   mailing: 'Mailing',
                 } as const;
@@ -1491,6 +1493,10 @@ const AdminUsers = () => {
                 )}
               </div>
             </>
+          )}
+
+          {activeTab === 'directory' && (
+            <AdminDirectory embedded />
           )}
 
           {activeTab === 'payments' && (
