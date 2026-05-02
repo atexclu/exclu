@@ -26,7 +26,6 @@ import {
   ChevronDown,
   Filter,
   ArrowUpDown,
-  Layers,
   Tags as TagsIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,11 +46,10 @@ interface DirectoryRow extends AdminCardRow {
 }
 
 type StatusFilter = 'all' | 'premium' | 'free';
-type VisibilityFilter = 'all' | 'visible_global' | 'hidden_global' | 'hidden_cat';
 type SortKey = 'curated' | 'views' | 'paid_links' | 'best_sellers' | 'newest' | 'oldest' | 'premium';
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'curated', label: 'Tri curé (Featured → curé → algo)' },
+  { value: 'curated', label: 'Mis en avant + auto' },
   { value: 'views', label: 'Plus de vues' },
   { value: 'paid_links', label: 'Plus de liens payants' },
   { value: 'best_sellers', label: 'Meilleures ventes' },
@@ -380,7 +378,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('curated');
   const [editingCategoriesFor, setEditingCategoriesFor] = useState<DirectoryRow | null>(null);
 
@@ -393,37 +390,53 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
-    if (categoryFilter === null) {
-      const { data, error } = await supabase
+
+    // PostgREST is hard-capped at 1000 rows on this project regardless of the
+    // client Range header, so we paginate client-side until the page comes
+    // back short. With ~4200 rows in the view this is 5 round-trips.
+    const PAGE = 1000;
+    const pageQuery = (from: number, to: number) => {
+      let q = supabase
         .from('v_directory_creators_admin')
         .select('*')
         .is('category', null)
-        .range(0, 49999);
+        .order('creator_profile_id', { ascending: true })
+        .range(from, to);
+      if (categoryFilter !== null) q = q.contains('model_categories', [categoryFilter]);
+      return q;
+    };
+
+    const all: any[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await pageQuery(from, from + PAGE - 1);
       if (error) {
         toast.error('Échec chargement directory');
         setLoading(false);
         return;
       }
-      setRows(sortByCurated((data || []) as DirectoryRow[]));
+      const batch = data || [];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+
+    if (categoryFilter === null) {
+      setRows(sortByCurated(all as DirectoryRow[]));
     } else {
-      const [creatorsRes, curationRes] = await Promise.all([
-        supabase
-          .from('v_directory_creators_admin')
-          .select('*')
-          .is('category', null)
-          .contains('model_categories', [categoryFilter])
-          .range(0, 49999),
-        supabase.from('directory_curation').select('*').eq('category', categoryFilter),
-      ]);
-      if (creatorsRes.error) {
-        toast.error('Échec chargement créateurs');
+      const { data: curationData, error: curationErr } = await supabase
+        .from('directory_curation')
+        .select('*')
+        .eq('category', categoryFilter);
+      if (curationErr) {
+        toast.error('Échec chargement curation');
         setLoading(false);
         return;
       }
       const curationMap = new Map<string, any>(
-        (curationRes.data || []).map((c: any) => [c.creator_id, c]),
+        (curationData || []).map((c: any) => [c.creator_id, c]),
       );
-      const merged: DirectoryRow[] = (creatorsRes.data || []).map((cp: any) => {
+      const merged: DirectoryRow[] = all.map((cp: any) => {
         const dc = curationMap.get(cp.creator_profile_id);
         const isFeatured = !!dc?.is_featured;
         const position = dc?.position ?? null;
@@ -491,14 +504,10 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
       }
       if (statusFilter === 'premium' && !r.is_premium) return false;
       if (statusFilter === 'free' && r.is_premium) return false;
-
-      if (visibilityFilter === 'visible_global' && !r.is_directory_visible) return false;
-      if (visibilityFilter === 'hidden_global' && r.is_directory_visible) return false;
-      if (visibilityFilter === 'hidden_cat' && !r.is_hidden_for_category) return false;
       return true;
     });
     return sortBy(filtered, sortKey);
-  }, [rows, search, statusFilter, visibilityFilter, sortKey]);
+  }, [rows, search, statusFilter, sortKey]);
 
   // When sortKey is "curated" we render two buckets: pinned (featured OR
   // positioned) + automatic. Otherwise a single grid sorted by the picked metric.
@@ -634,20 +643,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             ]}
           />
 
-          <FilterPill<VisibilityFilter>
-            icon={<Layers className="w-3 h-3" />}
-            label="Visibilité"
-            value={visibilityFilter}
-            onChange={setVisibilityFilter}
-            width="w-64"
-            options={[
-              { value: 'all', label: 'Tous' },
-              { value: 'visible_global', label: 'Visible (global)' },
-              { value: 'hidden_global', label: 'Masqué globalement' },
-              { value: 'hidden_cat', label: 'Masqué dans cette catégorie' },
-            ]}
-          />
-
           <FilterPill<SortKey>
             icon={<ArrowUpDown className="w-3 h-3" />}
             label="Trier"
@@ -657,15 +652,11 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             options={SORT_OPTIONS}
           />
 
-          {(statusFilter !== 'all' ||
-            visibilityFilter !== 'all' ||
-            sortKey !== 'curated' ||
-            search) && (
+          {(statusFilter !== 'all' || sortKey !== 'curated' || search) && (
             <button
               type="button"
               onClick={() => {
                 setStatusFilter('all');
-                setVisibilityFilter('all');
                 setSortKey('curated');
                 setSearch('');
               }}

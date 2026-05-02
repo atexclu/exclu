@@ -23,6 +23,7 @@ export interface AdminCardRow {
   is_premium: boolean;
   profile_view_count: number | null;
   paid_links_count: number;
+  assets_count: number;
   total_earned_cents: number;
   created_at: string | null;
   is_featured: boolean;
@@ -259,8 +260,10 @@ export default function AdminCreatorCard({
         <p className="text-[10.5px] text-white/55 truncate mt-0.5">
           @{row.username ?? 'unknown'}
         </p>
-        <div className="mt-1.5 flex items-center gap-2.5 text-[10.5px] text-white/70 font-mono tabular-nums">
+        <div className="mt-1.5 flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[10.5px] text-white/70 font-mono tabular-nums">
           <span title="Vues">{fmtCount(row.profile_view_count)}<span className="opacity-50 ml-0.5">vues</span></span>
+          <span className="opacity-25">·</span>
+          <span title="Contenus publiés">{fmtCount(row.assets_count)}<span className="opacity-50 ml-0.5">posts</span></span>
           <span className="opacity-25">·</span>
           <span title="Liens payants">{row.paid_links_count}<span className="opacity-50 ml-0.5">liens</span></span>
           <span className="opacity-25">·</span>
