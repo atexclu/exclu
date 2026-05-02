@@ -226,7 +226,7 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
                   style={{
                     pointerEvents: 'none',
                     userSelect: 'none',
-                    filter: 'blur(6px) saturate(1.1)',
+                    filter: 'blur(10px) saturate(1.1)',
                   }}
                 />
               )}
