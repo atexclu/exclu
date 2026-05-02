@@ -40,11 +40,23 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
   const [country, setCountry] = useState<string | null>(null);
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
   const [profileCountryLoaded, setProfileCountryLoaded] = useState(false);
+  // Live price re-fetched the moment the popup opens. Falls back to the
+  // parent's snapshot until the SELECT returns. Without this, a creator
+  // updating their fan-sub price in another tab would charge the new price
+  // (the EF re-reads creator_profiles) while the modal still showed the old
+  // amount. Re-fetching keeps display and charge in sync.
+  const [livePriceCents, setLivePriceCents] = useState<number>(creator.priceCents);
 
   // Prefill country on open: profiles table first, then IP geo as fallback.
+  // Also re-fetch the creator's live fan-sub price so the modal never
+  // displays a stale amount.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+
+    // Reset to the parent's snapshot in case the popup is being re-opened
+    // for a different creator without unmounting.
+    setLivePriceCents(creator.priceCents);
 
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -61,12 +73,25 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
       setProfileCountryLoaded(true);
     })();
 
+    (async () => {
+      const { data } = await supabase
+        .from('creator_profiles')
+        .select('fan_subscription_price_cents')
+        .eq('id', creator.profileId)
+        .maybeSingle();
+      if (cancelled) return;
+      const fresh = data?.fan_subscription_price_cents;
+      if (typeof fresh === 'number' && fresh > 0) {
+        setLivePriceCents(fresh);
+      }
+    })();
+
     getGeoCountry().then((c) => {
       if (!cancelled && c) setDetectedCountry(c);
     });
 
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, creator.profileId, creator.priceCents]);
 
   const handleSubscribe = async () => {
     if (!country) {
@@ -171,7 +196,7 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
                     className="text-3xl font-extrabold bg-clip-text text-transparent"
                     style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
                   >
-                    ${(creator.priceCents / 100).toFixed(2)}
+                    ${(livePriceCents / 100).toFixed(2)}
                   </span>
                   <span className="text-sm text-white/60">/ month</span>
                 </div>
@@ -203,7 +228,7 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
                 style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
               >
                 {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                Subscribe for ${(creator.priceCents / 100).toFixed(2)}/mo
+                Subscribe for ${(livePriceCents / 100).toFixed(2)}/mo
               </button>
 
               <p className="text-[11px] text-white/40 mt-3">
