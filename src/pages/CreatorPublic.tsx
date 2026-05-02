@@ -159,6 +159,31 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
     }
   };
 
+  // Caption edit from the embedded feed (creator's own /app/home). Optimistic
+  // local update, persists to assets.feed_caption. Rolls back on error.
+  const setAssetCaption = async (assetId: string, caption: string | null) => {
+    const previous = (publicContent as any[]).find((a) => a.id === assetId)?.feed_caption ?? null;
+    if ((previous ?? null) === (caption ?? null)) return;
+
+    setFeedItems((prev) =>
+      prev.map((item) => (item.kind === 'asset' && item.id === assetId ? { ...item, caption } : item)),
+    );
+    setPublicContent((prev) => prev.map((a: any) => (a.id === assetId ? { ...a, feed_caption: caption } : a)));
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ feed_caption: caption })
+      .eq('id', assetId);
+
+    if (error) {
+      console.error('[CreatorPublic] caption save failed', error);
+      setFeedItems((prev) =>
+        prev.map((item) => (item.kind === 'asset' && item.id === assetId ? { ...item, caption: previous } : item)),
+      );
+      setPublicContent((prev) => prev.map((a: any) => (a.id === assetId ? { ...a, feed_caption: previous } : a)));
+    }
+  };
+
   // Initial tab honours ?tab=content (used by chat "View feed" CTA, fan
   // subscription-success redirect, and fan "Open feed" link from My subs).
   // ?tab=feed is an alias for ?tab=content — the feed lives inside the
@@ -642,7 +667,9 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
         blurUrl: a.blurUrl ?? null,
         storagePath: a.storage_path ?? '',
         mimeType: a.mime_type ?? null,
-        caption: a.feed_caption ?? null,
+        // Fallback to title so newly-uploaded assets show their title above
+        // the post even before the creator opens the caption editor.
+        caption: a.feed_caption ?? a.title ?? null,
         isPublic: a.is_public !== false,
         createdAt: a.created_at ?? new Date().toISOString(),
       }));
@@ -1472,6 +1499,11 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                         gradientStops={gradientStops as [string, string]}
                         onLockedClick={() => setShowSubscribePopup(true)}
                         onLinkClick={(slug) => navigate(`/l/${slug}`)}
+                        onEditCaption={
+                          embed && item.kind === 'asset'
+                            ? (next) => setAssetCaption(item.id, next)
+                            : undefined
+                        }
                       />
                     </div>
                   ))}

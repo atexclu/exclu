@@ -43,6 +43,12 @@ interface FeedPostProps {
   author?: FeedAuthor;
   onLockedClick: () => void;
   onLinkClick: (slug: string) => void;
+  /**
+   * When provided (only in /app/home embed mode), the caption above asset
+   * posts becomes inline-editable. Click the caption → contenteditable input
+   * → blur saves. Receives the trimmed final string (or null when cleared).
+   */
+  onEditCaption?: (next: string | null) => void;
 }
 
 /**
@@ -87,7 +93,7 @@ function AuthorHeader({ author, gradientStops }: { author: FeedAuthor; gradientS
 const GRAIN_URL =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>\")";
 
-export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkClick }: FeedPostProps) {
+export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkClick, onEditCaption }: FeedPostProps) {
   // ── Paid-link variant — button wrapping a framed image card ──
   if (post.kind === 'link') {
     return (
@@ -175,11 +181,36 @@ export function FeedPost({ post, gradientStops, author, onLockedClick, onLinkCli
     >
       {author && <AuthorHeader author={author} gradientStops={gradientStops} />}
 
-      {/* Caption above the card — reads like a social post */}
-      {post.caption && (
-        <p className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap">
-          {post.caption}
+      {/* Caption above the card — reads like a social post.
+          In embed mode (creator's own /app/home), the caption is inline-editable:
+          contenteditable span, blur commits, Esc cancels. Empty → placeholder pill. */}
+      {onEditCaption ? (
+        <p
+          contentEditable
+          suppressContentEditableWarning
+          onBlur={(e) => {
+            const next = (e.currentTarget.textContent ?? '').trim().slice(0, 500);
+            onEditCaption(next || null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.currentTarget.blur();
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap outline-none focus:bg-white/5 rounded-md cursor-text empty:before:content-['Add_a_caption…'] empty:before:text-white/35"
+        >
+          {post.caption ?? ''}
         </p>
+      ) : (
+        post.caption && (
+          <p className="px-1 pb-2.5 text-[15px] leading-snug text-white whitespace-pre-wrap">
+            {post.caption}
+          </p>
+        )
       )}
 
       <div className="relative w-full overflow-hidden rounded-3xl border border-white/10 bg-black shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]">

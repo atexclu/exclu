@@ -245,18 +245,22 @@ const ContentLibrary = () => {
           throw new Error('Upload failed for one of the files. Please try again.');
         }
 
+        const trimmedTitle = assetTitle.trim() || null;
         const { data: inserted, error: insertError } = await supabase
           .from('assets')
           .insert({
             id: assetId,
             creator_id: user.id,
             profile_id: activeProfile?.id || null,
-            title: assetTitle.trim() || null,
+            title: trimmedTitle,
             storage_path: objectName,
             mime_type: file.type || rawFile.type || null,
             in_feed: false,
             is_public: false,
-            feed_caption: null,
+            // Title doubles as the feed caption — what appears above the post
+            // when the asset is shown in the feed. The creator can edit it
+            // later via the inline caption editor.
+            feed_caption: trimmedTitle ? trimmedTitle.slice(0, 500) : null,
             feed_blur_path: null,
           })
           .select('id, title, created_at, storage_path, mime_type, in_feed, is_public, feed_caption, feed_blur_path')
@@ -515,12 +519,15 @@ const ContentLibrary = () => {
                 <form className="space-y-6" onSubmit={handleAssetUpload}>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground" htmlFor="asset-title">
-                      Title (optional)
+                      Caption <span className="text-muted-foreground font-normal">(optional)</span>
                     </label>
+                    <p className="text-[11px] text-muted-foreground -mt-1">
+                      What's shown above the post in your feed. You can edit it later.
+                    </p>
                     <Input
                       id="asset-title"
                       value={assetTitle}
-                      onChange={(e) => setAssetTitle(e.target.value)}
+                      onChange={(e) => setAssetTitle(e.target.value.slice(0, 500))}
                       placeholder="Example: Behind the scenes shot"
                       className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
                     />
@@ -757,10 +764,10 @@ const ContentLibrary = () => {
                       </button>
                     </div>
 
-                    {/* In-feed switch — bottom-right, stops propagation so the click
+                    {/* In-feed switch — top-right, stops propagation so the click
                         doesn't open the preview modal. */}
                     <div
-                      className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15"
+                      className="absolute top-2 right-2 z-20 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <span className="text-[10px] font-bold uppercase tracking-wider text-white/85">
@@ -858,9 +865,37 @@ const ContentLibrary = () => {
                 <p className="text-exclu-space">No preview available</p>
               </div>
             )}
-            {previewAsset.title && (
-              <p className="mt-3 text-sm text-exclu-cloud font-medium">{previewAsset.title}</p>
-            )}
+            <div className="mt-4 w-full max-w-md">
+              <label className="block text-[10px] uppercase tracking-wider font-semibold text-white/55 mb-1.5">
+                Caption (shown above the post in feed)
+              </label>
+              <textarea
+                key={previewAsset.id}
+                defaultValue={previewAsset.feed_caption ?? previewAsset.title ?? ''}
+                onBlur={async (e) => {
+                  const next = e.target.value.trim().slice(0, 500) || null;
+                  if ((previewAsset.feed_caption ?? null) === next) return;
+                  const { error } = await supabase
+                    .from('assets')
+                    .update({ feed_caption: next })
+                    .eq('id', previewAsset.id);
+                  if (error) {
+                    console.error('Failed to save caption', error);
+                    toast.error('Failed to save caption');
+                    return;
+                  }
+                  setAssets((prev) =>
+                    prev.map((a) => (a.id === previewAsset.id ? { ...a, feed_caption: next } : a)),
+                  );
+                  setPreviewAsset((prev) => (prev ? { ...prev, feed_caption: next } : prev));
+                  toast.success('Caption saved');
+                }}
+                rows={2}
+                maxLength={500}
+                placeholder="What appears above this post in your feed…"
+                className="w-full resize-none rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
           </div>
         </div>
       )}
