@@ -452,11 +452,10 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
           if (!taggedWithCat && !hasCuration) return null;
           const isFeatured = !!dc?.is_featured;
           const position = dc?.position ?? null;
-          let displayRank = 5;
+          let displayRank = 4;
           if (isFeatured) displayRank = 1;
           else if (position != null) displayRank = 2;
           else if (cp.is_premium) displayRank = 3;
-          else if ((cp.paid_links_count ?? 0) > 0) displayRank = 4;
           return {
             ...cp,
             category: categoryFilter,
@@ -485,8 +484,7 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
         if (next.is_featured) next.display_rank = 1;
         else if (next.position != null) next.display_rank = 2;
         else if (next.is_premium) next.display_rank = 3;
-        else if (next.paid_links_count > 0) next.display_rank = 4;
-        else next.display_rank = 5;
+        else next.display_rank = 4;
         return next;
       }),
     );
