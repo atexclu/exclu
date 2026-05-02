@@ -27,6 +27,7 @@ import {
   Filter,
   ArrowUpDown,
   Layers,
+  Tags as TagsIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,7 +49,6 @@ interface DirectoryRow extends AdminCardRow {
 type StatusFilter = 'all' | 'premium' | 'free';
 type VisibilityFilter = 'all' | 'visible_global' | 'hidden_global' | 'hidden_cat';
 type SortKey = 'curated' | 'views' | 'paid_links' | 'best_sellers' | 'newest' | 'oldest' | 'premium';
-type AvatarFilter = 'all' | 'with_avatar' | 'no_avatar';
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'curated', label: 'Tri curé (Featured → curé → algo)' },
@@ -129,6 +129,93 @@ function SortableAdminCard({
   return (
     <div ref={setNodeRef} style={style}>
       {children({ attributes, listeners })}
+    </div>
+  );
+}
+
+/* ─── Category dropdown (grouped, single-select) ─── */
+function CategoryDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const isGlobal = value === GLOBAL_TAB;
+  const currentLabel = isGlobal ? 'Featured global' : getModelCategoryLabel(value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1.5 h-9 pl-2.5 pr-2 rounded-full text-xs font-medium border transition whitespace-nowrap ${
+          isGlobal
+            ? 'bg-exclu-ink/30 dark:bg-white/[0.04] text-exclu-cloud border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
+            : 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/40'
+        }`}
+      >
+        <TagsIcon className="w-3 h-3 opacity-70" />
+        <span className="text-[10px] uppercase tracking-wider opacity-60">Catégorie</span>
+        <span>{currentLabel}</span>
+        <ChevronDown className={`w-3 h-3 opacity-50 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-40 mt-1.5 left-0 w-72 max-h-[420px] overflow-y-auto rounded-xl border border-white/10 bg-[#0c0c10] shadow-2xl">
+          <button
+            type="button"
+            onClick={() => {
+              onChange(GLOBAL_TAB);
+              setOpen(false);
+            }}
+            className={`w-full text-left px-3 py-2 text-xs transition flex items-center justify-between ${
+              isGlobal ? 'bg-[#CFFF16]/10 text-[#CFFF16]' : 'text-white/85 hover:bg-white/[0.06]'
+            }`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Star className="w-3 h-3" /> Featured global
+            </span>
+            {isGlobal && <span className="text-[10px]">✓</span>}
+          </button>
+          {Object.entries(MODEL_CATEGORY_GROUPS).map(([group, options]) => (
+            <div key={group} className="border-t border-white/5">
+              <p className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/35">
+                {group}
+              </p>
+              {options.map((opt) => {
+                const selected = opt.value === value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      onChange(opt.value);
+                      setOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs transition flex items-center justify-between ${
+                      selected ? 'bg-[#CFFF16]/10 text-[#CFFF16]' : 'text-white/80 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {selected && <span className="text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -294,7 +381,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('all');
-  const [avatarFilter, setAvatarFilter] = useState<AvatarFilter>('with_avatar');
   const [sortKey, setSortKey] = useState<SortKey>('curated');
   const [editingCategoriesFor, setEditingCategoriesFor] = useState<DirectoryRow | null>(null);
 
@@ -409,13 +495,10 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
       if (visibilityFilter === 'visible_global' && !r.is_directory_visible) return false;
       if (visibilityFilter === 'hidden_global' && r.is_directory_visible) return false;
       if (visibilityFilter === 'hidden_cat' && !r.is_hidden_for_category) return false;
-
-      if (avatarFilter === 'with_avatar' && !r.avatar_url) return false;
-      if (avatarFilter === 'no_avatar' && r.avatar_url) return false;
       return true;
     });
     return sortBy(filtered, sortKey);
-  }, [rows, search, statusFilter, visibilityFilter, avatarFilter, sortKey]);
+  }, [rows, search, statusFilter, visibilityFilter, sortKey]);
 
   // When sortKey is "curated" we render the 3 buckets. Otherwise a single grid.
   const usingCurated = sortKey === 'curated';
@@ -500,43 +583,7 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
           </header>
         )}
 
-        {/* ── CATEGORY TABS ── */}
-        <div className="-mx-1 px-1 mb-5 overflow-x-auto scrollbar-none">
-          <div className="flex flex-wrap gap-1.5 pb-2 border-b border-border">
-            <button
-              type="button"
-              onClick={() => setActiveTab(GLOBAL_TAB)}
-              className={`px-3 h-7 inline-flex items-center gap-1.5 rounded-full text-xs font-medium transition ${
-                activeTab === GLOBAL_TAB
-                  ? 'bg-[#CFFF16] text-black'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/70'
-              }`}
-            >
-              <Star className="w-3 h-3" /> Featured global
-            </button>
-            {Object.entries(MODEL_CATEGORY_GROUPS).map(([group, options]) => (
-              <div key={group} className="flex items-center gap-1">
-                <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/50 px-1 select-none">
-                  {group}
-                </span>
-                {options.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setActiveTab(opt.value)}
-                    className={`px-2.5 h-7 inline-flex items-center rounded-full text-xs font-medium transition ${
-                      activeTab === opt.value
-                        ? 'bg-[#CFFF16] text-black'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* (category selection moved into the toolbar dropdown below) */}
 
         {/* ── FILTER TOOLBAR ── */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -550,6 +597,11 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
               className="pl-8 h-9 rounded-full bg-exclu-ink/30 dark:bg-white/[0.04] border-exclu-arsenic/40"
             />
           </div>
+
+          <CategoryDropdown
+            value={activeTab}
+            onChange={setActiveTab}
+          />
 
           <FilterPill<StatusFilter>
             icon={<Filter className="w-3 h-3" />}
@@ -577,18 +629,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
             ]}
           />
 
-          <FilterPill<AvatarFilter>
-            icon={<Filter className="w-3 h-3" />}
-            label="Avatar"
-            value={avatarFilter}
-            onChange={setAvatarFilter}
-            options={[
-              { value: 'with_avatar', label: 'Avec avatar' },
-              { value: 'all', label: 'Tous' },
-              { value: 'no_avatar', label: 'Sans avatar' },
-            ]}
-          />
-
           <FilterPill<SortKey>
             icon={<ArrowUpDown className="w-3 h-3" />}
             label="Trier"
@@ -600,7 +640,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
 
           {(statusFilter !== 'all' ||
             visibilityFilter !== 'all' ||
-            avatarFilter !== 'with_avatar' ||
             sortKey !== 'curated' ||
             search) && (
             <button
@@ -608,7 +647,6 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
               onClick={() => {
                 setStatusFilter('all');
                 setVisibilityFilter('all');
-                setAvatarFilter('with_avatar');
                 setSortKey('curated');
                 setSearch('');
               }}
