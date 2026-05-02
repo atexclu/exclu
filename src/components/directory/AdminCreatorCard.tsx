@@ -125,8 +125,8 @@ export default function AdminCreatorCard({
         </div>
       )}
 
-      {/* Hidden states — desaturate + dark tint */}
-      {(row.is_hidden_for_category || !row.is_directory_visible) && (
+      {/* Cat-hidden state — desaturate + dark tint */}
+      {row.is_hidden_for_category && (
         <div className="absolute inset-0 bg-black/55 backdrop-grayscale-[0.6] pointer-events-none" />
       )}
 
@@ -230,13 +230,6 @@ export default function AdminCreatorCard({
       {isPinned && row.position != null && (
         <span className="absolute top-12 left-2.5 z-10 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-black/65 backdrop-blur text-white text-[10px] font-mono font-semibold tracking-tight">
           #{row.position + 1}
-        </span>
-      )}
-
-      {/* Hidden state hint */}
-      {!row.is_directory_visible && (
-        <span className="absolute top-12 right-2.5 z-10 inline-flex items-center px-1.5 h-5 rounded-full bg-white/10 backdrop-blur text-white/85 text-[10px] font-medium uppercase tracking-wider">
-          Off
         </span>
       )}
 
