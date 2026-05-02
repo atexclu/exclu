@@ -86,10 +86,14 @@ export default function AdminCreatorCard({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [menuOpen]);
 
+  // "Pinned" merges featured + positioned-but-not-featured into a single
+  // visual state, matching the "Mis en avant" bucket the page renders.
+  const isPinned = row.is_featured || row.position != null;
+
   // Card outline reflects state. Stay strictly within Exclu palette + lemon
   // accent; only red is allowed for the hidden-cat destructive state.
   let ring = 'ring-1 ring-white/10';
-  if (row.is_featured) ring = 'ring-2 ring-[#CFFF16]';
+  if (isPinned) ring = 'ring-2 ring-[#CFFF16]';
   else if (row.is_hidden_for_category) ring = 'ring-2 ring-red-500/45';
 
   // Drag listeners go on the whole card when sortable. Buttons inside still
@@ -130,15 +134,19 @@ export default function AdminCreatorCard({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onPatch({ is_featured: !row.is_featured });
+          onPatch(
+            isPinned
+              ? { is_featured: false, position: null }
+              : { is_featured: true },
+          );
         }}
         onPointerDown={(e) => e.stopPropagation()}
         className={`absolute top-2.5 left-2.5 z-10 inline-flex items-center justify-center w-8 h-8 rounded-full backdrop-blur transition shadow-md ${
-          row.is_featured
+          isPinned
             ? 'bg-[#CFFF16] text-black hover:bg-[#CFFF16]/90'
             : 'bg-black/55 text-white hover:bg-black/80'
         }`}
-        title={row.is_featured ? 'Retirer du Featured' : 'Mettre en Featured'}
+        title={isPinned ? 'Retirer de Mis en avant' : 'Mettre en avant'}
       >
         <Pin className="w-3.5 h-3.5" />
       </button>
@@ -217,8 +225,8 @@ export default function AdminCreatorCard({
         )}
       </div>
 
-      {/* Position pip (when curated, below pin) */}
-      {!row.is_featured && row.position != null && (
+      {/* Position pip — shown when card is pinned (merged bucket) */}
+      {isPinned && row.position != null && (
         <span className="absolute top-12 left-2.5 z-10 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-black/65 backdrop-blur text-white text-[10px] font-mono font-semibold tracking-tight">
           #{row.position + 1}
         </span>

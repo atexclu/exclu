@@ -500,51 +500,70 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     return sortBy(filtered, sortKey);
   }, [rows, search, statusFilter, visibilityFilter, sortKey]);
 
-  // When sortKey is "curated" we render the 3 buckets. Otherwise a single grid.
+  // When sortKey is "curated" we render two buckets: pinned (featured OR
+  // positioned) + automatic. Otherwise a single grid sorted by the picked metric.
   const usingCurated = sortKey === 'curated';
-  const featuredRows = useMemo(
-    () => (usingCurated ? filteredRows.filter((r) => r.is_featured) : []),
-    [usingCurated, filteredRows],
-  );
-  const curatedRows = useMemo(
-    () => (usingCurated ? filteredRows.filter((r) => !r.is_featured && r.position != null) : []),
+  const pinnedRows = useMemo(
+    () =>
+      usingCurated
+        ? filteredRows.filter((r) => r.is_featured || r.position != null)
+        : [],
     [usingCurated, filteredRows],
   );
   const fallbackRows = useMemo(
-    () => (usingCurated ? filteredRows.filter((r) => !r.is_featured && r.position == null) : filteredRows),
+    () =>
+      usingCurated
+        ? filteredRows.filter((r) => !r.is_featured && r.position == null)
+        : filteredRows,
     [usingCurated, filteredRows],
   );
 
-  const handleDragEnd = (bucket: 'featured' | 'curated') => (event: DragEndEvent) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const ids =
-      bucket === 'featured'
-        ? featuredRows.map((r) => r.creator_profile_id)
-        : curatedRows.map((r) => r.creator_profile_id);
+    const ids = pinnedRows.map((r) => r.creator_profile_id);
     const oldIdx = ids.indexOf(String(active.id));
     const newIdx = ids.indexOf(String(over.id));
     if (oldIdx === -1 || newIdx === -1) return;
     const ordered = arrayMove(ids, oldIdx, newIdx);
+
+    // Optimistic: collapse the bucket — everything pinned becomes featured so
+    // drag order is preserved on the next render (no display_rank reshuffle).
     setRows((prev) => {
       const next = prev.slice();
       ordered.forEach((cid, i) => {
         const idx = next.findIndex((r) => r.creator_profile_id === cid);
-        if (idx >= 0) next[idx] = { ...next[idx], position: i };
+        if (idx >= 0) next[idx] = { ...next[idx], position: i, is_featured: true };
       });
       return sortByCurated(next);
     });
-    supabase
-      .rpc('admin_reorder_directory', {
-        p_category: categoryFilter,
-        p_ordered_creator_ids: ordered,
-      })
-      .then(({ error }) => {
-        if (error) {
-          toast.error('Échec réordonnancement');
-          fetchRows();
-        }
-      });
+
+    // Persist: reorder + promote any non-featured-but-positioned row to featured
+    // so the merged bucket stays consistent server-side.
+    const promotionTargets = pinnedRows
+      .filter((r) => !r.is_featured)
+      .map((r) => r.creator_profile_id);
+    Promise.all(
+      promotionTargets.map((id) =>
+        supabase.rpc('admin_set_directory_curation', {
+          p_creator_id: id,
+          p_category: categoryFilter,
+          p_patch: { is_featured: true },
+        }),
+      ),
+    ).then(() =>
+      supabase
+        .rpc('admin_reorder_directory', {
+          p_category: categoryFilter,
+          p_ordered_creator_ids: ordered,
+        })
+        .then(({ error }) => {
+          if (error) {
+            toast.error('Échec réordonnancement');
+            fetchRows();
+          }
+        }),
+    );
   };
 
   const renderCard = (row: DirectoryRow, sortable: boolean) => {
@@ -676,55 +695,28 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
           </div>
         ) : usingCurated ? (
           <div className="space-y-10">
-            {/* ── FEATURED CAROUSEL ── */}
+            {/* ── PINNED ── */}
             <section>
               <SectionHeader
-                title="Mises en avant"
-                count={featuredRows.length}
+                title="Mis en avant"
+                count={pinnedRows.length}
                 hint="Drag & drop pour réordonner — sauvegarde auto"
                 accent
               />
-              {featuredRows.length === 0 ? (
-                <EmptyState text="Aucune en featured. Cliquez sur l'épingle d'une carte pour l'ajouter." />
+              {pinnedRows.length === 0 ? (
+                <EmptyState text="Aucun créateur épinglé. Cliquez sur l'épingle d'une carte pour l'ajouter." />
               ) : (
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd('featured')}
+                  onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    items={featuredRows.map((r) => r.creator_profile_id)}
+                    items={pinnedRows.map((r) => r.creator_profile_id)}
                     strategy={rectSortingStrategy}
                   >
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                      {featuredRows.map((r) => renderCard(r, true))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </section>
-
-            {/* ── CURATED ── */}
-            <section>
-              <SectionHeader
-                title="Curées"
-                count={curatedRows.length}
-                hint="Position fixée — drag & drop"
-              />
-              {curatedRows.length === 0 ? (
-                <EmptyState text="Aucune position curée." />
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd('curated')}
-                >
-                  <SortableContext
-                    items={curatedRows.map((r) => r.creator_profile_id)}
-                    strategy={rectSortingStrategy}
-                  >
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                      {curatedRows.map((r) => renderCard(r, true))}
+                      {pinnedRows.map((r) => renderCard(r, true))}
                     </div>
                   </SortableContext>
                 </DndContext>
@@ -801,7 +793,7 @@ function SectionHeader({
           {title}
         </h2>
         <span className="text-[11px] tabular-nums text-muted-foreground/70 font-mono">
-          {count.toString().padStart(2, '0')}
+          {count}
         </span>
       </div>
       {hint && <span className="text-[10px] text-muted-foreground/60">{hint}</span>}
