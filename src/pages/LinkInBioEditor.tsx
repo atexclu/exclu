@@ -402,7 +402,14 @@ const LinkInBioEditor = () => {
         exclusive_content_link_id: debouncedData.exclusive_content_link_id,
         exclusive_content_url: debouncedData.exclusive_content_url,
         exclusive_content_image_url: debouncedData.exclusive_content_image_url,
-        link_order: debouncedData.link_order,
+        // link_order is intentionally NOT in this payload. ContentSection
+        // (and SocialSection in the future) are the canonical writers — they
+        // do read-modify-write on creator_profiles.link_order so the
+        // social_order / content_order halves don't clobber each other.
+        // Including link_order here would race with those writes: the
+        // auto-save fires on any unrelated edit (bio, color, etc.) and would
+        // restore the link_order that was on debouncedData when the editor
+        // mounted, silently undoing the drag the creator just did.
         chat_enabled: debouncedData.chat_enabled,
         tips_enabled: debouncedData.tips_enabled,
         custom_requests_enabled: debouncedData.custom_requests_enabled,
