@@ -20,9 +20,9 @@ type LibraryAsset = {
   storage_path: string;
   mime_type: string | null;
   previewUrl?: string | null;
+  in_feed: boolean;
   is_public: boolean;
   feed_caption: string | null;
-  is_feed_preview: boolean;
   feed_blur_path: string | null;
 };
 
@@ -38,12 +38,8 @@ const ContentLibrary = () => {
   const [error, setError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
-  // Default ON so the upload flow is feed-first; the creator still toggles it
-  // off explicitly if they want the asset kept private for now.
-  const [isPublic, setIsPublic] = useState(true);
-  const [feedCaption, setFeedCaption] = useState('');
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
-  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
+  const [feedFilter, setFeedFilter] = useState<'all' | 'in_feed' | 'not_in_feed'>('all');
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -78,7 +74,7 @@ const ContentLibrary = () => {
 
       const assetsQuery = supabase
         .from('assets')
-        .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview, feed_blur_path')
+        .select('id, title, created_at, storage_path, mime_type, in_feed, is_public, feed_caption, feed_blur_path')
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
@@ -249,29 +245,6 @@ const ContentLibrary = () => {
           throw new Error('Upload failed for one of the files. Please try again.');
         }
 
-        // Generate and upload a tiny pre-blurred thumbnail for the public feed.
-        // The feed serves this path to non-subscribed viewers so the full-res
-        // URL never appears in the page source. Failure is non-fatal.
-        let blurPath: string | null = null;
-        if (isPublic) {
-          try {
-            const blurBlob = await generateBlurThumbnail(file);
-            if (blurBlob) {
-              blurPath = `${user.id}/assets/${assetId}/preview/blur.jpg`;
-              const { error: blurErr } = await supabase.storage
-                .from('paid-content')
-                .upload(blurPath, blurBlob, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' });
-              if (blurErr) {
-                console.warn('Blur thumbnail upload failed — continuing without it', blurErr);
-                blurPath = null;
-              }
-            }
-          } catch (err) {
-            console.warn('Blur thumbnail generation failed', err);
-            blurPath = null;
-          }
-        }
-
         const { data: inserted, error: insertError } = await supabase
           .from('assets')
           .insert({
@@ -281,12 +254,12 @@ const ContentLibrary = () => {
             title: assetTitle.trim() || null,
             storage_path: objectName,
             mime_type: file.type || rawFile.type || null,
-            is_public: isPublic,
-            feed_caption: isPublic && feedCaption.trim() ? feedCaption.trim().slice(0, 500) : null,
-            is_feed_preview: false,
-            feed_blur_path: blurPath,
+            in_feed: false,
+            is_public: false,
+            feed_caption: null,
+            feed_blur_path: null,
           })
-          .select('id, title, created_at, storage_path, mime_type, is_public, feed_caption, is_feed_preview, feed_blur_path')
+          .select('id, title, created_at, storage_path, mime_type, in_feed, is_public, feed_caption, feed_blur_path')
           .single();
 
         if (insertError || !inserted) {
@@ -311,8 +284,6 @@ const ContentLibrary = () => {
         return [];
       });
       setShowUploadModal(false);
-      setIsPublic(true);
-      setFeedCaption('');
     } catch (err: any) {
       console.error('Error uploading asset', err);
       setError(err?.message || 'Unable to upload content right now.');
@@ -325,32 +296,84 @@ const ContentLibrary = () => {
     setShowUploadModal(false);
     setAssetTitle('');
     setSelectedFiles([]);
-    setIsPublic(false);
-    setFeedCaption('');
     setPreviewUrls((prev) => {
       prev.forEach((url) => URL.revokeObjectURL(url));
       return [];
     });
   };
 
-  const handleToggleVisibility = async (assetId: string, currentIsPublic: boolean) => {
-    const newIsPublic = !currentIsPublic;
+  // Lazy: when an asset enters the feed, make sure its server-side blur
+  // thumbnail exists. Subs-only posts use this thumbnail as the locked
+  // preview shown to non-subscribers, so we always need one.
+  const ensureBlurForAsset = async (asset: LibraryAsset): Promise<string | null> => {
+    if (asset.feed_blur_path || !asset.storage_path) return asset.feed_blur_path ?? null;
+    try {
+      const signedUrl = await getSignedUrl(asset.storage_path, 60);
+      if (!signedUrl) return null;
+      const res = await fetch(signedUrl);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const mime = asset.mime_type ?? blob.type ?? 'image/jpeg';
+      const file = new File([blob], `source-${asset.id}`, { type: mime });
+      const blurBlob = await generateBlurThumbnail(file);
+      if (!blurBlob) return null;
 
-    const { error } = await supabase
-      .from('assets')
-      .update({ is_public: newIsPublic })
-      .eq('id', assetId);
-
-    if (error) {
-      console.error('Error updating visibility', error);
-      return;
+      const BUCKET_PREFIX = 'paid-content/';
+      const relative = asset.storage_path.startsWith(BUCKET_PREFIX)
+        ? asset.storage_path.slice(BUCKET_PREFIX.length)
+        : asset.storage_path;
+      const [ownerId] = relative.split('/');
+      if (!ownerId) return null;
+      const blurPath = `${ownerId}/assets/${asset.id}/preview/blur.jpg`;
+      const { error: uploadErr } = await supabase.storage
+        .from('paid-content')
+        .upload(blurPath, blurBlob, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' });
+      if (uploadErr) throw uploadErr;
+      await supabase.from('assets').update({ feed_blur_path: blurPath }).eq('id', asset.id);
+      return blurPath;
+    } catch (err) {
+      console.warn('[ContentLibrary] Unable to generate blur preview', err);
+      return null;
     }
+  };
+
+  const handleToggleInFeed = async (assetId: string, currentInFeed: boolean) => {
+    const newInFeed = !currentInFeed;
 
     setAssets((prev) =>
       prev.map((asset) =>
-        asset.id === assetId ? { ...asset, is_public: newIsPublic } : asset
-      )
+        asset.id === assetId ? { ...asset, in_feed: newInFeed } : asset,
+      ),
     );
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ in_feed: newInFeed })
+      .eq('id', assetId);
+
+    if (error) {
+      console.error('Error updating in_feed', error);
+      toast.error('Failed to update feed visibility');
+      setAssets((prev) =>
+        prev.map((asset) =>
+          asset.id === assetId ? { ...asset, in_feed: currentInFeed } : asset,
+        ),
+      );
+      return;
+    }
+
+    if (newInFeed) {
+      const target = assets.find((a) => a.id === assetId);
+      if (target && !target.feed_blur_path) {
+        ensureBlurForAsset(target).then((blurPath) => {
+          if (blurPath) {
+            setAssets((prev) =>
+              prev.map((a) => (a.id === assetId ? { ...a, feed_blur_path: blurPath } : a)),
+            );
+          }
+        });
+      }
+    }
   };
 
   const toggleAssetSelection = (assetId: string) => {
@@ -374,26 +397,42 @@ const ContentLibrary = () => {
     setSelectedAssets(new Set());
   };
 
-  const handleBulkVisibilityChange = async (makePublic: boolean) => {
+  const handleBulkInFeedChange = async (makeInFeed: boolean) => {
     const assetIds = Array.from(selectedAssets);
     if (assetIds.length === 0) return;
 
     const { error } = await supabase
       .from('assets')
-      .update({ is_public: makePublic })
+      .update({ in_feed: makeInFeed })
       .in('id', assetIds);
 
     if (error) {
-      console.error('Error updating bulk visibility', error);
+      console.error('Error updating bulk in_feed', error);
+      toast.error('Failed to update feed visibility');
       return;
     }
 
     setAssets((prev) =>
       prev.map((asset) =>
-        assetIds.includes(asset.id) ? { ...asset, is_public: makePublic } : asset
-      )
+        assetIds.includes(asset.id) ? { ...asset, in_feed: makeInFeed } : asset,
+      ),
     );
     setSelectedAssets(new Set());
+    toast.success(`${assetIds.length} content${assetIds.length > 1 ? 's' : ''} ${makeInFeed ? 'added to' : 'removed from'} your feed.`);
+
+    if (makeInFeed) {
+      assets
+        .filter((a) => assetIds.includes(a.id) && !a.feed_blur_path)
+        .forEach((asset) => {
+          ensureBlurForAsset(asset).then((blurPath) => {
+            if (blurPath) {
+              setAssets((prev) =>
+                prev.map((a) => (a.id === asset.id ? { ...a, feed_blur_path: blurPath } : a)),
+              );
+            }
+          });
+        });
+    }
   };
 
   const handleBulkDelete = async () => {
@@ -425,9 +464,9 @@ const ContentLibrary = () => {
   };
 
   const getFilteredAssets = () => {
-    if (visibilityFilter === 'all') return assets;
-    if (visibilityFilter === 'public') return assets.filter(a => a.is_public);
-    return assets.filter(a => !a.is_public);
+    if (feedFilter === 'all') return assets;
+    if (feedFilter === 'in_feed') return assets.filter((a) => a.in_feed);
+    return assets.filter((a) => !a.in_feed);
   };
 
   return (
@@ -525,35 +564,6 @@ const ContentLibrary = () => {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 border border-border">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">Show in my feed</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Appears on your public profile. Non-subscribers see it blurred until they subscribe (or unblurred if you mark it as the free preview).
-                      </p>
-                    </div>
-                    <Switch
-                      checked={isPublic}
-                      onCheckedChange={setIsPublic}
-                    />
-                  </div>
-
-                  {isPublic && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-foreground block">
-                        Feed caption <span className="text-muted-foreground">(optional)</span>
-                      </label>
-                      <textarea
-                        value={feedCaption}
-                        onChange={(e) => setFeedCaption(e.target.value.slice(0, 500))}
-                        rows={2}
-                        placeholder="Legend shown above the post in your feed…"
-                        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                      />
-                      <p className="text-[10px] text-muted-foreground text-right">{feedCaption.length}/500</p>
-                    </div>
-                  )}
-
                   <div className="flex items-center justify-end gap-3">
                     <Button
                       type="button"
@@ -604,11 +614,11 @@ const ContentLibrary = () => {
                   <div className="flex items-center gap-3">
                     <p className="text-xs text-exclu-space/70">{getFilteredAssets().length} item{getFilteredAssets().length > 1 ? 's' : ''}</p>
 
-                    {/* Visibility filter */}
+                    {/* Feed filter */}
                     <div className="inline-flex rounded-full border border-exclu-arsenic/60 bg-exclu-ink/80 p-0.5 text-[11px] text-exclu-space/80">
                       <button
-                        onClick={() => setVisibilityFilter('all')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all ${visibilityFilter === 'all'
+                        onClick={() => setFeedFilter('all')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all ${feedFilter === 'all'
                           ? 'bg-primary text-white dark:text-black shadow-sm'
                           : 'hover:text-exclu-cloud'
                           }`}
@@ -616,24 +626,24 @@ const ContentLibrary = () => {
                         All
                       </button>
                       <button
-                        onClick={() => setVisibilityFilter('public')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${visibilityFilter === 'public'
+                        onClick={() => setFeedFilter('in_feed')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${feedFilter === 'in_feed'
                           ? 'bg-primary text-white dark:text-black shadow-sm'
                           : 'hover:text-exclu-cloud'
                           }`}
                       >
                         <Eye className="w-3 h-3" />
-                        Public
+                        In feed
                       </button>
                       <button
-                        onClick={() => setVisibilityFilter('private')}
-                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${visibilityFilter === 'private'
+                        onClick={() => setFeedFilter('not_in_feed')}
+                        className={`px-4 py-1.5 rounded-full font-medium transition-all flex items-center gap-1 ${feedFilter === 'not_in_feed'
                           ? 'bg-primary text-white dark:text-black shadow-sm'
                           : 'hover:text-exclu-cloud'
                           }`}
                       >
                         <EyeOff className="w-3 h-3" />
-                        Private
+                        Not in feed
                       </button>
                     </div>
                   </div>
@@ -671,20 +681,20 @@ const ContentLibrary = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleBulkVisibilityChange(true)}
+                      onClick={() => handleBulkInFeedChange(true)}
                       className="rounded-full text-xs h-8"
                     >
                       <Eye className="w-3 h-3 mr-1" />
-                      Make public
+                      Add to feed
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleBulkVisibilityChange(false)}
+                      onClick={() => handleBulkInFeedChange(false)}
                       className="rounded-full text-xs h-8"
                     >
                       <EyeOff className="w-3 h-3 mr-1" />
-                      Make private
+                      Remove from feed
                     </Button>
                     <Button
                       variant="ghost"
@@ -745,6 +755,22 @@ const ContentLibrary = () => {
                           <Check className="w-4 h-4 text-white" />
                         )}
                       </button>
+                    </div>
+
+                    {/* In-feed switch — bottom-right, stops propagation so the click
+                        doesn't open the preview modal. */}
+                    <div
+                      className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-white/85">
+                        {asset.in_feed ? 'In feed' : 'Hidden'}
+                      </span>
+                      <Switch
+                        checked={asset.in_feed}
+                        onCheckedChange={() => handleToggleInFeed(asset.id, asset.in_feed)}
+                        aria-label={asset.in_feed ? 'Remove from feed' : 'Add to feed'}
+                      />
                     </div>
 
                     <button
