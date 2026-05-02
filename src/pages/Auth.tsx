@@ -212,7 +212,7 @@ const Auth = () => {
         // the "check inbox" message.
         if (signUpData?.session) {
           toast.success('Welcome to Exclu!');
-          navigate(accountType === 'creator' ? '/app/profile' : '/fan', { replace: true });
+          navigate(accountType === 'creator' ? '/app/home' : '/fan', { replace: true });
           return;
         }
         toast.success('Check your inbox to confirm your account, then log in.');
@@ -284,8 +284,10 @@ const Auth = () => {
         if (!profile?.handle || !profile?.avatar_url) {
           navigate('/onboarding');
         } else {
-          const isMobile = window.innerWidth < 768;
-          navigate(isMobile ? '/app/profile' : '/app');
+          // Creators land on /app/home (live preview of their public profile)
+          // by default. /app itself redirects to /app/home so this works for
+          // both web and mobile.
+          navigate('/app/home');
         }
       }
     } catch (error: any) {

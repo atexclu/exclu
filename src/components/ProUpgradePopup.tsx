@@ -4,6 +4,7 @@ import { X, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
+import { wasLinkmeShownThisSession } from './LinkmePopup';
 
 const LAST_SHOWN_KEY = 'exclu_pro_popup_last_shown';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -31,6 +32,13 @@ export function ProUpgradePopup() {
         : 0;
       const lastShown = Math.max(localLast, dbLast);
       if (Date.now() - lastShown < WEEK_MS) return;
+
+      // Yield once so the LinkmePopup (mounted in parallel) has a chance to
+      // claim the screen before we open this small bottom-right popup. Both
+      // components fetch the same profile in parallel and we don't want them
+      // to stack when LinkmePopup wins the race.
+      await new Promise((r) => setTimeout(r, 600));
+      if (wasLinkmeShownThisSession()) return;
 
       setVisible(true);
       localStorage.setItem(LAST_SHOWN_KEY, String(Date.now()));

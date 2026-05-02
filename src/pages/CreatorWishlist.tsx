@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 import { useProfiles } from '@/contexts/ProfileContext';
 import AppShell from '@/components/AppShell';
 import { Button } from '@/components/ui/button';
@@ -614,12 +615,13 @@ const CreatorWishlist = () => {
                             <span className="text-xs text-exclu-space/60">Click to upload</span>
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/*,.heic,.heif"
                               className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (!f) return;
-                                if (f.size > 10 * 1024 * 1024) { toast.error('Image must be under 10 MB'); return; }
+                              onChange={async (e) => {
+                                const raw = e.target.files?.[0];
+                                if (!raw) return;
+                                if (raw.size > 10 * 1024 * 1024) { toast.error('Image must be under 10 MB'); return; }
+                                const f = await maybeConvertHeic(raw);
                                 setFormImageFile(f);
                                 setFormImagePreview(URL.createObjectURL(f));
                               }}

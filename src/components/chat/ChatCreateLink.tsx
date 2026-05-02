@@ -140,7 +140,7 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
 
   const selectedCount = selectedIds.size;
   const priceNumber = parseFloat(price);
-  const isValid = selectedCount > 0 && title.trim().length > 0 && priceNumber > 0;
+  const isValid = selectedCount > 0 && title.trim().length > 0 && Number.isFinite(priceNumber) && priceNumber >= 5;
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -383,8 +383,8 @@ export function ChatCreateLink({ profileId, onLinkCreated, onClose, senderType =
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              placeholder="Price"
-              min="1"
+              placeholder="Price ($5+)"
+              min="5"
               step="0.01"
               className="w-full pl-7 pr-2 py-2.5 text-xs bg-muted/50 border border-white/20 rounded-lg outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 text-foreground placeholder:text-muted-foreground"
             />

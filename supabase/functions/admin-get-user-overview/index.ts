@@ -111,8 +111,11 @@ interface UserOverviewPayload {
     is_directory_visible: boolean | null;
     is_creator_subscribed: boolean;
     wallet_balance_cents: number;
+    pending_balance_cents: number;
     total_earned_cents: number;
     total_withdrawn_cents: number;
+    holds_in_flight_cents: number;
+    rank_percentile: number | null; // Percentile among earning creators (top X%). Null if total_earned = 0.
     bank_iban: string | null;
     bank_holder_name: string | null;
     bank_bic: string | null;
@@ -301,7 +304,7 @@ serve(async (req) => {
       supabaseAdmin
         .from('profiles')
         .select(
-          'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed, deleted_at',
+          'id, display_name, handle, created_at, is_creator, country, role, wallet_balance_cents, pending_balance_cents, total_earned_cents, total_withdrawn_cents, bank_iban, bank_holder_name, bank_bic, bank_account_type, bank_account_number, bank_routing_number, bank_bsb, bank_country, payout_setup_complete, is_creator_subscribed, deleted_at',
         )
         .eq('id', targetUserId)
         .is('deleted_at', null)
@@ -517,12 +520,35 @@ serve(async (req) => {
     // ── Wallet totals reconciliation (keeps pre-wallet-migration parity) ──
     const computedEarnedCents = metrics?.totals?.net_cents ?? 0;
     const computedWithdrawnCents = (payoutsData as any[])
-      .filter((p) => p.status === 'completed' || p.status === 'approved' || p.status === 'processing')
+      .filter((p) => p.status === 'completed' || p.status === 'paid')
+      .reduce((s, p) => s + (p.amount_cents || 0), 0);
+
+    // Holds-in-flight: requested/pending/approved/processing payouts that have
+    // already debited the wallet via a payout_hold ledger entry but are not yet
+    // settled. This is what disambiguates "wallet balance" (post-hold available)
+    // from "lifetime earned" (pre-hold). Also fetched fresh below so the admin
+    // sees the same number a creator would see in their earnings page.
+    const holdsInFlightCents = (payoutsData as any[])
+      .filter((p) => ['requested', 'pending', 'approved', 'processing'].includes(p.status))
       .reduce((s, p) => s + (p.amount_cents || 0), 0);
 
     const finalEarned = Math.max(profile?.total_earned_cents ?? 0, computedEarnedCents);
     const finalWithdrawn = Math.max(profile?.total_withdrawn_cents ?? 0, computedWithdrawnCents);
-    const finalBalance = finalEarned - finalWithdrawn;
+    const finalBalance = profile?.wallet_balance_cents ?? Math.max(0, finalEarned - finalWithdrawn - holdsInFlightCents);
+    const pendingBalance = profile?.pending_balance_cents ?? 0;
+
+    // ── Rank percentile among earning creators ────────────────────────────
+    // Only meaningful for creators with non-zero lifetime earnings; null
+    // otherwise so the UI hides the rank chip.
+    let rankPercentile: number | null = null;
+    if (finalEarned > 0 && profile?.is_creator) {
+      const { data: rankData } = await supabaseAdmin.rpc('admin_creator_rank_percentile', {
+        p_user_id: targetUserId,
+      });
+      if (typeof rankData === 'number' && Number.isFinite(rankData)) {
+        rankPercentile = rankData;
+      }
+    }
 
     const payload: UserOverviewPayload = {
       profile: profile
@@ -536,9 +562,12 @@ serve(async (req) => {
           role: profile.role ?? null,
           is_directory_visible: isDirectoryVisible,
           is_creator_subscribed: profile.is_creator_subscribed ?? false,
-          wallet_balance_cents: Math.max(profile.wallet_balance_cents ?? 0, finalBalance),
+          wallet_balance_cents: finalBalance,
+          pending_balance_cents: pendingBalance,
           total_earned_cents: finalEarned,
           total_withdrawn_cents: finalWithdrawn,
+          holds_in_flight_cents: holdsInFlightCents,
+          rank_percentile: rankPercentile,
           bank_iban: profile.bank_iban ?? null,
           bank_holder_name: profile.bank_holder_name ?? null,
           bank_bic: profile.bank_bic ?? null,

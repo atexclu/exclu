@@ -142,7 +142,7 @@ interface MetricProps {
  */
 function Metric({ label, value, ariaLabel }: MetricProps) {
   return (
-    <div className="flex flex-col items-center gap-0.5 px-1" aria-label={ariaLabel}>
+    <div className="flex flex-col items-start gap-0.5 px-1" aria-label={ariaLabel}>
       <span className="text-[8px] uppercase tracking-[0.18em] font-semibold text-muted-foreground">
         {label}
       </span>

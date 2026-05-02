@@ -30,6 +30,7 @@ import EditLink from "./pages/EditLink";
 import LinkDetail from "./pages/LinkDetail";
 import ContentLibrary from "./pages/ContentLibrary";
 import CreatorPublic from "./pages/CreatorPublic";
+import CreatorHome from "./pages/CreatorHome";
 import PublicLink from "./pages/PublicLink";
 import Profile from "./pages/Profile";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -181,7 +182,15 @@ const App = () => {
                   path="/app"
                   element={
                     <ProtectedRoute>
-                      <Navigate to="/app/profile" replace />
+                      <Navigate to="/app/home" replace />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app/home"
+                  element={
+                    <ProtectedRoute>
+                      <AppShell><CreatorHome /></AppShell>
                     </ProtectedRoute>
                   }
                 />

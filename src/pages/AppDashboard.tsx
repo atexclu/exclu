@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight, HelpCircle, Info, CalendarClock, Download } from 'lucide-react';
+import { ExternalLink, X, CreditCard, Check, Copy, Zap, Users, Share2, Mail, Send, Loader2, Building2, Landmark, Heart, Gift, FileText, UserPlus, ArrowDownToLine, Banknote, AlertCircle, CircleCheck, CircleX, Clock, Sparkles, ShieldCheck, Pencil, ArrowUpRight, HelpCircle, Info, CalendarClock, Download, TrendingUp } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SiX, SiTelegram, SiInstagram, SiTiktok, SiSnapchat } from 'react-icons/si';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -89,6 +89,8 @@ const AppDashboard = () => {
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [isCreatorSubscribed, setIsCreatorSubscribed] = useState(false);
   const [commissionRate, setCommissionRate] = useState(0.15);
+  // Top-X% rank chip on the earnings card. Null when total_earned = 0 — UI hides it.
+  const [creatorRankPercentile, setCreatorRankPercentile] = useState<number | null>(null);
   // Wallet / payouts state (formerly /app/earnings)
   const [walletTotalEarnedCents, setWalletTotalEarnedCents] = useState(0);
   const [walletTotalWithdrawnCents, setWalletTotalWithdrawnCents] = useState(0);
@@ -413,6 +415,15 @@ const AppDashboard = () => {
           setIsCreatorSubscribed(profile.is_creator_subscribed === true);
           setCommissionRate(profile.is_creator_subscribed === true ? 0 : 0.15);
           setAffiliateEarningsCents(profile.affiliate_earnings_cents || 0);
+          // Fire-and-forget: rank chip is decorative, must not block the dashboard.
+          // Null when creator has 0 lifetime earnings → UI hides it.
+          if ((profile.total_earned_cents ?? 0) > 0) {
+            supabase.rpc('admin_creator_rank_percentile', { p_user_id: profile.id ?? user?.id }).then(({ data }) => {
+              if (typeof data === 'number' && Number.isFinite(data)) setCreatorRankPercentile(data);
+            }).catch(() => {});
+          } else {
+            setCreatorRankPercentile(null);
+          }
           if (profile.affiliate_payout_requested_at) setPayoutRequested(true);
 
           // Referral code (auto-generate client-side if missing)
@@ -667,25 +678,26 @@ const AppDashboard = () => {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-md bg-exclu-ink border border-exclu-arsenic/70 rounded-2xl shadow-2xl p-6"
+              className="relative w-full max-w-md bg-card text-foreground border border-border rounded-2xl shadow-2xl p-6"
               onClick={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
                 onClick={handleDismissPayoutModal}
-                className="absolute top-4 right-4 text-exclu-space/60 hover:text-exclu-cloud transition-colors"
+                aria-label="Close"
+                className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
 
               <div className="text-center mb-6">
                 <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500/30 to-lime-500/30 flex items-center justify-center mb-4">
                   <Landmark className="w-6 h-6 text-emerald-400" />
                 </div>
-                <h2 className="text-xl font-bold text-exclu-cloud mb-2">
+                <h2 className="text-xl font-bold text-foreground mb-2">
                   Set up your bank details to get paid
                 </h2>
-                <p className="text-sm text-exclu-space/80">
+                <p className="text-sm text-muted-foreground">
                   Add your bank account (IBAN) to receive payouts. Money from fans goes into your Exclu wallet, and you can withdraw anytime.
                 </p>
               </div>
@@ -695,19 +707,19 @@ const AppDashboard = () => {
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Withdraw to your bank account anytime</span>
+                  <span className="text-foreground/90">Withdraw to your bank account anytime</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Secure & encrypted storage</span>
+                  <span className="text-foreground/90">Secure & encrypted storage</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   </div>
-                  <span className="text-exclu-space">Takes only 1 minute</span>
+                  <span className="text-foreground/90">Takes only 1 minute</span>
                 </div>
               </div>
 
@@ -727,7 +739,7 @@ const AppDashboard = () => {
                 <button
                   type="button"
                   onClick={handleDismissPayoutModal}
-                  className="w-full text-center text-xs text-exclu-space/60 hover:text-exclu-space transition-colors py-2"
+                  className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-2"
                 >
                   I'll do this later
                 </button>
@@ -899,8 +911,25 @@ const AppDashboard = () => {
 
               {/* ── RIGHT (desktop, top-aligned) / BOTTOM (mobile, centered) — pills + Withdraw ── */}
               <div className="mt-7 lg:mt-0 flex flex-col items-center lg:items-end gap-3 lg:gap-4">
-                {/* Pills — centered on mobile, right-aligned on desktop */}
+                {/* Pills — Premium plan on the left, Bank status on the right (web), centered on mobile */}
                 <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
+                    <Sparkles className="w-3 h-3 text-[#CFFF16]" />
+                    {isCreatorSubscribed
+                      ? <>Premium · <span className="text-[#4a6304] dark:text-[#CFFF16] font-semibold">0% commission</span></>
+                      : <>Free · {Math.round(commissionRate * 100)}% commission</>}
+                  </div>
+
+                  {creatorRankPercentile !== null && (
+                    <div
+                      className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                      title="Your rank among earning creators"
+                    >
+                      <TrendingUp className="w-3 h-3" />
+                      Top {creatorRankPercentile}%
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={goToPayouts}
@@ -919,13 +948,6 @@ const AppDashboard = () => {
                     {payoutSetupComplete ? 'Bank account connected' : 'Connect bank'}
                     <ArrowUpRight className="w-3 h-3 opacity-60 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </button>
-
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 dark:border-white/10 bg-foreground/5 dark:bg-white/5 px-2.5 py-1 text-[10px] text-foreground/70 dark:text-white/70">
-                    <Sparkles className="w-3 h-3 text-[#CFFF16]" />
-                    {isCreatorSubscribed
-                      ? <>Premium · <span className="text-[#4a6304] dark:text-[#CFFF16] font-semibold">0% commission</span></>
-                      : <>Free · {Math.round(commissionRate * 100)}% commission</>}
-                  </div>
                 </div>
 
                 {/* Withdraw CTA — full-width mobile, right-aligned compact on desktop */}

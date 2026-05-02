@@ -129,6 +129,10 @@ interface RawSnapshot {
   salesCount: number;
   /** Total referrals where the active user is the referrer (any status). */
   referralCount: number;
+  /** Self-confirmed manual steps stored in creator_profiles (migration 193).
+      Merged with the localStorage set during hydration so we never regress
+      a creator's progress when migrating from local-only to server-backed. */
+  manualStepsServer: ProfileHealthStepId[];
 }
 
 /** Subset of fields the editor can patch optimistically. Counters (links,
@@ -271,7 +275,7 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       const profilePromise = supabase
         .from('creator_profiles')
         .select(
-          'username, avatar_url, bio, social_links, exclusive_content_url, fan_subscription_enabled, fan_subscription_price_cents, profile_view_count'
+          'username, avatar_url, bio, social_links, exclusive_content_url, fan_subscription_enabled, fan_subscription_price_cents, profile_view_count, profile_health_manual_steps'
         )
         .eq('id', profileId)
         .maybeSingle();
@@ -286,10 +290,20 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
 
       // Soft-deleted assets (deleted_at IS NOT NULL) are excluded — they're
       // hidden from the public profile and shouldn't count toward the feed step.
+      //
+      // We scope by `creator_id = uid` rather than `profile_id = profileId`
+      // because legacy assets uploaded before the multi-profile migration
+      // (creator_profiles introduced in mig 060) have a NULL profile_id but
+      // belong to the user. Filtering by profile_id would silently drop them
+      // from the count and leave the feed_30 step stuck even when the creator
+      // has plenty of public content. Single-profile creators see no
+      // difference; agencies still get a per-user count which is the same
+      // for all the profiles they manage (intended — referrals + posts are
+      // user-level signals, not per-profile).
       const assetsPromise = supabase
         .from('assets')
         .select('id', { count: 'exact', head: true })
-        .eq('profile_id', profileId)
+        .eq('creator_id', uid)
         .eq('is_public', true)
         .is('deleted_at', null);
 
@@ -356,6 +370,9 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         profileViewCount: profileRes.data?.profile_view_count ?? 0,
         salesCount,
         referralCount: referralsRes.count ?? 0,
+        manualStepsServer: ((profileRes.data?.profile_health_manual_steps ?? []) as string[]).filter(
+          (id): id is ProfileHealthStepId => typeof id === 'string',
+        ),
       };
     },
     []
@@ -370,11 +387,23 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
       // Guard against stale completion (profile was switched mid-flight).
       if (profileIdRef.current !== profileId) return;
 
-      // Re-read the manual set from localStorage at refetch time — handles
-      // the case where the user toggled it in another tab. The hook's own
-      // `manualDone` state is the visible state but localStorage is the
-      // truth across tabs.
-      const manualSnap = readManualSet(profileId);
+      // Reconcile manual steps from THREE sources:
+      //   1. server (creator_profiles.profile_health_manual_steps) — durable,
+      //      cross-device truth introduced by migration 193.
+      //   2. localStorage (legacy fallback) — what older clients wrote before
+      //      we shipped the server column. Union'd in so creators don't
+      //      regress on first sync.
+      //   3. The current React state (handled separately via setManualDone).
+      // Server-side write is fired-and-forgotten in toggleManualStep to keep
+      // both stores in lockstep; we read both here so a stale client never
+      // wipes a new device's freshly-checked step.
+      const manualLocal = readManualSet(profileId);
+      const manualSnap = new Set<ProfileHealthStepId>([...manualLocal, ...newSnap.manualStepsServer]);
+      // If server holds steps localStorage didn't have, write them back so
+      // future tabs read the merged set (idempotent).
+      if (newSnap.manualStepsServer.some((id) => !manualLocal.has(id))) {
+        writeManualSet(profileId, manualSnap);
+      }
       const newSteps = computeSteps(newSnap, manualSnap);
       const seen = readSeenSet(profileId);
 
@@ -388,10 +417,17 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         writeSeenSet(profileId, seen);
         isFirstLoadRef.current = false;
         lastServerStepsRef.current = newSteps;
+        // Propagate the merged manual set into React state so the popup
+        // reflects server-confirmed steps even on a fresh device.
+        setManualDone(manualSnap);
         setSnap(newSnap);
         setIsReady(true);
         return;
       }
+
+      // Subsequent fetches also need to keep the React state aligned with
+      // anything new on the server (e.g. another tab ticked a step).
+      setManualDone(manualSnap);
 
       // Crossing detection compares THIS server snapshot against the LAST
       // server snapshot, not the optimistic in-between state. That way the
@@ -462,8 +498,10 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     setIsReady(false);
     setJustCompletedStepId(null);
     setSnap(null);
-    // Re-hydrate the manual step set for this profile from localStorage —
-    // each profile keeps its own checked state.
+    // Pre-hydrate from localStorage so the popup paints correctly on the
+    // first frame even before the server snapshot lands. The snapshot
+    // arrival will then merge in any server-side steps that local doesn't
+    // already know about (cross-device case).
     setManualDone(readManualSet(profileId));
     lastServerStepsRef.current = PENDING_STEPS;
     isFirstLoadRef.current = true;
@@ -511,6 +549,7 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
     const profileId = profileIdRef.current;
     if (!profileId) return;
 
+    let nextSnapshot: Set<ProfileHealthStepId> | null = null;
     setManualDone((prev) => {
       const next = new Set(prev);
       const wasDone = next.has(stepId);
@@ -525,8 +564,26 @@ export function useProfileHealth(activeProfile: CreatorProfile | null): ProfileH
         seen.add(stepId);
         writeSeenSet(profileId, seen);
       }
+      nextSnapshot = next;
       return next;
     });
+
+    // Persist to creator_profiles so the toggle survives refresh, cache
+    // clears and cross-device sign-ins (migration 193). Fire-and-forget —
+    // the optimistic local state already reflects the click; if the write
+    // fails we let the next refetch reconcile from server truth.
+    if (nextSnapshot) {
+      const arr = Array.from(nextSnapshot);
+      supabase
+        .from('creator_profiles')
+        .update({ profile_health_manual_steps: arr })
+        .eq('id', profileId)
+        .then(({ error }) => {
+          if (error) {
+            console.warn('[useProfileHealth] persist manual step failed', error);
+          }
+        });
+    }
   }, []);
 
   const acknowledgeJustCompleted = useCallback(() => {

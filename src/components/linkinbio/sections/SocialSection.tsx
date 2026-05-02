@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { GripVertical, Plus, X, Lock, ArrowUpRight, ExternalLink, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { maybeConvertHeic } from '@/lib/convertHeic';
 import { toast } from 'sonner';
 import { getAuroraGradient } from '@/lib/auroraGradients';
 import {
@@ -148,17 +149,25 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !userId) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
-    if (!file.type.startsWith('image/')) { toast.error('Please upload an image file'); return; }
+    const raw = e.target.files?.[0];
+    e.target.value = '';
+    if (!raw || !userId) return;
+    if (raw.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
+    const fileName = raw.name.toLowerCase();
+    const isHeic = raw.type === 'image/heic' || raw.type === 'image/heif'
+      || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+    if (!raw.type.startsWith('image/') && !isHeic) {
+      toast.error('Please upload an image file (JPG, PNG, WebP, HEIC)');
+      return;
+    }
     setIsUploadingImage(true);
     try {
-      const fileExt = file.name.split('.').pop() ?? 'jpg';
+      const file = await maybeConvertHeic(raw);
+      const fileExt = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
       const filePath = `avatars/${userId}/exclusive-content.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, file, { cacheControl: '3600', upsert: true, contentType: file.type });
       if (uploadError) { toast.error('Failed to upload image'); return; }
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
       const newUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
@@ -282,7 +291,7 @@ export function SocialSection({ socialLinks, exclusiveContentText, exclusiveCont
           <input
             ref={imageInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             className="hidden"
             onChange={handleImageUpload}
           />

@@ -16,6 +16,9 @@ verify_jwt = false
 [functions.admin-get-user-overview]
 verify_jwt = false
 
+[functions.admin-send-content-reminder]
+verify_jwt = false
+
 [functions.generate-signed-urls]
 verify_jwt = false
 
@@ -43,13 +46,7 @@ verify_jwt = false
 [functions.admin-update-user-visibility]
 verify_jwt = false
 
-[functions.admin-impersonate-user]
-verify_jwt = false
-
 [functions.admin-manage-agencies]
-verify_jwt = false
-
-[functions.admin-manage-tools]
 verify_jwt = false
 
 [functions.check-fan-email]
@@ -79,17 +76,10 @@ verify_jwt = false
 [functions.process-payout]
 verify_jwt = false
 
-[functions.send-agency-contact]
-verify_jwt = false
-
 [functions.submit-agency-claim]
 verify_jwt = false
 
 [functions.send-chatter-invitation]
-verify_jwt = false
-
-
-[functions.verify-instagram]
 verify_jwt = false
 
 [functions.admin-approve-agency-contact]

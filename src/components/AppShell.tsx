@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { LogOut, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus } from 'lucide-react';
+import { Home, LogOut, Link2, Image as ImageIcon, ShieldCheck, Sun, Moon, Palette, MessageSquare, Gift, DollarSign, UserPlus, Menu, Settings, Building2, X, HelpCircle, Plus } from 'lucide-react';
 import { useChatUnread } from '@/hooks/useChatUnread';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -11,6 +11,7 @@ import { ProfileHealthCard, ProfileHealthCardSkeleton } from '@/components/Profi
 import { ProfileHealthDialog } from '@/components/ProfileHealthDialog';
 import { useProfileHealth, type ProfileHealthStepId } from '@/hooks/useProfileHealth';
 import { ProUpgradePopup } from './ProUpgradePopup';
+import { LinkmePopup } from './LinkmePopup';
 
 const PROFILE_HEALTH_AUTO_OPEN_DELAY_MS = 450;
 import logoBlack from '@/assets/logo-black.svg';
@@ -34,6 +35,10 @@ const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: 'General',
     items: [
+      // Home renders the live preview of the creator's public profile inside
+      // the dashboard chrome so they always have a "what fans see" reference
+      // one click away. Default landing after login (App.tsx redirects /app → /app/home).
+      { path: '/app/home', label: 'Home', icon: Home },
       { path: '/app/profile', label: 'Profile', icon: Palette },
       { path: '/app/dashboard', label: 'Earnings', icon: DollarSign },
       { path: '/app/links', label: 'Links', icon: Link2 },
@@ -428,7 +433,12 @@ const AppShell = ({ children, rightActions }: AppShellProps) => {
         {showProfileSwitcher && location.pathname.startsWith('/app') && <ProfileSwitcherOverlay />}
       </AnimatePresence>
 
-      {location.pathname.startsWith('/app') && <ProUpgradePopup />}
+      {location.pathname.startsWith('/app') && (
+        <>
+          <LinkmePopup />
+          <ProUpgradePopup />
+        </>
+      )}
 
       {/* Profile Health dialog — rendered at AppShell root so it survives
           the mobile drawer unmounting (which happens when the card is tapped). */}

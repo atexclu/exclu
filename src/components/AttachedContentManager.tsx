@@ -17,6 +17,7 @@ export interface AttachedMedia {
   previewUrl?: string | null;
   title?: string | null;
   isNew?: boolean;
+  isPrimary?: boolean;
   file?: File;
 }
 
@@ -33,7 +34,7 @@ interface SortableItemProps {
   disabled?: boolean;
 }
 
-const SortableItem = ({ media, onRemove, disabled }: SortableItemProps) => {
+const SortableItem = ({ media, onRemove, disabled, isFirst }: SortableItemProps & { isFirst?: boolean }) => {
   const {
     attributes,
     listeners,
@@ -66,6 +67,13 @@ const SortableItem = ({ media, onRemove, disabled }: SortableItemProps) => {
       >
         <GripVertical className="w-4 h-4 text-white" />
       </div>
+
+      {/* Primary badge — always on whichever item is currently first */}
+      {isFirst && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-2 py-1 rounded-md bg-primary/90 text-black text-[10px] font-bold tracking-wide">
+          PRIMARY
+        </div>
+      )}
 
       {/* Remove button */}
       <button
@@ -147,9 +155,7 @@ export const AttachedContentManager = ({
     if (over && active.id !== over.id) {
       const oldIndex = attachedMedia.findIndex((m) => m.id === active.id);
       const newIndex = attachedMedia.findIndex((m) => m.id === over.id);
-
-      const reordered = arrayMove(attachedMedia, oldIndex, newIndex);
-      onMediaChange(reordered);
+      onMediaChange(arrayMove(attachedMedia, oldIndex, newIndex));
     }
   };
 
@@ -201,7 +207,7 @@ export const AttachedContentManager = ({
         const fileExtension = uploadFile.name.split('.').pop() ?? 'bin';
         const timestamp = Date.now();
         const randomId = Math.random().toString(36).substring(7);
-        const objectName = `paid-content/${user.id}/${linkId}/attachments/${timestamp}-${randomId}.${fileExtension}`;
+        const objectName = `${user.id}/${linkId}/attachments/${timestamp}-${randomId}.${fileExtension}`;
 
         const { error: uploadError } = await supabase.storage
           .from('paid-content')
@@ -316,7 +322,7 @@ export const AttachedContentManager = ({
           >
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <AnimatePresence>
-                {attachedMedia.map((media) => (
+                {attachedMedia.map((media, idx) => (
                   <motion.div
                     key={media.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -328,6 +334,7 @@ export const AttachedContentManager = ({
                       media={media}
                       onRemove={() => handleRemove(media.id)}
                       disabled={disabled}
+                      isFirst={idx === 0}
                     />
                   </motion.div>
                 ))}

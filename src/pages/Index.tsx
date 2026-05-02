@@ -14,6 +14,7 @@ import ReferralLandingSection from '@/components/ReferralLandingSection';
 import FAQSection from '@/components/FAQSection';
 import FinalCTASection from '@/components/FinalCTASection';
 import Footer from '@/components/Footer';
+import VideoBubble from '@/components/VideoBubble';
 
 const Index = () => {
   useEffect(() => {
@@ -58,6 +59,9 @@ const Index = () => {
 
       {/* Footer */}
       <Footer />
+
+      {/* Floating intro video bubble (auto-plays, expands to a phone-shaped player). */}
+      <VideoBubble />
     </div>
   );
 };

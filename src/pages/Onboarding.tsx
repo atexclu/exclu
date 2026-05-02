@@ -542,8 +542,8 @@ const Onboarding = () => {
       if (linkError || !insertedLinks?.[0]) throw linkError || new Error('Failed to create link');
       const linkId = insertedLinks[0].id as string;
 
-      // 2. Upload file to storage (same path format as CreateLink)
-      const storagePath = `paid-content/${currentUser.id}/${linkId}/original/content.${ext}`;
+      // 2. Upload file to storage (no bucket-name prefix in the object key)
+      const storagePath = `${currentUser.id}/${linkId}/original/content.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from('paid-content')
         .upload(storagePath, converted, { cacheControl: '3600', upsert: true });
@@ -817,18 +817,26 @@ const Onboarding = () => {
                   </div>
 
                   {/* Cover image upload */}
-                  <input ref={exclusiveImageInputRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
-                    if (!file.type.startsWith('image/')) { toast.error('Please upload an image file'); return; }
+                  <input ref={exclusiveImageInputRef} type="file" accept="image/*,.heic,.heif" className="hidden" onChange={async (e) => {
+                    const raw = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!raw) return;
+                    if (raw.size > 5 * 1024 * 1024) { toast.error('Image must be less than 5MB'); return; }
+                    const lower = raw.name.toLowerCase();
+                    const isHeic = raw.type === 'image/heic' || raw.type === 'image/heif'
+                      || lower.endsWith('.heic') || lower.endsWith('.heif');
+                    if (!raw.type.startsWith('image/') && !isHeic) {
+                      toast.error('Please upload an image file (JPG, PNG, WebP, HEIC)');
+                      return;
+                    }
                     setIsUploadingExclusiveImage(true);
                     try {
                       const { data: { user } } = await supabase.auth.getUser();
                       if (!user) { toast.error('Not authenticated'); return; }
-                      const fileExt = file.name.split('.').pop() ?? 'jpg';
+                      const file = await maybeConvertHeic(raw);
+                      const fileExt = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
                       const filePath = `avatars/${user.id}/exclusive-content.${fileExt}`;
-                      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { cacheControl: '3600', upsert: true });
+                      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { cacheControl: '3600', upsert: true, contentType: file.type });
                       if (uploadError) { toast.error('Failed to upload image'); return; }
                       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
                       setExclusiveContentImageUrl(`${publicUrlData.publicUrl}?t=${Date.now()}`);

@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { getSignedUrl } from '@/lib/storageUtils';
 import { AttachedContentManager, AttachedMedia } from '@/components/AttachedContentManager';
+import { useProfiles } from '@/contexts/ProfileContext';
 
 type LibraryAsset = {
   id: string;
@@ -26,14 +27,13 @@ type LibraryAsset = {
 const EditLink = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const { activeProfile } = useProfiles();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('5');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [existingMediaUrl, setExistingMediaUrl] = useState<string | null>(null);
-  const [existingMediaIsVideo, setExistingMediaIsVideo] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [attachedMedia, setAttachedMedia] = useState<AttachedMedia[]>([]);
@@ -67,17 +67,24 @@ const EditLink = () => {
       setIsSupportLink(data.is_support_link === true);
       setInitialStoragePath(data.storage_path ?? null);
 
-      // Load existing media preview if storage_path exists
+      // Build a unified gallery: the legacy primary file (storage_path) is
+      // injected as the first item of attachedMedia, flagged isPrimary so it
+      // shows the badge and isn't draggable / removable. The remaining
+      // link_media rows follow in their saved order.
+      const unified: AttachedMedia[] = [];
+
       if (data.storage_path) {
         const ext = data.storage_path.split('.').pop()?.toLowerCase() ?? '';
-        const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-        setExistingMediaIsVideo(isVideo);
-
+        const isVideo = ['mp4', 'mov', 'webm', 'mkv', 'm4v', 'hevc', 'avi'].includes(ext);
         const signedUrl = await getSignedUrl(data.storage_path, 60 * 60);
-
-        if (signedUrl) {
-          setExistingMediaUrl(signedUrl);
-        }
+        unified.push({
+          id: 'primary',
+          isPrimary: true,
+          storage_path: data.storage_path,
+          mime_type: isVideo ? 'video/mp4' : 'image/jpeg',
+          previewUrl: signedUrl || null,
+          title: 'Primary content',
+        });
       }
 
       // Load existing link_media attachments with their asset details
@@ -88,7 +95,6 @@ const EditLink = () => {
         .order('position', { ascending: true });
 
       if (linkMedia && linkMedia.length > 0) {
-        // Generate previews for attached assets
         const attachedWithPreviews = await Promise.all(
           linkMedia.map(async (lm: any) => {
             const asset = lm.assets;
@@ -107,10 +113,11 @@ const EditLink = () => {
           })
         );
 
-        const validMedia = attachedWithPreviews.filter(Boolean) as AttachedMedia[];
-        setAttachedMedia(validMedia);
-        setInitialAttachedMedia(validMedia);
+        unified.push(...(attachedWithPreviews.filter(Boolean) as AttachedMedia[]));
       }
+
+      setAttachedMedia(unified);
+      setInitialAttachedMedia(unified);
 
       setIsLoading(false);
     };
@@ -243,73 +250,101 @@ const EditLink = () => {
         throw new Error('Unable to save changes. Please try again.');
       }
 
-      // 2. Upload new media if provided
+      // 2. Build the canonical save list. If the user picked a "Replace
+      // primary content" file, upload it and replace the synthetic primary
+      // entry in attachedMedia. The new primary keeps the index it had in
+      // the gallery (the synthetic primary the user can drag).
+      const saveOrder: AttachedMedia[] = [...attachedMedia];
+
       if (file) {
         const convertedFile = await maybeConvertHeic(file);
         const fileExtension = convertedFile.name.split('.').pop() ?? 'bin';
-        const objectName = `paid-content/${user.id}/${id}/original/content.${fileExtension}`;
+        const objectName = `${user.id}/${id}/original/content.${fileExtension}`;
 
         const { error: uploadError } = await supabase.storage
           .from('paid-content')
-          .upload(objectName, convertedFile, {
-            cacheControl: '3600',
-            upsert: true,
-          });
+          .upload(objectName, convertedFile, { cacheControl: '3600', upsert: true });
 
         if (uploadError) {
           console.error(uploadError);
           throw new Error('Upload failed. Please try again.');
         }
 
+        const replacement: AttachedMedia = {
+          id: 'primary',
+          isPrimary: true,
+          storage_path: objectName,
+          mime_type: convertedFile.type || null,
+          previewUrl: null,
+          title: 'Primary content',
+        };
+
+        const oldPrimaryIdx = saveOrder.findIndex((m) => m.isPrimary);
+        if (oldPrimaryIdx >= 0) saveOrder[oldPrimaryIdx] = replacement;
+        else saveOrder.unshift(replacement);
+      }
+
+      if (saveOrder.length === 0 && !isSupportLink) {
+        throw new Error('A link must have at least one piece of content.');
+      }
+
+      // 3. Promote any synthetic primary that's no longer at index 0 into a
+      // real `assets` row so it can be attached via link_media.
+      for (let i = 1; i < saveOrder.length; i++) {
+        const item = saveOrder[i];
+        if (item.isPrimary && !item.asset_id) {
+          const { data: assetRow, error: assetErr } = await supabase
+            .from('assets')
+            .insert({
+              creator_id: user.id,
+              profile_id: activeProfile?.id ?? null,
+              title: item.title || 'Primary content',
+              storage_path: item.storage_path,
+              mime_type: item.mime_type,
+            })
+            .select('id')
+            .single();
+          if (assetErr || !assetRow) {
+            console.error('Error promoting primary to asset', assetErr);
+            throw new Error('Could not save the new content order. Please try again.');
+          }
+          saveOrder[i] = { ...item, asset_id: assetRow.id, isPrimary: false };
+        }
+      }
+
+      // 4. Whatever sits at index 0 becomes the new `links.storage_path`.
+      const newPrimary = saveOrder[0];
+      if (newPrimary && newPrimary.storage_path !== initialStoragePath) {
         const { error: updateStorageError } = await supabase
           .from('links')
-          .update({ storage_path: objectName })
+          .update({ storage_path: newPrimary.storage_path })
           .eq('id', id)
           .eq('creator_id', user.id);
-
         if (updateStorageError) {
           console.error(updateStorageError);
-          throw new Error('The file was uploaded but could not be attached to the link.');
+          throw new Error('Could not update the primary content reference.');
         }
       }
 
-      // 3. Update link_media based on attachedMedia changes
-      const initialAssetIds = initialAttachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
-      const currentAssetIds = attachedMedia.map((m) => m.asset_id).filter(Boolean) as string[];
-
-      const addedAssets = currentAssetIds.filter((assetId) => !initialAssetIds.includes(assetId));
-      const removedAssets = initialAssetIds.filter((assetId) => !currentAssetIds.includes(assetId));
-      const hasOrderChanged = JSON.stringify(initialAssetIds) !== JSON.stringify(currentAssetIds);
-
-      // Delete all existing link_media entries if there are changes
-      if (removedAssets.length > 0 || hasOrderChanged) {
-        const { error: deleteError } = await supabase
-          .from('link_media')
-          .delete()
-          .eq('link_id', id);
-
-        if (deleteError) {
-          console.error('Error removing link_media', deleteError);
-        }
+      // 5. Replace link_media with everything past index 0 in current order.
+      const { error: deleteError } = await supabase
+        .from('link_media')
+        .delete()
+        .eq('link_id', id);
+      if (deleteError) {
+        console.error('Error clearing link_media', deleteError);
       }
 
-      // Re-insert all current attachments with correct positions
-      if (attachedMedia.length > 0 && (addedAssets.length > 0 || hasOrderChanged)) {
-        const rows = attachedMedia
-          .filter((m) => m.asset_id)
-          .map((media, index) => ({
-            link_id: id,
-            asset_id: media.asset_id!,
-            position: index,
-          }));
+      const linkMediaRows = saveOrder
+        .slice(1)
+        .filter((m) => m.asset_id)
+        .map((m, index) => ({ link_id: id, asset_id: m.asset_id!, position: index }));
 
-        if (rows.length > 0) {
-          const { error: insertError } = await supabase.from('link_media').insert(rows);
-
-          if (insertError) {
-            console.error('Error adding link_media', insertError);
-            toast.error('Some media could not be attached.');
-          }
+      if (linkMediaRows.length > 0) {
+        const { error: insertError } = await supabase.from('link_media').insert(linkMediaRows);
+        if (insertError) {
+          console.error('Error adding link_media', insertError);
+          toast.error('Some media could not be attached.');
         }
       }
 
@@ -496,39 +531,21 @@ const EditLink = () => {
                       </div>
                     </div>
 
-                    {/* Upload + preview + library info (hidden for support links) */}
+                    {/* Replace primary file (hidden for support links) */}
                     {!isSupportLink && (
                     <div className="space-y-3">
-                      <p className="text-xs font-medium text-exclu-space">Content source</p>
+                      <p className="text-xs font-medium text-exclu-space">Replace primary content</p>
                       <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-4 flex flex-col items-center justify-center text-center gap-3">
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary mb-1">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
                           {file ? <Film className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
                         </div>
                         <div className="space-y-1 w-full">
                           <p className="text-sm font-medium text-exclu-cloud">
-                            {file ? file.name : 'Upload a new photo or video (optional)'}
+                            {file ? file.name : 'Upload a new file to replace the primary'}
                           </p>
                           <p className="text-[11px] text-exclu-space/80">
-                            If you don&apos;t upload anything, the existing media will be kept. MP4, MOV, JPG, PNG are supported.
+                            Leave empty to keep the current primary. Use the gallery above to add or reorder additional content. MP4, MOV, JPG, PNG, HEIC supported.
                           </p>
-                          {/* Show existing media if no new file selected */}
-                          {!previewUrl && existingMediaUrl && (
-                            <div className="mt-3 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40 relative">
-                              <p className="absolute top-2 left-2 text-[10px] bg-black/60 text-exclu-cloud px-2 py-0.5 rounded-full">Current media</p>
-                              {existingMediaIsVideo ? (
-                                <video
-                                  src={existingMediaUrl}
-                                  className="w-full h-40 object-cover"
-                                  muted
-                                  loop
-                                  autoPlay
-                                  playsInline
-                                />
-                              ) : (
-                                <img src={existingMediaUrl} className="w-full h-40 object-cover" alt="Current media" />
-                              )}
-                            </div>
-                          )}
                           {previewUrl && (
                             <div className="mt-3 rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40">
                               {file && file.type.startsWith('video/') ? (
@@ -546,10 +563,10 @@ const EditLink = () => {
                           )}
                         </div>
                         <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-exclu-cloud text-[11px] font-medium text-black cursor-pointer hover:bg-white transition-colors">
-                          <span>Choose file</span>
+                          <span>{file ? 'Choose another' : 'Choose file'}</span>
                           <input
                             type="file"
-                            accept="image/*,video/*"
+                            accept="image/*,video/*,.heic,.heif"
                             className="hidden"
                             onChange={handleFileChange}
                           />

@@ -9,7 +9,7 @@ import { Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
-import { getSignedUrl } from '@/lib/storageUtils';
+import { getSignedUrls } from '@/lib/storageUtils';
 import { useProfiles } from '@/contexts/ProfileContext';
 
 interface LinkRow {
@@ -82,43 +82,51 @@ const CreatorLinks = () => {
       } else {
         const baseLinks = (data ?? []) as LinkRow[];
 
-        // Generate signed URLs for media previews
-        const withPreviews = await Promise.all(
-          baseLinks.map(async (link) => {
-            // First try main storage_path
-            if (link.storage_path) {
-              const previewUrl = await getSignedUrl(link.storage_path, 60 * 60);
+        // Pass 1 — sign every link.storage_path in a single round-trip.
+        const directPaths = baseLinks
+          .map((l) => l.storage_path)
+          .filter(Boolean) as string[];
+        const directSigned = await getSignedUrls(directPaths, 60 * 60);
 
-              if (previewUrl) {
-                const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
-                const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
-                return { ...link, previewUrl, isVideo };
-              }
+        // Pass 2 — for links missing a direct preview, fetch the first attached
+        // asset of all of them in ONE query, then sign all those paths in one batch.
+        const fallbackLinkIds = baseLinks
+          .filter((l) => !l.storage_path || !directSigned[l.storage_path!])
+          .map((l) => l.id);
+        const fallbackByLink: Record<string, { storage_path: string; mime_type?: string | null }> = {};
+        if (fallbackLinkIds.length > 0) {
+          const { data: media } = await supabase
+            .from('link_media')
+            .select('link_id, position, assets(storage_path, mime_type)')
+            .in('link_id', fallbackLinkIds)
+            .order('position', { ascending: true });
+          for (const row of (media ?? []) as Array<{ link_id: string; assets: { storage_path: string; mime_type?: string | null } | null }>) {
+            if (!fallbackByLink[row.link_id] && row.assets?.storage_path) {
+              fallbackByLink[row.link_id] = row.assets;
             }
-
-            // If no main storage_path, try to get first attached asset from link_media
-            const { data: linkMedia } = await supabase
-              .from('link_media')
-              .select('assets(storage_path, mime_type)')
-              .eq('link_id', link.id)
-              .order('position', { ascending: true })
-              .limit(1);
-
-            if (linkMedia && linkMedia.length > 0) {
-              const asset = (linkMedia[0] as any).assets;
-              if (asset?.storage_path) {
-                const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
-
-                if (previewUrl) {
-                  const isVideo = asset.mime_type?.startsWith('video/') || false;
-                  return { ...link, previewUrl, isVideo };
-                }
-              }
-            }
-
-            return { ...link, previewUrl: null, isVideo: false };
-          })
+          }
+        }
+        const fallbackSigned = await getSignedUrls(
+          Object.values(fallbackByLink).map((a) => a.storage_path),
+          60 * 60,
         );
+
+        const withPreviews = baseLinks.map((link) => {
+          if (link.storage_path && directSigned[link.storage_path]) {
+            const ext = link.storage_path.split('.').pop()?.toLowerCase() ?? '';
+            const isVideo = ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+            return { ...link, previewUrl: directSigned[link.storage_path], isVideo };
+          }
+          const fb = fallbackByLink[link.id];
+          if (fb && fallbackSigned[fb.storage_path]) {
+            return {
+              ...link,
+              previewUrl: fallbackSigned[fb.storage_path],
+              isVideo: fb.mime_type?.startsWith('video/') || false,
+            };
+          }
+          return { ...link, previewUrl: null, isVideo: false };
+        });
 
         setLinks(withPreviews);
 

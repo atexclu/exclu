@@ -188,12 +188,18 @@ const DirectoryCreators = () => {
           .eq('is_active', true)
           .is('deleted_at', null)
           .not('avatar_url', 'is', null)
-          .order('profile_view_count', { ascending: false }),
+          .order('profile_view_count', { ascending: false })
+          .range(0, 9999),
+        // .range() raises the default PostgREST 1000-row cap. Without it the
+        // paid-links tier silently misranks Pros whose links happen to fall
+        // past the cutoff (Carolina sat behind KarinaJP because her 3 paid
+        // links were truncated out of `linksByCreator`).
         supabase
           .from('links')
           .select('creator_id, price_cents')
           .eq('status', 'published')
-          .gt('price_cents', 0),
+          .gt('price_cents', 0)
+          .range(0, 9999),
       ]);
 
       if (creatorsRes.error) {
@@ -202,7 +208,7 @@ const DirectoryCreators = () => {
         return;
       }
 
-      const profiles = (creatorsRes.data || []).map((p: any) => ({
+      const rawProfiles = (creatorsRes.data || []).map((p: any) => ({
         ...p,
         model_categories: p.model_categories || [],
       }));
@@ -217,18 +223,23 @@ const DirectoryCreators = () => {
       }
       setLinksCountMap(linksByCreator);
 
-      if (profiles.length > 0) {
-        const userIds = profiles.map((p: CreatorProfile) => p.user_id);
-        const { data: premiumProfiles } = await supabase
-          .from('profiles')
-          .select('id')
-          .in('id', userIds)
-          .eq('is_creator_subscribed', true);
+      if (rawProfiles.length > 0) {
+        // Fetch the Pro and admin pools in parallel. Both are small (~10 each),
+        // so a plain filter is cheap and avoids the PostgREST URL-length cliff
+        // we'd hit with `.in('id', userIds)` over ~1000 UUIDs.
+        const [premiumRes, adminRes] = await Promise.all([
+          supabase.from('profiles').select('id').eq('is_creator_subscribed', true),
+          supabase.from('profiles').select('id').eq('is_admin', true),
+        ]);
 
-        const premiumSet = new Set((premiumProfiles || []).map((p: any) => p.id));
+        const premiumSet = new Set((premiumRes.data || []).map((p: any) => p.id));
+        const adminSet = new Set((adminRes.data || []).map((p: any) => p.id));
         setPremiumIds(premiumSet);
 
-        // Sort: premium first → then creators with paid links → then by profile views desc
+        // Strip admin-owned creator_profiles before sorting/displaying.
+        const profiles = rawProfiles.filter((p: any) => !adminSet.has(p.user_id));
+
+        // Sort: Pro first → has-paid-links second → views desc.
         const sorted = [...profiles].sort((a: CreatorProfile, b: CreatorProfile) => {
           const aP = premiumSet.has(a.user_id) ? 1 : 0;
           const bP = premiumSet.has(b.user_id) ? 1 : 0;

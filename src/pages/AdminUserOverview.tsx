@@ -2,7 +2,7 @@ import AppShell from '@/components/AppShell';
 import { supabase } from '@/lib/supabaseClient';
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2, Camera, Mail, Wallet as WalletIcon, TrendingUp, ShoppingCart, Landmark, Activity, ArrowUpRight, Crown, Link2, FolderOpen, Settings as SettingsIcon, LayoutGrid, ChevronLeft, MapPin, Calendar, Sparkles } from 'lucide-react';
+import { Download, ExternalLink, Trash2, Eye, EyeOff, Loader2, Tag, Building2, Camera, Mail, Wallet as WalletIcon, TrendingUp, ShoppingCart, Landmark, Activity, ArrowUpRight, Crown, Link2, FolderOpen, Settings as SettingsIcon, LayoutGrid, ChevronLeft, MapPin, Calendar, Sparkles } from 'lucide-react'; // Loader2 + Mail used by content reminder button
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { ModelCategoryDropdown } from '@/components/ui/ModelCategoryDropdown';
@@ -18,8 +18,11 @@ interface UserProfileOverview {
   is_directory_visible: boolean | null;
   is_creator_subscribed: boolean;
   wallet_balance_cents: number;
+  pending_balance_cents: number;
   total_earned_cents: number;
   total_withdrawn_cents: number;
+  holds_in_flight_cents: number;
+  rank_percentile: number | null;
   bank_iban: string | null;
   bank_holder_name: string | null;
   bank_bic: string | null;
@@ -167,6 +170,12 @@ const AdminUserOverview = () => {
   const [photoTargetProfileId, setPhotoTargetProfileId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'content' | 'wallet' | 'settings'>('overview');
+  // Content reminder state — loaded async after the main payload, so the
+  // overview renders immediately and the chip flicks in once the metadata is
+  // available. Last-upload date is derived locally from the same `links` and
+  // `assets` arrays the overview already pulls.
+  const [lastReminderAt, setLastReminderAt] = useState<string | null>(null);
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -234,6 +243,20 @@ const AdminUserOverview = () => {
         setSales(payload.sales ?? []);
         setPayouts(payload.payouts ?? []);
         setMetrics(payload.metrics ?? null);
+
+        // Last reminder — fire-and-forget. Decorative chip; no blocking.
+        if (payload.profile?.is_creator) {
+          supabase
+            .from('content_reminder_log')
+            .select('sent_at')
+            .eq('creator_id', payload.profile.id)
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then(({ data }) => {
+              if (data?.sent_at) setLastReminderAt(data.sent_at);
+            });
+        }
 
         const extra = profileExtraResult.data;
         if (extra?.avatar_url) setAvatarUrl(extra.avatar_url);
@@ -398,6 +421,63 @@ const AdminUserOverview = () => {
       toast.success(newVal ? 'Asset set to public' : 'Asset hidden from public');
     }
   };
+
+  const handleSendContentReminder = async () => {
+    if (!profile || isSendingReminder) return;
+    setIsSendingReminder(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Session expired');
+        setIsSendingReminder(false);
+        return;
+      }
+
+      const { data, error: invokeErr } = await supabase.functions.invoke('admin-send-content-reminder', {
+        body: { creator_id: profile.id },
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'x-supabase-auth': session.access_token,
+        },
+      });
+
+      if (invokeErr || (data && (data as any).error)) {
+        const msg = (data as any)?.error ?? invokeErr?.message ?? 'Reminder failed to send';
+        toast.error(msg);
+        return;
+      }
+
+      const sentAt = (data as any)?.sent_at ?? new Date().toISOString();
+      setLastReminderAt(sentAt);
+      toast.success('Content reminder sent ✨');
+    } catch (err) {
+      console.error('[AdminUserOverview] send-content-reminder error', err);
+      toast.error('Reminder failed to send');
+    } finally {
+      setIsSendingReminder(false);
+    }
+  };
+
+  // Days since last upload (links + assets, any status). Used for the chip
+  // colour in the admin hero — green ≤7d, amber ≤30d, red >30d.
+  const lastUploadAt: string | null = (() => {
+    const candidates = [
+      ...links.map((l) => l.created_at),
+      ...assets.map((a) => a.created_at),
+    ].filter((d): d is string => !!d);
+    if (candidates.length === 0) return null;
+    return candidates.reduce((acc, cur) => (cur > acc ? cur : acc), candidates[0]);
+  })();
+  const daysSinceLastUpload =
+    lastUploadAt !== null
+      ? Math.max(0, Math.floor((Date.now() - new Date(lastUploadAt).getTime()) / 86_400_000))
+      : null;
+  const reminderChipColour = (() => {
+    if (daysSinceLastUpload === null) return 'bg-exclu-arsenic/40 text-exclu-space border-exclu-arsenic/60';
+    if (daysSinceLastUpload <= 7) return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
+    if (daysSinceLastUpload <= 30) return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+    return 'bg-red-500/10 text-red-300 border-red-500/30';
+  })();
 
   const handleSaveCategories = async () => {
     if (!id) return;
@@ -623,6 +703,14 @@ const AdminUserOverview = () => {
                       <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${profile.is_directory_visible ? 'bg-green-500/10 text-green-400 border-green-500/25' : 'bg-exclu-arsenic/40 text-exclu-space/60 border-exclu-arsenic/50'}`}>
                         {profile.is_directory_visible ? <><Eye className="w-3 h-3" /> In directory</> : <><EyeOff className="w-3 h-3" /> Hidden</>}
                       </span>
+                      {profile.rank_percentile !== null && profile.rank_percentile !== undefined && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                          title="Rank among earning creators (1 = top earner)"
+                        >
+                          <TrendingUp className="w-3 h-3" /> Top {profile.rank_percentile}%
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px] text-exclu-space/70">
@@ -630,17 +718,58 @@ const AdminUserOverview = () => {
                       {profile.country && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" /> {profile.country}</span>}
                     </div>
                   </div>
+
+                  {/* ── Admin actions — content reminder (creators only) ──
+                      Manual trigger; no DB-side cooldown. The chips below the
+                      button surface "last upload" and "last reminder" so the
+                      admin can decide visually whether sending another is
+                      appropriate. Send is single-click, instant — modal-free
+                      per UX spec. */}
+                  {profile.is_creator && (
+                    <div className="sm:ml-auto flex flex-col items-stretch sm:items-end gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSendContentReminder}
+                        disabled={isSendingReminder}
+                        className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-bold bg-[#CFFF16] text-black hover:bg-[#CFFF16]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_6px_18px_-4px_rgba(207,255,22,0.4)]"
+                      >
+                        {isSendingReminder ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…</> : <><Mail className="w-3.5 h-3.5" /> Send content reminder</>}
+                      </button>
+                      <div className="flex flex-col items-stretch sm:items-end gap-1 text-[10px]">
+                        <span className={`inline-flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${reminderChipColour}`}>
+                          {daysSinceLastUpload === null
+                            ? 'No content yet'
+                            : daysSinceLastUpload === 0
+                              ? 'Last upload today'
+                              : `Last upload: ${daysSinceLastUpload}d ago`}
+                        </span>
+                        {lastReminderAt && (
+                          <span className="text-exclu-space/60">
+                            Last reminder: {new Date(lastReminderAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            {' · '}
+                            {Math.floor((Date.now() - new Date(lastReminderAt).getTime()) / 86_400_000)}d ago
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
 
-              {/* ── KPI strip ── */}
-              <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+              {/* ── KPI strip — money flow disambiguated ──
+                Available  : matured credits − settled withdrawals − active holds (what the creator can actually withdraw right now)
+                Pending    : credits not yet matured (anti-fraud holding window). Becomes Available after maturation.
+                Holds      : in-flight payouts (requested/approved/processing) already debited from Available
+                Earned     : lifetime gross-of-holds creator-net revenue (every successful sale, ever)
+                Withdrawn  : settled payouts (status=completed/paid)
+                Sales+Last30: activity counters (last_30d revenue is creator-net since migration 191)
+              */}
+              <section className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
                 {[
-                  { icon: WalletIcon, label: 'Wallet balance', value: `$${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}`, accent: true },
-                  { icon: TrendingUp, label: 'Total earned', value: `$${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}` },
-                  { icon: ShoppingCart, label: 'Total sales', value: (metrics?.totals.count ?? 0).toLocaleString() },
-                  { icon: Activity, label: 'Last 30 days', value: metrics ? `${metrics.last_30d.sales_count} · $${(metrics.last_30d.revenue_cents / 100).toFixed(2)}` : '—' },
-                ].map(({ icon: Icon, label, value, accent }) => (
+                  { icon: WalletIcon, label: 'Available now',     value: `$${((profile.wallet_balance_cents ?? 0) / 100).toFixed(2)}`, hint: 'Withdrawable today', accent: true },
+                  { icon: Activity,   label: 'Pending balance',   value: `$${((profile.pending_balance_cents ?? 0) / 100).toFixed(2)}`, hint: 'Maturing — not yet withdrawable' },
+                  { icon: ArrowUpRight, label: 'Holds in flight', value: `$${((profile.holds_in_flight_cents ?? 0) / 100).toFixed(2)}`, hint: 'Pending payout (already debited)' },
+                ].map(({ icon: Icon, label, value, hint, accent }) => (
                   <div
                     key={label}
                     className={`relative overflow-hidden rounded-2xl border p-4 transition-colors ${
@@ -656,6 +785,29 @@ const AdminUserOverview = () => {
                     <p className={`mt-2 text-xl sm:text-2xl font-bold tabular-nums tracking-tight ${accent ? 'text-[#CFFF16]' : 'text-exclu-cloud'}`}>
                       {value}
                     </p>
+                    <p className="mt-1 text-[10px] text-exclu-space/60 leading-tight">{hint}</p>
+                  </div>
+                ))}
+              </section>
+              <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                {[
+                  { icon: TrendingUp,   label: 'Lifetime earned', value: `$${((profile.total_earned_cents ?? 0) / 100).toFixed(2)}`, hint: 'Gross creator-net, all time' },
+                  { icon: Landmark,     label: 'Withdrawn',       value: `$${((profile.total_withdrawn_cents ?? 0) / 100).toFixed(2)}`, hint: 'Settled payouts only' },
+                  { icon: ShoppingCart, label: 'Total sales',     value: (metrics?.totals.count ?? 0).toLocaleString(), hint: 'All transactions, all time' },
+                  { icon: Activity,     label: 'Last 30 days',    value: metrics ? `${metrics.last_30d.sales_count} · $${(metrics.last_30d.revenue_cents / 100).toFixed(2)}` : '—', hint: 'Creator-net revenue (post-migration 191)' },
+                ].map(({ icon: Icon, label, value, hint }) => (
+                  <div
+                    key={label}
+                    className="relative overflow-hidden rounded-2xl border border-exclu-arsenic/50 bg-exclu-ink/70 p-4"
+                  >
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-semibold text-exclu-space/70">
+                      <Icon className="w-3.5 h-3.5 text-exclu-space/70" />
+                      {label}
+                    </div>
+                    <p className="mt-2 text-xl sm:text-2xl font-bold tabular-nums tracking-tight text-exclu-cloud">
+                      {value}
+                    </p>
+                    <p className="mt-1 text-[10px] text-exclu-space/60 leading-tight">{hint}</p>
                   </div>
                 ))}
               </section>

@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { UploadCloud, Image as ImageIcon, Film, Sparkles, Heart } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Film, Sparkles, Heart, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { maybeConvertHeic } from '@/lib/convertHeic';
 import { getSignedUrl } from '@/lib/storageUtils';
@@ -29,8 +29,8 @@ const CreateLink = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('5');
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  type PendingFile = { id: string; file: File; previewUrl: string; isVideo: boolean };
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([]);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
@@ -41,61 +41,51 @@ const CreateLink = () => {
   const [showOnProfile, setShowOnProfile] = useState(true);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = event.target.files?.[0] ?? null;
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selected.length === 0) return;
 
-    if (selected) {
-      const MAX_FILE_SIZE_MB = 500;
-      const fileName = selected.name.toLowerCase();
-      const isZip = fileName.endsWith('.zip') || selected.type === 'application/zip' || selected.type === 'application/x-zip-compressed';
-      const isHeic = selected.type === 'image/heic' || selected.type === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
-      const isImage = selected.type.startsWith('image/') || isHeic;
-      const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
-      const isVideo = selected.type.startsWith('video/') || videoExtensions.some(ext => fileName.endsWith(ext));
+    const MAX_FILE_SIZE_MB = 500;
+    const videoExtensions = ['.mp4', '.mov', '.webm', '.m4v', '.hevc', '.avi', '.mkv'];
+    const accepted: PendingFile[] = [];
+
+    for (const f of selected) {
+      const fileName = f.name.toLowerCase();
+      const isZip = fileName.endsWith('.zip') || f.type === 'application/zip' || f.type === 'application/x-zip-compressed';
+      const isHeic = f.type === 'image/heic' || f.type === 'image/heif' || fileName.endsWith('.heic') || fileName.endsWith('.heif');
+      const isImage = f.type.startsWith('image/') || isHeic;
+      const isVideo = f.type.startsWith('video/') || videoExtensions.some((ext) => fileName.endsWith(ext));
 
       if (isZip) {
-        toast.error('ZIP files are not supported. Please upload the photos and videos individually (you can select multiple files at once).');
-        event.target.value = '';
-        setFile(null);
-        return;
+        toast.error(`${f.name}: ZIP files are not supported. Upload photos and videos individually.`);
+        continue;
       }
-
       if (!isImage && !isVideo) {
-        toast.error('Please upload an image or video file.');
-        event.target.value = '';
-        setFile(null);
-        setPreviewUrl((previous) => {
-          if (previous) URL.revokeObjectURL(previous);
-          return null;
-        });
-        return;
+        toast.error(`${f.name}: only images and videos are supported.`);
+        continue;
+      }
+      if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.error(`${f.name}: file is too large (max 500 MB).`);
+        continue;
       }
 
-      if (selected.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        toast.error('This file is too large. Please upload a file under 500 MB.');
-        event.target.value = '';
-        setFile(null);
-        setPreviewUrl((previous) => {
-          if (previous) URL.revokeObjectURL(previous);
-          return null;
-        });
-        return;
-      }
-    }
-
-    setFile(selected);
-
-    if (selected) {
-      const nextUrl = URL.createObjectURL(selected);
-      setPreviewUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return nextUrl;
-      });
-    } else {
-      setPreviewUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return null;
+      accepted.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        isVideo,
       });
     }
+
+    if (accepted.length > 0) setPendingFiles((prev) => [...prev, ...accepted]);
+  };
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
   };
 
   useEffect(() => {
@@ -205,9 +195,9 @@ const CreateLink = () => {
 
     return () => {
       isMounted = false;
-      setPreviewUrl((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return null;
+      setPendingFiles((prev) => {
+        prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+        return [];
       });
     };
   }, []);
@@ -237,7 +227,7 @@ const CreateLink = () => {
       return;
     }
 
-    if (!file && selectedAssetIds.length === 0) {
+    if (pendingFiles.length === 0 && selectedAssetIds.length === 0) {
       toast.error('Please upload or attach at least one media file for this link.');
       return;
     }
@@ -278,46 +268,90 @@ const CreateLink = () => {
       }
 
       const linkId = insertedLinks[0].id as string;
-      let storagePath: string | null = null;
 
-      // 2. Upload primary file if present (kept as main media)
-      if (file) {
-        const convertedFile = await maybeConvertHeic(file);
-        const fileExtension = convertedFile.name.split('.').pop() ?? 'bin';
-        const objectName = `paid-content/${user.id}/${linkId}/original/content.${fileExtension}`;
+      // 2. Convert HEIC + upload all pending files in parallel. The first
+      // file becomes the legacy primary (`links.storage_path`); the rest
+      // become new `assets` rows attached via `link_media`.
+      const converted = await Promise.all(pendingFiles.map((p) => maybeConvertHeic(p.file)));
 
-        const { error: uploadError } = await supabase.storage
-          .from('paid-content')
-          .upload(objectName, convertedFile, {
-            cacheControl: '3600',
-            upsert: true,
-          });
+      const uploadResults = await Promise.all(
+        converted.map(async (convertedFile, i) => {
+          const ext = convertedFile.name.split('.').pop() ?? 'bin';
+          const objectName =
+            i === 0
+              ? `${user.id}/${linkId}/original/content.${ext}`
+              : `${user.id}/${linkId}/attachments/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}.${ext}`;
 
-        if (uploadError) {
-          console.error(uploadError);
-          // Clean up the draft link so no empty link is left behind
-          await supabase.from('links').delete().eq('id', linkId);
-          throw new Error('Upload failed. Please try again.');
-        }
+          const { error } = await supabase.storage
+            .from('paid-content')
+            .upload(objectName, convertedFile, { cacheControl: '3600', upsert: i === 0 });
 
-        storagePath = objectName;
+          return { i, objectName, convertedFile, rawName: pendingFiles[i].file.name, error };
+        })
+      );
 
-        const { error: updateError } = await supabase
-          .from('links')
-          .update({ storage_path: storagePath })
-          .eq('id', linkId);
-
-        if (updateError) {
-          console.error(updateError);
-          await supabase.from('links').delete().eq('id', linkId);
-          throw new Error('Link was created but media could not be attached.');
-        }
+      const primaryUpload = uploadResults.find((r) => r.i === 0);
+      if (primaryUpload?.error) {
+        console.error(primaryUpload.error);
+        await supabase.from('links').delete().eq('id', linkId);
+        throw new Error('Upload failed. Please try again.');
       }
 
-      // 3. Attach library assets via link_media BEFORE publishing so the
-      // `links_require_content` DB trigger sees the content it requires.
-      if (selectedAssetIds.length > 0) {
-        const rows = selectedAssetIds.map((assetId, index) => ({
+      const successfulExtras = uploadResults.filter((r) => r.i > 0 && !r.error);
+      uploadResults
+        .filter((r) => r.i > 0 && r.error)
+        .forEach((r) => {
+          console.error(r.error);
+          toast.error(`${r.rawName}: upload failed, skipped.`);
+        });
+
+      // 3. Update primary storage_path + batch-insert extra assets in parallel.
+      const [updatePrimary, insertedAssets] = await Promise.all([
+        primaryUpload
+          ? supabase.from('links').update({ storage_path: primaryUpload.objectName }).eq('id', linkId)
+          : Promise.resolve({ error: null } as { error: null }),
+        successfulExtras.length > 0
+          ? supabase
+              .from('assets')
+              .insert(
+                successfulExtras.map((r) => ({
+                  creator_id: user.id,
+                  profile_id: activeProfile?.id ?? null,
+                  title: r.rawName,
+                  storage_path: r.objectName,
+                  mime_type: r.convertedFile.type || null,
+                }))
+              )
+              .select('id, storage_path')
+          : Promise.resolve({ data: [] as { id: string; storage_path: string }[], error: null }),
+      ]);
+
+      if (updatePrimary.error) {
+        console.error(updatePrimary.error);
+        await supabase.from('links').delete().eq('id', linkId);
+        throw new Error('Link was created but media could not be attached.');
+      }
+
+      if (insertedAssets.error) {
+        console.error(insertedAssets.error);
+        await supabase.from('links').delete().eq('id', linkId);
+        throw new Error('Link was created but extra media could not be registered.');
+      }
+
+      // Re-order extras by upload index so positions stay deterministic.
+      const assetByPath = new Map(
+        ((insertedAssets.data ?? []) as { id: string; storage_path: string }[]).map((a) => [a.storage_path, a.id])
+      );
+      const extraAssetIds = successfulExtras
+        .map((r) => assetByPath.get(r.objectName))
+        .filter((id): id is string => Boolean(id));
+
+      // 4. Attach library assets + extra uploads via link_media BEFORE
+      // publishing so the `links_require_content` DB trigger sees the
+      // content it requires.
+      const allAttachedAssetIds = [...selectedAssetIds, ...extraAssetIds];
+      if (allAttachedAssetIds.length > 0) {
+        const rows = allAttachedAssetIds.map((assetId, index) => ({
           link_id: linkId,
           asset_id: assetId,
           position: index,
@@ -332,7 +366,7 @@ const CreateLink = () => {
         }
       }
 
-      // 4. Publish the link now that content is guaranteed to be attached.
+      // 5. Publish the link now that content is guaranteed to be attached.
       const { error: publishError } = await supabase
         .from('links')
         .update({ status: 'published' })
@@ -458,36 +492,58 @@ const CreateLink = () => {
                         <p className="text-xs font-medium text-exclu-space">Content source</p>
                         <div className="rounded-2xl border border-dashed border-exclu-arsenic/70 bg-exclu-ink/80 p-3 sm:p-4 flex flex-col items-center justify-center text-center gap-3">
                           <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary mb-1">
-                            {file ? <Film className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
+                            {pendingFiles.length > 0 ? <Film className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
                           </div>
                           <div className="space-y-1 w-full">
                             <p className="text-sm font-medium text-exclu-cloud">
-                              {file ? file.name : 'Upload a photo or video'}
+                              {pendingFiles.length > 0
+                                ? `${pendingFiles.length} file${pendingFiles.length > 1 ? 's' : ''} ready to upload`
+                                : 'Upload photos or videos'}
                             </p>
                             <p className="text-[11px] text-exclu-space/80">
-                              Drag & drop a file here, or click to browse. MP4, MOV, JPG, PNG are supported.
+                              Drag & drop or click to browse. You can select several files at once. MP4, MOV, JPG, PNG, HEIC are supported.
                             </p>
-                            {previewUrl && (
-                              <div className="mt-3 rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/40">
-                                {file && file.type.startsWith('video/') ? (
-                                  <video
-                                    src={previewUrl}
-                                    className="w-full h-40 object-cover"
-                                    muted
-                                    loop
-                                    autoPlay
-                                  />
-                                ) : (
-                                  <img src={previewUrl} className="w-full h-40 object-cover" alt={file?.name || 'Preview'} />
-                                )}
+                            {pendingFiles.length > 0 && (
+                              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {pendingFiles.map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="relative group rounded-xl overflow-hidden border border-exclu-arsenic/60 bg-black/40"
+                                  >
+                                    {p.isVideo ? (
+                                      <video
+                                        src={p.previewUrl}
+                                        className="w-full h-28 object-cover"
+                                        muted
+                                        loop
+                                        autoPlay
+                                        playsInline
+                                      />
+                                    ) : (
+                                      <img src={p.previewUrl} className="w-full h-28 object-cover" alt={p.file.name} />
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => removePendingFile(p.id)}
+                                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-red-500/80 transition-colors"
+                                      aria-label={`Remove ${p.file.name}`}
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                    <p className="absolute inset-x-0 bottom-0 px-2 py-1 text-[9px] text-exclu-cloud bg-gradient-to-t from-black/80 to-transparent truncate text-left">
+                                      {p.file.name}
+                                    </p>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
                           <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-exclu-cloud text-[11px] font-medium text-black cursor-pointer hover:bg-white transition-colors">
-                            <span>Choose file</span>
+                            <span>{pendingFiles.length > 0 ? 'Add more files' : 'Choose files'}</span>
                             <input
                               type="file"
-                              accept="image/*,video/*"
+                              accept="image/*,video/*,.heic,.heif"
+                              multiple
                               className="hidden"
                               onChange={handleFileChange}
                             />
