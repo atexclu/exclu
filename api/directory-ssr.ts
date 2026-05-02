@@ -1,8 +1,52 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 const SUPABASE_URL = 'https://qexnwezetjlbwltyccks.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleG53ZXpldGpsYndsdHljY2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyOTcyNjcsImV4cCI6MjA4Mzg3MzI2N30.BwE47MEU7KVm3NWXbX7hK1osCc00dQ0s8Y0Qudh5eyE';
 const SITE_URL = 'https://exclu.at';
+
+let cachedIndexHtml: string | null = null;
+function getIndexHtml(): string {
+  if (!cachedIndexHtml) {
+    const indexPath = join(process.cwd(), 'dist', 'index.html');
+    cachedIndexHtml = readFileSync(indexPath, 'utf-8');
+  }
+  return cachedIndexHtml;
+}
+
+// Inject SEO meta + a crawler-only noscript summary into the SPA shell so
+// /directory/creators is fully indexable while keeping the React app's
+// interactivity for real users.
+function injectCreatorsSEO(
+  html: string,
+  ogTitle: string,
+  ogDescription: string,
+  ogImage: string,
+  ogUrl: string,
+  noscriptHtml: string,
+): string {
+  return html
+    .replace(/<title>[^<]*<\/title>/, `<title>${esc(ogTitle)}</title>`)
+    .replace(
+      /<!-- Open Graph -->[\s\S]*?<!-- Twitter -->[\s\S]*?<meta\s+name="twitter:image"[^>]*\/>/,
+      `<!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${esc(ogTitle)}" />
+    <meta property="og:description" content="${esc(ogDescription)}" />
+    <meta property="og:image" content="${ogImage}" />
+    <meta property="og:url" content="${ogUrl}" />
+    <meta property="og:site_name" content="Exclu" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@exclu" />
+    <meta name="twitter:title" content="${esc(ogTitle)}" />
+    <meta name="twitter:description" content="${esc(ogDescription)}" />
+    <meta name="twitter:image" content="${ogImage}" />`,
+    )
+    .replace('</body>', `<noscript>${noscriptHtml}</noscript></body>`);
+}
 
 function esc(text: string): string {
   return text
@@ -120,6 +164,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const path = req.url || '/';
 
   try {
+    // ── CREATORS LIST: /directory/creators ──────────────────────────
+    // Renders the SPA shell with custom OG + a crawler-friendly noscript
+    // listing the top creators (resolved through v_directory_creators).
+    if (path.match(/^\/directory\/creators(\/?$|\?)/)) {
+      const creators = (await supabaseFetch(
+        'v_directory_creators?category=is.null&is_hidden_for_category=eq.false&order=display_rank.asc,position.asc.nullslast,profile_view_count.desc&limit=60'
+      )) as any[];
+
+      const title = 'Discover creators on Exclu — Creator Directory';
+      const description =
+        'Browse independent creators on Exclu. No account required to unlock content. Tip, subscribe, or chat with creators directly.';
+      const url = `${SITE_URL}/directory/creators`;
+      const image = `${SITE_URL}/og-directory-default.png`;
+
+      const noscript = `
+  <header><h1>Creators on Exclu</h1><p>${esc(description)}</p></header>
+  <ul>${(creators || [])
+    .map((c) => {
+      const name = c.display_name || c.username || '';
+      const loc = [c.city, c.country].filter(Boolean).join(', ');
+      return `<li><a href="${SITE_URL}/${esc(c.username || '')}">${esc(name)}</a>${
+        c.niche ? ` · ${esc(c.niche)}` : ''
+      }${loc ? ` · ${esc(loc)}` : ''}</li>`;
+    })
+    .join('')}</ul>`;
+
+      const html = injectCreatorsSEO(getIndexHtml(), title, description, image, url, noscript);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+      return res.send(html);
+    }
+
     // ── AGENCY DETAIL: /directory/agencies/:slug ────────────────────
     const agencyMatch = path.match(/^\/directory\/agencies\/([^/?]+)/);
     if (agencyMatch) {

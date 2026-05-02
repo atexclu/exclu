@@ -65,6 +65,7 @@ import AdminEmailCampaigns from "@/pages/admin/AdminEmailCampaigns";
 import AdminEmailCampaignEdit from "@/pages/admin/AdminEmailCampaignEdit";
 import AdminEmailContacts from "@/pages/admin/AdminEmailContacts";
 import AdminEmailLogs from "@/pages/admin/AdminEmailLogs";
+import AdminDirectory from "@/pages/admin/AdminDirectory";
 import DirectoryHub from './pages/DirectoryHub';
 import DirectoryCreators from './pages/DirectoryCreators';
 import DirectoryAgencies from './pages/DirectoryAgencies';
@@ -158,6 +159,14 @@ const App = () => {
                   element={
                     <AdminRoute>
                       <AdminPayments />
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/directory"
+                  element={
+                    <AdminRoute>
+                      <AdminDirectory />
                     </AdminRoute>
                   }
                 />

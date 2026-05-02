@@ -2,6 +2,9 @@
   "functions": {
     "api/og-proxy.ts": {
       "includeFiles": "dist/index.html"
+    },
+    "api/directory-ssr.ts": {
+      "includeFiles": "dist/index.html"
     }
   },
   "crons": [
@@ -165,6 +168,10 @@
     {
       "source": "/rss.xml",
       "destination": "/api/rss"
+    },
+    {
+      "source": "/directory/creators",
+      "destination": "/api/directory-ssr"
     },
     {
       "source": "/directory/:path*",

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useForceDark } from '@/contexts/ThemeContext';
 import { motion, useInView } from 'framer-motion';
-import { Search, MapPin, Verified, Users, Loader2, Filter, X, ChevronDown } from 'lucide-react';
+import { Search, Users, Loader2, Filter, X, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 
 const COUNTRY_NAMES: Record<string, string> = {
@@ -23,23 +23,30 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import Aurora from '@/components/ui/Aurora';
 import GradualBlur from '@/components/ui/GradualBlur';
+import { MODEL_CATEGORY_GROUPS } from '@/lib/categories';
+import CreatorCard from '@/components/directory/CreatorCard';
 
-interface CreatorProfile {
-  id: string;
-  username: string;
+interface DirectoryRow {
+  creator_profile_id: string;
+  user_id: string;
+  username: string | null;
   display_name: string | null;
   avatar_url: string | null;
   bio: string | null;
   country: string | null;
   city: string | null;
   niche: string | null;
-  is_directory_visible: boolean;
-  user_id: string;
-  profile_view_count: number;
-  model_categories: string[];
+  model_categories: string[] | null;
+  profile_view_count: number | null;
+  created_at: string | null;
+  paid_links_count: number;
+  is_premium: boolean;
+  category: string | null;
+  is_featured: boolean;
+  position: number | null;
+  is_hidden_for_category: boolean;
+  display_rank: number;
 }
-
-import { MODEL_CATEGORY_GROUPS } from '@/lib/categories';
 
 /* ─── Filter Dropdown Component ─── */
 const CategoryFilterDropdown = ({
@@ -161,9 +168,7 @@ const BATCH_SIZE = 20;
 
 const DirectoryCreators = () => {
   useForceDark();
-  const [allCreators, setAllCreators] = useState<CreatorProfile[]>([]);
-  const [premiumIds, setPremiumIds] = useState<Set<string>>(new Set());
-  const [linksCountMap, setLinksCountMap] = useState<Map<string, number>>(new Map());
+  const [allCreators, setAllCreators] = useState<DirectoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
@@ -180,83 +185,37 @@ const DirectoryCreators = () => {
     const fetchCreators = async () => {
       setLoading(true);
 
-      const [creatorsRes, linksRes] = await Promise.all([
-        supabase
-          .from('creator_profiles')
-          .select('id, username, display_name, avatar_url, bio, country, city, niche, is_directory_visible, user_id, profile_view_count, model_categories')
-          .eq('is_directory_visible', true)
-          .eq('is_active', true)
-          .is('deleted_at', null)
-          .not('avatar_url', 'is', null)
-          .order('profile_view_count', { ascending: false })
-          .range(0, 9999),
-        // .range() raises the default PostgREST 1000-row cap. Without it the
-        // paid-links tier silently misranks Pros whose links happen to fall
-        // past the cutoff (Carolina sat behind KarinaJP because her 3 paid
-        // links were truncated out of `linksByCreator`).
-        supabase
-          .from('links')
-          .select('creator_id, price_cents')
-          .eq('status', 'published')
-          .gt('price_cents', 0)
-          .range(0, 9999),
-      ]);
+      // Pull the global directory bucket only (category is null). Per-category
+      // tabs on the admin side query the same view with a category filter.
+      // .range(0, 9999) raises the default PostgREST 1000-row cap.
+      const { data, error } = await supabase
+        .from('v_directory_creators')
+        .select('*')
+        .is('category', null)
+        .eq('is_hidden_for_category', false)
+        .range(0, 9999);
 
-      if (creatorsRes.error) {
-        console.error('Error fetching creators:', creatorsRes.error);
+      if (error) {
+        console.error('Error fetching directory:', error);
         setLoading(false);
         return;
       }
 
-      const rawProfiles = (creatorsRes.data || []).map((p: any) => ({
-        ...p,
-        model_categories: p.model_categories || [],
-      }));
+      const rows = ((data || []) as DirectoryRow[]).slice().sort((a, b) => {
+        if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
+        // Curated rows: explicit position wins, NULLs last.
+        const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
+        const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
+        if (aPos !== bPos) return aPos - bPos;
+        // Fallback tiebreak: views desc, then created_at desc.
+        const dv = (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
+        if (dv !== 0) return dv;
+        const ad = a.created_at ? Date.parse(a.created_at) : 0;
+        const bd = b.created_at ? Date.parse(b.created_at) : 0;
+        return bd - ad;
+      });
 
-      // Count paid links per creator user_id
-      const linksByCreator = new Map<string, number>();
-      if (linksRes.data) {
-        for (const row of linksRes.data) {
-          const current = linksByCreator.get(row.creator_id) || 0;
-          linksByCreator.set(row.creator_id, current + 1);
-        }
-      }
-      setLinksCountMap(linksByCreator);
-
-      if (rawProfiles.length > 0) {
-        // Fetch the Pro and admin pools in parallel. Both are small (~10 each),
-        // so a plain filter is cheap and avoids the PostgREST URL-length cliff
-        // we'd hit with `.in('id', userIds)` over ~1000 UUIDs.
-        const [premiumRes, adminRes] = await Promise.all([
-          supabase.from('profiles').select('id').eq('is_creator_subscribed', true),
-          supabase.from('profiles').select('id').eq('is_admin', true),
-        ]);
-
-        const premiumSet = new Set((premiumRes.data || []).map((p: any) => p.id));
-        const adminSet = new Set((adminRes.data || []).map((p: any) => p.id));
-        setPremiumIds(premiumSet);
-
-        // Strip admin-owned creator_profiles before sorting/displaying.
-        const profiles = rawProfiles.filter((p: any) => !adminSet.has(p.user_id));
-
-        // Sort: Pro first → has-paid-links second → views desc.
-        const sorted = [...profiles].sort((a: CreatorProfile, b: CreatorProfile) => {
-          const aP = premiumSet.has(a.user_id) ? 1 : 0;
-          const bP = premiumSet.has(b.user_id) ? 1 : 0;
-          if (bP !== aP) return bP - aP;
-
-          const aLinks = linksByCreator.get(a.user_id) || 0;
-          const bLinks = linksByCreator.get(b.user_id) || 0;
-          const aHasLinks = aLinks > 0 ? 1 : 0;
-          const bHasLinks = bLinks > 0 ? 1 : 0;
-          if (bHasLinks !== aHasLinks) return bHasLinks - aHasLinks;
-
-          return (b.profile_view_count || 0) - (a.profile_view_count || 0);
-        });
-
-        setAllCreators(sorted);
-      }
-
+      setAllCreators(rows);
       setLoading(false);
     };
 
@@ -479,59 +438,9 @@ const DirectoryCreators = () => {
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                {visibleCreators.map((creator, i) => {
-                  const isPremium = premiumIds.has(creator.user_id);
-                  return (
-                    <motion.div
-                      key={creator.id}
-                      initial={{ opacity: 0, y: 30 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: Math.min((i % BATCH_SIZE) * 0.04, 0.4) }}
-                    >
-                      <a
-                        href={`/${creator.username}`}
-                        className="group block relative rounded-3xl overflow-hidden border border-exclu-arsenic/40 hover:border-white/30 transition-all duration-500 hover:scale-[1.03]"
-                      >
-                        <div className="aspect-[3/4] relative">
-                          {creator.avatar_url ? (
-                            <img
-                              src={creator.avatar_url}
-                              alt={creator.display_name || creator.username}
-                              className="absolute inset-0 w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-exclu-arsenic/30 flex items-center justify-center">
-                              <span className="text-4xl font-bold text-white/20">
-                                {(creator.display_name || creator.username)?.[0]?.toUpperCase()}
-                              </span>
-                            </div>
-                          )}
-                          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-exclu-black via-exclu-black/90 to-transparent">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-white font-bold text-sm truncate">
-                                {creator.display_name || creator.username}
-                              </p>
-                              {isPremium && <Verified className="w-4 h-4 text-[#CFFF16] flex-shrink-0" />}
-                            </div>
-                            {creator.niche && (
-                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-exclu-steel mb-1">
-                                {creator.niche}
-                              </span>
-                            )}
-                            {(creator.city || creator.country) && (
-                              <p className="text-[11px] text-exclu-steel flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />
-                                {[creator.city, creator.country].filter(Boolean).join(', ')}
-                              </p>
-                            )}
-                          </div>
-                          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-white/5 to-transparent" />
-                        </div>
-                      </a>
-                    </motion.div>
-                  );
-                })}
+                {visibleCreators.map((creator, i) => (
+                  <CreatorCard key={creator.creator_profile_id} creator={creator} index={i} batchSize={BATCH_SIZE} />
+                ))}
               </div>
 
               {/* Infinite scroll sentinel */}
