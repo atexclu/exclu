@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -18,55 +18,49 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'sonner';
-import { Pin, EyeOff, Eye, Tags, ExternalLink, UserCog, Search, Loader2, Star, Crown, Sparkles, GripVertical } from 'lucide-react';
+import {
+  Search,
+  Loader2,
+  Star,
+  X,
+  ChevronDown,
+  Filter,
+  ArrowUpDown,
+  Layers,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MODEL_CATEGORY_GROUPS, getModelCategoryLabel } from '@/lib/categories';
-import CreatorCard, { type DirectoryCreator } from '@/components/directory/CreatorCard';
-import { Link } from 'react-router-dom';
+import AdminCreatorCard, { type AdminCardRow } from '@/components/directory/AdminCreatorCard';
 import AppShell from '@/components/AppShell';
 
 const GLOBAL_TAB = '__global__';
 
-const ALL_CATEGORY_OPTIONS = Object.entries(MODEL_CATEGORY_GROUPS).flatMap(
-  ([group, options]) => options.map((o) => ({ ...o, group })),
-);
-
-interface DirectoryRow {
-  creator_profile_id: string;
-  user_id: string;
-  username: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
+interface DirectoryRow extends AdminCardRow {
   bio: string | null;
-  country: string | null;
-  city: string | null;
-  niche: string | null;
   model_categories: string[] | null;
-  profile_view_count: number | null;
-  paid_links_count: number;
-  is_premium: boolean;
-  created_at: string | null;
   category: string | null;
-  is_featured: boolean;
-  position: number | null;
-  is_hidden_for_category: boolean;
   display_rank: number;
 }
 
 type StatusFilter = 'all' | 'premium' | 'free';
+type VisibilityFilter = 'all' | 'visible_global' | 'hidden_global' | 'hidden_cat';
+type SortKey = 'curated' | 'views' | 'paid_links' | 'best_sellers' | 'newest' | 'oldest' | 'premium';
+type AvatarFilter = 'all' | 'with_avatar' | 'no_avatar';
 
-const NEW_CREATOR_DAYS = 7;
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'curated', label: 'Tri curé (Featured → curé → algo)' },
+  { value: 'views', label: 'Plus de vues' },
+  { value: 'paid_links', label: 'Plus de liens payants' },
+  { value: 'best_sellers', label: 'Meilleures ventes' },
+  { value: 'premium', label: 'Pro en premier' },
+  { value: 'newest', label: 'Plus récents' },
+  { value: 'oldest', label: 'Plus anciens' },
+];
 
-const isNewCreator = (createdAt: string | null) => {
-  if (!createdAt) return false;
-  const ageDays = (Date.now() - Date.parse(createdAt)) / (1000 * 60 * 60 * 24);
-  return ageDays <= NEW_CREATOR_DAYS;
-};
-
-const sortRows = (rows: DirectoryRow[]) =>
+const sortByCurated = (rows: DirectoryRow[]) =>
   rows.slice().sort((a, b) => {
     if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
     const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
@@ -79,7 +73,37 @@ const sortRows = (rows: DirectoryRow[]) =>
     return bd - ad;
   });
 
-/* ─── Sortable card wrapper for drag & drop ─── */
+const sortBy = (rows: DirectoryRow[], key: SortKey): DirectoryRow[] => {
+  if (key === 'curated') return sortByCurated(rows);
+  const arr = rows.slice();
+  switch (key) {
+    case 'views':
+      return arr.sort((a, b) => (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0));
+    case 'paid_links':
+      return arr.sort((a, b) => b.paid_links_count - a.paid_links_count);
+    case 'best_sellers':
+      return arr.sort((a, b) => Number(b.total_earned_cents) - Number(a.total_earned_cents));
+    case 'premium':
+      return arr.sort((a, b) => {
+        if (a.is_premium !== b.is_premium) return a.is_premium ? -1 : 1;
+        return (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
+      });
+    case 'newest':
+      return arr.sort(
+        (a, b) =>
+          (b.created_at ? Date.parse(b.created_at) : 0) -
+          (a.created_at ? Date.parse(a.created_at) : 0),
+      );
+    case 'oldest':
+      return arr.sort(
+        (a, b) =>
+          (a.created_at ? Date.parse(a.created_at) : 0) -
+          (b.created_at ? Date.parse(b.created_at) : 0),
+      );
+  }
+};
+
+/* ─── Sortable card wrapper ─── */
 function SortableAdminCard({
   row,
   showHandle,
@@ -100,149 +124,89 @@ function SortableAdminCard({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 'auto',
   };
   return (
-    <div ref={setNodeRef} style={style} className={isDragging ? 'ring-2 ring-[#CFFF16] rounded-3xl' : ''}>
+    <div ref={setNodeRef} style={style}>
       {children({ attributes, listeners })}
     </div>
   );
 }
 
-/* ─── Card overlay (badges + kebab actions) ─── */
-function CardOverlay({
-  row,
-  category,
-  onPatch,
-  onOpenCategories,
-  dragAttributes,
-  dragListeners,
-  showHandle,
+/* ─── Reusable filter dropdown pill ─── */
+function FilterPill<T extends string>({
+  icon,
+  label,
+  value,
+  options,
+  onChange,
+  width = 'w-56',
 }: {
-  row: DirectoryRow;
-  category: string | null;
-  onPatch: (patch: Record<string, unknown>) => void;
-  onOpenCategories: () => void;
-  dragAttributes?: ReturnType<typeof useSortable>['attributes'];
-  dragListeners?: ReturnType<typeof useSortable>['listeners'];
-  showHandle: boolean;
+  icon: React.ReactNode;
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  width?: string;
 }) {
-  const newBadge = isNewCreator(row.created_at);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const current = options.find((o) => o.value === value);
+  const isDefault = options[0]?.value === value;
   return (
-    <>
-      {/* Top-left badges */}
-      <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
-        {row.is_featured && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#CFFF16] text-black text-[10px] font-bold">
-            <Star className="w-3 h-3" /> Featured
-          </span>
-        )}
-        {row.is_premium && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/90 text-white text-[10px] font-semibold">
-            <Crown className="w-3 h-3" /> Pro
-          </span>
-        )}
-        {newBadge && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/90 text-white text-[10px] font-semibold">
-            <Sparkles className="w-3 h-3" /> New
-          </span>
-        )}
-      </div>
-
-      {/* Top-right action cluster */}
-      <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onPatch({ is_featured: !row.is_featured });
-          }}
-          className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition ${
-            row.is_featured ? 'bg-[#CFFF16] text-black' : 'bg-black/60 text-white hover:bg-black/80'
-          }`}
-          title={row.is_featured ? 'Retirer du Featured' : 'Mettre en Featured'}
-        >
-          <Pin className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onPatch({ is_hidden: !row.is_hidden_for_category });
-          }}
-          className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition ${
-            row.is_hidden_for_category ? 'bg-red-500/90 text-white' : 'bg-black/60 text-white hover:bg-black/80'
-          }`}
-          title={row.is_hidden_for_category ? 'Réafficher dans cette catégorie' : 'Masquer dans cette catégorie'}
-        >
-          {row.is_hidden_for_category ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onOpenCategories();
-          }}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-          title="Catégories du créateur"
-        >
-          <Tags className="w-3.5 h-3.5" />
-        </button>
-        <a
-          href={`/${row.username}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-          title="Profil public"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
-        <Link
-          to={`/admin/users/${row.user_id}/overview`}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
-          title="Fiche admin"
-        >
-          <UserCog className="w-3.5 h-3.5" />
-        </Link>
-      </div>
-
-      {/* Drag handle (only when DnD is active) */}
-      {showHandle && dragAttributes && dragListeners && (
-        <button
-          type="button"
-          {...dragAttributes}
-          {...dragListeners}
-          onClick={(e) => e.preventDefault()}
-          className="absolute bottom-2 right-2 z-10 inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/70 text-white hover:bg-[#CFFF16] hover:text-black transition cursor-grab active:cursor-grabbing"
-          title="Réordonner"
-        >
-          <GripVertical className="w-3.5 h-3.5" />
-        </button>
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`group inline-flex items-center gap-1.5 h-9 pl-2.5 pr-2 rounded-full text-xs font-medium border transition whitespace-nowrap ${
+          isDefault
+            ? 'bg-exclu-ink/30 dark:bg-white/[0.04] text-exclu-cloud border-exclu-arsenic/40 hover:border-exclu-arsenic/70'
+            : 'bg-[#CFFF16]/10 text-[#CFFF16] border-[#CFFF16]/40'
+        }`}
+      >
+        <span className="opacity-70 group-hover:opacity-100">{icon}</span>
+        <span className="text-[10px] uppercase tracking-wider opacity-60">{label}</span>
+        <span>{current?.label}</span>
+        <ChevronDown className={`w-3 h-3 opacity-50 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className={`absolute z-40 mt-1.5 left-0 ${width} rounded-xl border border-exclu-arsenic/60 bg-[#0a0a0e] shadow-2xl overflow-hidden`}>
+          {options.map((opt) => {
+            const selected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 text-xs transition flex items-center justify-between ${
+                  selected
+                    ? 'bg-[#CFFF16]/10 text-[#CFFF16]'
+                    : 'text-exclu-cloud hover:bg-exclu-arsenic/30'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {selected && <span className="text-[10px]">✓</span>}
+              </button>
+            );
+          })}
+        </div>
       )}
-
-      {/* Bottom-left stats overlay */}
-      <div className="absolute top-12 left-2 flex flex-col gap-1 z-10">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-medium">
-          {row.profile_view_count ?? 0} vues
-        </span>
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-medium">
-          {row.paid_links_count} liens
-        </span>
-      </div>
-
-      {/* Hidden-cat ghost overlay */}
-      {row.is_hidden_for_category && (
-        <div className="absolute inset-0 bg-black/55 backdrop-grayscale pointer-events-none" />
-      )}
-    </>
+    </div>
   );
 }
 
-/* ─── Multi-category modal ─── */
+/* ─── Multi-category dialog ─── */
 function CategoriesDialog({
   open,
   onOpenChange,
@@ -256,14 +220,11 @@ function CategoriesDialog({
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-
   useEffect(() => {
     if (creator) setSelected(creator.model_categories || []);
   }, [creator]);
-
   const toggle = (v: string) =>
     setSelected((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
-
   const save = async () => {
     if (!creator) return;
     setSaving(true);
@@ -280,7 +241,6 @@ function CategoriesDialog({
     onSaved(creator.creator_profile_id, selected);
     onOpenChange(false);
   };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -292,7 +252,7 @@ function CategoriesDialog({
         <div className="space-y-4 py-2">
           {Object.entries(MODEL_CATEGORY_GROUPS).map(([group, options]) => (
             <div key={group}>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-2">
                 {group}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -333,7 +293,9 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [signupSort, setSignupSort] = useState<'newest' | 'oldest'>('newest');
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('all');
+  const [avatarFilter, setAvatarFilter] = useState<AvatarFilter>('with_avatar');
+  const [sortKey, setSortKey] = useState<SortKey>('curated');
   const [editingCategoriesFor, setEditingCategoriesFor] = useState<DirectoryRow | null>(null);
 
   const categoryFilter = activeTab === GLOBAL_TAB ? null : activeTab;
@@ -346,34 +308,27 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
   const fetchRows = useCallback(async () => {
     setLoading(true);
     if (categoryFilter === null) {
-      // Global feed: read view directly with category is null
       const { data, error } = await supabase
-        .from('v_directory_creators')
+        .from('v_directory_creators_admin')
         .select('*')
         .is('category', null)
-        .range(0, 9999);
+        .range(0, 49999);
       if (error) {
         toast.error('Échec chargement directory');
         setLoading(false);
         return;
       }
-      setRows(sortRows((data || []) as DirectoryRow[]));
+      setRows(sortByCurated((data || []) as DirectoryRow[]));
     } else {
-      // Per-category: pull all creators that have this cat in model_categories,
-      // then merge curation rows for that category.
       const [creatorsRes, curationRes] = await Promise.all([
         supabase
-          .from('v_directory_creators')
+          .from('v_directory_creators_admin')
           .select('*')
           .is('category', null)
           .contains('model_categories', [categoryFilter])
-          .range(0, 9999),
-        supabase
-          .from('directory_curation')
-          .select('*')
-          .eq('category', categoryFilter),
+          .range(0, 49999),
+        supabase.from('directory_curation').select('*').eq('category', categoryFilter),
       ]);
-
       if (creatorsRes.error) {
         toast.error('Échec chargement créateurs');
         setLoading(false);
@@ -400,7 +355,7 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
           display_rank: displayRank,
         } as DirectoryRow;
       });
-      setRows(sortRows(merged));
+      setRows(sortByCurated(merged));
     }
     setLoading(false);
   }, [categoryFilter]);
@@ -409,26 +364,22 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     fetchRows();
   }, [fetchRows]);
 
-  /* ─── Optimistic local mutation helpers ─── */
+  /* ─── Optimistic patches ─── */
   const patchLocal = (id: string, patch: Partial<DirectoryRow>) =>
     setRows((prev) =>
-      sortRows(
-        prev.map((r) => {
-          if (r.creator_profile_id !== id) return r;
-          const next = { ...r, ...patch } as DirectoryRow;
-          // Recompute display_rank when featured/position change.
-          if (next.is_featured) next.display_rank = 1;
-          else if (next.position != null) next.display_rank = 2;
-          else if (next.is_premium) next.display_rank = 3;
-          else if (next.paid_links_count > 0) next.display_rank = 4;
-          else next.display_rank = 5;
-          return next;
-        }),
-      ),
+      prev.map((r) => {
+        if (r.creator_profile_id !== id) return r;
+        const next = { ...r, ...patch } as DirectoryRow;
+        if (next.is_featured) next.display_rank = 1;
+        else if (next.position != null) next.display_rank = 2;
+        else if (next.is_premium) next.display_rank = 3;
+        else if (next.paid_links_count > 0) next.display_rank = 4;
+        else next.display_rank = 5;
+        return next;
+      }),
     );
 
   const applyPatch = async (id: string, patch: Record<string, unknown>) => {
-    // Optimistic
     patchLocal(id, patch as Partial<DirectoryRow>);
     const { error } = await supabase.rpc('admin_set_directory_curation', {
       p_creator_id: id,
@@ -438,125 +389,104 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     if (error) {
       toast.error('Échec mise à jour — refresh en cours');
       fetchRows();
-      return;
     }
   };
 
-  /* ─── DnD reorder ─── */
-  const reorder = async (
-    bucket: 'featured' | 'curated',
-    activeId: string,
-    overId: string,
-  ) => {
-    const ids = bucket === 'featured' ? featuredRows.map((r) => r.creator_profile_id) : curatedRows.map((r) => r.creator_profile_id);
-    const oldIdx = ids.indexOf(activeId);
-    const newIdx = ids.indexOf(overId);
+  /* ─── Filter + sort ─── */
+  const filteredRows = useMemo(() => {
+    const filtered = rows.filter((r) => {
+      if (search) {
+        const q = search.toLowerCase();
+        const ok =
+          r.display_name?.toLowerCase().includes(q) ||
+          r.username?.toLowerCase().includes(q) ||
+          r.bio?.toLowerCase().includes(q);
+        if (!ok) return false;
+      }
+      if (statusFilter === 'premium' && !r.is_premium) return false;
+      if (statusFilter === 'free' && r.is_premium) return false;
+
+      if (visibilityFilter === 'visible_global' && !r.is_directory_visible) return false;
+      if (visibilityFilter === 'hidden_global' && r.is_directory_visible) return false;
+      if (visibilityFilter === 'hidden_cat' && !r.is_hidden_for_category) return false;
+
+      if (avatarFilter === 'with_avatar' && !r.avatar_url) return false;
+      if (avatarFilter === 'no_avatar' && r.avatar_url) return false;
+      return true;
+    });
+    return sortBy(filtered, sortKey);
+  }, [rows, search, statusFilter, visibilityFilter, avatarFilter, sortKey]);
+
+  // When sortKey is "curated" we render the 3 buckets. Otherwise a single grid.
+  const usingCurated = sortKey === 'curated';
+  const featuredRows = useMemo(
+    () => (usingCurated ? filteredRows.filter((r) => r.is_featured) : []),
+    [usingCurated, filteredRows],
+  );
+  const curatedRows = useMemo(
+    () => (usingCurated ? filteredRows.filter((r) => !r.is_featured && r.position != null) : []),
+    [usingCurated, filteredRows],
+  );
+  const fallbackRows = useMemo(
+    () => (usingCurated ? filteredRows.filter((r) => !r.is_featured && r.position == null) : filteredRows),
+    [usingCurated, filteredRows],
+  );
+
+  const handleDragEnd = (bucket: 'featured' | 'curated') => (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids =
+      bucket === 'featured'
+        ? featuredRows.map((r) => r.creator_profile_id)
+        : curatedRows.map((r) => r.creator_profile_id);
+    const oldIdx = ids.indexOf(String(active.id));
+    const newIdx = ids.indexOf(String(over.id));
     if (oldIdx === -1 || newIdx === -1) return;
     const ordered = arrayMove(ids, oldIdx, newIdx);
-
-    // Optimistic
     setRows((prev) => {
       const next = prev.slice();
       ordered.forEach((cid, i) => {
         const idx = next.findIndex((r) => r.creator_profile_id === cid);
         if (idx >= 0) next[idx] = { ...next[idx], position: i };
       });
-      return sortRows(next);
+      return sortByCurated(next);
     });
-
-    const { error } = await supabase.rpc('admin_reorder_directory', {
-      p_category: categoryFilter,
-      p_ordered_creator_ids: ordered,
-    });
-    if (error) {
-      toast.error('Échec réordonnancement');
-      fetchRows();
-    }
-  };
-
-  /* ─── Filter & bucket the rows ─── */
-  const filteredRows = useMemo(() => {
-    return rows.filter((r) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !r.display_name?.toLowerCase().includes(q) &&
-          !r.username?.toLowerCase().includes(q)
-        )
-          return false;
-      }
-      if (statusFilter === 'premium' && !r.is_premium) return false;
-      if (statusFilter === 'free' && r.is_premium) return false;
-      return true;
-    }).sort((a, b) => {
-      // Within filtered view we still want display_rank → position to win,
-      // but if user picked a signup sort, that supersedes the views/created_at
-      // tiebreak only inside rank 5 (rest bucket). Keep it simple: apply only
-      // to the fallback bucket so featured/curated keep their human order.
-      if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
-      const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
-      const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
-      if (aPos !== bPos) return aPos - bPos;
-      const ad = a.created_at ? Date.parse(a.created_at) : 0;
-      const bd = b.created_at ? Date.parse(b.created_at) : 0;
-      return signupSort === 'newest' ? bd - ad : ad - bd;
-    });
-  }, [rows, search, statusFilter, signupSort]);
-
-  const featuredRows = useMemo(() => filteredRows.filter((r) => r.is_featured), [filteredRows]);
-  const curatedRows = useMemo(
-    () => filteredRows.filter((r) => !r.is_featured && r.position != null),
-    [filteredRows],
-  );
-  const fallbackRows = useMemo(
-    () => filteredRows.filter((r) => !r.is_featured && r.position == null),
-    [filteredRows],
-  );
-
-  const handleDragEnd = (bucket: 'featured' | 'curated') => (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    reorder(bucket, String(active.id), String(over.id));
-  };
-
-  /* ─── Render ─── */
-  const cardFor = (row: DirectoryRow, idx: number, sortable: boolean) => {
-    const creator: DirectoryCreator = {
-      creator_profile_id: row.creator_profile_id,
-      user_id: row.user_id,
-      username: row.username,
-      display_name: row.display_name,
-      avatar_url: row.avatar_url,
-      country: row.country,
-      city: row.city,
-      niche: row.niche,
-      is_premium: row.is_premium,
-    };
-    const innerCard = (handleProps?: { attributes?: any; listeners?: any }) => (
-      <CreatorCard
-        creator={creator}
-        index={idx}
-        asChild
-        overlay={
-          <CardOverlay
-            row={row}
-            category={categoryFilter}
-            onPatch={(patch) => applyPatch(row.creator_profile_id, patch)}
-            onOpenCategories={() => setEditingCategoriesFor(row)}
-            dragAttributes={handleProps?.attributes}
-            dragListeners={handleProps?.listeners}
-            showHandle={sortable}
-          />
+    supabase
+      .rpc('admin_reorder_directory', {
+        p_category: categoryFilter,
+        p_ordered_creator_ids: ordered,
+      })
+      .then(({ error }) => {
+        if (error) {
+          toast.error('Échec réordonnancement');
+          fetchRows();
         }
+      });
+  };
+
+  const renderCard = (row: DirectoryRow, sortable: boolean) => {
+    const inner = (handleProps?: { attributes?: any; listeners?: any }) => (
+      <AdminCreatorCard
+        row={row}
+        category={categoryFilter}
+        onPatch={(patch) => applyPatch(row.creator_profile_id, patch)}
+        onOpenCategories={() => setEditingCategoriesFor(row)}
+        dragAttributes={handleProps?.attributes}
+        dragListeners={handleProps?.listeners}
+        showHandle={sortable}
       />
     );
-    if (!sortable) return innerCard();
+    if (!sortable) return inner();
     return (
       <SortableAdminCard row={row} showHandle={sortable}>
-        {innerCard}
+        {inner}
       </SortableAdminCard>
     );
   };
+
+  /* ─── Render ─── */
+  const totalAll = rows.length;
+  const totalFiltered = filteredRows.length;
 
   const content = (
     <div className={embedded ? '' : 'min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8'}>
@@ -565,105 +495,159 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
           <header className="mb-6">
             <h1 className="text-2xl sm:text-3xl font-bold">Directory — curation</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Mettez en avant, masquez ou réordonnez les créatrices par catégorie. La table vide
-              laisse l'algo automatique tourner — comportement actuel préservé.
+              Mettez en avant, masquez ou réordonnez les créatrices par catégorie.
             </p>
           </header>
         )}
 
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-2 mb-6 pb-3 border-b border-border overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab(GLOBAL_TAB)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-              activeTab === GLOBAL_TAB
-                ? 'bg-[#CFFF16] text-black'
-                : 'bg-muted text-muted-foreground hover:bg-muted/70'
-            }`}
-          >
-            Featured global
-          </button>
-          {Object.entries(MODEL_CATEGORY_GROUPS).map(([group, options]) => (
-            <div key={group} className="flex items-center gap-1">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 px-1">
-                {group}
-              </span>
-              {options.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setActiveTab(opt.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                    activeTab === opt.value
-                      ? 'bg-[#CFFF16] text-black'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/70'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          ))}
+        {/* ── CATEGORY TABS ── */}
+        <div className="-mx-1 px-1 mb-5 overflow-x-auto scrollbar-none">
+          <div className="flex flex-wrap gap-1.5 pb-2 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setActiveTab(GLOBAL_TAB)}
+              className={`px-3 h-7 inline-flex items-center gap-1.5 rounded-full text-xs font-medium transition ${
+                activeTab === GLOBAL_TAB
+                  ? 'bg-[#CFFF16] text-black'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/70'
+              }`}
+            >
+              <Star className="w-3 h-3" /> Featured global
+            </button>
+            {Object.entries(MODEL_CATEGORY_GROUPS).map(([group, options]) => (
+              <div key={group} className="flex items-center gap-1">
+                <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/50 px-1 select-none">
+                  {group}
+                </span>
+                {options.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setActiveTab(opt.value)}
+                    className={`px-2.5 h-7 inline-flex items-center rounded-full text-xs font-medium transition ${
+                      activeTab === opt.value
+                        ? 'bg-[#CFFF16] text-black'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-2 mb-6">
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        {/* ── FILTER TOOLBAR ── */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
-              placeholder="Rechercher par handle ou nom…"
+              placeholder="Rechercher handle, nom, bio…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-8 h-9 rounded-full bg-exclu-ink/30 dark:bg-white/[0.04] border-exclu-arsenic/40"
             />
           </div>
-          <select
+
+          <FilterPill<StatusFilter>
+            icon={<Filter className="w-3 h-3" />}
+            label="Plan"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-          >
-            <option value="all">Tous (Pro + Free)</option>
-            <option value="premium">Pro uniquement</option>
-            <option value="free">Free uniquement</option>
-          </select>
-          <select
-            value={signupSort}
-            onChange={(e) => setSignupSort(e.target.value as 'newest' | 'oldest')}
-            className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-          >
-            <option value="newest">Plus récents</option>
-            <option value="oldest">Plus anciens</option>
-          </select>
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filteredRows.length} créateur{filteredRows.length > 1 ? 's' : ''}
-            {categoryFilter ? ` dans ${getModelCategoryLabel(categoryFilter)}` : ''}
-          </span>
+            onChange={setStatusFilter}
+            options={[
+              { value: 'all', label: 'Pro + Free' },
+              { value: 'premium', label: 'Pro uniquement' },
+              { value: 'free', label: 'Free uniquement' },
+            ]}
+          />
+
+          <FilterPill<VisibilityFilter>
+            icon={<Layers className="w-3 h-3" />}
+            label="Visibilité"
+            value={visibilityFilter}
+            onChange={setVisibilityFilter}
+            width="w-64"
+            options={[
+              { value: 'all', label: 'Tous' },
+              { value: 'visible_global', label: 'Visible (global)' },
+              { value: 'hidden_global', label: 'Masqué globalement' },
+              { value: 'hidden_cat', label: 'Masqué dans cette catégorie' },
+            ]}
+          />
+
+          <FilterPill<AvatarFilter>
+            icon={<Filter className="w-3 h-3" />}
+            label="Avatar"
+            value={avatarFilter}
+            onChange={setAvatarFilter}
+            options={[
+              { value: 'with_avatar', label: 'Avec avatar' },
+              { value: 'all', label: 'Tous' },
+              { value: 'no_avatar', label: 'Sans avatar' },
+            ]}
+          />
+
+          <FilterPill<SortKey>
+            icon={<ArrowUpDown className="w-3 h-3" />}
+            label="Trier"
+            value={sortKey}
+            onChange={setSortKey}
+            width="w-72"
+            options={SORT_OPTIONS}
+          />
+
+          {(statusFilter !== 'all' ||
+            visibilityFilter !== 'all' ||
+            avatarFilter !== 'with_avatar' ||
+            sortKey !== 'curated' ||
+            search) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                setVisibilityFilter('all');
+                setAvatarFilter('with_avatar');
+                setSortKey('curated');
+                setSearch('');
+              }}
+              className="inline-flex items-center gap-1 h-9 px-3 rounded-full text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition"
+            >
+              <X className="w-3 h-3" /> Reset
+            </button>
+          )}
+
+          <div className="ml-auto inline-flex items-center gap-2 text-[11px] text-muted-foreground tabular-nums">
+            <span className="font-mono">
+              {totalFiltered}
+            </span>
+            <span>/</span>
+            <span className="font-mono opacity-60">{totalAll}</span>
+            <span>
+              créateur{totalFiltered > 1 ? 's' : ''}
+              {categoryFilter ? ` · ${getModelCategoryLabel(categoryFilter)}` : ''}
+            </span>
+          </div>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-24 text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+            <Loader2 className="w-5 h-5 animate-spin mr-2" />
             Chargement…
           </div>
-        ) : (
+        ) : usingCurated ? (
           <div className="space-y-10">
             {/* ── FEATURED CAROUSEL ── */}
             <section>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Star className="w-4 h-4 text-[#CFFF16]" />
-                  Mises en avant
-                  <span className="text-xs font-normal normal-case">({featuredRows.length})</span>
-                </h2>
-                <span className="text-[11px] text-muted-foreground">
-                  Drag & drop pour réordonner — sauvegardé automatiquement
-                </span>
-              </div>
+              <SectionHeader
+                title="Mises en avant"
+                count={featuredRows.length}
+                hint="Drag & drop pour réordonner — sauvegarde auto"
+                accent
+              />
               {featuredRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-6 text-center bg-muted/30 rounded-2xl">
-                  Aucune créatrice en featured. Cliquez sur l'épingle d'une carte pour l'ajouter.
-                </p>
+                <EmptyState text="Aucune en featured. Cliquez sur l'épingle d'une carte pour l'ajouter." />
               ) : (
                 <DndContext
                   sensors={sensors}
@@ -674,24 +658,23 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
                     items={featuredRows.map((r) => r.creator_profile_id)}
                     strategy={rectSortingStrategy}
                   >
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                      {featuredRows.map((row, i) => cardFor(row, i, true))}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                      {featuredRows.map((r) => renderCard(r, true))}
                     </div>
                   </SortableContext>
                 </DndContext>
               )}
             </section>
 
-            {/* ── CURATED GRID ── */}
+            {/* ── CURATED ── */}
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Curées (position fixée)
-                <span className="text-xs font-normal normal-case ml-2">({curatedRows.length})</span>
-              </h2>
+              <SectionHeader
+                title="Curées"
+                count={curatedRows.length}
+                hint="Position fixée — drag & drop"
+              />
               {curatedRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-6 text-center bg-muted/30 rounded-2xl">
-                  Aucune position curée. Glissez une carte du fallback ici pour la fixer.
-                </p>
+                <EmptyState text="Aucune position curée." />
               ) : (
                 <DndContext
                   sensors={sensors}
@@ -702,33 +685,46 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
                     items={curatedRows.map((r) => r.creator_profile_id)}
                     strategy={rectSortingStrategy}
                   >
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                      {curatedRows.map((row, i) => cardFor(row, i, true))}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                      {curatedRows.map((r) => renderCard(r, true))}
                     </div>
                   </SortableContext>
                 </DndContext>
               )}
             </section>
 
-            {/* ── FALLBACK GRID (read-only ordering) ── */}
+            {/* ── FALLBACK ── */}
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Tri automatique
-                <span className="text-xs font-normal normal-case ml-2">
-                  ({fallbackRows.length}) — Pro → liens payants → vues
-                </span>
-              </h2>
+              <SectionHeader
+                title="Tri automatique"
+                count={fallbackRows.length}
+                hint="Pro → liens payants → vues"
+              />
               {fallbackRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-6 text-center bg-muted/30 rounded-2xl">
-                  Vide.
-                </p>
+                <EmptyState text="Vide." />
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {fallbackRows.map((row, i) => cardFor(row, i, false))}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                  {fallbackRows.map((r) => renderCard(r, false))}
                 </div>
               )}
             </section>
           </div>
+        ) : (
+          /* ── NON-CURATED SORT (single grid) ── */
+          <section>
+            <SectionHeader
+              title={SORT_OPTIONS.find((s) => s.value === sortKey)?.label ?? ''}
+              count={fallbackRows.length}
+              hint="Tri appliqué sur toute la base — actions rapides via les épingles ⇒ les remontent dans le tri curé"
+            />
+            {fallbackRows.length === 0 ? (
+              <EmptyState text="Aucun résultat avec ces filtres." />
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                {fallbackRows.map((r) => renderCard(r, false))}
+              </div>
+            )}
+          </section>
         )}
       </div>
 
@@ -743,4 +739,42 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
 
   if (embedded) return content;
   return <AppShell>{content}</AppShell>;
+}
+
+function SectionHeader({
+  title,
+  count,
+  hint,
+  accent = false,
+}: {
+  title: string;
+  count: number;
+  hint?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex items-end justify-between mb-3 px-0.5">
+      <div className="flex items-baseline gap-2">
+        <h2
+          className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${
+            accent ? 'text-[#CFFF16]' : 'text-muted-foreground'
+          }`}
+        >
+          {title}
+        </h2>
+        <span className="text-[11px] tabular-nums text-muted-foreground/70 font-mono">
+          {count.toString().padStart(2, '0')}
+        </span>
+      </div>
+      {hint && <span className="text-[10px] text-muted-foreground/60">{hint}</span>}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <p className="text-xs text-muted-foreground py-8 text-center bg-muted/30 rounded-xl border border-dashed border-border">
+      {text}
+    </p>
+  );
 }
