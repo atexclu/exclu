@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabaseClient';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, ArrowUpRight, Image as ImageIcon, Globe, X, Play, MapPin, DollarSign, MessageSquare, Loader2, ArrowLeft, ExternalLink } from 'lucide-react';
@@ -18,6 +18,8 @@ import { getSignedUrl } from '@/lib/storageUtils';
 import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
 import { SubscriptionPopup } from '@/components/feed/SubscriptionPopup';
 import { SuggestedCreatorsStrip } from '@/components/feed/SuggestedCreatorsStrip';
+import { CreatePostDialog, CreatePostTrigger } from '@/components/feed/CreatePostDialog';
+import { PostVisibilityToggle } from '@/components/feed/PostVisibilityToggle';
 import { useFanSubscription } from '@/hooks/useFanSubscription';
 import {
   SiX,
@@ -70,7 +72,7 @@ type FeedItem =
       storagePath: string;
       mimeType: string | null;
       caption: string | null;
-      isPreview: boolean;
+      isPublic: boolean; // drives the Public/Subs toggle and the locked/unlocked render
       createdAt: string;
     }
   | {
@@ -81,6 +83,7 @@ type FeedItem =
       description: string | null;
       priceCents: number;
       coverUrl: string | null;
+      isPublic: boolean;
       createdAt: string;
     };
 
@@ -91,6 +94,10 @@ interface CreatorLinkCard {
   price_cents: number;
   currency: string;
   slug: string;
+  is_public?: boolean | null;
+  created_at?: string | null;
+  status?: string | null;
+  show_on_profile?: boolean | null;
 }
 
 
@@ -107,27 +114,68 @@ const socialPlatforms: Record<string, { label: string; icon: JSX.Element }> = {
   website: { label: 'Website', icon: <Globe className="w-4 h-4" /> },
 };
 
-const CreatorPublic = () => {
-  const { handle } = useParams<{ handle: string }>();
+interface CreatorPublicProps {
+  /**
+   * When set, overrides the route param. Used by the in-app /app/home tab
+   * which renders the same component to give the creator a live preview
+   * of their own public profile without leaving the dashboard chrome.
+   */
+  handleOverride?: string;
+  /**
+   * `true` when rendered inside AppShell's content area (creator's own home
+   * tab). Suppresses the floating "Login as creator" CTA, hides the redundant
+   * "share my profile" buttons, and lets the parent AppShell own the chrome
+   * (volet/topbar). The feed itself, layout, and content stay identical to
+   * what a public visitor sees so the creator gets a faithful preview.
+   */
+  embed?: boolean;
+}
+
+const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {}) => {
+  const { handle: handleFromRoute } = useParams<{ handle: string }>();
+  const handle = handleOverride ?? handleFromRoute;
   const navigate = useNavigate();
 
   const [profile, setProfile] = useState<CreatorProfileData | null>(null);
   const [links, setLinks] = useState<CreatorLinkCard[]>([]);
   const [publicContent, setPublicContent] = useState<any[]>([]);
+  // /app/home only — toggles the post composer modal. The trigger pill
+  // renders above the feed when `embed === true`.
+  const [showCreatePost, setShowCreatePost] = useState(false);
+  // Bumped after a post is published so the existing fetch effects re-run
+  // and the new post shows up immediately.
+  const [feedRefreshKey, setFeedRefreshKey] = useState(0);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+
+  // Optimistic visibility update for /app/home toggles. Updates feedItems in
+  // place (and the underlying `links`/`publicContent` arrays so the next feed
+  // rebuild keeps the new value) without re-fetching.
+  const setItemVisibility = (postId: string, kind: 'asset' | 'link', isPublic: boolean) => {
+    setFeedItems((prev) => prev.map((item) => (item.id === postId && item.kind === kind ? { ...item, isPublic } : item)));
+    if (kind === 'asset') {
+      setPublicContent((prev) => prev.map((a: any) => (a.id === postId ? { ...a, is_public: isPublic } : a)));
+    } else {
+      setLinks((prev) => prev.map((l) => (l.id === postId ? { ...l, is_public: isPublic } : l)));
+    }
+  };
 
   // Initial tab honours ?tab=content (used by chat "View feed" CTA, fan
   // subscription-success redirect, and fan "Open feed" link from My subs).
   // ?tab=feed is an alias for ?tab=content — the feed lives inside the
   // Content tab on the public profile.
-  const initialTab: 'links' | 'content' | 'wishlist' = (() => {
-    if (typeof window === 'undefined') return 'content';
+  // When no ?tab is passed, we resolve the default once links/profile are
+  // loaded (see useEffect below): Links if the creator has paid links or a
+  // pinned exclusive content, Feed otherwise.
+  const tabFromUrl: 'links' | 'content' | 'wishlist' | null = (() => {
+    if (typeof window === 'undefined') return null;
     const t = new URLSearchParams(window.location.search).get('tab');
     if (t === 'content' || t === 'feed') return 'content';
     if (t === 'wishlist') return 'wishlist';
     if (t === 'links') return 'links';
-    return 'content';
+    return null;
   })();
-  const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>(initialTab);
+  const tabForcedByUrl = tabFromUrl !== null;
+  const [activeTab, setActiveTab] = useState<'links' | 'content' | 'wishlist'>(tabFromUrl ?? 'content');
   const [selectedContent, setSelectedContent] = useState<any | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [showSubscribePopup, setShowSubscribePopup] = useState(false);
@@ -338,6 +386,8 @@ const CreatorPublic = () => {
           loadedFromCreatorProfiles = true;
           userId = cpData.user_id;
           profileId = cpData.id;
+          // Surface for the embed-mode CreatePostDialog (only used in /app/home).
+          setActiveProfileId(cpData.id);
 
           // Load account-level data (premium status, payout) from parent profiles row
           const { data: parentProfile } = await supabase
@@ -465,7 +515,7 @@ const CreatorPublic = () => {
         {
           let linksQuery = supabase
             .from('links')
-            .select('id, title, description, price_cents, currency, slug, status, show_on_profile')
+            .select('id, title, description, price_cents, currency, slug, status, show_on_profile, is_public, created_at')
             .eq('status', 'published')
             .eq('show_on_profile', true)
             .order('created_at', { ascending: false });
@@ -487,16 +537,15 @@ const CreatorPublic = () => {
           }
         }
 
-        // ── Step 4: Load public content ──
-        // Free preview asset surfaces first; remaining assets follow the
-        // creator's manual order (creator_profiles.content_order) with
-        // created_at desc as a tiebreaker for new uploads not yet in the array.
+        // ── Step 4: Load feed content ──
+        // Both public profile and /app/home embed only fetch in-feed assets.
+        // is_public flags whether each post is shown clear or blurred to
+        // non-subscribers; the toggle in embed mode flips that flag.
         let assetsQuery = supabase
           .from('assets')
-          .select('id, title, storage_path, mime_type, feed_caption, is_feed_preview, feed_blur_path, created_at')
-          .eq('is_public', true)
+          .select('id, title, storage_path, mime_type, feed_caption, feed_blur_path, in_feed, is_public, created_at')
+          .eq('in_feed', true)
           .is('deleted_at', null)
-          .order('is_feed_preview', { ascending: false })
           .order('created_at', { ascending: false });
 
         if (profileId) {
@@ -545,8 +594,11 @@ const CreatorPublic = () => {
         if (!isMounted) return;
         setWishlistItems(wishlistData ?? []);
 
-        // Increment profile view count (best-effort)
-        if (profileData.handle) {
+        // Increment profile view count (best-effort) — skipped in embed mode
+        // because /app/home is the creator previewing their OWN profile and
+        // self-views must not inflate the counter. The counter only tracks
+        // genuine fan visits to /:handle.
+        if (profileData.handle && !embed) {
           supabase.functions
             .invoke('increment-profile-view', {
               body: { handle: profileData.handle, profile_id: profileId || undefined },
@@ -568,37 +620,60 @@ const CreatorPublic = () => {
     return () => {
       isMounted = false;
     };
-  }, [handle]);
+    // feedRefreshKey bumps when a new post is published from the embedded
+    // composer in /app/home — re-running this effect re-fetches links + assets
+    // so the new post shows up immediately without a manual reload.
+  }, [handle, feedRefreshKey]);
 
-  // Build the feed from public assets only — paid links stay on the Links tab.
-  // The single `is_feed_preview=true` asset (if any) always leads; the rest
-  // follows the creator's manual order (creator_profiles.content_order) with
-  // created_at desc as a tiebreaker for new uploads not yet in the array.
+  // Build the feed from in-feed assets + composer posts (price=0 links).
+  // Paid links (price_cents > 0) stay on the Links tab. Order follows the
+  // creator's manual content_order, with created_at desc as a tiebreaker for
+  // new uploads not yet in the array.
   useEffect(() => {
     const order: string[] = (profile?.content_order ?? []) as string[];
     const orderIndex = new Map<string, number>(order.map((id, i) => [id, i]));
 
-    const assetItems: FeedItem[] = (publicContent as any[]).map((a) => ({
-      kind: 'asset',
-      id: a.id,
-      previewUrl: a.previewUrl ?? null,
-      blurUrl: a.blurUrl ?? null,
-      storagePath: a.storage_path ?? '',
-      mimeType: a.mime_type ?? null,
-      caption: a.feed_caption ?? null,
-      isPreview: a.is_feed_preview === true,
-      createdAt: a.created_at ?? new Date().toISOString(),
-    }));
+    const assetItems: FeedItem[] = (publicContent as any[])
+      .filter((a) => a.in_feed === true)
+      .map((a) => ({
+        kind: 'asset' as const,
+        id: a.id,
+        previewUrl: a.previewUrl ?? null,
+        blurUrl: a.blurUrl ?? null,
+        storagePath: a.storage_path ?? '',
+        mimeType: a.mime_type ?? null,
+        caption: a.feed_caption ?? null,
+        isPublic: a.is_public !== false,
+        createdAt: a.created_at ?? new Date().toISOString(),
+      }));
 
-    const preview = assetItems.find((x) => x.isPreview);
-    const nonPreview = assetItems.filter((x) => !x.isPreview).sort((a, b) => {
+    // Posts created from the /app/home composer are stored as `links` with
+    // `price_cents = 0`. Surface them inline with asset items so the creator
+    // sees their fresh post immediately (and so fans see them on the public
+    // feed). Paid links (price_cents > 0) stay on the Links tab.
+    const postItems: FeedItem[] = (links as any[])
+      .filter((l) => (l.price_cents ?? 0) === 0)
+      .map((l) => ({
+        kind: 'link' as const,
+        id: l.id,
+        slug: l.slug ?? '',
+        title: l.title ?? 'Post',
+        description: l.description ?? null,
+        priceCents: 0,
+        coverUrl: null,
+        isPublic: l.is_public !== false,
+        createdAt: l.created_at ?? new Date().toISOString(),
+      }));
+
+    const allItems: FeedItem[] = [...assetItems, ...postItems];
+    const sorted = allItems.sort((a, b) => {
       const ai = orderIndex.has(a.id) ? (orderIndex.get(a.id) as number) : Infinity;
       const bi = orderIndex.has(b.id) ? (orderIndex.get(b.id) as number) : Infinity;
       if (ai !== bi) return ai - bi;
       return a.createdAt < b.createdAt ? 1 : -1;
     });
-    setFeedItems(preview ? [preview, ...nonPreview] : nonPreview);
-  }, [publicContent, profile?.content_order]);
+    setFeedItems(sorted);
+  }, [publicContent, links, profile?.content_order]);
 
   // Whether the Links tab has anything to show: either a direct link or a
   // pinned "exclusive content" pill that lives at the top of the Links tab.
@@ -618,16 +693,37 @@ const CreatorPublic = () => {
     }
   }, [activeTab, hasAnyLinksOrExclusive]);
 
-  // Lazy-sign full-res URLs only for the free preview (always) and when the
-  // viewer is subscribed (everything else). By deferring this until the
-  // subscription state resolves, non-subscribed DOMs never contain a full-res
-  // URL — the bundle check / view source attack surface stays protected.
+  // Default-tab resolution: when the URL doesn't force a tab, prefer Links
+  // for creators who have paid links / pinned exclusive content (most
+  // common case: monetisation-first profile), and fall back to Feed for
+  // creators who only have public content. Runs once data is loaded; the
+  // ref guard ensures we never override a user's manual tab click.
+  const didResolveDefaultTab = useRef(false);
+  useEffect(() => {
+    if (tabForcedByUrl) return;
+    if (didResolveDefaultTab.current) return;
+    if (isContentLoading) return;
+    didResolveDefaultTab.current = true;
+    if (hasAnyLinksOrExclusive) setActiveTab('links');
+  }, [tabForcedByUrl, isContentLoading, hasAnyLinksOrExclusive]);
+
+  // Lazy-sign full-res URLs in the situations where the viewer is allowed to
+  // see them in clear:
+  //   • the free preview slot (always)
+  //   • the asset is flagged `is_public = true` (open to everyone)
+  //   • an active fan subscription is in place
+  //   • `embed === true` — the creator is previewing their own /app/home
+  // By deferring this resolution until those conditions are known, non-allowed
+  // DOMs never contain a full-res URL (view-source attack surface).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const targets = feedItems.filter(
         (item): item is Extract<FeedItem, { kind: 'asset' }> =>
-          item.kind === 'asset' && !item.previewUrl && (item.isPreview || isSubscribed) && !!item.storagePath,
+          item.kind === 'asset' &&
+          !item.previewUrl &&
+          (item.isPublic || isSubscribed) &&
+          !!item.storagePath,
       );
       if (targets.length === 0) return;
       const resolved = await Promise.all(
@@ -950,7 +1046,11 @@ const CreatorPublic = () => {
   const socialLinks = profile?.social_links || {};
   const activeSocials = Object.entries(socialLinks).filter(([_, url]) => url && url.trim() !== '');
   const isPremium = profile?.is_creator_subscribed === true;
-  const shouldShowJoinBanner = !isPremium || (isPremium && profile?.show_join_banner !== false);
+  // The "Become a creator on Exclu" floating banner is suppressed in embed
+  // mode (i.e. when the creator is previewing their own profile from /app/home)
+  // because they are already a creator — the CTA is meaningless and the
+  // bottom safe area is owned by AppShell's volet/bottom-nav.
+  const shouldShowJoinBanner = !embed && (!isPremium || (isPremium && profile?.show_join_banner !== false));
   // Payout setup is NOT required to sell/receive — earnings go to wallet.
   // Tips/gifts/requests are always available if the creator has enabled them.
   const showTipsCta = profile?.tips_enabled === true;
@@ -1318,53 +1418,74 @@ const CreatorPublic = () => {
                       </div>
                     </motion.button>
                   );
-                }) : (
-                  !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id || links.length > 0)) && (
-                    <div className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-sm p-4 text-sm text-white/70 text-center">No exclusive content available yet.</div>
-                  )
-                )}
+                }) : null}
               </div>
             )}
 
             {!isContentLoading && activeTab === 'content' && (
               feedItems.length > 0 ? (
                 <div className="space-y-4">
+                  {/* /app/home only — composer above the feed (mobile feed branch). */}
+                  {embed && (
+                    <CreatePostTrigger onClick={() => setShowCreatePost(true)} />
+                  )}
                   {feedItems.map((item) => (
-                    <FeedPost
-                      key={`${item.kind}-${item.id}`}
-                      post={
-                        item.kind === 'asset'
-                          ? {
-                              kind: 'asset',
-                              id: item.id,
-                              previewUrl: item.previewUrl,
-                              blurUrl: item.blurUrl,
-                              mimeType: item.mimeType,
-                              caption: item.caption,
-                              isUnlocked: item.isPreview || isSubscribed,
-                            }
-                          : {
-                              kind: 'link',
-                              id: item.id,
-                              slug: item.slug,
-                              title: item.title,
-                              description: item.description,
-                              priceCents: item.priceCents,
-                              coverUrl: item.coverUrl,
-                            }
-                      }
-                      author={feedAuthor}
-                      gradientStops={gradientStops as [string, string]}
-                      onLockedClick={() => setShowSubscribePopup(true)}
-                      onLinkClick={(slug) => navigate(`/l/${slug}`)}
-                    />
+                    // Wrapper is `relative` so the embed-mode visibility chip
+                    // can absolute-position itself top-right of the post.
+                    <div key={`${item.kind}-${item.id}`} className="relative">
+                      {embed && (
+                        <PostVisibilityToggle
+                          postId={item.id}
+                          kind={item.kind}
+                          isPublic={item.isPublic}
+                          onChange={(next) => setItemVisibility(item.id, item.kind, next)}
+                          gradientStops={gradientStops as [string, string]}
+                        />
+                      )}
+                      <FeedPost
+                        post={
+                          item.kind === 'asset'
+                            ? {
+                                kind: 'asset',
+                                id: item.id,
+                                previewUrl: item.previewUrl,
+                                blurUrl: item.blurUrl,
+                                mimeType: item.mimeType,
+                                caption: item.caption,
+                                // In /app/home embed mode the creator owns the
+                                // content and must always see it unblurred.
+                                // Otherwise apply the public-visit logic
+                                // (free preview slot or active fan subscription).
+                                isUnlocked: item.isPublic || isSubscribed,
+                              }
+                            : {
+                                kind: 'link',
+                                id: item.id,
+                                slug: item.slug,
+                                title: item.title,
+                                description: item.description,
+                                priceCents: item.priceCents,
+                                coverUrl: item.coverUrl,
+                              }
+                        }
+                        author={feedAuthor}
+                        gradientStops={gradientStops as [string, string]}
+                        onLockedClick={() => setShowSubscribePopup(true)}
+                        onLinkClick={(slug) => navigate(`/l/${slug}`)}
+                      />
+                    </div>
                   ))}
                 </div>
               ) : (
                 // No public assets → placeholder blurred card (per Part 3 spec:
                 // "si pas de content en publique visible on met juste un image par défaut
-                // blurred dans ce feed").
+                // blurred dans ce feed"). In /app/home embed we surface the
+                // composer instead so the creator gets a one-click way to fill
+                // their feed even when it's empty.
                 <>
+                  {embed && (
+                    <CreatePostTrigger onClick={() => setShowCreatePost(true)} />
+                  )}
                   {isSubscribed && periodEnd && (
                     <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm mb-3">
                       <div className="flex items-center justify-between gap-3">
@@ -1811,11 +1932,7 @@ const CreatorPublic = () => {
                               </motion.button>
                             );
                           })
-                        ) : (
-                          !(profile?.exclusive_content_text && (profile.exclusive_content_url || profile.exclusive_content_link_id)) && (
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50 text-center">No exclusive content available yet.</div>
-                          )
-                        )}
+                        ) : null}
                       </div>
                     )}
 
@@ -1826,11 +1943,23 @@ const CreatorPublic = () => {
                     {!isContentLoading && activeTab === 'content' && (
                       feedItems.length > 0 ? (
                         <div className="w-full">
+                          {/* /app/home only — composer above the feed (desktop branch). */}
+                          {embed && (
+                            <CreatePostTrigger onClick={() => setShowCreatePost(true)} />
+                          )}
                           {feedItems.map((item, index) => (
                             <div
                               key={`${item.kind}-${item.id}`}
-                              className={`${index > 0 ? 'mt-5 pt-5 border-t border-white/10' : ''}`}
+                              className={`relative ${index > 0 ? 'mt-5 pt-5 border-t border-white/10' : ''}`}
                             >
+                              {embed && (
+                                <PostVisibilityToggle
+                                  postId={item.id}
+                                  kind={item.kind}
+                                  isPublic={item.isPublic}
+                                  onChange={(next) => setItemVisibility(item.id, item.kind, next)}
+                                />
+                              )}
                               <FeedPost
                                 post={
                                   item.kind === 'asset'
@@ -1841,7 +1970,11 @@ const CreatorPublic = () => {
                                         blurUrl: item.blurUrl,
                                         mimeType: item.mimeType,
                                         caption: item.caption,
-                                        isUnlocked: item.isPreview || isSubscribed,
+                                        // In /app/home embed mode the creator owns the
+                                // content and must always see it unblurred.
+                                // Otherwise apply the public-visit logic
+                                // (free preview slot or active fan subscription).
+                                isUnlocked: item.isPublic || isSubscribed,
                                       }
                                     : {
                                         kind: 'link',
@@ -1863,6 +1996,11 @@ const CreatorPublic = () => {
                         </div>
                       ) : (
                         <>
+                          {/* /app/home only — let the creator open the composer
+                              even when they have no content yet (desktop branch). */}
+                          {embed && (
+                            <CreatePostTrigger onClick={() => setShowCreatePost(true)} />
+                          )}
                           {isSubscribed && periodEnd && (
                             <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm mb-3">
                               <div className="flex items-center justify-between gap-3">
@@ -2438,6 +2576,19 @@ const CreatorPublic = () => {
         }}
         gradientStops={gradientStops as [string, string]}
       />
+
+      {/* /app/home only — composer modal. Reuses the asset library, posts a
+          price=0 link with link_media + visibility flag, then bumps a refresh
+          key so the feed effects re-fetch and the new post appears. */}
+      {embed && creatorUserId && (
+        <CreatePostDialog
+          open={showCreatePost}
+          onClose={() => setShowCreatePost(false)}
+          creatorUserId={creatorUserId}
+          profileId={activeProfileId}
+          onPosted={() => setFeedRefreshKey((k) => k + 1)}
+        />
+      )}
     </div>
   );
 };
