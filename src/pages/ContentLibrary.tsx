@@ -890,25 +890,26 @@ const ContentLibrary = () => {
 
       {/* Preview Modal */}
       {previewAsset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto p-4 sm:p-6">
           <div
-            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm"
             onClick={() => setPreviewAsset(null)}
           />
-          {/* Column: caption input (top) → media (constrained so the bottom never
-              touches the viewport edge). max-h on the column itself keeps the
-              whole stack inside the screen on mobile and desktop. */}
-          <div className="relative w-full max-w-[680px] flex flex-col items-stretch gap-4 max-h-[calc(100vh-3rem)]">
+          {/* Solid stacking column: caption first (always visible at top),
+              then media with a hard max-h so the bottom never reaches the
+              viewport edge. Outer wrapper allows scroll if needed on small
+              screens — no flex-1 / min-h-0 trickery. */}
+          <div className="relative w-full max-w-[680px] my-auto z-10">
             <button
               onClick={() => setPreviewAsset(null)}
-              className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 p-2 rounded-full bg-exclu-ink/90 hover:bg-exclu-arsenic/50 transition-colors z-10 border border-white/15"
+              className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 p-2 rounded-full bg-exclu-ink/90 hover:bg-exclu-arsenic/50 transition-colors z-20 border border-white/15"
               aria-label="Close preview"
             >
               <X className="w-5 h-5 text-exclu-cloud" />
             </button>
 
-            {/* Caption editor — above the photo */}
-            <div className="w-full">
+            {/* Caption editor — ALWAYS shown first */}
+            <div className="mb-4">
               <label className="block text-[10px] uppercase tracking-wider font-semibold text-white/55 mb-1.5">
                 Caption (shown above the post in feed)
               </label>
@@ -918,8 +919,6 @@ const ContentLibrary = () => {
                 onBlur={async (e) => {
                   const next = e.target.value.trim().slice(0, 500) || null;
                   if ((previewAsset.feed_caption ?? null) === next && (previewAsset.title ?? null) === next) return;
-                  // Title and feed_caption are the same concept since the
-                  // refonte. Write both so the library card label updates too.
                   const { error } = await supabase
                     .from('assets')
                     .update({ feed_caption: next, title: next })
@@ -942,21 +941,21 @@ const ContentLibrary = () => {
               />
             </div>
 
-            {/* Media — flex-1 lets it shrink to fill the remaining height; the
-                inner img/video carries object-contain so it never overflows. */}
-            <div className="flex-1 min-h-0 flex items-center justify-center">
+            {/* Media — capped at 70vh so caption + media + close button always
+                fit comfortably; img/video object-contain so aspect is kept. */}
+            <div className="flex items-center justify-center w-full">
               {previewAsset.previewUrl ? (
                 previewAsset.mime_type?.startsWith('video/') ? (
                   <video
                     src={previewAsset.previewUrl}
-                    className="max-w-full max-h-full rounded-lg"
+                    className="max-w-full max-h-[70vh] rounded-lg"
                     controls
                     autoPlay
                   />
                 ) : (
                   <img
                     src={previewAsset.previewUrl}
-                    className="max-w-full max-h-full rounded-lg object-contain"
+                    className="max-w-full max-h-[70vh] rounded-lg object-contain"
                     alt={previewAsset.feed_caption || previewAsset.title || 'Preview'}
                   />
                 )
