@@ -2655,7 +2655,6 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
           displayName: profile?.display_name || profile?.handle || 'creator',
           handle: profile?.handle || '',
           avatarUrl: profile?.avatar_url ?? null,
-          priceCents: profile?.fan_subscription_price_cents ?? 500,
         }}
         gradientStops={gradientStops as [string, string]}
       />
