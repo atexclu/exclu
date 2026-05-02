@@ -61,6 +61,8 @@ interface AdminCreatorCardProps {
   category: string | null;
   onPatch: (patch: Record<string, unknown>) => void;
   onOpenCategories: () => void;
+  /** Globally hide the user from the directory (mirrors /admin/users/:id/overview). */
+  onHideGlobally: () => void;
   /** Sortable props applied to the whole card when showHandle = true. */
   dragAttributes?: ReturnType<typeof useSortable>['attributes'];
   dragListeners?: ReturnType<typeof useSortable>['listeners'];
@@ -72,6 +74,7 @@ export default function AdminCreatorCard({
   category,
   onPatch,
   onOpenCategories,
+  onHideGlobally,
   dragAttributes,
   dragListeners,
   showHandle = false,
@@ -225,6 +228,17 @@ export default function AdminCreatorCard({
                 )}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onHideGlobally();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400/90 hover:bg-red-500/[0.08] hover:text-red-300 transition text-left border-t border-white/5"
+            >
+              <EyeOff className="w-3.5 h-3.5 opacity-70" />
+              Masquer globalement
+            </button>
           </div>
         )}
       </div>

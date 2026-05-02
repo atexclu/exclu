@@ -600,6 +600,38 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     );
   };
 
+  const hideGlobally = async (row: DirectoryRow) => {
+    if (
+      !window.confirm(
+        `Masquer ${row.display_name || row.username} du directory ? La créatrice disparaîtra de toutes les catégories et de la page publique.`,
+      )
+    )
+      return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Session expirée — reconnecte-toi.');
+      return;
+    }
+
+    // Optimistic: drop the card (it would be filtered out of the view on next refetch anyway)
+    setRows((prev) => prev.filter((r) => r.creator_profile_id !== row.creator_profile_id));
+
+    const { error } = await supabase.functions.invoke('admin-update-user-visibility', {
+      body: { user_id: row.user_id, is_directory_visible: false },
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'x-supabase-auth': session.access_token,
+      },
+    });
+    if (error) {
+      toast.error('Échec masquage — refresh');
+      fetchRows();
+      return;
+    }
+    toast.success(`${row.display_name || row.username} masquée du directory.`);
+  };
+
   const renderCard = (row: DirectoryRow, sortable: boolean) => {
     const inner = (handleProps?: { attributes?: any; listeners?: any }) => (
       <AdminCreatorCard
@@ -607,6 +639,7 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
         category={categoryFilter}
         onPatch={(patch) => applyPatch(row.creator_profile_id, patch)}
         onOpenCategories={() => setEditingCategoriesFor(row)}
+        onHideGlobally={() => hideGlobally(row)}
         dragAttributes={handleProps?.attributes}
         dragListeners={handleProps?.listeners}
         showHandle={sortable}
