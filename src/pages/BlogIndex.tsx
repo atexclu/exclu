@@ -162,35 +162,27 @@ const BlogIndex = () => {
           .from('blog_categories')
           .select('id, slug, name')
           .order('sort_order', { ascending: true }),
-        // Pull from v_directory_creators so the blog carousel respects the
-        // same featured / curated order as /directory/creators.
+        // Pull the curation-ordered top 8 directly from v_directory_creators
+        // — server-side ORDER BY display_rank → position → views guarantees
+        // featured creators surface even though their UUIDs may sort past the
+        // PostgREST 1000-row cap.
         supabase
           .from('v_directory_creators')
-          .select('creator_profile_id, username, display_name, avatar_url, bio, niche, user_id, profile_view_count, created_at, is_featured, position, is_hidden_for_category, display_rank')
+          .select('creator_profile_id, username, display_name, avatar_url, bio, niche, user_id')
           .is('category', null)
           .eq('is_hidden_for_category', false)
-          .order('creator_profile_id', { ascending: true })
-          .limit(1000),
+          .order('display_rank', { ascending: true })
+          .order('position', { ascending: true, nullsFirst: false })
+          .order('profile_view_count', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(8),
       ]);
 
       if (articlesRes.data) setArticles(articlesRes.data as unknown as BlogArticle[]);
       if (categoriesRes.data) setCategories(categoriesRes.data);
 
       if (creatorsRes.data && creatorsRes.data.length > 0) {
-        // Same comparator as /directory/creators: featured first by position,
-        // then Pro fallback, then everyone else by views.
-        const sortedCreators = [...creatorsRes.data].sort((a: any, b: any) => {
-          if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
-          const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
-          const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
-          if (aPos !== bPos) return aPos - bPos;
-          const dv = (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
-          if (dv !== 0) return dv;
-          const ad = a.created_at ? Date.parse(a.created_at) : 0;
-          const bd = b.created_at ? Date.parse(b.created_at) : 0;
-          return bd - ad;
-        });
-        const featured = sortedCreators.slice(0, 8).map((r: any) => ({
+        const featured = creatorsRes.data.map((r: any) => ({
           id: r.creator_profile_id,
           username: r.username,
           display_name: r.display_name,
