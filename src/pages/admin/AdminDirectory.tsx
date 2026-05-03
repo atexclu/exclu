@@ -475,18 +475,25 @@ export default function AdminDirectory({ embedded = false }: { embedded?: boolea
     fetchRows();
   }, [fetchRows]);
 
-  /* ─── Optimistic patches ─── */
+  /* ─── Optimistic patches ───
+   * Re-sort after every patch with the same comparator the public
+   * /directory/creators page applies on fetch, so pinning/unpinning here
+   * snaps to the exact order the public site will show on next reload —
+   * no drift between the admin's local state and what fans see.
+   */
   const patchLocal = (id: string, patch: Partial<DirectoryRow>) =>
     setRows((prev) =>
-      prev.map((r) => {
-        if (r.creator_profile_id !== id) return r;
-        const next = { ...r, ...patch } as DirectoryRow;
-        if (next.is_featured) next.display_rank = 1;
-        else if (next.position != null) next.display_rank = 2;
-        else if (next.is_premium) next.display_rank = 3;
-        else next.display_rank = 4;
-        return next;
-      }),
+      sortByCurated(
+        prev.map((r) => {
+          if (r.creator_profile_id !== id) return r;
+          const next = { ...r, ...patch } as DirectoryRow;
+          if (next.is_featured) next.display_rank = 1;
+          else if (next.position != null) next.display_rank = 2;
+          else if (next.is_premium) next.display_rank = 3;
+          else next.display_rank = 4;
+          return next;
+        }),
+      ),
     );
 
   const applyPatch = async (id: string, patch: Record<string, unknown>) => {
