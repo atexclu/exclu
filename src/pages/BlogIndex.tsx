@@ -162,39 +162,44 @@ const BlogIndex = () => {
           .from('blog_categories')
           .select('id, slug, name')
           .order('sort_order', { ascending: true }),
+        // Pull from v_directory_creators so the blog carousel respects the
+        // same featured / curated order as /directory/creators.
         supabase
-          .from('creator_profiles')
-          .select('id, username, display_name, avatar_url, bio, niche, user_id, profile_view_count, is_directory_visible')
-          .eq('is_active', true)
-          .eq('is_directory_visible', true)
-          .is('deleted_at', null)
-          .not('avatar_url', 'is', null)
-          .order('profile_view_count', { ascending: false })
-          .limit(50),
+          .from('v_directory_creators')
+          .select('creator_profile_id, username, display_name, avatar_url, bio, niche, user_id, profile_view_count, created_at, is_featured, position, is_hidden_for_category, display_rank')
+          .is('category', null)
+          .eq('is_hidden_for_category', false)
+          .order('creator_profile_id', { ascending: true })
+          .limit(1000),
       ]);
 
       if (articlesRes.data) setArticles(articlesRes.data as unknown as BlogArticle[]);
       if (categoriesRes.data) setCategories(categoriesRes.data);
 
       if (creatorsRes.data && creatorsRes.data.length > 0) {
-        console.log('🔍 Blog carousel: Found creators:', creatorsRes.data.length);
-        
-        // Simple: always show creators, prioritize by profile views
-        // No dependency on paid links to ensure carousel always appears
-        const sortedCreators = [...creatorsRes.data].sort((a, b) => 
-          (b.profile_view_count || 0) - (a.profile_view_count || 0)
-        );
-
-        // Always show at least 8 creators for a good carousel effect
-        const minCreatorsToShow = 8;
-        const featured = sortedCreators.slice(0, minCreatorsToShow);
-        
-        console.log('🔍 Blog carousel: Featured creators:', featured.length);
-        console.log('🔍 Blog carousel: First creator:', featured[0]);
-        
+        // Same comparator as /directory/creators: featured first by position,
+        // then Pro fallback, then everyone else by views.
+        const sortedCreators = [...creatorsRes.data].sort((a: any, b: any) => {
+          if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
+          const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
+          const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
+          if (aPos !== bPos) return aPos - bPos;
+          const dv = (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
+          if (dv !== 0) return dv;
+          const ad = a.created_at ? Date.parse(a.created_at) : 0;
+          const bd = b.created_at ? Date.parse(b.created_at) : 0;
+          return bd - ad;
+        });
+        const featured = sortedCreators.slice(0, 8).map((r: any) => ({
+          id: r.creator_profile_id,
+          username: r.username,
+          display_name: r.display_name,
+          avatar_url: r.avatar_url,
+          bio: r.bio,
+          niche: r.niche,
+          user_id: r.user_id,
+        }));
         setFeaturedCreators(featured);
-      } else {
-        console.log('🔍 Blog carousel: No creators found', creatorsRes.error);
       }
 
       setLoading(false);

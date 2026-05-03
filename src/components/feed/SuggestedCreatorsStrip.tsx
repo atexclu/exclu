@@ -40,15 +40,19 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
     (async () => {
       setIsLoading(true);
 
+      // Read v_directory_creators (which already exposes is_premium and the
+      // curated display_rank/position) so suggestions respect Louna's pinning
+      // and the same display_rank → position → views comparator the directory
+      // page uses. PostgREST caps at 1000 rows server-side, so we fetch the
+      // first 1000 ordered by creator_profile_id, then sort + take top 40
+      // client-side. Featured creators always score display_rank=1 so they
+      // make it into the top 40 regardless of where their UUID sorts.
       const { data: profiles, error: cpErr } = await supabase
-        .from('creator_profiles')
-        .select('id, user_id, username, display_name, avatar_url, profile_view_count')
-        .eq('is_active', true)
-        .eq('is_directory_visible', true)
-        .is('deleted_at', null)
-        .not('username', 'is', null)
-        .order('profile_view_count', { ascending: false })
-        .limit(40);
+        .from('v_directory_creators')
+        .select('creator_profile_id, user_id, username, display_name, avatar_url, profile_view_count, created_at, is_premium, is_featured, position, is_hidden_for_category, display_rank')
+        .is('category', null)
+        .eq('is_hidden_for_category', false)
+        .order('creator_profile_id', { ascending: true });
 
       if (cpErr || !profiles) {
         if (!cancelled) {
@@ -58,28 +62,30 @@ export function SuggestedCreatorsStrip({ excludeUserId, gradientStops }: Suggest
         return;
       }
 
-      const userIds = [...new Set(profiles.map((p: any) => p.user_id).filter(Boolean))];
-      const premiumSet = new Set<string>();
-      if (userIds.length) {
-        const { data: pros } = await supabase
-          .from('profiles')
-          .select('id')
-          .in('id', userIds)
-          .eq('is_creator_subscribed', true);
-        (pros ?? []).forEach((p: any) => premiumSet.add(p.id));
-      }
-
-      const mapped: SuggestedCreator[] = profiles
+      const sorted = profiles
         .filter((r: any) => !!r.username && r.user_id !== excludeUserId)
-        .map((r: any) => ({
-          profileId: r.id,
-          userId: r.user_id,
-          handle: r.username,
-          displayName: r.display_name || r.username,
-          avatarUrl: r.avatar_url,
-          isPremium: premiumSet.has(r.user_id),
-          viewCount: r.profile_view_count ?? 0,
-        }));
+        .sort((a: any, b: any) => {
+          if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
+          const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
+          const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
+          if (aPos !== bPos) return aPos - bPos;
+          const dv = (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
+          if (dv !== 0) return dv;
+          const ad = a.created_at ? Date.parse(a.created_at) : 0;
+          const bd = b.created_at ? Date.parse(b.created_at) : 0;
+          return bd - ad;
+        })
+        .slice(0, 40);
+
+      const mapped: SuggestedCreator[] = sorted.map((r: any) => ({
+        profileId: r.creator_profile_id,
+        userId: r.user_id,
+        handle: r.username,
+        displayName: r.display_name || r.username,
+        avatarUrl: r.avatar_url,
+        isPremium: !!r.is_premium,
+        viewCount: r.profile_view_count ?? 0,
+      }));
 
       if (!cancelled) {
         setCreators(mapped);

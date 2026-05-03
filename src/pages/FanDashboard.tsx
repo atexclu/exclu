@@ -327,15 +327,48 @@ const FanDashboard = () => {
       new Set((subs ?? []).map((s: { creator_user_id: string }) => s.creator_user_id)),
     );
 
-    // Fetch ALL active creators for discovery directory
-    const { data: creatorsData } = await supabase
-      .from('creator_profiles')
-      .select('id, user_id, username, display_name, avatar_url, model_categories')
-      .eq('is_active', true)
-      .is('deleted_at', null)
-      .not('avatar_url', 'is', null)
-      .order('profile_view_count', { ascending: false });
-    if (creatorsData) setDiscoveryCreators(creatorsData);
+    // Discovery directory — read v_directory_creators so the fan home respects
+    // the same featured / curated order as /directory/creators. PostgREST caps
+    // SELECTs at 1000 rows on this project, so paginate client-side until a
+    // page comes back short. Same comparator as the public directory page.
+    const PAGE = 1000;
+    const all: any[] = [];
+    let from = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data: page } = await supabase
+        .from('v_directory_creators')
+        .select('creator_profile_id, user_id, username, display_name, avatar_url, model_categories, profile_view_count, created_at, is_featured, position, is_hidden_for_category, display_rank')
+        .is('category', null)
+        .eq('is_hidden_for_category', false)
+        .order('creator_profile_id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      const batch = page || [];
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      from += PAGE;
+    }
+    const sortedCreators = all.slice().sort((a: any, b: any) => {
+      if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
+      const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
+      const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
+      if (aPos !== bPos) return aPos - bPos;
+      const dv = (b.profile_view_count ?? 0) - (a.profile_view_count ?? 0);
+      if (dv !== 0) return dv;
+      const ad = a.created_at ? Date.parse(a.created_at) : 0;
+      const bd = b.created_at ? Date.parse(b.created_at) : 0;
+      return bd - ad;
+    });
+    setDiscoveryCreators(
+      sortedCreators.map((r: any) => ({
+        id: r.creator_profile_id,
+        user_id: r.user_id,
+        username: r.username,
+        display_name: r.display_name,
+        avatar_url: r.avatar_url,
+        model_categories: r.model_categories,
+      })),
+    );
 
     // Fetch tips
     const { data: tipsData } = await supabase
