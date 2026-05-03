@@ -82,34 +82,37 @@ const CreatorLinks = () => {
       } else {
         const baseLinks = (data ?? []) as LinkRow[];
 
-        // Pass 1 — sign every link.storage_path in a single round-trip.
+        // Direct preview signing + fallback link_media query run in parallel —
+        // both only depend on baseLinks. Saves one RTT vs the previous chain.
         const directPaths = baseLinks
           .map((l) => l.storage_path)
           .filter(Boolean) as string[];
-        const directSigned = await getSignedUrls(directPaths, 60 * 60);
+        const allLinkIds = baseLinks.map((l) => l.id);
 
-        // Pass 2 — for links missing a direct preview, fetch the first attached
-        // asset of all of them in ONE query, then sign all those paths in one batch.
-        const fallbackLinkIds = baseLinks
-          .filter((l) => !l.storage_path || !directSigned[l.storage_path!])
-          .map((l) => l.id);
+        const [directSigned, mediaRes] = await Promise.all([
+          getSignedUrls(directPaths, 60 * 60),
+          allLinkIds.length > 0
+            ? supabase
+                .from('link_media')
+                .select('link_id, position, assets(storage_path, mime_type)')
+                .in('link_id', allLinkIds)
+                .order('position', { ascending: true })
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+
         const fallbackByLink: Record<string, { storage_path: string; mime_type?: string | null }> = {};
-        if (fallbackLinkIds.length > 0) {
-          const { data: media } = await supabase
-            .from('link_media')
-            .select('link_id, position, assets(storage_path, mime_type)')
-            .in('link_id', fallbackLinkIds)
-            .order('position', { ascending: true });
-          for (const row of (media ?? []) as Array<{ link_id: string; assets: { storage_path: string; mime_type?: string | null } | null }>) {
-            if (!fallbackByLink[row.link_id] && row.assets?.storage_path) {
-              fallbackByLink[row.link_id] = row.assets;
-            }
+        for (const row of (mediaRes.data ?? []) as Array<{ link_id: string; assets: { storage_path: string; mime_type?: string | null } | null }>) {
+          if (!fallbackByLink[row.link_id] && row.assets?.storage_path) {
+            fallbackByLink[row.link_id] = row.assets;
           }
         }
-        const fallbackSigned = await getSignedUrls(
-          Object.values(fallbackByLink).map((a) => a.storage_path),
-          60 * 60,
-        );
+        // Only sign fallback paths actually needed — when the direct preview
+        // already worked we don't bother.
+        const fallbackPathsNeeded = baseLinks
+          .filter((l) => !l.storage_path || !directSigned[l.storage_path])
+          .map((l) => fallbackByLink[l.id]?.storage_path)
+          .filter(Boolean) as string[];
+        const fallbackSigned = await getSignedUrls(fallbackPathsNeeded, 60 * 60);
 
         const withPreviews = baseLinks.map((link) => {
           if (link.storage_path && directSigned[link.storage_path]) {

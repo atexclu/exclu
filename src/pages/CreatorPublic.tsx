@@ -14,7 +14,7 @@ import GuestChat from '@/components/GuestChat';
 import { PreCheckoutGate, isPreCheckoutReady, type PreCheckoutGateState } from '@/components/checkout/PreCheckoutGate';
 import { getGeoCountry } from '@/lib/ipGeo';
 import { getAuroraGradient } from '@/lib/auroraGradients';
-import { getSignedUrl } from '@/lib/storageUtils';
+import { getSignedUrl, getSignedUrls } from '@/lib/storageUtils';
 import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
 import { SubscriptionPopup } from '@/components/feed/SubscriptionPopup';
 import { SuggestedCreatorsStrip } from '@/components/feed/SuggestedCreatorsStrip';
@@ -461,12 +461,27 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
           // Surface for the embed-mode CreatePostDialog (only used in /app/home).
           setActiveProfileId(cpData.id);
 
-          // Load account-level data (premium status, payout) from parent profiles row
-          const { data: parentProfile } = await supabase
-            .from('profiles')
-            .select('is_creator_subscribed, payout_setup_complete, deleted_at')
-            .eq('id', cpData.user_id)
-            .maybeSingle();
+          // Parent profile + agency branding fields + show_agency_branding can
+          // all run in parallel — they only depend on user_id / profile_id.
+          const [parentRes, agencyRes, brandingRes] = await Promise.all([
+            supabase
+              .from('profiles')
+              .select('is_creator_subscribed, payout_setup_complete, deleted_at')
+              .eq('id', cpData.user_id)
+              .maybeSingle(),
+            supabase
+              .from('profiles')
+              .select('agency_name, agency_logo_url')
+              .eq('id', cpData.user_id)
+              .maybeSingle(),
+            supabase
+              .from('creator_profiles')
+              .select('show_agency_branding')
+              .eq('id', cpData.id)
+              .maybeSingle(),
+          ]);
+
+          const parentProfile = parentRes.data;
 
           // Defensive: if the owning user has been soft-deleted but the
           // creator_profiles row hasn't propagated the cascade yet, also
@@ -479,27 +494,11 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
 
           if (!isMounted) return;
 
-          // Load agency branding separately (migration 070)
-          try {
-            const { data: agencyData } = await supabase
-              .from('profiles')
-              .select('agency_name, agency_logo_url')
-              .eq('id', cpData.user_id)
-              .maybeSingle();
-            setAgencyName(agencyData?.agency_name || null);
-            setAgencyLogoUrl(agencyData?.agency_logo_url || null);
-          } catch { /* migration 070 not applied */ }
-
-          // Load show_agency_branding toggle separately (migration 070)
-          let showBranding = true;
-          try {
-            const { data: brandingToggle } = await supabase
-              .from('creator_profiles')
-              .select('show_agency_branding')
-              .eq('id', cpData.id)
-              .maybeSingle();
-            if (brandingToggle) showBranding = brandingToggle.show_agency_branding !== false;
-          } catch { /* migration 070 not applied */ }
+          setAgencyName(agencyRes.data?.agency_name || null);
+          setAgencyLogoUrl(agencyRes.data?.agency_logo_url || null);
+          const showBranding = brandingRes.data
+            ? brandingRes.data.show_agency_branding !== false
+            : true;
 
           profileData = {
             id: cpData.id,
@@ -591,101 +590,85 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
           } catch { /* migration 070 not applied */ }
         }
 
-        // ── Step 3: Load links (use profile_id when available, else creator_id) ──
-        // Always load links — they should be visible on the public profile.
-        // The purchase flow itself checks payment readiness.
-        {
-          let linksQuery = supabase
+        // ── Step 3-5: Load links + feed assets + wishlist items in parallel ──
+        // All three only depend on profileId/userId from step 1, so we fan them
+        // out together. Saves 2 round-trips on first paint.
+        const linksQuery = (() => {
+          let q = supabase
             .from('links')
             .select('id, title, description, price_cents, currency, slug, status, show_on_profile, is_public, created_at')
             .eq('status', 'published')
             .eq('show_on_profile', true)
             .order('created_at', { ascending: false });
+          q = profileId ? q.eq('profile_id', profileId) : q.eq('creator_id', userId!);
+          return q;
+        })();
 
-          if (profileId) {
-            linksQuery = linksQuery.eq('profile_id', profileId);
-          } else {
-            linksQuery = linksQuery.eq('creator_id', userId!);
-          }
+        const assetsQuery = (() => {
+          let q = supabase
+            .from('assets')
+            .select('id, title, storage_path, mime_type, feed_caption, feed_blur_path, in_feed, is_public, created_at')
+            .eq('in_feed', true)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false });
+          q = profileId ? q.eq('profile_id', profileId) : q.eq('creator_id', userId!);
+          return q;
+        })();
 
-          const { data: linksData, error: linksError } = await linksQuery;
-          if (!isMounted) return;
+        const wishlistQuery = (() => {
+          let q = supabase
+            .from('wishlist_items')
+            .select('id, name, description, emoji, image_url, gift_url, price_cents, currency, max_quantity, gifted_count, is_visible')
+            .eq('is_visible', true)
+            .order('sort_order');
+          q = profileId ? q.eq('profile_id', profileId) : q.eq('creator_id', userId!);
+          return q;
+        })();
 
-          if (linksError) {
-            console.error('Error loading creator links', linksError);
-            setLinks([]);
-          } else {
-            // Honour the creator's manual order for paid links
-            // (creator_profiles.link_order.content_order). Anything not in
-            // the array sorts last by created_at desc, matching the editor.
-            const linkOrderIds: string[] = ((profileData as any)?.link_order?.content_order ?? []) as string[];
-            const linkOrderIndex = new Map<string, number>(linkOrderIds.map((id, i) => [id, i]));
-            const sortedLinks = [...((linksData ?? []) as CreatorLinkCard[])].sort((a, b) => {
-              const ai = linkOrderIndex.has(a.id) ? (linkOrderIndex.get(a.id) as number) : Infinity;
-              const bi = linkOrderIndex.has(b.id) ? (linkOrderIndex.get(b.id) as number) : Infinity;
-              if (ai !== bi) return ai - bi;
-              return (b.created_at ?? '').localeCompare(a.created_at ?? '');
-            });
-            setLinks(sortedLinks);
-          }
-        }
-
-        // ── Step 4: Load feed content ──
-        // Both public profile and /app/home embed only fetch in-feed assets.
-        // is_public flags whether each post is shown clear or blurred to
-        // non-subscribers; the toggle in embed mode flips that flag.
-        let assetsQuery = supabase
-          .from('assets')
-          .select('id, title, storage_path, mime_type, feed_caption, feed_blur_path, in_feed, is_public, created_at')
-          .eq('in_feed', true)
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false });
-
-        if (profileId) {
-          assetsQuery = assetsQuery.eq('profile_id', profileId);
-        } else {
-          assetsQuery = assetsQuery.eq('creator_id', userId!);
-        }
-
-        const { data: publicData, error: publicError } = await assetsQuery;
-        if (!isMounted) return;
-
-        if (publicError) {
-          console.error('Error loading public content:', publicError.message);
-        }
-        if (!publicError && publicData && publicData.length > 0) {
-          // Sign blur paths for everyone. Full-res signed URLs are resolved
-          // separately in a later effect, but ONLY when the viewer is subscribed.
-          // That way non-subscribers never even observe a full-res URL.
-          const withUrls = await Promise.all(
-            publicData.map(async (item: any) => {
-              const blurUrl = item.feed_blur_path
-                ? await getSignedUrl(item.feed_blur_path, 60 * 60)
-                : null;
-              return { ...item, blurUrl, previewUrl: null };
-            })
-          );
-          if (!isMounted) return;
-          setPublicContent(withUrls);
-        }
-
-        // ── Step 5: Load wishlist items ──
-        let wlQuery = supabase
-          .from('wishlist_items')
-          .select('id, name, description, emoji, image_url, gift_url, price_cents, currency, max_quantity, gifted_count, is_visible')
-          .eq('is_visible', true)
-          .order('sort_order');
-
-        if (profileId) {
-          wlQuery = wlQuery.eq('profile_id', profileId);
-        } else {
-          wlQuery = wlQuery.eq('creator_id', userId!);
-        }
-
-        const { data: wishlistData } = await wlQuery;
+        const [linksRes, assetsRes, wishlistRes] = await Promise.all([
+          linksQuery,
+          assetsQuery,
+          wishlistQuery,
+        ]);
 
         if (!isMounted) return;
-        setWishlistItems(wishlistData ?? []);
+
+        if (linksRes.error) {
+          console.error('Error loading creator links', linksRes.error);
+          setLinks([]);
+        } else {
+          // Honour the creator's manual order for paid links
+          // (creator_profiles.link_order.content_order). Anything not in
+          // the array sorts last by created_at desc, matching the editor.
+          const linkOrderIds: string[] = ((profileData as any)?.link_order?.content_order ?? []) as string[];
+          const linkOrderIndex = new Map<string, number>(linkOrderIds.map((id, i) => [id, i]));
+          const sortedLinks = [...((linksRes.data ?? []) as CreatorLinkCard[])].sort((a, b) => {
+            const ai = linkOrderIndex.has(a.id) ? (linkOrderIndex.get(a.id) as number) : Infinity;
+            const bi = linkOrderIndex.has(b.id) ? (linkOrderIndex.get(b.id) as number) : Infinity;
+            if (ai !== bi) return ai - bi;
+            return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+          });
+          setLinks(sortedLinks);
+        }
+
+        if (assetsRes.error) {
+          console.error('Error loading public content:', assetsRes.error.message);
+        }
+        const publicData = assetsRes.data;
+        if (!assetsRes.error && publicData && publicData.length > 0) {
+          // Sign every blur path in a single batched round-trip rather than
+          // one Promise.all over per-path createSignedUrl calls.
+          const blurPaths = publicData.map((it: any) => it.feed_blur_path).filter(Boolean) as string[];
+          const blurMap = await getSignedUrls(blurPaths, 60 * 60);
+          if (!isMounted) return;
+          setPublicContent(publicData.map((item: any) => ({
+            ...item,
+            blurUrl: item.feed_blur_path ? (blurMap[item.feed_blur_path] ?? null) : null,
+            previewUrl: null,
+          })));
+        }
+
+        setWishlistItems(wishlistRes.data ?? []);
 
         // Increment profile view count (best-effort) — skipped in embed mode
         // because /app/home is the creator previewing their OWN profile and

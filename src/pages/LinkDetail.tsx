@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { AdaptiveVideo } from '@/components/ui/AdaptiveVideo';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/lib/supabaseClient';
-import { getSignedUrl } from '@/lib/storageUtils';
+import { getSignedUrl, getSignedUrls } from '@/lib/storageUtils';
 import { useEffect, useState } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -51,6 +51,7 @@ const LinkDetail = () => {
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [isPremium, setIsPremium] = useState(false);
   const [contentPreviewUrl, setContentPreviewUrl] = useState<string | null>(null);
+  const [contentItems, setContentItems] = useState<Array<{ id: string; url: string; isVideo: boolean }>>([]);
   const [chatterInfo, setChatterInfo] = useState<{ display_name: string | null; email: string | null } | null>(null);
   const [chatterProfiles, setChatterProfiles] = useState<Map<string, string>>(new Map());
 
@@ -154,12 +155,44 @@ const LinkDetail = () => {
           }
         }
 
-        // Load content preview if storage_path exists
-        if (data.storage_path) {
-          const signedUrl = await getSignedUrl(data.storage_path, 60 * 60);
+        // Load every attached piece of content — main storage_path + every
+        // link_media row joined with its asset. Sign all of them in a single
+        // batched round-trip so the gallery shows the full set, not just the
+        // first file.
+        const { data: mediaRows } = await supabase
+          .from('link_media')
+          .select('asset_id, position, assets(storage_path, mime_type)')
+          .eq('link_id', data.id)
+          .order('position', { ascending: true });
 
-          if (signedUrl) {
-            setContentPreviewUrl(signedUrl);
+        const sources: Array<{ id: string; storagePath: string; mimeType: string | null }> = [];
+        if (data.storage_path) {
+          sources.push({ id: 'main', storagePath: data.storage_path, mimeType: data.mime_type });
+        }
+        for (const row of (mediaRows ?? []) as Array<{ asset_id: string | null; assets: { storage_path: string; mime_type: string | null } | null }>) {
+          if (row.assets?.storage_path) {
+            sources.push({
+              id: row.asset_id || `media-${sources.length}`,
+              storagePath: row.assets.storage_path,
+              mimeType: row.assets.mime_type ?? null,
+            });
+          }
+        }
+
+        if (sources.length > 0) {
+          const signedMap = await getSignedUrls(sources.map((s) => s.storagePath), 60 * 60);
+          const items = sources
+            .map((s) => {
+              const url = signedMap[s.storagePath];
+              if (!url) return null;
+              const ext = s.storagePath.split('.').pop()?.toLowerCase() ?? '';
+              const isVideo = (s.mimeType?.startsWith('video/') ?? false) || ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+              return { id: s.id, url, isVideo };
+            })
+            .filter(Boolean) as Array<{ id: string; url: string; isVideo: boolean }>;
+          if (isMounted) {
+            setContentItems(items);
+            setContentPreviewUrl(items[0]?.url ?? null);
           }
         }
       } catch (err) {
@@ -393,9 +426,30 @@ const LinkDetail = () => {
             {/* Content preview card */}
             <Card className="relative overflow-hidden rounded-3xl border border-exclu-arsenic/70 bg-gradient-to-br from-exclu-ink via-exclu-phantom/20 to-exclu-ink shadow-glow-lg">
               <CardContent className="p-0">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 px-4 pt-4 pb-2">Content</p>
-                
-                {contentPreviewUrl ? (
+                <p className="text-[11px] uppercase tracking-[0.22em] text-exclu-space/70 px-4 pt-4 pb-2">
+                  Content{contentItems.length > 1 ? ` · ${contentItems.length} items` : ''}
+                </p>
+
+                {contentItems.length > 1 ? (
+                  <div className="relative">
+                    <div className="flex overflow-x-auto snap-x snap-mandatory gap-2 px-4 pb-3 scroll-smooth [scrollbar-width:thin]">
+                      {contentItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="snap-start flex-shrink-0 w-[85%] sm:w-[60%] md:w-[48%] rounded-2xl overflow-hidden border border-exclu-arsenic/60 bg-black/30"
+                        >
+                          {item.isVideo ? (
+                            <AdaptiveVideo src={item.url} controls maxHeight="55vh" />
+                          ) : (
+                            <div className="relative h-64 sm:h-72 md:h-80">
+                              <img src={item.url} className="w-full h-full object-cover" alt={link?.title || 'Content'} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : contentPreviewUrl ? (
                     <div className="relative">
                       {link?.mime_type?.startsWith('video/') ? (
                         <AdaptiveVideo

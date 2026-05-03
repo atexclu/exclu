@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { X, Plus, ChevronDown, Check, Eye, EyeOff, Trash2, Link2 as LinkIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { maybeConvertHeic } from '@/lib/convertHeic';
-import { getSignedUrl } from '@/lib/storageUtils';
+import { getSignedUrl, getSignedUrls } from '@/lib/storageUtils';
 import { generateBlurThumbnail } from '@/lib/blurThumbnail';
 import { useProfiles } from '@/contexts/ProfileContext';
 import { toast } from 'sonner';
@@ -91,15 +91,14 @@ const ContentLibrary = () => {
       } else {
         const baseAssets = (data ?? []) as LibraryAsset[];
 
-        // Generate signed URLs for previews so we can display a media mosaic
-        const withPreviews = await Promise.all(
-          baseAssets.map(async (asset) => {
-            if (!asset.storage_path) return { ...asset, previewUrl: null };
-
-            const previewUrl = await getSignedUrl(asset.storage_path, 60 * 60);
-            return { ...asset, previewUrl };
-          })
-        );
+        // Sign every asset.storage_path in a single batched round-trip
+        // instead of N parallel `createSignedUrl` calls.
+        const paths = baseAssets.map((a) => a.storage_path).filter(Boolean) as string[];
+        const signed = await getSignedUrls(paths, 60 * 60);
+        const withPreviews = baseAssets.map((asset) => ({
+          ...asset,
+          previewUrl: asset.storage_path ? (signed[asset.storage_path] ?? null) : null,
+        }));
 
         // Self-heal orphans: an asset whose storage_path resolves to no signed
         // URL means the underlying storage file is gone (deleted manually or by
