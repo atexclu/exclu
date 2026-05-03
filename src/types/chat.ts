@@ -7,6 +7,7 @@ export interface FanProfile {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  handle?: string | null;
   deleted_at?: string | null;
 }
 

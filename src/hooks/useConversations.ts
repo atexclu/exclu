@@ -50,7 +50,7 @@ export function useConversations({
 
     let query = supabase
       .from('conversations')
-      .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, deleted_at)')
+      .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, handle, deleted_at)')
       .in('status', statusFilter)
       .is('creator_deleted_at', null)
       .order('is_pinned', { ascending: false })

@@ -40,10 +40,11 @@ export function ConversationListItem({
   const fan = conversation.fan;
   const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
   const isDeletedFan = !!fan?.deleted_at;
+  const fanHandle = !isGuest && fan?.handle ? fan.handle : null;
   const fanName = isGuest
     ? (conversation.guest_display_name || 'Guest')
-    : (fan?.display_name || 'Fan');
-  const initial = fanName.charAt(0).toUpperCase();
+    : (fan?.display_name || (fanHandle ? `@${fanHandle}` : 'Fan'));
+  const initial = fanName.replace(/^@/, '').charAt(0).toUpperCase();
   const isUnread = !conversation.is_read;
   const isUnclaimed = conversation.status === 'unclaimed';
 
@@ -96,6 +97,9 @@ export function ConversationListItem({
           ) : (
             <span className={`text-sm truncate ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
               {fanName}
+              {fanHandle && fan?.display_name && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground/60">@{fanHandle}</span>
+              )}
             </span>
           )}
           {isGuest && !isDeletedFan && (

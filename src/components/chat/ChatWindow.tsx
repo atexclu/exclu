@@ -96,9 +96,10 @@ export function ChatWindow({ conversation, currentUserId, senderType, onDeleted 
   const fan = conversation.fan;
   const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
   const isDeletedFan = !!fan?.deleted_at;
+  const fanHandle = !isGuest && fan?.handle ? fan.handle : null;
   const fanName = isGuest
     ? (conversation.guest_display_name || 'Guest')
-    : (fan?.display_name || 'Fan');
+    : (fan?.display_name || (fanHandle ? `@${fanHandle}` : 'Fan'));
 
   // Creator profile info (fetched for fan senderType)
   const [creatorInfo, setCreatorInfo] = useState<{
@@ -327,7 +328,12 @@ export function ChatWindow({ conversation, currentUserId, senderType, onDeleted 
             {isCounterpartDeleted ? (
               <p className="text-sm italic text-muted-foreground truncate">[Deleted user]</p>
             ) : (
-              <p className="text-sm font-semibold text-foreground truncate">{fanName}</p>
+              <p className="text-sm font-semibold text-foreground truncate">
+                {fanName}
+                {senderType !== 'fan' && fanHandle && fan?.display_name && (
+                  <span className="ml-1 text-xs font-normal text-muted-foreground/60">@{fanHandle}</span>
+                )}
+              </p>
             )}
             {isGuest && !isCounterpartDeleted && (
               <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 flex-shrink-0">
