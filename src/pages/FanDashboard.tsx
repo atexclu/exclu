@@ -257,13 +257,15 @@ const FanDashboard = () => {
         }
       }
 
-      await fetchData(user.id, user.email);
-
-      // Handle tab/conversation redirect from CreatorPublic
+      // If landing on the messages tab, fire the conversation fetch immediately
+      // and in parallel with fetchData so the chat surface paints first instead
+      // of waiting on favorites + discovery + tips + gifts + purchases (~9 RTTs).
       if (tabParam === 'messages') {
         setActiveTab('messages');
-        await fetchFanConversations(user.id, convParam ?? null);
+        void fetchFanConversations(user.id, convParam ?? null);
       }
+
+      await fetchData(user.id, user.email);
     };
 
     init();
@@ -302,12 +304,94 @@ const FanDashboard = () => {
   const fetchData = async (uid: string, email?: string | null) => {
     setIsLoading(true);
 
-    // Fetch favorites with creator profile
-    const { data: favData } = await supabase
+    // Run all independent queries in parallel — previously these ran
+    // sequentially which made the dashboard wait on ~9 round-trips before
+    // any tab could paint.
+    const favoritesPromise = supabase
       .from('fan_favorites')
       .select('id, creator_id, creator:profiles!fan_favorites_creator_id_fkey(id, display_name, avatar_url, handle, tips_enabled, custom_requests_enabled)')
       .eq('fan_id', uid)
       .order('created_at', { ascending: false });
+
+    const activeSubsPromise = supabase
+      .from('fan_creator_subscriptions')
+      .select('creator_user_id, status, cancel_at_period_end')
+      .eq('fan_id', uid)
+      .eq('status', 'active');
+
+    const tipsPromise = supabase
+      .from('tips')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, creator:profiles!tips_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const giftsPromise = supabase
+      .from('gift_purchases')
+      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, wishlist_item:wishlist_items!gift_purchases_wishlist_item_id_fkey(name, emoji, image_url), creator:profiles!gift_purchases_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
+      .eq('fan_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const subsPromise = supabase
+      .from('fan_creator_subscriptions')
+      .select(`
+        id, creator_profile_id, price_cents, status, period_end, cancel_at_period_end,
+        creator_profile:creator_profiles!fan_creator_subscriptions_creator_profile_id_fkey(username, display_name, avatar_url)
+      `)
+      .eq('fan_id', uid)
+      .in('status', ['active', 'cancelled'])
+      .gt('period_end', new Date().toISOString())
+      .order('period_end', { ascending: true });
+
+    const requestsPromise = supabase
+      .from('custom_requests')
+      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, creator:profiles!creator_id(display_name, handle, avatar_url, deleted_at)')
+      .eq('fan_id', uid)
+      .neq('status', 'pending_payment')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const purchasesPromise = email
+      ? supabaseAnon
+          .from('purchases')
+          .select('id, link_id, amount_cents, currency, status, created_at, access_token')
+          .eq('buyer_email', email)
+          .eq('status', 'succeeded')
+          .order('created_at', { ascending: false })
+          .limit(50)
+      : Promise.resolve({ data: null });
+
+    // Discovery directory — fetch first page only (1000 rows is the PostgREST
+    // cap). The favorites tab uses this; deferring extra pages would be a next
+    // optimization but most fans have <1k creators surfaced.
+    const discoveryPromise = supabase
+      .from('v_directory_creators')
+      .select('creator_profile_id, user_id, username, display_name, avatar_url, model_categories, profile_view_count, created_at, is_featured, position, is_hidden_for_category, display_rank')
+      .is('category', null)
+      .eq('is_hidden_for_category', false)
+      .order('creator_profile_id', { ascending: true })
+      .range(0, 999);
+
+    const [
+      { data: favData },
+      { data: subs },
+      { data: tipsData },
+      { data: giftsData },
+      { data: subsData },
+      { data: reqData },
+      purchasesRes,
+      { data: discoveryPage },
+    ] = await Promise.all([
+      favoritesPromise,
+      activeSubsPromise,
+      tipsPromise,
+      giftsPromise,
+      subsPromise,
+      requestsPromise,
+      purchasesPromise,
+      discoveryPromise,
+    ]);
 
     if (favData) {
       setFavorites(favData.map((f: any) => ({
@@ -317,38 +401,23 @@ const FanDashboard = () => {
       })));
     }
 
-    // Fetch this fan's active creator subscriptions to badge "Subscribed" in My Creators
-    const { data: subs } = await supabase
-      .from('fan_creator_subscriptions')
-      .select('creator_user_id, status, cancel_at_period_end')
-      .eq('fan_id', uid)
-      .eq('status', 'active');
     setSubscribedCreatorIds(
       new Set((subs ?? []).map((s: { creator_user_id: string }) => s.creator_user_id)),
     );
 
-    // Discovery directory — read v_directory_creators so the fan home respects
-    // the same featured / curated order as /directory/creators. PostgREST caps
-    // SELECTs at 1000 rows on this project, so paginate client-side until a
-    // page comes back short. Same comparator as the public directory page.
-    const PAGE = 1000;
-    const all: any[] = [];
-    let from = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { data: page } = await supabase
-        .from('v_directory_creators')
-        .select('creator_profile_id, user_id, username, display_name, avatar_url, model_categories, profile_view_count, created_at, is_featured, position, is_hidden_for_category, display_rank')
-        .is('category', null)
-        .eq('is_hidden_for_category', false)
-        .order('creator_profile_id', { ascending: true })
-        .range(from, from + PAGE - 1);
-      const batch = page || [];
-      all.push(...batch);
-      if (batch.length < PAGE) break;
-      from += PAGE;
+    if (tipsData) {
+      setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
     }
-    const sortedCreators = all.slice().sort((a: any, b: any) => {
+
+    if (giftsData) {
+      setGifts(giftsData.map((g: any) => ({ ...g, wishlist_item: g.wishlist_item, creator: g.creator })));
+    }
+
+    if (subsData) {
+      setFanSubs(subsData as any);
+    }
+
+    const sortedCreators = (discoveryPage ?? []).slice().sort((a: any, b: any) => {
       if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
       const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
       const bPos = b.position == null ? Number.POSITIVE_INFINITY : b.position;
@@ -369,55 +438,6 @@ const FanDashboard = () => {
         model_categories: r.model_categories,
       })),
     );
-
-    // Fetch tips
-    const { data: tipsData } = await supabase
-      .from('tips')
-      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, creator:profiles!tips_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
-      .eq('fan_id', uid)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (tipsData) {
-      setTips(tipsData.map((t: any) => ({ ...t, creator: t.creator })));
-    }
-
-    // Fetch gifts
-    const { data: giftsData } = await supabase
-      .from('gift_purchases')
-      .select('id, amount_cents, currency, status, message, is_anonymous, created_at, wishlist_item:wishlist_items!gift_purchases_wishlist_item_id_fkey(name, emoji, image_url), creator:profiles!gift_purchases_creator_id_fkey(display_name, handle, avatar_url, deleted_at)')
-      .eq('fan_id', uid)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (giftsData) {
-      setGifts(giftsData.map((g: any) => ({ ...g, wishlist_item: g.wishlist_item, creator: g.creator })));
-    }
-
-    // Fetch active / still-in-period subscriptions for the settings tab
-    const { data: subsData } = await supabase
-      .from('fan_creator_subscriptions')
-      .select(`
-        id, creator_profile_id, price_cents, status, period_end, cancel_at_period_end,
-        creator_profile:creator_profiles!fan_creator_subscriptions_creator_profile_id_fkey(username, display_name, avatar_url)
-      `)
-      .eq('fan_id', uid)
-      .in('status', ['active', 'cancelled'])
-      .gt('period_end', new Date().toISOString())
-      .order('period_end', { ascending: true });
-
-    if (subsData) {
-      setFanSubs(subsData as any);
-    }
-
-    // Fetch custom requests (exclude incomplete checkouts)
-    const { data: reqData } = await supabase
-      .from('custom_requests')
-      .select('id, description, proposed_amount_cents, final_amount_cents, currency, status, creator_response, created_at, delivery_link_id, creator:profiles!creator_id(display_name, handle, avatar_url, deleted_at)')
-      .eq('fan_id', uid)
-      .neq('status', 'pending_payment')
-      .order('created_at', { ascending: false })
-      .limit(50);
 
     if (reqData) {
       // For delivered requests, fetch delivery link slugs via anon client (bypasses RLS on links)
@@ -443,43 +463,38 @@ const FanDashboard = () => {
       })));
     }
 
-    // Fetch purchased links (by buyer_email from purchases table)
-    if (email) {
-      const { data: purchasesData } = await supabaseAnon
-        .from('purchases')
-        .select('id, link_id, amount_cents, currency, status, created_at, access_token')
-        .eq('buyer_email', email)
-        .eq('status', 'succeeded')
-        .order('created_at', { ascending: false })
-        .limit(50);
+    const purchasesData = purchasesRes?.data;
+    if (purchasesData && purchasesData.length > 0) {
+      // purchases.link_id is SET NULL when a creator deletes the link
+      // (mig. 161) — filter those out before the .in() call so we don't send
+      // `id=in.(null)` to PostgREST.
+      const linkIds = [...new Set(purchasesData.map((p: any) => p.link_id).filter((id: string | null): id is string => !!id))];
 
-      if (purchasesData && purchasesData.length > 0) {
-        // Fetch link details for each purchase
-        const linkIds = [...new Set(purchasesData.map((p: any) => p.link_id))];
-        const { data: linksData } = await supabaseAnon
-          .from('links')
-          .select('id, title, slug, creator_id, price_cents, currency')
-          .in('id', linkIds);
+      const [linksRes, creatorsRes] = await Promise.all([
+        linkIds.length > 0
+          ? supabaseAnon.from('links').select('id, title, slug, creator_id, price_cents, currency').in('id', linkIds)
+          : Promise.resolve({ data: [] as any[] }),
+        Promise.resolve({ data: [] as any[] }),
+      ]);
 
-        // Fetch creator profiles
-        const creatorIds = [...new Set((linksData ?? []).map((l: any) => l.creator_id))];
-        const { data: creatorsData } = creatorIds.length > 0
-          ? await supabaseAnon.from('profiles').select('id, display_name, handle, avatar_url, deleted_at').in('id', creatorIds)
-          : { data: [] };
+      const linksData = linksRes.data ?? [];
+      const creatorIds = [...new Set(linksData.map((l: any) => l.creator_id))];
+      const { data: creatorsData } = creatorIds.length > 0
+        ? await supabaseAnon.from('profiles').select('id, display_name, handle, avatar_url, deleted_at').in('id', creatorIds)
+        : creatorsRes;
 
-        const linksMap = new Map((linksData ?? []).map((l: any) => [l.id, l]));
-        const creatorsMap = new Map((creatorsData ?? []).map((c: any) => [c.id, c]));
+      const linksMap = new Map(linksData.map((l: any) => [l.id, l]));
+      const creatorsMap = new Map((creatorsData ?? []).map((c: any) => [c.id, c]));
 
-        setPurchasedLinks(purchasesData.map((p: any) => {
-          const link = linksMap.get(p.link_id);
-          const creator = link ? creatorsMap.get(link.creator_id) : null;
-          return {
-            ...p,
-            link: link || null,
-            creator: creator || null,
-          };
-        }));
-      }
+      setPurchasedLinks(purchasesData.map((p: any) => {
+        const link = linksMap.get(p.link_id);
+        const creator = link ? creatorsMap.get(link.creator_id) : null;
+        return {
+          ...p,
+          link: link || null,
+          creator: creator || null,
+        };
+      }));
     }
 
     setIsLoading(false);
@@ -607,31 +622,24 @@ const FanDashboard = () => {
   const handleOpenChat = async (creatorId: string) => {
     if (!userId) return;
     setActiveTab('messages');
-    // Find or create conversation for this fan + creator
-    const { data: existing } = await supabase
-      .from('conversations')
-      .select('*, creator_profile:creator_profiles!conversations_profile_id_fkey(id, username, display_name, avatar_url, deleted_at)')
-      .eq('fan_id', userId)
-      .in('status', ['unclaimed', 'active'])
-      .limit(100);
 
-    // Match by creator user_id through profile
-    const convs = (existing ?? []) as any[];
-    const match = convs.find((c: any) => c.creator_profile?.id && favorites.some(f => f.creator_id === creatorId));
-    const mapped: Conversation[] = convs.map((c: any) => ({
-      ...c,
-      fan: c.creator_profile
-        ? { id: c.creator_profile.id, display_name: c.creator_profile.display_name, avatar_url: c.creator_profile.avatar_url, deleted_at: c.creator_profile.deleted_at ?? null }
-        : null,
-    }));
-    setFanConversations(mapped);
-    if (match) {
-      const target = mapped.find(c => c.id === match.id);
-      if (target) {
-        setSelectedFanConversation(target);
-        setShowMobileConvList(false);
-      }
-    }
+    // Resolve the creator's creator_profiles.id (conversations.profile_id FK)
+    // from the favorited user_id.
+    const { data: cp } = await supabase
+      .from('creator_profiles')
+      .select('id')
+      .eq('user_id', creatorId)
+      .maybeSingle();
+    if (!cp?.id) return;
+
+    // Get-or-create + revive (handles fan_deleted_at and archived) via RPC.
+    const { data: convId } = await supabase.rpc('get_or_create_fan_conversation', {
+      p_profile_id: cp.id,
+    });
+    if (!convId) return;
+
+    // Refresh the conversation list and pre-select the target one.
+    await fetchFanConversations(userId, convId as string);
   };
 
   return (
@@ -1328,7 +1336,7 @@ const FanDashboard = () => {
                     {!isLoadingConversations && fanConversations.length === 0 && (
                       <div className="flex flex-col items-center justify-center py-12 gap-3 text-center px-4">
                         <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
-                        <p className="text-xs text-muted-foreground/60">Aucune conversation encore</p>
+                        <p className="text-xs text-muted-foreground/60">No conversations yet</p>
                       </div>
                     )}
                     {!isLoadingConversations && fanConversations.map((conv) => {
@@ -1374,7 +1382,7 @@ const FanDashboard = () => {
                               <p className="text-sm font-medium text-foreground truncate">{name}</p>
                             )}
                             <p className="text-xs text-muted-foreground/60 truncate">
-                              {conv.last_message_preview || 'Début de la conversation'}
+                              {conv.last_message_preview || 'Start the conversation'}
                             </p>
                           </div>
                           <button
@@ -1400,7 +1408,7 @@ const FanDashboard = () => {
                       <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border/60">
                         <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 px-2" onClick={() => setShowMobileConvList(true)}>
                           <ArrowLeft className="w-3.5 h-3.5" />
-                          Retour
+                          Back
                         </Button>
                       </div>
                       <ChatWindow
@@ -1413,7 +1421,7 @@ const FanDashboard = () => {
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
                       <MessagesSquare className="w-8 h-8 text-muted-foreground/20" />
-                      <p className="text-sm text-muted-foreground/50">Sélectionne une conversation</p>
+                      <p className="text-sm text-muted-foreground/50">Select a conversation</p>
                     </div>
                   )}
                 </div>

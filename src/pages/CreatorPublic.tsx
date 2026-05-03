@@ -966,19 +966,14 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
       setCurrentFanId(user.id);
     }
 
-    const { data: conv, error } = await supabase
-      .from('conversations')
-      .upsert(
-        { fan_id: fanId, profile_id: creatorProfileId },
-        { onConflict: 'fan_id,profile_id', ignoreDuplicates: false }
-      )
-      .select('id')
-      .single();
-    if (error || !conv) {
+    const { data: convId, error } = await supabase.rpc('get_or_create_fan_conversation', {
+      p_profile_id: creatorProfileId,
+    });
+    if (error || !convId) {
       navigate(`/fan?tab=messages`);
       return;
     }
-    navigate(`/fan?tab=messages&conversation=${conv.id}`);
+    navigate(`/fan?tab=messages&conversation=${convId}`);
   };
 
   const handleTipSubmit = async () => {
