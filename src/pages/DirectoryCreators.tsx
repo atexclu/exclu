@@ -185,23 +185,34 @@ const DirectoryCreators = () => {
     const fetchCreators = async () => {
       setLoading(true);
 
-      // Pull the global directory bucket only (category is null). Per-category
-      // tabs on the admin side query the same view with a category filter.
-      // .range(0, 9999) raises the default PostgREST 1000-row cap.
-      const { data, error } = await supabase
-        .from('v_directory_creators')
-        .select('*')
-        .is('category', null)
-        .eq('is_hidden_for_category', false)
-        .range(0, 9999);
-
-      if (error) {
-        console.error('Error fetching directory:', error);
-        setLoading(false);
-        return;
+      // PostgREST hard-caps at 1000 rows on this project regardless of the
+      // client Range header — the global view holds ~4000 rows so a single
+      // request misses 75% of creators (including most featured ones, whose
+      // creator_profile_id sort past the cap). Paginate client-side until a
+      // page comes back short.
+      const PAGE = 1000;
+      const all: DirectoryRow[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('v_directory_creators')
+          .select('*')
+          .is('category', null)
+          .eq('is_hidden_for_category', false)
+          .order('creator_profile_id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) {
+          console.error('Error fetching directory:', error);
+          setLoading(false);
+          return;
+        }
+        const batch = (data || []) as DirectoryRow[];
+        all.push(...batch);
+        if (batch.length < PAGE) break;
+        from += PAGE;
       }
 
-      const rows = ((data || []) as DirectoryRow[]).slice().sort((a, b) => {
+      const rows = all.slice().sort((a, b) => {
         if (a.display_rank !== b.display_rank) return a.display_rank - b.display_rank;
         // Curated rows: explicit position wins, NULLs last.
         const aPos = a.position == null ? Number.POSITIVE_INFINITY : a.position;
