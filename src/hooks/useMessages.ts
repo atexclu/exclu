@@ -65,36 +65,42 @@ export function useMessages(conversationId: string | null, viewerRole: 'fan' | '
       return;
     }
 
-    // Load link data separately via anon client (bypasses RLS on links for fans)
     const msgs = (data ?? []) as Message[];
-    const paidContentIds = [...new Set(msgs.filter(m => m.paid_content_id).map(m => m.paid_content_id!))];
-    if (paidContentIds.length > 0) {
-      const { data: links } = await supabaseAnon
-        .from('links')
-        .select('id, title, slug, price_cents')
-        .in('id', paidContentIds);
-      const linkMap = new Map((links ?? []).map(l => [l.id, l]));
-      for (const msg of msgs) {
-        if (msg.paid_content_id && linkMap.has(msg.paid_content_id)) {
-          (msg as any).link = linkMap.get(msg.paid_content_id);
-        }
-      }
-    }
 
+    // Paint messages first — link enrichment + mark-as-read run in background.
     setMessages(msgs);
     setIsLoading(false);
 
-    // Marquer les messages de l'autre partie comme lus
+    const paidContentIds = [...new Set(msgs.filter(m => m.paid_content_id).map(m => m.paid_content_id!))];
+    if (paidContentIds.length > 0) {
+      // Anon client bypasses RLS on links for fans.
+      void supabaseAnon
+        .from('links')
+        .select('id, title, slug, price_cents')
+        .in('id', paidContentIds)
+        .then(({ data: links }) => {
+          if (!links) return;
+          const linkMap = new Map(links.map((l: any) => [l.id, l]));
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.paid_content_id && linkMap.has(m.paid_content_id)
+                ? ({ ...m, link: linkMap.get(m.paid_content_id) as any })
+                : m,
+            ),
+          );
+        });
+    }
+
+    // Mark-as-read writes are fire-and-forget — don't block the UI on round-trips.
     const typesToMarkRead = viewerRole === 'fan' ? ['creator', 'chatter'] : ['fan'];
-    await supabase
+    void supabase
       .from('messages')
       .update({ is_read: true, read_at: new Date().toISOString() })
       .eq('conversation_id', conversationId)
       .in('sender_type', typesToMarkRead)
       .eq('is_read', false);
 
-    // Marquer la conversation elle-même comme lue
-    await supabase
+    void supabase
       .from('conversations')
       .update({ is_read: true })
       .eq('id', conversationId);

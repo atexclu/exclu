@@ -48,9 +48,16 @@ export function useConversations({
     setIsLoading(true);
     setError(null);
 
+    // Single round-trip: join fan profile + guest session in one PostgREST query.
     let query = supabase
       .from('conversations')
-      .select('*, fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, handle, deleted_at)')
+      .select(`
+        id, fan_id, profile_id, assigned_chatter_id, guest_session_id, status,
+        is_pinned, is_read, last_message_at, last_message_preview,
+        total_revenue_cents, created_at, archived_at,
+        fan:profiles!conversations_fan_id_fkey(id, display_name, avatar_url, handle, deleted_at),
+        guest_session:guest_sessions(id, display_name)
+      `)
       .in('status', statusFilter)
       .is('creator_deleted_at', null)
       .order('is_pinned', { ascending: false })
@@ -71,31 +78,14 @@ export function useConversations({
       return;
     }
 
-    const convs = (data ?? []) as Conversation[];
-
-    // Enrich guest conversations with display_name from guest_sessions
-    const guestSessionIds = convs
-      .filter((c) => c.guest_session_id && !c.fan_id)
-      .map((c) => c.guest_session_id!);
-
-    if (guestSessionIds.length > 0) {
-      const { data: guestSessions } = await supabase
-        .from('guest_sessions')
-        .select('id, display_name')
-        .in('id', guestSessionIds);
-
-      if (guestSessions) {
-        const guestMap = new Map(guestSessions.map((gs: any) => [gs.id, gs.display_name]));
-        for (const conv of convs) {
-          if (conv.guest_session_id && !conv.fan_id) {
-            conv.is_guest = true;
-            if (guestMap.has(conv.guest_session_id)) {
-              conv.guest_display_name = guestMap.get(conv.guest_session_id) || 'Guest';
-            }
-          }
-        }
-      }
-    }
+    const convs = ((data ?? []) as any[]).map((c) => {
+      const isGuest = !c.fan_id && !!c.guest_session_id;
+      return {
+        ...c,
+        is_guest: isGuest || undefined,
+        guest_display_name: isGuest ? (c.guest_session?.display_name || 'Guest') : undefined,
+      } as Conversation;
+    });
 
     setConversations(convs);
     setIsLoading(false);
