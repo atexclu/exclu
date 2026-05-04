@@ -220,9 +220,12 @@ export function FanSubscriptionsList() {
   }
 
   /* ── List ─────────────────────────────────────────────────────────── */
+  // Fan pays creator's base price + 15% processing fee on every cycle —
+  // displayed amounts here are the real outgoing, not the creator-set base.
+  const fanCharge = (baseCents: number) => baseCents + Math.round(baseCents * 0.15);
   const totalMonthly = rows
     .filter((r) => r.status === 'active' && !r.cancel_at_period_end)
-    .reduce((sum, r) => sum + r.price_cents, 0);
+    .reduce((sum, r) => sum + fanCharge(r.price_cents), 0);
 
   return (
     <section className="space-y-4">
@@ -254,7 +257,7 @@ export function FanSubscriptionsList() {
           const variant = variantFor(r);
           const theme = VARIANT_THEME[variant];
           const label = r.creator_name || r.creator_handle || 'Creator';
-          const { dollars, cents } = centsToPrice(r.price_cents);
+          const { dollars, cents } = centsToPrice(fanCharge(r.price_cents));
           const inactive = variant !== 'active';
           const dateLabel = variant === 'cancelling' ? 'Access ends' : 'Next charge';
 

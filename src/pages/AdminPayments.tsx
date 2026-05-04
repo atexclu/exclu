@@ -507,7 +507,7 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                           </p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mt-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs mt-3">
                         <div>
                           <p className="text-muted-foreground">Amount</p>
                           <p className="font-bold text-foreground text-sm tabular-nums">
@@ -542,6 +542,10 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                         <div>
                           <p className="text-muted-foreground">Holder</p>
                           <p className="text-foreground">{payout.bank_holder_name || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Country</p>
+                          <p className="text-foreground uppercase tracking-wide">{payout.bank_country || '—'}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Requested</p>
@@ -744,6 +748,7 @@ export default function AdminPayments({ embedded = false }: { embedded?: boolean
                           <p className="text-xs text-muted-foreground truncate">
                             {payout.creator_name || 'Unknown'}
                             {payout.creator_handle && <span> · @{payout.creator_handle}</span>}
+                            {payout.bank_country && <span className="uppercase"> · {payout.bank_country}</span>}
                           </p>
                         </div>
                       </div>

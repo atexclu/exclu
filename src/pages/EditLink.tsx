@@ -483,7 +483,7 @@ const EditLink = () => {
                             id="price"
                             type="number"
                             min={5}
-                            step={0.5}
+                            step={0.01}
                             value={price}
                             onChange={(e) => setPrice(e.target.value)}
                             className="h-10 bg-white border-exclu-arsenic/70 text-black text-sm"

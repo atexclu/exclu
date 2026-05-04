@@ -94,7 +94,7 @@ export function FanSubscriptionSection({ enabled, priceCents, onUpdate }: FanSub
               type="number"
               min={PRICE_MIN}
               max={PRICE_MAX}
-              step={0.5}
+              step={0.01}
               inputMode="decimal"
               value={priceDraft}
               onChange={(e) => setPriceDraft(e.target.value)}

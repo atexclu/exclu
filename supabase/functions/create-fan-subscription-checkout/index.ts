@@ -159,9 +159,17 @@ serve(async (req) => {
     }
 
     // ── Route MID + build QuickPay form fields ─────────────────────────────
+    // The fan pays the creator's chosen price + a 15% processing fee — same
+    // pattern as link/tip/gift/request checkouts. The fee is platform revenue
+    // and is layered on top of any plan-based commission applied at credit time.
+    // `price_cents` on fan_creator_subscriptions stays as the creator's chosen
+    // price (grandfathered) — `rebillFanSubscription` re-applies the 15%
+    // markup on every renewal, and the ledger credit is computed off the base.
     const midKey = routeMidForCountry(country);
     const creds = getMidCredentials(midKey);
-    const amountDecimal = (priceCents / 100).toFixed(2);
+    const fanProcessingFeeCents = Math.round(priceCents * 0.15);
+    const totalFanPaysCents = priceCents + fanProcessingFeeCents;
+    const amountDecimal = (totalFanPaysCents / 100).toFixed(2);
     const displayName = creatorProfile.display_name || creatorProfile.username || 'creator';
     const creatorHandle = creatorProfile.username || '';
     const merchantReference = `fsub_${subId}`;
@@ -180,7 +188,7 @@ serve(async (req) => {
       'ItemName[0]': `Subscribe to ${displayName}`,
       'ItemQuantity[0]': '1',
       'ItemAmount[0]': amountDecimal,
-      'ItemDesc[0]': `Monthly subscription to ${displayName}'s exclusive content`,
+      'ItemDesc[0]': `Monthly subscription to ${displayName}'s exclusive content (includes 15% processing fee)`,
       ApprovedURL: `${siteUrl}/fan?tab=feed&subscribed=${encodeURIComponent(creatorHandle)}`,
       ConfirmURL: `${siteUrl}/api/ugp-confirm`,
       DeclinedURL: `${siteUrl}/${encodeURIComponent(creatorHandle)}?subscribe_failed=1`,

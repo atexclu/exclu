@@ -227,7 +227,13 @@ async function rebillFanSubscription(sub: any): Promise<void> {
     console.error(`[rebill] fan sub ${sub.id}: missing mid or tid, skipping`);
     return;
   }
-  const amount = sub.price_cents as number; // grandfathered — locked at subscribe time
+  // sub.price_cents = creator's chosen price (grandfathered, locked at subscribe time).
+  // The fan is charged base + 15% processing fee on every renewal, matching the
+  // initial checkout pattern. The ledger credit below is still computed off the
+  // base — the 15% is platform revenue.
+  const baseCents = sub.price_cents as number;
+  const billedCents = baseCents + Math.round(baseCents * 0.15);
+  const amount = billedCents;
   const creds = getMidCredentials(mid);
 
   // Idempotency guard — same pattern as creator rebill (see D8).
@@ -286,7 +292,9 @@ async function rebillFanSubscription(sub: any): Promise<void> {
       .eq('id', sub.creator_user_id)
       .single();
     const platformRate = creatorProfile?.subscription_plan === 'free' ? 0.15 : 0;
-    const creatorNetCents = Math.round(amount * (1 - platformRate));
+    // Creator's revenue is computed off the base price — the 15% fan fee is
+    // platform-only and never enters the creator's wallet.
+    const creatorNetCents = Math.round(baseCents * (1 - platformRate));
 
     await applyWalletTransaction(supabase, {
       ownerId: sub.creator_user_id,
@@ -299,7 +307,8 @@ async function rebillFanSubscription(sub: any): Promise<void> {
       sourceUgpMid: sub.ugp_mid ?? null,
       metadata: {
         fan_id: sub.fan_id,
-        cycle_amount_cents: amount,
+        cycle_amount_cents: baseCents,
+        amount_charged_cents: billedCents,
         platform_rate: platformRate,
         kind: 'rebill',
       },

@@ -45,7 +45,12 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
   // before the real one. Note: the actual charge is set server-side by
   // create-fan-subscription-checkout reading creator_profiles directly, so
   // tampering with this state in DevTools cannot lower the amount charged.
+  // This is the creator's chosen base price; the fan is charged base + 15%
+  // processing fee at checkout (and on every renewal).
   const [livePriceCents, setLivePriceCents] = useState<number | null>(null);
+  const fanTotalCents = livePriceCents === null
+    ? null
+    : livePriceCents + Math.round(livePriceCents * 0.15);
 
   // Prefill country on open: profiles table first, then IP geo as fallback.
   // Also re-fetch the creator's live fan-sub price so the modal never
@@ -192,7 +197,7 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
 
               <div className="w-full rounded-2xl bg-white/5 border border-white/10 p-4 mb-4">
                 <div className="flex items-baseline justify-center gap-1 mb-1 min-h-[36px]">
-                  {livePriceCents === null ? (
+                  {fanTotalCents === null ? (
                     <span className="inline-block h-7 w-20 rounded-md bg-white/10 animate-pulse" />
                   ) : (
                     <>
@@ -200,13 +205,13 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
                         className="text-3xl font-extrabold bg-clip-text text-transparent"
                         style={{ backgroundImage: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
                       >
-                        ${(livePriceCents / 100).toFixed(2)}
+                        ${(fanTotalCents / 100).toFixed(2)}
                       </span>
                       <span className="text-sm text-white/60">/ month</span>
                     </>
                   )}
                 </div>
-                <p className="text-[11px] text-white/50">Cancel anytime — access stays until the end of the period.</p>
+                <p className="text-[11px] text-white/50">Includes 15% processing fee. Cancel anytime — access stays until the end of the period.</p>
               </div>
 
               <div className="w-full text-left mb-4">
@@ -229,12 +234,12 @@ export function SubscriptionPopup({ open, onClose, creator, gradientStops }: Sub
               <button
                 type="button"
                 onClick={handleSubscribe}
-                disabled={isSubmitting || !country || livePriceCents === null}
+                disabled={isSubmitting || !country || fanTotalCents === null}
                 className="w-full h-12 rounded-full text-sm font-bold text-black transition-transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center justify-center gap-2"
                 style={{ background: `linear-gradient(to right, ${gradientStops[0]}, ${gradientStops[1]})` }}
               >
-                {isSubmitting || livePriceCents === null ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {livePriceCents === null ? 'Loading…' : `Subscribe for $${(livePriceCents / 100).toFixed(2)}/mo`}
+                {isSubmitting || fanTotalCents === null ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {fanTotalCents === null ? 'Loading…' : `Subscribe for $${(fanTotalCents / 100).toFixed(2)}/mo`}
               </button>
 
               <p className="text-[11px] text-white/40 mt-3">

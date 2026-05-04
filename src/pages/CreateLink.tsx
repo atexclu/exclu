@@ -465,7 +465,7 @@ const CreateLink = () => {
                             id="price"
                             type="number"
                             min={5}
-                            step={0.5}
+                            step={0.01}
                             value={price}
                             onChange={(e) => setPrice(e.target.value)}
                             className="h-11 bg-primary/10 border-border text-foreground placeholder:text-muted-foreground"
