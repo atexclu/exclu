@@ -53,7 +53,7 @@ export function MessageBubble({ message, isOwn, isTeam, teamSenderInfo, conversa
   const linkPurchaseStatus = useLinkPurchaseStatus(
     message.content_type === 'paid_content' ? message.link?.id : undefined
   );
-  const rightAligned = isTeam ?? isOwn;
+  const rightAligned = viewerRole === 'fan' ? isOwn : isTeam;
 
   // Custom request rich card
   if (message.content_type === 'custom_request' && message.custom_request_id) {

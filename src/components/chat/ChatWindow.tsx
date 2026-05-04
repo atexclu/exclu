@@ -97,9 +97,16 @@ export function ChatWindow({ conversation, currentUserId, senderType, onDeleted 
   const isGuest = !conversation.fan_id && !!conversation.guest_session_id;
   const isDeletedFan = !!fan?.deleted_at;
   const fanHandle = !isGuest && fan?.handle ? fan.handle : null;
+  // Logged-in fans always have a profile row — fall back to a short id-based
+  // identifier rather than the generic "Fan" label so each conversation header
+  // is uniquely recognisable even when display_name + handle are missing
+  // (e.g. legacy fans signed up before the trigger backfilled them).
+  const fanShortId = conversation.fan_id ? conversation.fan_id.slice(0, 6) : null;
   const fanName = isGuest
     ? (conversation.guest_display_name || 'Guest')
-    : (fan?.display_name || (fanHandle ? `@${fanHandle}` : 'Fan'));
+    : (fan?.display_name
+        || (fanHandle ? `@${fanHandle}` : null)
+        || (fanShortId ? `Fan #${fanShortId}` : 'Fan'));
 
   // Creator profile info (fetched for fan senderType)
   const [creatorInfo, setCreatorInfo] = useState<{
