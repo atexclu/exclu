@@ -17,7 +17,6 @@ import { getAuroraGradient } from '@/lib/auroraGradients';
 import { getSignedUrl, getSignedUrls } from '@/lib/storageUtils';
 import { FeedPost, type FeedPostData } from '@/components/feed/FeedPost';
 import { SubscriptionPopup } from '@/components/feed/SubscriptionPopup';
-import { SuggestedCreatorsStrip } from '@/components/feed/SuggestedCreatorsStrip';
 import { CreatePostDialog, CreatePostTrigger } from '@/components/feed/CreatePostDialog';
 import { PostVisibilityToggle } from '@/components/feed/PostVisibilityToggle';
 import { useFanSubscription } from '@/hooks/useFanSubscription';
@@ -1599,10 +1598,6 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
               )
             )}
 
-            {!isContentLoading && activeTab === 'content' && (
-              <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
-            )}
-
             {!isContentLoading && activeTab === 'wishlist' && (
               <div className="grid grid-cols-2 gap-3">
                 {wishlistItems.map((item, index) => {
@@ -2118,12 +2113,6 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
                           )}
                         </>
                       )
-                    )}
-
-                    {!isContentLoading && activeTab === 'content' && (
-                      <div className="w-full mt-6 pt-6 border-t border-white/10">
-                        <SuggestedCreatorsStrip excludeUserId={creatorUserId} gradientStops={gradientStops as [string, string]} />
-                      </div>
                     )}
 
                     {/* Wishlist Tab */}
