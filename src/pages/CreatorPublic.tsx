@@ -311,32 +311,22 @@ const CreatorPublic = ({ handleOverride, embed = false }: CreatorPublicProps = {
   const [giftFanName, setGiftFanName] = useState('');
   const [isGiftSubmitting, setIsGiftSubmitting] = useState(false);
 
-  // Desktop photo collapse on scroll.
-  //  • Links tab: collapse when the creator has > 5 links and the viewer
-  //    scrolls past 35vh (the list gets long enough that hiding the photo
-  //    gives more breathing room).
-  //  • Feed tab: always collapse on scroll so the feed centers itself and
-  //    the posts feel like a social-media timeline.
+  // Photo collapse driven purely by scroll position — uniform across all tabs
+  // so switching from Feed (collapsed) to Links/Wishlist doesn't snap the
+  // photo back open. Re-expanding mid-scroll on tab change pushed every
+  // element below it down, which on mobile read as the page jumping back
+  // to the top. Now: scroll past 35vh → collapsed, regardless of activeTab.
   const [photoVisible, setPhotoVisible] = useState(true);
   useEffect(() => {
     const threshold = window.innerHeight * 0.35;
     const handleScroll = () => {
-      if (activeTab === 'content') {
-        const shouldShow = window.scrollY < threshold;
-        setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
-        return;
-      }
-      if (links.length <= 5) {
-        setPhotoVisible((prev) => (prev ? prev : true));
-        return;
-      }
       const shouldShow = window.scrollY < threshold;
       setPhotoVisible((prev) => (prev !== shouldShow ? shouldShow : prev));
     };
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [links.length, activeTab]);
+  }, []);
 
   // Check if a fan (not a creator) is logged in. Pre-fill the checkout
   // gate with the signed-in user's email + stored country so they don't

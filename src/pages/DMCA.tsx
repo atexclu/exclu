@@ -30,7 +30,7 @@ const DMCA = () => {
             <strong>DMCA Agent — FRANCEPRODUCT SAS</strong><br />
             13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />
             Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />
-            Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a>
+            Telegram: <a href="https://t.me/exclu_alternative" target="_blank" rel="noopener noreferrer">@exclu_alternative</a>
           </p>
           <p>For fastest processing, please submit your notice via email with the subject line "<strong>DMCA Takedown Notice</strong>."</p>
 
@@ -70,7 +70,7 @@ const DMCA = () => {
             DMCA Agent<br />
             13 Place Jean Jaurès, 59292 Saint-Hilaire-lez-Cambrai, France<br />
             Email: <a href="mailto:contact@exclu.at">contact@exclu.at</a><br />
-            Phone: <a href="tel:+33745017758">+33 7 45 01 77 58</a>
+            Telegram: <a href="https://t.me/exclu_alternative" target="_blank" rel="noopener noreferrer">@exclu_alternative</a>
           </p>
         </div>
       </main>

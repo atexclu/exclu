@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import logoBlack from '@/assets/logo-black.svg';
 import logoWhite from '@/assets/logo-white.svg';
-import { Instagram, Send, Mail, Phone } from 'lucide-react';
+import { Instagram, Send, Mail } from 'lucide-react';
 
 // X (Twitter) icon component
 const XIcon = ({ className }: { className?: string }) => (
@@ -122,8 +122,13 @@ const Footer = () => {
           <a href="mailto:contact@exclu.at" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
             <Mail className="w-3.5 h-3.5" /> contact@exclu.at
           </a>
-          <a href="tel:+33745017758" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
-            <Phone className="w-3.5 h-3.5" /> +33 7 45 01 77 58
+          <a
+            href="https://t.me/exclu_alternative"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 hover:text-primary transition-colors"
+          >
+            <Send className="w-3.5 h-3.5" /> Contact us on Telegram
           </a>
         </div>
 
