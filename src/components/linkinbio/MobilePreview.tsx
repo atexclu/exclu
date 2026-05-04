@@ -492,28 +492,6 @@ export function MobilePreview({ data, links, isPremium = false, publicContent = 
                         );
                       })}
 
-                      {/* Discovery strip — "You might also like" (visual placeholder, matches SuggestedCreatorsStrip) */}
-                      <div className="mt-5 pt-4 border-t border-white/10">
-                        <p className="text-[7px] font-semibold uppercase tracking-[0.25em] text-white/45 mb-0.5">Discovery</p>
-                        <p className="text-[11px] font-bold text-white mb-2">You might also like</p>
-                        <div className="flex gap-1.5 -mx-0.5 px-0.5 overflow-x-auto scrollbar-hide">
-                          {[0, 1, 2, 3].map((i) => (
-                            <div
-                              key={i}
-                              className="h-20 w-14 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 relative bg-white/5"
-                              style={{ background: `linear-gradient(135deg, ${gradientStops[0]}33, ${gradientStops[1]}33)` }}
-                            >
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                              <div
-                                className="absolute bottom-1 left-1 right-1 h-3 rounded-full flex items-center justify-center text-[6px] font-bold text-black"
-                                style={{ background: `linear-gradient(135deg, ${gradientStops[0]}, ${gradientStops[1]})` }}
-                              >
-                                Discover
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   )}
 
