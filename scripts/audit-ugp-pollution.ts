@@ -208,7 +208,7 @@ hr('Q6 — Per-creator impact (purchases + tips + gifts)');
 }
 
 // ── Q7: Test-card 4242 events that hit our handlers ────────────────────────
-hr('Q7 — ConfirmURL events that look like TEST CARDS (CardMask 424242…)');
+hr('Q7 — ConfirmURL events that look like TEST CARDS (IsTestCard flag, fallback to legacy CardMask)');
 {
   const { data, error } = await sb
     .from('payment_events')
@@ -219,8 +219,10 @@ hr('Q7 — ConfirmURL events that look like TEST CARDS (CardMask 424242…)');
     console.error(error);
   } else {
     const testCard = (data ?? []).filter((r: any) => {
-      const mask = r?.raw_payload?.CardMask ?? '';
-      return /^4242/.test(String(mask));
+      const flag = r?.raw_payload?.IsTestCard;
+      if (flag === '1' || flag === 1) return true;
+      const legacyMask = r?.raw_payload?.CardMask ?? '';
+      return /^4242/.test(String(legacyMask));
     });
     console.log(`Test-card events processed as real sales: ${testCard.length}`);
     console.table(

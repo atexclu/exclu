@@ -182,6 +182,21 @@ serve(async (req) => {
   const transactionId = body.TransactionID || '';
   const merchantRef = body.MerchantReference || '';
   const amount = body.Amount || '0';
+  // Scrub UG fields that fall outside the merchant guideline #5 ("store ONLY
+  // token + last 4 + expiry") before persisting. CardMask is the BIN+last4
+  // masked PAN, BankMessage may contain issuer-side decline detail. We
+  // derive `IsTestCard` from CardMask BEFORE stripping so the operational
+  // reconcile/audit scripts keep working without the BIN.
+  const sanitizedPayload: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'CardMask' || k === 'BankMessage') continue;
+    sanitizedPayload[k] = v;
+  }
+  if (typeof body.CardMask === 'string' && /^(4242|5555|0000)/.test(body.CardMask)) {
+    sanitizedPayload.IsTestCard = '1';
+  } else if (body.CardMask) {
+    sanitizedPayload.IsTestCard = '0';
+  }
   try {
     await supabase.from('payment_events').insert({
       transaction_id: transactionId,
@@ -189,7 +204,7 @@ serve(async (req) => {
       amount_decimal: amount,
       transaction_state: body.TransactionState || null,
       customer_email: body.CustomerEmail || null,
-      raw_payload: body,
+      raw_payload: sanitizedPayload,
       processed: false,
     });
   } catch (logErr) {

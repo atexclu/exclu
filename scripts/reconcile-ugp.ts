@@ -12,7 +12,7 @@
  *     - transaction_id NOT LIKE 'listener_%'
  *     - processed = true
  *     - transaction_state = 'Sale'
- *     - raw_payload.CardMask does NOT start with 4242  (test card)
+ *     - raw_payload.IsTestCard != '1'  (legacy rows: CardMask does NOT start with 4242)
  *
  *   A purchases/tips/gift_purchases row is LEGIT when
  *     status='succeeded' AND ugp_transaction_id matches a REAL sale.
@@ -61,9 +61,16 @@ const testCardTxns = new Set<string>();
   for (const e of data ?? []) {
     const txn = e.transaction_id as string;
     const state = (e.transaction_state ?? '') as string;
-    const mask = (e.raw_payload as any)?.CardMask ?? null;
+    // IsTestCard is the post-scrub flag set by ugp-confirm/ugp-listener
+    // (migration 200/201 dropped CardMask from raw_payload to satisfy the
+    // merchant guideline #5). Legacy rows from before the scrub still have
+    // CardMask, so we fall back to that for them.
+    const isTestCardFlag = (e.raw_payload as any)?.IsTestCard;
+    const legacyMask = (e.raw_payload as any)?.CardMask ?? null;
+    const isTestCard = isTestCardFlag === '1'
+      || isTestCardFlag === 1
+      || (typeof legacyMask === 'string' && /^4242/.test(legacyMask));
     const status = (e.raw_payload as any)?.TransactionStatus ?? null;
-    const isTestCard = typeof mask === 'string' && /^4242/.test(mask);
 
     if (isTestCard) testCardTxns.add(txn);
 
@@ -73,7 +80,7 @@ const testCardTxns = new Set<string>();
     } else if (e.processed && state === 'Authorize' && !isTestCard && status !== 'Declined') {
       realAuthTxns.add(txn);
     } else {
-      polludedTxns.set(txn, { state, cardMask: mask });
+      polludedTxns.set(txn, { state, cardMask: legacyMask });
     }
   }
   console.log(`Real Sales       : ${realSaleTxns.size}`);
@@ -234,8 +241,12 @@ const subsToRollback: SubRollback[] = [];
     .eq('processed', true)
     .like('merchant_reference', 'sub_%');
   for (const e of testSubEvents ?? []) {
-    const mask = (e.raw_payload as any)?.CardMask ?? '';
-    if (!/^4242/.test(mask)) continue;
+    // Post-scrub: IsTestCard flag is the source of truth. Pre-scrub legacy
+    // rows fall back to the CardMask BIN check.
+    const flag = (e.raw_payload as any)?.IsTestCard;
+    const legacyMask = (e.raw_payload as any)?.CardMask ?? '';
+    const isTest = flag === '1' || flag === 1 || /^4242/.test(legacyMask);
+    if (!isTest) continue;
     const userId = (e.merchant_reference as string).replace(/^sub_/, '');
     const { data: prof } = await sb.from('profiles').select('id, handle, display_name, is_creator_subscribed').eq('id', userId).maybeSingle();
     if (prof && (prof as any).is_creator_subscribed) {

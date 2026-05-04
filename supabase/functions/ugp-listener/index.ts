@@ -85,6 +85,20 @@ serve(async (req) => {
   }
 
   // Log the event
+  // Scrub CardMask (BIN+last4 masked PAN, fails merchant guideline #5) and
+  // BankMessage (issuer decline detail) before persisting raw_payload.
+  // Derive IsTestCard from CardMask before stripping so audit scripts keep
+  // their test-card detection.
+  const sanitizedPayload: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'CardMask' || k === 'BankMessage') continue;
+    sanitizedPayload[k] = v;
+  }
+  if (typeof body.CardMask === 'string' && /^(4242|5555|0000)/.test(body.CardMask)) {
+    sanitizedPayload.IsTestCard = '1';
+  } else if (body.CardMask) {
+    sanitizedPayload.IsTestCard = '0';
+  }
   try {
     await supabase.from('payment_events').insert({
       transaction_id: `listener_${transactionId}_${transactionState}`,
@@ -92,7 +106,7 @@ serve(async (req) => {
       amount_decimal: amount,
       transaction_state: transactionState,
       customer_email: body.CustomerEmail || null,
-      raw_payload: body,
+      raw_payload: sanitizedPayload,
       processed: false,
     });
   } catch (logErr) {
